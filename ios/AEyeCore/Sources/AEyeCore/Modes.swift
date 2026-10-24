@@ -20,17 +20,23 @@ public struct Mode: Equatable, Identifiable {
 }
 
 public enum Modes {
-    /// Ring order: the four server packs, then the coming-soon modes.
+    /// Ring order mirrors `client-web/agent.js` MODES: the server packs, then the coming-soon modes.
+    /// Sink is the `home` pack (the dad flow); Memory is the memory aid.
     public static let all: [Mode] = [
         Mode(id: "general", title: "General", symbol: "sparkles", pack: "general", requiresPowerOff: false),
         Mode(id: "pc_build", title: "PC Build", symbol: "desktopcomputer", pack: "pc_build", requiresPowerOff: true),
         Mode(id: "cooking", title: "Cooking", symbol: "frying.pan", pack: "cooking", requiresPowerOff: false),
         Mode(id: "assemble", title: "Assembly", symbol: "hammer", pack: "assemble", requiresPowerOff: false),
+        Mode(id: "memory", title: "Memory", symbol: "brain.head.profile", pack: "memory", requiresPowerOff: false),
         Mode(id: "mechanic", title: "Mechanic", symbol: "car", pack: nil, requiresPowerOff: false),
-        Mode(id: "plumbing", title: "Plumbing", symbol: "drop", pack: nil, requiresPowerOff: false),
+        Mode(id: "plumbing", title: "Sink", symbol: "drop", pack: "home", requiresPowerOff: false),
         Mode(id: "engineering", title: "Engineering", symbol: "gearshape.2", pack: nil, requiresPowerOff: false),
     ]
 
-    /// PC Build is centred at launch.
-    public static let defaultIndex = 1
+    /// The pack that is the product focus: Memory is centred at launch, as on the web.
+    public static let defaultIndex = all.firstIndex { $0.id == "memory" } ?? 0
+
+    /// The `home` pack waits for a task word; the web sends "sink" as soon as the helper first listens.
+    public static let homePack = "home"
+    public static let homeStartText = "sink"
 }

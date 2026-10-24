@@ -62,7 +62,7 @@ struct RootView: View {
     }
 
     private var needsServer: Bool {
-        serverURL(from: controller.serverURLString) == nil
+        controller.socketURL == nil
     }
 
     // MARK: - Camera screen

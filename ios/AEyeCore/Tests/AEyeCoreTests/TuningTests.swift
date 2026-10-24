@@ -16,3 +16,23 @@ final class TuningTests: XCTestCase {
         XCTAssertNil(serverURL(from: "   "))
     }
 }
+
+final class ServerURLTokenTests: XCTestCase {
+    func testTokenBecomesQueryItem() {
+        XCTAssertEqual(serverURL(from: "192.168.1.5:8000", token: "abc123")?.absoluteString,
+                       "ws://192.168.1.5:8000/ws2?token=abc123")
+        XCTAssertEqual(serverURL(from: "https://mac.tail1.ts.net", token: " s3cret ")?.absoluteString,
+                       "wss://mac.tail1.ts.net/ws2?token=s3cret")
+    }
+
+    func testEmptyTokenLeavesURLAlone() {
+        XCTAssertEqual(serverURL(from: "192.168.1.5:8000", token: "")?.absoluteString, "ws://192.168.1.5:8000/ws2")
+        XCTAssertEqual(serverURL(from: "192.168.1.5:8000", token: "  ")?.absoluteString, "ws://192.168.1.5:8000/ws2")
+    }
+
+    func testTypedTokenReplacesOneInTheURL() {
+        XCTAssertEqual(serverURL(from: "ws://h:8000/ws2?token=old&x=1", token: "new")?.absoluteString,
+                       "ws://h:8000/ws2?x=1&token=new")
+        XCTAssertNil(serverURL(from: "", token: "new"))
+    }
+}

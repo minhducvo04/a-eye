@@ -27,7 +27,19 @@ public func frameSize(width: Int, height: Int, maxSide: Int = Tuning.maxFrameSid
 
 /// Turns what the user typed in Settings into the `/ws2` socket URL, or nil when it is unusable.
 /// - no scheme -> `ws://`; `http` -> `ws`; `https` -> `wss`; empty or `/` path -> `/ws2`.
-public func serverURL(from raw: String) -> URL? {
+/// - a non-empty `token` is sent as the `token` query item, the same way `agent.html?token=` does on the web.
+public func serverURL(from raw: String, token: String = "") -> URL? {
+    guard let base = baseServerURL(from: raw) else { return nil }
+    let secret = token.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !secret.isEmpty, var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
+        return base
+    }
+    let others = (components.queryItems ?? []).filter { $0.name != "token" }
+    components.queryItems = others + [URLQueryItem(name: "token", value: secret)]
+    return components.url
+}
+
+private func baseServerURL(from raw: String) -> URL? {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return nil }
 

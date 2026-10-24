@@ -14,10 +14,12 @@ The ring shows the v2 skill packs plus three placeholders:
 | Mode | Pack | Status |
 |---|---|---|
 | General | `general` | works |
-| PC Build | `pc_build` | works; centred at launch; "Power is off" gate before any step |
+| PC Build | `pc_build` | works; "Power is off" gate before any step |
 | Cooking | `cooking` | works |
 | Assembly | `assemble` | works |
-| Mechanic, Plumbing, Engineering | none | "coming soon" (tap shakes, no call) |
+| Memory | `memory` | works; centred at launch (the memory aid is the product focus, same as the web) |
+| Sink | `home` | works; the app sends "sink" as soon as the helper first listens, like the web |
+| Mechanic, Engineering | none | "coming soon" (tap shakes, no call) |
 
 ## Protocol
 
@@ -65,6 +67,10 @@ On the Mac run:
 VISION_BACKEND=fake make dev
 ```
 
+The server refuses any client that is not localhost unless it has credentials. On home Wi-Fi start it open
+(`A_EYE_OPEN=1 make server`) and leave the app's token field empty, or set `A_EYE_TOKEN` in `.env` and type the
+same value in the app's gear sheet (Access token; it is kept in the Keychain and sent as `?token=`).
+
 Then give the app the Mac's address, either in `ios/AEye/Config/Local.xcconfig`
 (`AEYE_SERVER_URL = ws:/$()/192.168.1.10:8000/ws2`) or at runtime in the gear sheet (Settings > server). The phone
 and the Mac must be on the same Wi-Fi. Accepted forms: `192.168.1.10:8000` (becomes `ws://.../ws2`),
@@ -82,7 +88,7 @@ and the Mac must be on the same Wi-Fi. Accepted forms: `192.168.1.10:8000` (beco
 - Portrait, iPhone only.
 - The phone speaks with the system voice (`tts:"browser"`); server TTS audio is not played.
 - Boxes are drawn where the server put them. There is no tracking between frames, so they can lag a moving object.
-- Mechanic, Plumbing and Engineering are placeholders.
+- Mechanic and Engineering are placeholders.
 - No app icon yet.
 - The app is a helper, not a certified or medical tool, and it is not for mains, gas or PSU internals.
 - Safari (`client-web/`) stays the committed demo unless native passes the same rehearsal.

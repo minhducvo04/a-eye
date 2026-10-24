@@ -29,6 +29,22 @@ final class CallController {
         }
     }
 
+    private var storedAccessToken: String
+
+    /// The server's shared token (`A_EYE_TOKEN`), empty on an open home server. Kept in the Keychain, never logged.
+    var accessToken: String {
+        get { storedAccessToken }
+        set {
+            storedAccessToken = newValue
+            TokenStore.save(newValue)
+        }
+    }
+
+    /// The socket URL for the current settings, with the token attached when one is set.
+    var socketURL: URL? {
+        serverURL(from: serverURLString, token: accessToken)
+    }
+
     /// Spoken replies. Exposed so voice input can read `speakingText` / `startedAt` and call `stop()`.
     let speech = SpeechOut()
 
@@ -59,10 +75,13 @@ final class CallController {
     /// spoken then, or one that ended less than `echoWindowSeconds` before. nil = cannot be an echo.
     @ObservationIgnored private var utteranceEchoReference: String?
     private static let echoWindowSeconds: TimeInterval = 1.0
+    /// Sink mode: the `home` pack needs the task word once the helper listens, as `client-web/agent.js` does.
+    @ObservationIgnored private var isHomeStartPending = false
 
     init(camera: CameraService) {
         self.camera = camera
         self.storedServerURL = UserDefaults.standard.string(forKey: Self.serverURLKey) ?? Self.bundledServerURL()
+        self.storedAccessToken = TokenStore.load()
     }
 
     /// Milliseconds since 1970. The clock `CallState.reduce(nowMs:)` and `DrawState.visible(nowMs:)` share.
@@ -73,9 +92,10 @@ final class CallController {
     // MARK: - Call lifecycle
 
     func start(_ mode: Mode) {
-        guard self.mode == nil, mode.isAvailable, serverURL(from: serverURLString) != nil else { return }
+        guard self.mode == nil, mode.isAvailable, socketURL != nil else { return }
         self.mode = mode
         state = .initial
+        isHomeStartPending = mode.pack == Modes.homePack
         sessionId = UUID().uuidString
         callStartedAt = Date()
         speech.prepareAudioSession()
@@ -102,6 +122,7 @@ final class CallController {
         speech.stop()
         speech.releaseAudioSession()
         state = .initial
+        isHomeStartPending = false
         mode = nil
         callStartedAt = nil
         lastFrameSize = .zero
@@ -226,7 +247,7 @@ final class CallController {
     // MARK: - Socket
 
     private func connect() {
-        guard let mode, mode.pack != nil, let url = serverURL(from: serverURLString) else { return }
+        guard let mode, mode.pack != nil, let url = socketURL else { return }
         generation += 1
         let thisGeneration = generation
         socket?.close()
@@ -252,6 +273,10 @@ final class CallController {
         apply(.server(message))
         if case .say(_, let utteranceId, let text) = message, !text.isEmpty {
             speech.speak(text: text, utteranceId: utteranceId)
+        }
+        if isHomeStartPending, case .agentState(_, .listening) = message {
+            isHomeStartPending = false
+            send(text: Modes.homeStartText)
         }
     }
 
