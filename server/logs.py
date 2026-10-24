@@ -6,7 +6,7 @@ import logging
 import re
 
 _FIELDS = {'pack', 'tts', 'stt', 'dependency', 'to', 'ms', 'vlm_ms',
-           'brain_first_token_ms', 'first_audio_ms', 'turn_ms'}
+           'brain_first_token_ms', 'first_audio_ms', 'turn_ms', 'error', 'where'}
 
 
 def event(name, session=None, level='info', **fields):

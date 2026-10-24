@@ -59,9 +59,12 @@ class TtsEngine:
     def segments(self, text, voice):
         if self.local_dir and not voice.endswith(".pt"):
             voice = os.path.join(self.local_dir, "voices", voice + ".pt")
+        # Synthesize everything under the lock, then release it before yielding. A client that drops a
+        # streamed response (barge-in) used to leave this generator suspended while holding the lock, and every
+        # later request hung (seen live). Kokoro runs at about 1/100 real time, so one sentence costs ~40 ms.
         with self.lock:
-            for _, _, audio in self.pipeline(text, voice=voice):
-                yield audio
+            chunks = [audio for _, _, audio in self.pipeline(text, voice=voice)]
+        yield from chunks
 
 
 class Detector:

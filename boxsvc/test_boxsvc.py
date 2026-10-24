@@ -154,3 +154,17 @@ def test_invalid_media_and_validation_do_not_echo_inputs(client):
 def test_resample_interpolation_and_clipping():
     data = service.pcm16_16khz([0, 0, 1, -2, 0, 0])
     assert struct.unpack("<4h", data) == (0, 16384, -32767, 0)
+
+
+def test_abandoned_tts_stream_does_not_hold_the_lock():
+    """Seen live: a dropped /tts stream kept the Kokoro lock and every later request hung."""
+    from boxsvc.engines import TtsEngine
+    engine = TtsEngine.__new__(TtsEngine)
+    from threading import Lock
+    engine.lock = Lock()
+    engine.local_dir = None
+    engine.pipeline = lambda text, voice: iter([(None, None, [0.0] * 10), (None, None, [0.0] * 10)])
+    first = engine.segments('a', 'af_heart')
+    next(first)  # consumer takes one chunk, then abandons the stream
+    assert engine.lock.acquire(timeout=0.5)
+    engine.lock.release()

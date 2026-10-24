@@ -242,8 +242,14 @@ async def websocket(ws: WebSocket):
         except asyncio.CancelledError:
             await lifecycle.stage('cancelled')
             raise
-        except Exception:
-            event('dependency_error', session.session_id, dependency='turn', level='error')
+        except Exception as exc:
+            # Class name and the innermost frame only: never message text, which could hold user words.
+            tb = exc.__traceback__
+            while tb and tb.tb_next:
+                tb = tb.tb_next
+            where = f'{tb.tb_frame.f_code.co_filename.rsplit("/", 1)[-1]}:{tb.tb_lineno}' if tb else ''
+            event('dependency_error', session.session_id, dependency='turn', level='error',
+                  error=type(exc).__name__, where=where)
             await lifecycle.stage('failed', detail='Brain failed')
         finally:
             if not asyncio.current_task().cancelling():
