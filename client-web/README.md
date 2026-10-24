@@ -56,3 +56,11 @@ node --test client-web/
 ```
 
 The Node tests cover overlay scaling, the cover-crop map, stale-overlay clearing, and the frame scheduler with a fake clock. They do not open Safari, a camera, or a WebSocket.
+
+## Voice
+
+`client-web/voice.js` exports `createVoice` for the call page. It turns the mic into text with the browser speech API, speaks with `speechSynthesis`, and plays server audio (16 kHz mono PCM16) on Web Audio. It does not record audio, does not store it, and does not log it. Status is only the `onState` callback: `idle`, `listening`, or `speaking`.
+
+Recognition uses `SpeechRecognition`, or `webkitSpeechRecognition` on Safari, with `continuous` and `interimResults`. If that API is missing, `supported.stt` is false and the page falls back to typing. Safari needs HTTPS for the microphone as well as the camera. Use headphones so playback into the mic does not trip barge-in: two or more words that are not already in the line being spoken stop playback at once. Whisper on the PC is a later option.
+
+On iPhone, call `unlockAudio()` from the mic button tap. iOS only creates or resumes `AudioContext` inside that gesture.
