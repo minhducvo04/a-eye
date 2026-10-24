@@ -876,8 +876,10 @@ function boot() {
       video.srcObject = stream;
       video.playsInline = true;
       video.muted = true;
-      await video.play();
+      // On before play(): a play() that never settles must not leave a live camera the button can't stop.
       cameraOn = true;
+      await video.play().catch(() => {});
+      if (video.srcObject !== stream) return;
       startBtn.textContent = "Camera off";
       startBtn.setAttribute("aria-pressed", "true");
       send({ v: 2, type: "camera", session_id: sessionId, on: true });
@@ -1233,7 +1235,7 @@ function boot() {
     choosePack(button.getAttribute("data-pack"));
   });
   startBtn.addEventListener("click", () => {
-    if (cameraOn) stopCamera();
+    if (cameraOn || video.srcObject) stopCamera();
     else void startCamera();
   });
   powerBtn.addEventListener("click", () => {
