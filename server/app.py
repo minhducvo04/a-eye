@@ -2,11 +2,16 @@
 import asyncio
 from contextlib import asynccontextmanager
 import json
+import os
 from pathlib import Path
 import time
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
+from server.auth import authorized, accept_socket
+from server.logs import event, protect_transport_logs
+from server import api, mock
 from jsonschema import ValidationError
 
 from contracts import validate
@@ -23,16 +28,34 @@ CLIENT_WEB = Path(__file__).resolve().parents[1] / 'client-web'
 def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
     @asynccontextmanager
     async def lifespan(app):
-        warmup = asyncio.create_task(ws2.warm_brain(app))
+        protect_transport_logs()
+        if not os.environ.get("A_EYE_TOKEN"):
+            event("auth_disabled", level="warning")
+        warmup = None if app.state.mock else asyncio.create_task(ws2.warm_brain(app))
         try:
             yield
         finally:
-            warmup.cancel()
-            await asyncio.gather(warmup, return_exceptions=True)
+            if warmup:
+                warmup.cancel()
+                await asyncio.gather(warmup, return_exceptions=True)
 
     app = FastAPI(lifespan=lifespan)
     app.state.vision = vision if vision is not None else VisionClient()
     app.state.llm = llm if llm is not None else LLMClient()
+    app.state.mock = os.environ.get('A_EYE_MOCK') == '1'
+    app.state.status_cache = None
+    app.state.status_lock = asyncio.Lock()
+    if app.state.mock:
+        mock.install(app)
+        app.add_middleware(mock.FirstSceneBarrier)
+
+    @app.middleware('http')
+    async def authenticate(request, call_next):
+        if request.url.path.startswith('/api/') and not authorized(request):
+            event('auth_rejected', level='warning')
+            return JSONResponse({'error': 'unauthorized'}, status_code=401)
+        return await call_next(request)
+
     now = clock if clock is not None else lambda: int(time.time() * 1000)
 
     @app.get('/health')
@@ -41,7 +64,8 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
 
     @app.websocket('/ws')
     async def websocket(ws: WebSocket):
-        await ws.accept()
+        if not await accept_socket(ws):
+            return
         session = None
 
         async def send(messages):
@@ -64,6 +88,7 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
                     except (OSError, ValueError, ValidationError):
                         await send([error('bad_message', 'Unknown or invalid board.')])
                         continue
+                    event('hello', incoming['session_id'])
                     session = Session(incoming['session_id'], board_id, board)
                     await send(session.start())
                     continue
@@ -111,6 +136,7 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
             pass
 
     app.include_router(ws2.router)
+    app.include_router(api.router)
     # Routes must precede the catch-all static mount. The client package owns this directory.
     if Path(static_dir).is_dir():
         app.mount('/', StaticFiles(directory=static_dir, html=True, check_dir=False), name='client')

@@ -59,7 +59,7 @@ function randomId() {
 
 function wsUrl() {
   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${scheme}//${location.host}/ws`;
+  return `${scheme}//${location.host}/ws?token=${encodeURIComponent(new URLSearchParams(location.search).get("token") || "")}`;
 }
 
 export function speak(text) {

@@ -9,7 +9,7 @@ VISION_BACKEND ?= auto
 -include .env
 export
 
-.PHONY: setup test test-py test-web vision server dev smoke phone
+.PHONY: setup test test-py test-web vision server dev smoke phone mock
 
 setup:            ## create .venv and install Python deps
 	uv venv .venv && uv pip install --python .venv/bin/python -r requirements.txt
@@ -31,11 +31,16 @@ server:           ## orchestrator on :8000, serves client-web at / (v1) and /age
 dev:              ## vision + server together; open http://localhost:8000/agent.html
 	$(MAKE) vision & $(MAKE) server; kill %1
 
+mock:             ## offline phone backend, no GPU service
+	A_EYE_MOCK=1 $(PY) -m uvicorn server.app:app --host 0.0.0.0 --port 8000
+
 phone:            ## print the HTTPS command for iPhone testing (Safari needs HTTPS for camera and mic)
 	@echo "Run this yourself (it changes Tailscale settings on this Mac):"
 	@echo "  tailscale serve --bg $(SERVER_PORT)"
 	@echo "Then open https://<this-mac>.<tailnet>.ts.net/agent.html on the phone (same tailnet)."
 	@echo "Stop it with: tailscale serve reset"
+	@echo "Quick tunnel: cloudflared tunnel --url http://localhost:8000"
+	@echo "Before public exposure, set A_EYE_TOKEN and open /agent.html?token=..."
 
 smoke:            ## end to end: photo -> server -> fake vision -> box + step
 	VISION_BACKEND=fake $(PY) scripts/smoke.py
