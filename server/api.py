@@ -164,6 +164,6 @@ async def status(request: Request):
         results = await asyncio.gather(*(dependency(app, name) for name in names))
         report = dict(ok=all(item['ok'] for item in results),
                       mode='mock' if app.state.mock else 'live', version={'contracts': '2.2'},
-                      deps=dict(zip(names, results)))
+                      deps=dict(zip(names, results)), features=dict(memory=True))
         app.state.status_cache = (monotonic(), report)
         return report

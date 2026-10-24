@@ -34,8 +34,15 @@ CROP_SIDE = 224
 _ID = re.compile(r'^[a-z0-9][a-z0-9-]{0,39}$')
 _PERSON = re.compile(r'\b(person|people|man|woman|boy|girl|child|face|baby)\b', re.I)
 _WORD = re.compile(r'[a-z0-9]+')
+_GENERIC = re.compile(r'^\s*(the\s+)?(object|thing|item)s?\s*$', re.I)
 _STOP = {'the', 'my', 'a', 'an', 'your', 'our', 'of', 'where', 'are', 'is', 'did', 'i', 'put', 'leave', 'left',
          'last', 'see', 'saw', 'find', 'have', 'you', 'seen', 'what', 'happened', 'to', 'it', 'they', 'them'}
+
+
+def person_id(owner):
+    """One memory per signed-in person: derived from server.rewind.identity(), never chosen by the client."""
+    import hashlib
+    return 'p-' + hashlib.sha256((owner or 'local').encode()).hexdigest()[:16]
 
 
 def root():
@@ -165,6 +172,47 @@ class Store:
         self._write_json('tags.json', tags)
         return tags[name.lower()]
 
+    REFUSED_ROOMS = ('bedroom', 'bathroom')
+
+    def settings(self):
+        saved = self._read_json('settings.json', {})
+        tags = [dict(item=t['name'], home=t['home']) for t in self.tags().values() if t['kind'] == 'object' and t['home']]
+        return dict(consent=dict(person=bool(saved.get('consent', {}).get('person')),
+                                 caregiver=bool(saved.get('consent', {}).get('caregiver'))),
+                    items=tags, rooms=saved.get('rooms', ['kitchen', 'living room', 'entryway']),
+                    kept_days=saved.get('kept_days', retention_days()), remembering=bool(saved.get('remembering')))
+
+    def save_settings(self, value):
+        """Both consents are checked again here; bedroom and bathroom are refused (ValueError)."""
+        consent = value.get('consent') or {}
+        both = bool(consent.get('person')) and bool(consent.get('caregiver'))
+        rooms = [str(r).strip().lower()[:30] for r in value.get('rooms') or [] if str(r).strip()]
+        if any(r in self.REFUSED_ROOMS for r in rooms):
+            raise ValueError('refused room')
+        days = min(30, max(1, int(round(float(value.get('kept_days') or retention_days())))))
+        self._write_json('settings.json', dict(consent=dict(person=bool(consent.get('person')),
+                                                            caregiver=bool(consent.get('caregiver'))),
+                                               rooms=sorted(set(rooms)), kept_days=days,
+                                               remembering=both and bool(value.get('remembering'))))
+        wanted = {}
+        for entry in value.get('items') or []:
+            if isinstance(entry, dict) and str(entry.get('item', '')).strip() and str(entry.get('home', '')).strip():
+                wanted[str(entry['item']).strip().lower()[:60]] = str(entry['home']).strip()[:60]
+        for name, tag in list(self.tags().items()):
+            if tag['kind'] == 'object' and tag['home'] and name not in wanted:
+                self._write_json('tags.json', {k: v for k, v in self.tags().items() if k != name})
+        for name, home in wanted.items():
+            self.set_tag(name, home=home)
+        self.purge_old()
+        return self.settings()
+
+    def remembering(self):
+        return self.settings()['remembering']
+
+    def count_today(self):
+        midnight = datetime.fromtimestamp(self.clock()).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        return sum(1 for r in self.records() if r.get('note') and r.get('t', 0) >= midnight)
+
     def videos(self):
         return self._read_json('videos.json', [])
 
@@ -217,7 +265,9 @@ class Store:
         return count
 
     def purge_old(self, days=None):
-        cutoff = self.clock() - 86400 * (retention_days() if days is None else days)
+        if days is None:
+            days = self._read_json('settings.json', {}).get('kept_days', retention_days())
+        cutoff = self.clock() - 86400 * days
         return self._drop(lambda r: r.get('t', 0) >= cutoff)
 
 
@@ -354,12 +404,14 @@ class Writer:
     async def observe(self, scene, jpeg_b64):
         """One keyframe scan: scene (caption, objects) and the frame it was made from."""
         note = ' '.join((scene.get('caption') or '').split())[:200]
-        objects = [o for o in scene.get('objects', []) if o.get('label')]
+        objects = [o for o in scene.get('objects', []) if o.get('label') and not _GENERIC.match(o['label'])]
         tags = self.store.tags()
         objects += await self.ground(tags, jpeg_b64, note)
         hits = []
         for obj in objects:
             for tag in tags.values():
+                if tag['kind'] != 'object':
+                    continue            # places are context ("under the left red cup"), not items to crop
                 if words(tag['label']) & words(obj['label']) or words(tag['name']) & words(obj['label']):
                     hits.append((tag, obj))
         key = (note, tuple(sorted({t['name'] for t, _ in hits})))
@@ -442,7 +494,7 @@ def live_target(scene, item, record_tag):
     if not scene:
         return None
     for obj in scene.get('objects', []):
-        if words(obj['label']) & words(item):
+        if words(obj['label']) & words(item) and obj.get('conf', 1) >= 0.5:
             return dict(object_id=obj['id'], bbox=obj['bbox'], what='item')
     near = (record_tag or {}).get('near')
     if near:
@@ -463,16 +515,15 @@ def place_words(tag_entry, tags=None):
     rel = ('in' if re.search(r'\b(bowl|basket|drawer|tray|box|bag|jar|pocket)\b', label, re.I) else
            'under' if re.search(r'\b(cup|mug|lid|cloth|towel|hat)\b', label, re.I) else 'by')
     place = next((t for t in (tags or {}).values() if t['kind'] == 'place' and words(t['label']) & words(label)), None)
-    if place:
-        return f"{rel} the {place['name']}"
     x = center(near['bbox'])[0]
     side = 'left ' if x < 0.38 else 'right ' if x > 0.62 else 'middle '
-    return f"{rel} the {side}{label}"
+    return f"{rel} the {side}{place['name'] if place else label}"
 
 
-async def ground_live(vision, jpeg_b64, item, entry):
-    """Live objects for the arrow: the item itself, and its last place by side ("the left red cup")."""
-    queries = [item]
+async def ground_live(vision, jpeg_b64, item, entry, caption=''):
+    """Live objects for the arrow: the item itself (only when the live caption mentions it: grounding alone
+    can invent a box for a hidden thing), and its last place by side ("the left red cup")."""
+    queries = [item] if words(item) & words(caption) else []
     place = place_words(entry)
     if place:
         queries.append(place.split(' the ', 1)[1])
@@ -526,13 +577,17 @@ async def find(store, question, embedder=None, scene=None, now=None, vision=None
         return result
     entry = next((e for e in hit.get('tags') or [] if words(e['tag']) & words(target)), None)
     place = place_words(entry, tags)
+    home = tag.get('home') if tag else None
+    near = (entry or {}).get('near')
+    if place and home and near and words(home) & words(near['label']):
+        place = place.split(' the ', 1)[0] + f' the {home}'      # at its home: "in the blue bowl"
     when = spoken_time(hit['t'], now)
     result.update(t=hit['t'], when=when, note=hit['note'], place=place, record_id=hit['id'],
                   box=(entry or {}).get('crop_bbox'), bbox=(entry or {}).get('bbox'))
     crop_id = (hit.get('crops') or {}).get(entry['tag']) if entry else None
     result['crop'] = store.load_crop(crop_id) if crop_id else None
     if vision is not None and live_frame:
-        grounded = await ground_live(vision, live_frame, item, entry)
+        grounded = await ground_live(vision, live_frame, item, entry, (scene or {}).get('caption', ''))
         if grounded and grounded['objects']:
             scene = grounded
     result['live'] = live_target(scene, item, entry)
@@ -551,6 +606,21 @@ async def find(store, question, embedder=None, scene=None, now=None, vision=None
     return result
 
 
+def hit_fields(result, call_started=None):
+    """find_item answer: the rewind_hit fields (t_s, start_s, end_s, sure, frame_b64, objects, alternatives) plus
+    place, when, at_ms, home, live and counts. t_s is seconds since this call started (negative: an earlier call)."""
+    out = {k: v for k, v in result.items() if k not in ('crop', 'live_scene', 'box', 'bbox', 't')}
+    if result.get('found'):
+        t_s = round(result['t'] - call_started, 1) if call_started else 0.0
+        out.update(t_s=t_s, start_s=t_s, end_s=t_s, sure=result.get('how') in ('tag', 'label'), alternatives=[],
+                   at_ms=int(result['t'] * 1000))
+        if result.get('crop'):
+            out['frame_b64'] = base64.b64encode(result['crop']).decode()
+        if result.get('box'):
+            out['objects'] = [dict(id='memory-0', label=result['item'], bbox=result['box'], conf=1.0)]
+    return out
+
+
 # ---- per-process attachments: which call writes to which memory ----
 
 class Memories:
@@ -563,6 +633,25 @@ class Memories:
 
     def store(self, memory_id):
         return Store(memory_id, base=self.base)
+
+    def for_owner(self, owner):
+        store = self.store(person_id(owner))
+        store.claim(owner)
+        return store
+
+    def auto_attach(self, rewind):
+        """At call start, and when settings change: attach while the person has both consents and remembering on."""
+        store = self.for_owner(rewind.owner)
+        if store.remembering() and rewind.session_id not in self.calls:
+            _, writer = self.attach(rewind.session_id, store.id, rewind.owner)
+            rewind.memory_writer = writer
+            if not any(c.video_id for c in rewind.clips):
+                rewind.index_name, rewind.index_id = f'a-eye-{store.id}', None
+            rewind.on_upload = store.add_video
+        elif not store.remembering() and rewind.session_id in self.calls:
+            self.detach(rewind.session_id)
+            rewind.memory_writer = None
+        return store
 
     def attach(self, session_id, memory_id, owner):
         store = self.store(memory_id)

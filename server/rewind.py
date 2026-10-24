@@ -246,6 +246,7 @@ class Rewind:
         self.index_name = INDEX_NAME   # local memory attaches a per-person index: a-eye-<memory id>
         self.on_upload = None   # callback(index_id, video_id), e.g. the person's memory store
         self.memory_writer = None   # server.memory.Writer while local memory is attached to this call
+        self.memories = None        # server.memory.Memories, set by the registry, for auto attach
         self.session = None
         self.keep = False       # True: the user keeps the TwelveLabs videos after the call
         self.deleted = []       # video ids deleted from TwelveLabs (ids only)
@@ -509,6 +510,12 @@ class Rewind:
         every = every or float(os.environ.get('REWIND_FLUSH_S', '60'))
         self.mode = getattr(getattr(session, 'pack', None), 'id', None)
         self.session = session  # the live scene, for local memory's arrow to an object in view now
+        if self.memories is not None:
+            try:
+                self.memories.auto_attach(self)
+            except Exception as exc:
+                event('dependency_error', self.session_id, dependency='memory', level='error',
+                      error=type(exc).__name__)
         seq = None
         next_flush = self.clock() + every
         recent = {}             # seq -> jpeg_b64, so a scan's own frame is found for local memory
@@ -546,8 +553,9 @@ class Rewind:
 class Registry:
     """Recent calls' Rewind state for this server process, so a question after the call still finds it."""
 
-    def __init__(self, client=None, keep=5, encoder=None):
+    def __init__(self, client=None, keep=5, encoder=None, memories=None):
         self.client = client
+        self.memories = memories
         self.encoder = encoder
         self.keep = keep
         self.calls = {}
@@ -559,6 +567,7 @@ class Registry:
         old = self.calls.get(session_id)
         rewind = Rewind(session_id, client=self.client, **kwargs)
         rewind.owner = owner
+        rewind.memories = self.memories
         if old is not None and old.owner != owner:
             # Another caller's session id: never touch that call; this one gets an unregistered, off Rewind.
             event('auth_rejected', level='warning', reason='rewind_owner')
@@ -612,6 +621,9 @@ class Registry:
 def registry(app):
     if not hasattr(app.state, 'rewind'):
         app.state.rewind = Registry(getattr(app.state, 'rewind_client', None))
+    if getattr(app.state.rewind, 'memories', None) is None:
+        from server.memory import memories
+        app.state.rewind.memories = memories(app)
     return app.state.rewind
 
 
@@ -758,7 +770,7 @@ async def memory_turn(session, text, kind, speak, emit, turn_id, vision=None):
             await emit(card)
         await speak(cloud['say'], True)
         return
-    await emit(memory_hit_message(result, turn_id))
+    await emit(memory_hit_message(result, turn_id, session.rewind.started_wall))
     if result.get('live') and session.camera and result.get('live_scene'):
         turn = dict(agent='helper', draw=[dict(kind='arrow', target=result['live']['object_id'], role='target')])
         seq = frame['seq'] if frame else getattr(session, 'scene_seq', 0)

@@ -1063,16 +1063,28 @@
    "item": "keys",
    "found": true,
    "at_ms": 1792850000000,
+   "t_s": -86400.0,
+   "start_s": -86400.0,
+   "end_s": -86400.0,
+   "sure": true,
+   "alternatives": [],
    "when": "yesterday at 3:02 PM",
-   "place": "under the left cup",
+   "place": "under the left red cup",
    "home": "blue bowl",
-   "say": "I last saw your keys under the left cup, yesterday at 3:02 PM. Their home is the blue bowl.",
-   "crop_b64": "AAAA",
-   "box": [
-    0.1,
-    0.2,
-    0.5,
-    0.5
+   "say": "I last saw your keys under the left red cup, yesterday at 3:02 PM. Their home is the blue bowl.",
+   "frame_b64": "AAAA",
+   "objects": [
+    {
+     "id": "memory-0",
+     "label": "keys",
+     "bbox": [
+      0.1,
+      0.2,
+      0.5,
+      0.5
+     ],
+     "conf": 1.0
+    }
    ],
    "live": {
     "object_id": "o2",

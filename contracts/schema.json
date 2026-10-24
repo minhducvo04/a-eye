@@ -3092,7 +3092,7 @@
    }
   },
   "v2_memory_hit": {
-   "description": "Server to client: where an object was last seen, from the person's local memory across calls. crop_b64 is a small crop of the item (box on it), never a full frame; live points at the item or its last place in the current view.",
+   "description": "Server to client: where an object was last seen, from the person's local memory across calls. Carries the rewind_hit fields so the same card renders it: frame_b64 is a small crop of the item (never a full frame) and objects box the item on it; t_s is seconds since this call started (negative for an earlier call). live points at the item or its last place in the current view.",
    "type": "object",
    "additionalProperties": false,
    "required": [
@@ -3134,12 +3134,6 @@
     "say": {
      "type": "string"
     },
-    "crop_b64": {
-     "$ref": "#/$defs/jpeg_b64"
-    },
-    "box": {
-     "$ref": "#/$defs/bbox"
-    },
     "live": {
      "type": "object",
      "additionalProperties": false,
@@ -3163,11 +3157,40 @@
     "count_item": {
      "type": "integer",
      "minimum": 0
+    },
+    "t_s": {
+     "type": "number",
+     "description": "Seconds since this call started; negative for an earlier call."
+    },
+    "start_s": {
+     "type": "number"
+    },
+    "end_s": {
+     "type": "number"
+    },
+    "sure": {
+     "type": "boolean"
+    },
+    "alternatives": {
+     "type": "array",
+     "items": {
+      "type": "number"
+     },
+     "maxItems": 3
+    },
+    "frame_b64": {
+     "$ref": "#/$defs/jpeg_b64"
+    },
+    "objects": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/scene_object"
+     }
     }
    }
   },
   "v2_memory_state": {
-   "description": "Server to client: local memory status after a tag or forget. count is the number of kept notes; encrypted false means file-system protection only. After \"forget that\", item and count_item give the memories left about that item.",
+   "description": "Server to client: local memory status after a tag or forget. count is the notes kept today; encrypted false means file-system protection only. After \"forget that\", item and count_item give the memories left about that item.",
    "type": "object",
    "additionalProperties": false,
    "required": [

@@ -129,7 +129,7 @@ async def run_memory_tool(name, args, session, app, turn_id=None):
         result = await memory.find(store, str(args.get('item') or '')[:120], embedder=memories.embedder,
                                    scene=getattr(session, 'scene', None), vision=memories.vision,
                                    live_frame=frame and frame['jpeg_b64'])
-        cards = [memory_hit_message(result, turn_id)]
+        cards = [memory_hit_message(result, turn_id, getattr(getattr(session, 'rewind', None), 'started_wall', None))]
         if result.get('live') and result.get('live_scene'):
             turn = dict(agent='helper', draw=[dict(kind='arrow', target=result['live']['object_id'], role='target')])
             cards.append(resolve(turn, result['live_scene'], frame['seq'] if frame else 0)[0])
@@ -164,25 +164,19 @@ async def run_memory_tool(name, args, session, app, turn_id=None):
     raise KeyError(name)
 
 
-def memory_hit_message(result, turn_id=None):
-    import base64
+def memory_hit_message(result, turn_id=None, call_started=None):
+    """The client card: rewind_hit fields (t_s, frame_b64 = the crop, objects = the item's box on it) plus place."""
     from server.agent import message
-    fields = dict(item=result.get('item') or '', found=bool(result.get('found')), count=result.get('count', 0),
-                  count_item=result.get('count_item', 0))
-    for key in ('when', 'place', 'home', 'say'):
-        if result.get(key):
-            fields[key] = result[key]
-    if result.get('t'):
-        fields['at_ms'] = int(result['t'] * 1000)
-    if result.get('crop'):
-        fields['crop_b64'] = base64.b64encode(result['crop']).decode()
-    if result.get('box'):
-        fields['box'] = result['box']
+    from server.memory import hit_fields
+    fields = hit_fields(result, call_started)
+    keep = ('item', 'found', 'count', 'count_item', 'when', 'place', 'home', 'say', 'at_ms', 't_s', 'start_s', 'end_s',
+            'sure', 'alternatives', 'frame_b64', 'objects')
+    out = {k: fields[k] for k in keep if fields.get(k) not in (None, '')}
     if result.get('live'):
-        fields['live'] = {k: result['live'][k] for k in ('object_id', 'bbox')}
+        out['live'] = {k: result['live'][k] for k in ('object_id', 'bbox')}
     if turn_id:
-        fields['turn_id'] = turn_id
-    return message('memory_hit', **fields)
+        out['turn_id'] = turn_id
+    return message('memory_hit', **out)
 
 
 def memory_state_message(store, item=None):
@@ -190,5 +184,7 @@ def memory_state_message(store, item=None):
     from server.agent import message
     status = memory.status(store)
     extra = dict(item=item, count_item=store.count(item)) if item else {}
+    status['count'] = store.count_today()          # the page shows "Remembering N things today"
+    status['retention_days'] = store.settings()['kept_days']
     return message('memory_state', on=True, **{k: status[k] for k in
                    ('memory_id', 'count', 'crops', 'bytes', 'encrypted', 'retention_days')}, **extra)

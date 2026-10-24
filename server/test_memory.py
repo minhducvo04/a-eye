@@ -216,7 +216,7 @@ def test_memory_ids_and_owners(tmp_path):
 
 
 def test_two_calls_tag_in_one_ask_in_the_other(tmp_path, monkeypatch):
-    """Call 1 tags the keys and sees them; call 2 (new session, same person) asks where they are."""
+    """Caregiver settings first; call 1 sees the keys; call 2 (new session, same person) asks, then forgets."""
     from contracts import validate
     from server.app import create_app
     from server.rewind import Registry
@@ -238,8 +238,8 @@ def test_two_calls_tag_in_one_ask_in_the_other(tmp_path, monkeypatch):
     app = create_app(static_dir='/nonexistent')
     app.state.vision_v2 = vision
     app.state.llm_v2 = LLM()
-    app.state.rewind = Registry(FakeTL())
     app.state.memories = mem.Memories(base=tmp_path, embedder=Words(), person_check=Person())
+    app.state.rewind = Registry(FakeTL(), memories=app.state.memories)
 
     def until(ws, kind):
         while True:
@@ -248,29 +248,36 @@ def test_two_calls_tag_in_one_ask_in_the_other(tmp_path, monkeypatch):
             if msg['type'] == kind:
                 return msg
 
-    def frame(seq):
-        return dict(v=2, type='frame', session_id='s', seq=seq, ts_ms=seq, w=320, h=240, jpeg_b64=jpeg((seq * 40 % 255, 90, 90)))
+    def frame(session, seq):
+        return dict(v=2, type='frame', session_id=session, seq=seq, ts_ms=seq, w=320, h=240,
+                    jpeg_b64=jpeg((seq * 40 % 255, 90, 90)))
 
+    settings = dict(consent=dict(person=True, caregiver=True), items=[dict(item='keys', home='blue bowl')],
+                    rooms=['kitchen'], kept_days=7, remembering=True)
     with TestClient(app) as client:
+        assert client.put('/api/memory/settings', json=dict(settings, rooms=['bedroom'])).status_code == 422
+        refused = client.put('/api/memory/settings', json=dict(settings, consent=dict(person=True))).json()
+        assert refused['remembering'] is False                      # both consents are re-checked on the server
+        assert client.put('/api/memory/settings', json=settings).json()['items'] == [dict(item='keys', home='blue bowl')]
+        client.post('/api/memory/tag', json={'name': 'red cup', 'kind': 'place'})
+        assert client.get('/api/status').json()['features'] == {'memory': True}
         with client.websocket_connect('/ws2') as ws:
             ws.send_json(dict(v=2, type='hello', session_id='call-one', pack='general'))
             until(ws, 'agent_state')
-            assert client.post('/api/memory/tag', json={'memory_id': 'me', 'name': 'keys', 'home': 'blue bowl'}).status_code == 200
-            assert client.post('/api/memory/attach', json={'session_id': 'call-one', 'memory_id': 'me'}).json()['on']
-            ws.send_json(dict(frame(1), session_id='call-one'))
+            ws.send_json(frame('call-one', 1))
             until(ws, 'track')
             for _ in range(100):
-                if client.get('/api/memory/status', params={'memory_id': 'me'}).json()['count']:
+                if client.get('/api/memory/status').json()['count']:
                     break
                 time.sleep(0.02)
-        status = client.get('/api/memory/status', params={'memory_id': 'me'}).json()
-        assert status['count'] == 1 and status['crops'] == 1 and status['tags'] == ['keys']
+            assert client.get('/api/memory/status', params={'session_id': 'call-one'}).json()['on'] is True
+        status = client.get('/api/memory/status').json()
+        assert status['count'] == 1 and status['crops'] == 1 and status['kept_days'] == 7
         vision.scene = scenes[1]
         with client.websocket_connect('/ws2') as ws:
             ws.send_json(dict(v=2, type='hello', session_id='call-two', pack='general'))
             until(ws, 'agent_state')
-            client.post('/api/memory/attach', json={'session_id': 'call-two', 'memory_id': 'me'})
-            ws.send_json(dict(frame(2), session_id='call-two'))
+            ws.send_json(frame('call-two', 2))
             until(ws, 'track')
             ws.send_json(dict(v=2, type='user_text', session_id='call-two', text='Where are my keys?', final=True))
             hit = until(ws, 'memory_hit')
@@ -278,27 +285,38 @@ def test_two_calls_tag_in_one_ask_in_the_other(tmp_path, monkeypatch):
             said = until(ws, 'say')
             while said.get('final') is not True:
                 said = until(ws, 'say')
-            assert hit['found'] and hit['crop_b64'] and hit['place'] == 'under the left red cup'
+            assert hit['found'] and hit['frame_b64'] and hit['objects'][0]['label'] == 'keys'
+            assert hit['place'] == 'under the left red cup' and hit['t_s'] <= 0 and hit['sure'] is True
             assert hit['live']['bbox'] == CUPS[0]['bbox'] and hit['home'] == 'blue bowl'
             assert any(op['kind'] == 'arrow' for op in arrow['ops'])
             assert said['text'].startswith('I last saw your keys under the left red cup')
-            ws.send_json(dict(v=2, type='user_text', session_id='call-two', text='Forget that.', final=True))
-            state = until(ws, 'memory_state')
-            assert state['item'] == 'keys' and state['count_item'] == 0 and state['crops'] == 0
-        assert client.post('/api/memory/find', json={'memory_id': 'me', 'query': 'keys'}).json()['found'] is False
+            found = client.post('/api/memory/find', json={'query': 'my keys', 'session_id': 'call-two'}).json()
+            assert found['found'] and found['place'] == 'under the left red cup' and found['frame_b64']
+            gone = client.post('/api/memory/forget', json={'session_id': 'call-two', 'scope': 'last'}).json()
+            assert gone['item'] == 'keys' and gone['count_item'] == 0
+        assert client.post('/api/memory/find', json={'query': 'keys'}).json()['found'] is False
 
 
-def test_routes_refuse_another_callers_memory(tmp_path, monkeypatch):
+def test_each_caller_has_their_own_memory(tmp_path, monkeypatch):
+    from server import memory_api
     from server.app import create_app
     monkeypatch.setenv('A_EYE_MEMORY_DIR', str(tmp_path))
-    Store('me', base=tmp_path).claim('access:alice')
     app = create_app(static_dir='/nonexistent')
     app.state.memories = mem.Memories(base=tmp_path, embedder=Words(), person_check=Person())
-    with TestClient(app) as client:                      # no auth configured: identity "local"
-        assert client.post('/api/memory/find', json={'memory_id': 'me', 'query': 'keys'}).json()['found'] is False
-        assert client.post('/api/memory/forget', json={'memory_id': 'me', 'scope': 'everything'}).status_code == 404
-        assert client.post('/api/memory/tag', json={'memory_id': 'me', 'name': 'x'}).status_code == 404
-        assert client.get('/api/memory/status', params={'memory_id': 'me'}).json()['count'] == 0
+    who = ['access:alice']
+    monkeypatch.setattr(memory_api, 'identity', lambda request: who[0])
+    with TestClient(app) as client:
+        client.post('/api/memory/tag', json={'name': 'keys', 'home': 'blue bowl'})
+        alice = app.state.memories.for_owner('access:alice')
+        write(alice, dict(caption='keys on the desk', objects=[KEYS]))
+        assert client.post('/api/memory/find', json={'query': 'keys'}).json()['found'] is True
+        who[0] = 'access:bob'
+        assert client.post('/api/memory/find', json={'query': 'keys'}).json()['found'] is False
+        assert client.get('/api/memory/settings').json()['items'] == []
+        assert client.post('/api/memory/forget', json={'scope': 'everything'}).json()['deleted'] == 0
+        who[0] = 'access:alice'
+        assert client.get('/api/memory/status').json()['total'] == 1
+    assert mem.person_id('access:alice') != mem.person_id('access:bob')
 
 
 def test_memory_tool_schemas():
