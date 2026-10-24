@@ -20,11 +20,23 @@ struct CallScreen: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
 
+            // Viewfinder sweep while the helper reads the picture.
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                if let wait = visibleWait(state, at: context.date), wait.agent == .helper {
+                    ScanSweep(color: Palette.helper)
+                        .ignoresSafeArea()
+                        .transition(.opacity)
+                }
+            }
+
             VStack(spacing: 12) {
                 topBar(state: state)
                 Spacer(minLength: 0)
+                waitCard(state: state)
                 CaptionCard(caption: state.caption, errorText: state.errorText)
-                interimLine
+                if controller.isInputResolved, controller.inputMode == .voice {
+                    ListeningStrip(listener: controller.listener)
+                }
                 powerOffGate(state: state)
                 if controller.isInputResolved, controller.inputMode == .typed {
                     typedBar
@@ -34,6 +46,8 @@ struct CallScreen: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 20)
         }
+        .animation(.easeOut(duration: 0.25), value: state.wait?.turnId)
+        .animation(.easeOut(duration: 0.25), value: state.wait == nil)
         .sheet(item: marketBinding) { presentation in
             MarketSheet(market: presentation.response)
         }
@@ -90,20 +104,18 @@ struct CallScreen: View {
 
     // MARK: - Middle
 
-    /// What the recogniser has heard so far, faint, until the utterance is final.
-    @ViewBuilder
-    private var interimLine: some View {
-        let heard = controller.listener.interim
-        if !heard.isEmpty {
-            Text(heard)
-                .font(.subheadline)
-                .foregroundStyle(Color.white.opacity(0.6))
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 6)
-                .shadow(color: .black.opacity(0.6), radius: 3)
-                .accessibilityLabel("Heard: \(heard)")
+    /// Percentage card while an agent works on an answer, so a slow answer does not look like a frozen app.
+    private func waitCard(state: CallState) -> some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            if let wait = visibleWait(state, at: context.date) {
+                WaitCard(wait: wait)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
         }
+    }
+
+    private func visibleWait(_ state: CallState, at date: Date) -> Wait? {
+        state.visibleWait(nowMs: date.timeIntervalSince1970 * 1000)
     }
 
     /// PC Build only: asks the user to confirm the PC is off before the agent goes on.

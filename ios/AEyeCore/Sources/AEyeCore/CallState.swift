@@ -33,9 +33,11 @@ public struct CallState: Equatable {
     public var draw: DrawState
     public var market: MarketResponse?
     public var errorText: String?
+    /// Set while an agent works on an answer; nil once it speaks, fails or the link drops.
+    public var wait: Wait?
 
     public init(link: LinkStatus, caption: Caption?, presence: [Agent: PresenceState], powerOffConfirmed: Bool,
-                draw: DrawState, market: MarketResponse?, errorText: String?) {
+                draw: DrawState, market: MarketResponse?, errorText: String?, wait: Wait? = nil) {
         self.link = link
         self.caption = caption
         self.presence = presence
@@ -43,6 +45,7 @@ public struct CallState: Equatable {
         self.draw = draw
         self.market = market
         self.errorText = errorText
+        self.wait = wait
     }
 
     public static let initial = CallState(
@@ -65,8 +68,10 @@ public struct CallState: Equatable {
             next.draw = .empty
             next.presence = [:]
             next.errorText = nil
+            next.wait = nil
         case .disconnected:
             next.link = .reconnecting
+            next.wait = nil
         case .powerOffTapped:
             next.powerOffConfirmed = true
         case .marketDismissed:
@@ -86,15 +91,54 @@ public struct CallState: Equatable {
                     let other: Agent = agent == .helper ? .shopper : .helper
                     next.presence[other] = .idle
                 }
+                next.wait = waitAfter(agent: agent, presence: state, nowMs: nowMs)
+            case .turn(let id, let stage, let typicalMs, let detail):
+                next.wait = waitAfter(turnId: id, stage: stage, typicalMs: typicalMs, nowMs: nowMs)
+                if stage == .failed, let detail, !detail.isEmpty {
+                    next.errorText = detail
+                }
             case .marketResults(let response):
                 next.market = response
             case .error(_, let errorMessage):
                 next.errorText = errorMessage
+                next.wait = nil
             case .ignored:
                 break
             }
         }
         return next
+    }
+
+    /// A `turn` message: a new turn id restarts the clock, a later stage of the same turn keeps it.
+    private func waitAfter(turnId: String, stage: TurnStage, typicalMs: Int?, nowMs: Double) -> Wait? {
+        guard stage.isWaiting else { return nil }
+        let isSameTurn = wait?.turnId == turnId
+        return Wait(
+            turnId: turnId,
+            agent: isSameTurn ? (wait?.agent ?? .helper) : .helper,
+            stage: stage,
+            startedAtMs: isSameTurn ? (wait?.startedAtMs ?? nowMs) : nowMs,
+            typicalMs: typicalMs ?? (isSameTurn ? wait?.typicalMs : nil)
+        )
+    }
+
+    /// `agent_state`: thinking starts a wait if none is running (the shopper sends no `turn`), speaking ends it.
+    private func waitAfter(agent: Agent, presence: PresenceState, nowMs: Double) -> Wait? {
+        switch presence {
+        case .thinking:
+            if let wait, wait.agent == agent { return wait }
+            return Wait(turnId: nil, agent: agent, stage: .thinking, startedAtMs: nowMs, typicalMs: nil)
+        case .speaking:
+            return nil
+        case .idle, .listening:
+            return wait
+        }
+    }
+
+    /// The wait to show at `nowMs`, or nil once it is older than `Tuning.maxWaitMs` (the server never ended it).
+    public func visibleWait(nowMs: Double) -> Wait? {
+        guard let wait, nowMs - wait.startedAtMs <= Tuning.maxWaitMs else { return nil }
+        return wait
     }
 
     /// The "Power is off" button shows for modes that need it, until it has been tapped on this connection.
