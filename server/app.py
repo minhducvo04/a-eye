@@ -1,5 +1,6 @@
 """WebSocket orchestrator; each connection owns one in-memory session."""
 import asyncio
+from contextlib import asynccontextmanager
 import json
 from pathlib import Path
 import time
@@ -20,7 +21,16 @@ CLIENT_WEB = Path(__file__).resolve().parents[1] / 'client-web'
 
 
 def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
-    app = FastAPI()
+    @asynccontextmanager
+    async def lifespan(app):
+        warmup = asyncio.create_task(ws2.warm_brain(app))
+        try:
+            yield
+        finally:
+            warmup.cancel()
+            await asyncio.gather(warmup, return_exceptions=True)
+
+    app = FastAPI(lifespan=lifespan)
     app.state.vision = vision if vision is not None else VisionClient()
     app.state.llm = llm if llm is not None else LLMClient()
     now = clock if clock is not None else lambda: int(time.time() * 1000)

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import time
+import threading
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
@@ -62,13 +63,42 @@ class VoiceAdapter:
         raise NotImplementedError
 
 
-def make_adapter(**kwargs: Any) -> VoiceAdapter:
-    """Cartesia when CARTESIA_API_KEY is set and VOICE=cartesia, else Fake."""
-    key = os.environ.get("CARTESIA_API_KEY") or ""
-    if key and os.environ.get("VOICE") == "cartesia":
-        from voice.cartesia import CartesiaAdapter
+_health_cache = {}
+_health_lock = threading.Lock()
 
+
+def _kokoro_available():
+    with _health_lock:
+        return _check_kokoro()
+
+
+def _check_kokoro():
+    # make_adapter is synchronous; socket callers run it in a worker thread.
+    import httpx
+    from server.box_client import box_url
+    url = box_url()
+    cached = _health_cache.get(url)
+    if cached and time.monotonic() - cached[0] < 60:
+        return cached[1]
+    try:
+        with httpx.Client(timeout=1) as client:
+            response = client.get(url + '/health')
+            response.raise_for_status()
+            available = response.json().get('tts') is True
+    except Exception:
+        available = False
+    _health_cache[url] = (time.monotonic(), available)
+    return available
+
+
+def make_adapter(**kwargs: Any) -> VoiceAdapter:
+    """Prefer local Kokoro, then configured Cartesia, then browser speech."""
+    mode = os.environ.get('VOICE', 'auto')
+    if mode == 'kokoro' or (mode == 'auto' and _kokoro_available()):
+        from voice.kokoro import KokoroAdapter
+        return KokoroAdapter(**kwargs)
+    if mode in ('auto', 'cartesia') and os.environ.get('CARTESIA_API_KEY'):
+        from voice.cartesia import CartesiaAdapter
         return CartesiaAdapter(**kwargs)
     from voice.fake import FakeAdapter
-
     return FakeAdapter(**kwargs)
