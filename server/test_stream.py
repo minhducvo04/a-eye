@@ -208,3 +208,19 @@ def test_header_without_draw_is_accepted_and_say_marker_stripped():
             validate('server_message_v2', msg)
         assert [m['text'] for m in messages if m['type'] == 'say'] == ['Cut it in half.', 'Keep fingers back.']
     asyncio.run(check())
+
+
+def test_old_scene_of_the_newest_frame_is_still_used():
+    """A still photo: the scene is older than 2 s but belongs to the newest frame, so the brain must see it."""
+    async def check():
+        session = Session('s')
+        session.scene = SCENE
+        session.scene_time = monotonic() - 30
+        session.scene_seq = 7
+        session.frame = {'seq': 7}
+        vision = Vision()
+        messages = await run_turn(session, 'point', vision=vision, llm=Brain())
+        drawing = next(m for m in messages if m['type'] == 'draw')
+        assert drawing['seq'] == 7 and len(drawing['ops']) > 1
+        assert not vision.calls
+    asyncio.run(check())

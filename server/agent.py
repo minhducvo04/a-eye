@@ -140,7 +140,10 @@ async def run_turn(session, text, *, vision, llm):
             pass
         finally:
             vlm_ms = (monotonic() - started) * 1000
-    if session.scene is not None and monotonic() - session.scene_time < 2:
+    frame = getattr(session, 'frame', None)
+    same_frame = frame is not None and frame.get('seq') == session.scene_seq
+    # Fresh scene, or the scene of the newest frame (a still photo does not go stale).
+    if session.scene is not None and (monotonic() - session.scene_time < 2 or same_frame):
         scene, seq = session.scene, session.scene_seq
     system = session.pack.system_prompt
     if session.pack.id == 'pc_build':
