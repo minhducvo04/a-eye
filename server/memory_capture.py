@@ -1,4 +1,5 @@
 """Local vision event gate; only a short text record can reach the memory store."""
+import asyncio
 import base64
 import io
 import json
@@ -9,10 +10,21 @@ import httpx
 from PIL import Image
 
 from server.memory import PersonCheck
+from server import privacy
 
 
 async def worth_noting(frames):
-    # Explicit home-box endpoint. No router or cloud fallback.
+    # HTTP capture has no call consent and stays local. Call tasks inherit consent.
+    if privacy.google_allowed() and frames:
+        from vision.gemini import GeminiBackend
+        answer = await asyncio.to_thread(
+            GeminiBackend().request, {'image_b64': frames[-1]},
+            'Describe the visible object and where it is. Return JSON '
+            '{"worth":true/false,"note":"at most 12 words"}. '
+            'Use worth=false if uncertain; do not infer motion from this still.')
+        if isinstance(answer, dict) and isinstance(answer.get('worth'), bool):
+            return answer
+    # Explicit home-box endpoint for missing consent or failed Gemini requests.
     url = os.environ.get('OLLAMA_URL', 'http://127.0.0.1:11434').rstrip('/')
     async with httpx.AsyncClient(timeout=8, follow_redirects=False) as client:
         response = await client.post(url + '/api/chat', json={
