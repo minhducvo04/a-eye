@@ -4,6 +4,7 @@ import { bootPairCamera, setupPairCall } from './pair.js';
 
 import { paintDraw, applyDraw, pruneDraw, viewTransform, visibleOps } from "./draw.js";
 import { writeFrame } from "./live.js";
+import { renderHit } from "./rewind.js";
 import { sharpCanvasSize } from "./overlay.js";
 import {
   AUDIO_FALLBACK_MS,
@@ -101,6 +102,10 @@ function boot() {
   const noticeEl = document.getElementById("notice");
   const marketEl = document.getElementById("market");
   const marketBody = document.getElementById("market-body");
+  const rewindEl = document.getElementById("rewind-sheet");
+  const rewindBody = document.getElementById("rewind-body");
+  const rewindToggle = document.getElementById("rewind-toggle");
+  const rewindBadge = document.getElementById("rewind-badge");
   const repliesEl = document.getElementById("replies");
   const interimEl = document.getElementById("interim");
   const typedEl = document.getElementById("typed");
@@ -178,6 +183,7 @@ function boot() {
   let pendingText = null;
   let seq = 0;
   let cameraOn = false;
+  let rewindOn = false; // off by default; the switch sends clips to TwelveLabs
   let starting = false;
   let frameTimer = 0;
   let photoUrl = "";
@@ -420,6 +426,7 @@ function boot() {
     };
     if (tts === "server" && ttsVoice) hello.voice = ttsVoice;
     if (pack === "pc_build") hello.board_id = BOARD_ID;
+    if (rewindOn) hello.rewind = true;
     const ok = send(hello);
     if (ok) ui.dispatch({ type: "hello_sent" });
     return ok;
@@ -563,6 +570,15 @@ function boot() {
       showMarket(message.result);
       return;
     }
+    if (message.type === "rewind_state") {
+      showRewind(Boolean(message.on));
+      return;
+    }
+    if (message.type === "rewind_hit") {
+      renderHit(document, rewindBody, message);
+      openSheet(rewindEl);
+      return;
+    }
     if (message.type === "error") {
       showProblem(message.message || "Something went wrong.");
     }
@@ -644,8 +660,14 @@ function boot() {
     openSheet(marketEl);
   }
 
+  function showRewind(on) {
+    rewindOn = on;
+    if (rewindToggle) rewindToggle.checked = on;
+    if (rewindBadge) rewindBadge.classList.toggle("hidden", !on);
+  }
+
   function openSheet(sheet) {
-    for (const other of [marketEl, settingsEl]) if (other && other !== sheet) other.classList.add("hidden");
+    for (const other of [marketEl, settingsEl, rewindEl]) if (other && other !== sheet) other.classList.add("hidden");
     sheet.classList.remove("hidden");
     if (backdropEl) backdropEl.classList.remove("hidden");
   }
@@ -654,6 +676,7 @@ function boot() {
     marketEl.classList.add("hidden");
     marketBody.replaceChildren();
     if (settingsEl) settingsEl.classList.add("hidden");
+    if (rewindEl) rewindEl.classList.add("hidden");
     if (backdropEl) backdropEl.classList.add("hidden");
     micPreview.stop();
     showMicLevel(0);
@@ -1524,6 +1547,13 @@ function boot() {
   for (const opener of openers) opener.addEventListener("click", () => void onSettingsOpen());
   wireDevices();
   document.getElementById("settings-done").addEventListener("click", closeSheets);
+  if (rewindEl) document.getElementById("rewind-dismiss").addEventListener("click", closeSheets);
+  if (rewindToggle) {
+    rewindToggle.addEventListener("change", () => {
+      showRewind(rewindToggle.checked);
+      if (socket && socket.readyState === WebSocket.OPEN) send({ v: 2, type: "rewind", session_id: sessionId, on: rewindOn });
+    });
+  }
   if (backdropEl) backdropEl.addEventListener("click", closeSheets);
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeSheets();

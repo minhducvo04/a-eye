@@ -941,3 +941,42 @@ svg .fill {
   background: var(--helper);
   transition: width 60ms linear;
 }
+
+/* Rewind: on-screen badge while clips are uploaded, and the answer frame with boxes. */
+.rewind-badge {
+  position: fixed;
+  z-index: 9;
+  top: calc(12px + env(safe-area-inset-top));
+  right: 16px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: var(--fs-footnote);
+  font-weight: 600;
+}
+
+.rewind-frame {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.rewind-frame img {
+  display: block;
+  width: 100%;
+}
+
+.rewind-box {
+  position: absolute;
+  border: 3px solid #ffd60a;
+  border-radius: 6px;
+  color: #ffd60a;
+  font-size: var(--fs-footnote);
+  font-weight: 600;
+  text-shadow: 0 1px 2px #000;
+  padding: 2px 4px;
+}
+
+.rewind-when {
+  margin-top: 10px;
+  font-family: var(--mono);
+}

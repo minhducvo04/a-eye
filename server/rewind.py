@@ -76,11 +76,13 @@ async def confirm(vision, jpeg, target, min_conf=0.5):
 
 def fmt_offset(seconds):
     seconds = max(0, int(round(seconds)))
+    if seconds < 5:
+        return 'right at the start of the call'
     minutes, rest = divmod(seconds, 60)
     if not minutes:
-        return f'{rest} seconds in'
-    return f"{minutes} minute{'s' if minutes != 1 else ''} {rest} seconds in" if rest else \
-        f"{minutes} minute{'s' if minutes != 1 else ''} in"
+        return f'about {rest} seconds in'
+    unit = f"{minutes} minute{'s' if minutes != 1 else ''}"
+    return f'about {unit} {rest} seconds in' if rest else f'about {unit} in'
 
 
 class TwelveLabsClient:
@@ -360,9 +362,9 @@ class Rewind:
             hit['sure'] = bool(hit['objects'])
         hit['alternatives'] = [h['t_s'] for h in hits[1:2]]
         if hit['sure']:
-            return f"That was about {fmt_offset(hit['t_s'])}. Here's the clip.", hit
+            return f"That was {fmt_offset(hit['t_s'])}. Here's the clip.", hit
         times = ' or '.join(fmt_offset(t) for t in [hit['t_s']] + hit['alternatives'])
-        return f"I'm not sure I saw it. Maybe about {times}. Here's my best guess.", hit
+        return f"I'm not sure I saw it. Maybe {times}. Here's my best guess.", hit
 
     async def aclose(self):
         for task in list(self.waits):

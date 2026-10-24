@@ -137,7 +137,7 @@ def test_answer_claims_only_what_local_vision_confirms():
 
     text, hit = asyncio.run(rewind.answer('When did I plug in the CPU fan?',
                                           vision=FakeVision([dict(fan, label='RAM stick')])))
-    assert text == "I'm not sure I saw it. Maybe about 20 seconds in or 3 seconds in. Here's my best guess."
+    assert text == "I'm not sure I saw it. Maybe about 20 seconds in or right at the start of the call. Here's my best guess."
     assert hit['sure'] is False and hit['alternatives'] == [3.0]
 
 
@@ -158,6 +158,9 @@ def test_question_and_query_words():
     assert not is_rewind_question('which header does the CPU fan go in?')
     assert query_from('When did I plug in the CPU fan?') == 'plug in the CPU fan'
     assert target_from('plug in the CPU fan') == 'CPU fan'
+    from server.rewind import fmt_offset
+    assert [fmt_offset(s) for s in (2, 42, 60, 130)] == [
+        'right at the start of the call', 'about 42 seconds in', 'about 1 minute in', 'about 2 minutes 10 seconds in']
 
 
 def test_registry_falls_back_to_last_call_with_clips():
@@ -263,7 +266,7 @@ def test_voice_path_through_ws2():
         hit = until(ws, 'rewind_hit')
         said = until(ws, 'say')
         assert hit['sure'] and hit['objects'][0]['label'] == 'screw' and hit['frame_b64']
-        assert said['text'].startswith('That was about') and said['final']
+        assert said['text'].startswith('That was ') and said['final']
         assert until(ws, 'turn')['stage'] in ('speaking', 'done')
         ws.send_json(dict(v=2, type='rewind', session_id='s', on=False))
         assert until(ws, 'rewind_state')['on'] is False
