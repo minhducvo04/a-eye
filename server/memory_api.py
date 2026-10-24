@@ -127,3 +127,34 @@ async def tag(request: Request):
     except ValueError:
         return JSONResponse({'error': 'invalid_body'}, status_code=422)
     return dict(tag=saved, **mem.status(store))
+
+
+@router.post('/event')
+async def capture_event(request: Request):
+    """Bounded RAM-only still burst. Same owner and consent gates as local memory."""
+    from server.memory_capture import capture, worth_noting
+    import asyncio
+    chunks = bytearray()
+    value = {}
+    try:
+        async for chunk in request.stream():
+            chunks.extend(chunk)
+            if len(chunks) > 610000:
+                return JSONResponse({'error': 'too_large'}, status_code=413)
+        import json
+        value = json.loads(chunks)
+        chunks.clear()
+        if not isinstance(value, dict):
+            raise ValueError('invalid body')
+        judge = getattr(request.app.state, 'capture_judge', worth_noting)
+        return await asyncio.wait_for(capture(mine(request), value.get('frames'), judge), 9)
+    except (ValueError, TypeError):
+        return JSONResponse({'error': 'invalid_event'}, status_code=422)
+    except Exception:
+        return JSONResponse({'error': 'local_capture_unavailable'}, status_code=503)
+    finally:
+        chunks.clear()
+        if isinstance(value, dict):
+            frames = value.pop('frames', None)
+            if isinstance(frames, list):
+                frames.clear()

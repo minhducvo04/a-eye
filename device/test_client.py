@@ -34,8 +34,14 @@ def server(monkeypatch, tmp_path):
     for name in ('A_EYE_TOKEN', 'CF_ACCESS_TEAM_DOMAIN', 'CF_ACCESS_AUD'):
         monkeypatch.delenv(name, raising=False)
     from server.app import create_app
+    async def safe(self, jpeg_b64, scene=None):
+        return False  # Synthetic fixtures; never contact a real detector host.
+    monkeypatch.setattr('server.memory.PersonCheck.__call__', safe)
     app = create_app()
     app.state.llm = app.state.llm_v2 = Brain()
+    async def judge(frames):
+        return {'worth': True, 'note': 'Keys placed on the table.'}
+    app.state.capture_judge = judge
     with socket.socket() as s:
         s.bind(('127.0.0.1', 0))
         port = s.getsockname()[1]
@@ -86,7 +92,13 @@ async def until_off(device, presses=None, timeout=30):
 
 
 def test_button_turn_reply_audio_then_idle_off(server, tmp_path):
-    device = make(server, tmp_path, idle=3, script=[(1.0, tone_wav(tmp_path / 'q.wav'))])
+    class NoPeople:
+        available = True
+
+        def has_person(self, image):
+            return False
+
+    device = make(server, tmp_path, idle=3, script=[(1.0, tone_wav(tmp_path / 'q.wav'))], person=NoPeople())
     asyncio.run(until_off(device, hw.scripted_presses(device.events, [0.1])))
     s = device.stats
     assert s['frames_sent'] > 0 and s['utterances'] == 1 and s['audio_in_bytes'] > 0
@@ -95,11 +107,6 @@ def test_button_turn_reply_audio_then_idle_off(server, tmp_path):
     assert s['audio_out_bytes'] > 0                      # mock server voice: a tone, played on the null speaker
     assert s['off_reasons'] == ['idle'] and not s['errors']
 
-
-def test_motion_turns_it_on_without_a_button(server, tmp_path):
-    device = make(server, tmp_path, idle=2, keys_from=2, motion=True)
-    asyncio.run(until_off(device))
-    assert device.stats['calls'] == 1 and device.stats['off_reasons'] == ['idle']
 
 
 def test_frames_with_a_person_never_leave_the_device(server, tmp_path):

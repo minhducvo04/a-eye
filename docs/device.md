@@ -1,10 +1,9 @@
 # A-eye device: a home camera (or a clip-on) that talks to your own server
 
 A small computer with a camera, a microphone, a speaker, a button and a light. It is a full A-eye call device,
-like the phone page, but with no screen. It stays off until you press the button (or, as a home camera, until a
-hand reaches into the key table). While it is on, the light is on, and it sends pictures and your questions to the
-family's own A-eye server at home. The answer comes out of its speaker. Private mode is on by default, so nothing
-goes to any cloud service.
+like the phone page, but with no screen. Off keeps the camera and microphone closed. Explicit Armed mode
+checks motion locally; Event briefly sends person-filtered stills to the home server for a text-only memory note.
+Session is the existing user-started camera and microphone task call.
 
 Status: built and tested on a Mac with a fake camera, a fake mic and a fake speaker against a real local server
 (`docs/results/device.md`). Not yet run on a Raspberry Pi, a real button, a real LED or a real speakerphone.
@@ -34,7 +33,7 @@ resistor, and the Mac that runs the A-eye server.
    Then on the Pi: `cd a-eye && python3 -m venv --system-site-packages .venv && .venv/bin/pip install -r device/requirements.txt sounddevice`
 6. **Tell it where the server is.** `sudo mkdir -p /etc/a-eye && sudo cp device/device.example.toml /etc/a-eye/device.toml`,
    then `sudo nano /etc/a-eye/device.toml`: set `url` to `ws://<the Mac's address>:8000/ws2`, `button = "gpio"`,
-   `kind = "gpio"` under `[indicator]`, and for a home camera `motion = true`.
+   `kind = "gpio"` under `[indicator]`, and for explicit Armed startup on a home camera `motion = true`.
 7. **Add the password, if the server has one.** `sudo nano /etc/a-eye/device.env` with the line
    `A_EYE_TOKEN=<the server's token>`, then `sudo chmod 600 /etc/a-eye/device.env`. Skip this on an open home server.
 8. **Try it once by hand:** `.venv/bin/python -m device --config /etc/a-eye/device.toml`. Press the button, ask a
@@ -51,8 +50,7 @@ Pin numbers are the physical header pins; GPIO numbers are what the config uses.
 | Push button | one leg to GPIO17 (pin 11) | other leg to GND (pin 9) |
 | LED | GPIO27 (pin 13) through a 330 ohm resistor to the LED's long leg | LED's short leg to GND (pin 14) |
 
-The button uses the Pi's internal pull-up, so it needs no resistor. The LED is the privacy light: it is on exactly
-while the device is capturing, driven by the same code that opens and closes the camera and mic.
+The button uses the Pi's internal pull-up, so it needs no resistor. The LED is a software state indicator, not a hardware camera cutoff.
 
 ## Network: LAN, Tailscale, or a phone hotspot
 
@@ -85,19 +83,36 @@ config file, and are never logged.
 
 **On-device rules** (`device/trigger.py`, unit tested in `device/test_trigger.py`):
 
-- Off by default. Off means: no socket, mic closed, camera closed. With `motion = true` the camera takes one
-  small look per second on the device to see if a hand reached in; those looks are compared and dropped, never sent.
-- On: a button press (GPIO, Enter in the terminal for testing, or `SIGUSR1`), or motion on the fixed surface (more
-  than 2% of a 64 by 48 grey thumbnail changed by more than 25 levels; noise and a 2 px jitter stay under it).
-  No wake phrase yet.
-- Auto-off: 90 s with no change (no motion between sent frames, no speech, no reply audio) or 15 minutes since
-  turn-on, whichever comes first. Another press turns it off at once.
-- Frames with a person are dropped on the device when OpenCV is installed (its built-in HOG people detector, no
-  model download, about 9 ms on the Mac). Without OpenCV the device says so once at start; the server's own
-  person check for memory crops still applies.
+- Off by default: camera and microphone closed, no application socket.
+- `motion = true` explicitly starts Armed once at boot. It does not silently re-arm after Off or the cap.
+- Terminal commands: `arm`, `remember this`, `session`; Enter stops Armed/Event/Session, or starts Session
+  from Off. GPIO17 is the Session/Off button; optional GPIO22 to ground is the Remember button.
+- Armed: requests 64×48 camera output at 1 fps, compares grey pixels in `trigger.zone` (normalized rectangle).
+  It retains a five-second grey RAM pre-roll and one comparison thumbnail, no microphone or network connection.
+  USB camera drivers may ignore resolution/fps requests; actual sensor duty must be measured.
+- `trigger.armed_cap_s` defaults to 43200 (12 h), including Event capture and upload; expiry cancels the Event,
+  clears its buffers and closes the camera. No automatic re-arm at expiry.
+- Event: five further seconds at up to 640 px; inspect every candidate with the device person detector and send
+  at most three safe JPEG stills. Unknown/unavailable detector or a detector error fails closed. Tiny pre-roll
+  is discarded before transmission because HOG cannot reliably inspect 64×48 frames. No cloud fallback.
+- Memory must already have both consents and Remembering enabled for this device's authenticated owner.
+  `/api/memory/event` first checks every still with the server's local person detector. A person, unknown result
+  or detector failure refuses the whole Event before inference. It then asks the configured home `OLLAMA_URL`
+  model “Worth noting?” once, then writes zero or one
+  note (12 words, max 200 characters). Notes are searchable by the existing Find path. No crops are saved.
+- Event buffers clear on success, refusal, cancellation and error; return to Armed after success, Off on stop.
+  An application disconnect cannot recall a request already received by the server; the server clears its own
+  frames after the bounded inference finishes. Python reference release is not a secure RAM overwrite.
+- Session keeps the 90 s idle / 15 min cap and existing audio behaviour. Remember during Session closes that
+  session before opening Event. No always-listening wake phrase: use the Remember button or terminal command.
+- Event and Session both require a successful on-device person check before sending images. Setting
+  `drop_person_frames = false` disables the detector and therefore **blocks all frames in both states**;
+  it never permits unfiltered images or a server-only fallback. Session audio remains available.
+- HOG detects some full people, not every face/person. Synthetic person-drop tests prove transport gating,
+  not reliable recognition of all people. No real-world “people can never leave” claim is justified yet.
 - On turn-on it takes a burst of 3 frames and sends the sharpest (edge variance), against motion blur.
 
-**Relay** (`device/client.py`) over the existing `/ws2` contract, no server change:
+**Session relay** (`device/client.py`) over the unchanged `/ws2` contract:
 
 - `hello` with `pack: general`, `tts: server`, `stt: server`, `camera: true` and `private: true`. With
   `private = false` it sends `hello.cloud` with the three switches from `[privacy]` (Claude, Cartesia, TwelveLabs).
@@ -123,3 +138,21 @@ keys?", presses the button once, and checks: listening with Private on, frames s
 received, reply text, reply audio, and auto-off by idle. Speech recognition and Kokoro run on the GPU box; by
 default it points the server's Ollama at a closed port so it never loads models on the box (`--box-ollama` to
 use them). `--mock` uses `A_EYE_MOCK=1` instead (no box at all).
+
+## Private capture state signals and measurement
+
+| State | GPIO27 PWM LED | Terminal strip |
+|---|---|---|
+| Off | dark | `[Off]` |
+| Armed | slow four-second pulse, 3–15% duty (never dark) | `[Armed]` |
+| Event | solid 60% duty | `[Event]` |
+| Session | solid full brightness | `[Session]` |
+
+This single-color board distinguishes Session by brightness; an RGB LED is not implemented. GPIO PWM patterns
+have fake-driver tests only. Swap/core dumps are outside Python's RAM-only guarantee: disable them on deployment
+before claiming image bytes never reach any physical disk. No application capture code creates image files.
+
+Run `PYTHONPATH=. python scripts/capture_power.py --fake` for 20 synthetic motion trials on Mac. Without `--fake`,
+perform 20 placements and enter whether each Event appeared plus an optional USB meter watt reading. JSON lines
+include state, event count, misses, battery percent (`pmset`) and Pi temperature (`vcgencmd`). Missing sensors
+print `SKIP`. Redirect stdout to keep a measurement log. Fake trials do not measure power or real-world misses.

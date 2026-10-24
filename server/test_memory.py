@@ -106,6 +106,26 @@ def test_person_label_in_scene_skips_without_asking_the_box(store):
     assert record['crops'] == {} and record['skipped'] == 'person'
 
 
+@pytest.mark.parametrize('detections', [{}, '', [{}], [{'label': ''}], None])
+def test_person_check_rejects_unknown_detector_response(detections):
+    class Box:
+        async def detect(self, jpeg_b64):
+            return detections
+
+    with pytest.raises(ValueError, match='person detector'):
+        asyncio.run(mem.PersonCheck(box=Box())(FRAME))
+
+
+@pytest.mark.parametrize('detections,expected', [([], False), ([{'label': 'keys'}], False),
+                                               ([{'label': 'person'}], True)])
+def test_person_check_accepts_valid_detector_response(detections, expected):
+    class Box:
+        async def detect(self, jpeg_b64):
+            return detections
+
+    assert asyncio.run(mem.PersonCheck(box=Box())(FRAME)) is expected
+
+
 def test_post_condition_no_stored_crop_came_from_a_person_frame(store):
     store.set_tag('keys')
     seen = []
