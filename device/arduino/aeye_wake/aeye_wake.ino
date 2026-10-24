@@ -1,4 +1,5 @@
 // Only ONE color is driven at a time: the kit has ONE shared 220-ohm resistor.
+const bool SINGLE_LED = true;  // one plain LED on pin 9: states shown by pattern, not color
 const bool COMMON_ANODE = false; // true: shared leg through resistor to +5V; false: to GND.
 const byte PIR = 2, RED = 9, GREEN = 10, BLUE = 11;
 char command[20];
@@ -52,8 +53,8 @@ void loop() {
   if (mode == ARMED) {
     unsigned int phase = now % 4000;
     byte dim = 2 + (phase < 2000 ? phase : 4000 - phase) * 18UL / 2000;
-    color(BLUE, dim);
+    color(SINGLE_LED ? RED : BLUE, dim);
   } else if (mode == EVENT) color(RED, 100);
-  else if (mode == SESSION) color(GREEN, 100);
+  else if (mode == SESSION) color(SINGLE_LED ? RED : GREEN, SINGLE_LED ? ((now / 500) % 2 ? 100 : 0) : 100);
   else color(RED, 0);
 }
