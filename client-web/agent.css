@@ -1145,12 +1145,10 @@ svg .fill {
   display: none;
 }
 
+/* In the call's top column, under the pill (it used to be fixed top right and covered the pill at 390 px). */
 .rewind-badge {
-  position: fixed;
-  z-index: 9;
-  top: calc(12px + env(safe-area-inset-top));
-  right: 16px;
   display: flex;
+  justify-content: center;
   gap: 6px;
 }
 
