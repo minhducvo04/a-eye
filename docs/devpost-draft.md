@@ -66,8 +66,9 @@ A-eye has no face recognition and does not identify people.
   anything is sent, and a longer barge-in rule in a loud room.
 - **Privacy that holds in code.** Our first `LOCAL_ONLY` switch stopped Claude but not the cloud voice or
   Rewind. Private mode now covers all of them.
-- **Deletion you can trust.** Rewind clips used to stay in TwelveLabs. Now the call's videos are deleted at call
-  end and on Forget, and a call can only search its own clips.
+- **Deletion you can trust.** Rewind clips used to stay in TwelveLabs. Now A-eye deletes the call's videos at
+  call end and on Forget, and a call can only search its own clips. We tested the delete against a stand-in; a
+  live run is **(in progress)**.
 
 ## Accomplishments that we're proud of
 
@@ -76,7 +77,8 @@ A-eye has no face recognition and does not identify people.
   recognition and Cartesia.
 - A full local path: with the local brain, first audio came at a median of 1630 ms, against 3290 ms with the
   Claude Sonnet brain in the same test.
-- Forget works end to end in rehearsal: the clip count went to 0 and the TwelveLabs delete was called.
+- Forget works end to end in rehearsal: the clip count went to 0 and the delete call was made (against our
+  TwelveLabs stand-in; the live delete has not been run yet).
 - Hard rules live in code, not only in prompts: the pill line, no dosing, crop size limits, Private mode.
   The caregiver page refuses bedrooms and bathrooms.
 
@@ -142,7 +144,7 @@ person in the hall. A reminder in the person's own cloned voice is **(in progres
 
 **Microsoft: Built for the Real World.** A-eye is a memory aid a family could set up at home: a phone on a
 stand, a caregiver page with two consents, refused private rooms, a keep-for setting and a stop switch. It
-admits doubt instead of guessing with confidence. Forget deletes the call's clips, locally and in TwelveLabs.
+admits doubt instead of guessing with confidence. Forget deletes the call's clips locally and asks TwelveLabs to delete them (tested against a stand-in so far).
 We measured what we could: the router's accuracy and speed, voice latency, and the local brain against the cloud
 brain. The find-rate measurement over many hides and server storage for the caregiver settings are
 **(in progress)**.
@@ -169,23 +171,24 @@ Sources for every number and claim (repo at main c9fb212, 2026-10-24):
 - 1630 ms vs 3290 ms first audio median, local brain vs Claude Sonnet brain: docs/results/wave6-turn-latency.md.
 - Qwen 3.5 9B and Qwen 2.5-VL 7B on the GPU box, Haiku talker, Sonnet planner with crops only, Opus expert,
   EmbeddingGemma router, Whisper partials, Kokoro: docs/model-choices.md.
-- Crop limits, Anthropic "may not train", 30-day deletion, Cartesia and TwelveLabs train unless opted out:
-  docs/privacy.md (dated before Private mode and Rewind deletion landed; its "Proposed" rows for those are stale).
+- Crop limits, Anthropic "may not train", 30-day deletion, Cartesia and TwelveLabs train unless opted out (opt-outs
+  not done yet): docs/privacy.md.
 - Rewind: silent clips around scene changes, Marengo search, off by default, vision double-check, rank and no
   score: docs/results/rewind.md.
 - Keys rehearsal: best guess not sure, no box on the hit frame, forget set clips to 0 and called the TwelveLabs
   delete, "Done. I deleted 1 clip of this call.": docs/results/demo-rehearsal.md.
-- Private mode (local brain, Kokoro, Rewind cloud locked, green Private badge): commit 9c5b4f2; screenshots
-  docs/ui-parity/badge-private-390.png.
-- Rewind deletion at call end and on Forget, own call only: commit 6078b85; spoken "forget that": commit 722a745.
-- Memory pack rules (pill line, no dosing, same answer to a repeat, no "you already asked", gentle Cartesia
-  voice): commit 58cbe9c.
+- Private mode (local brain, Kokoro, server STT, Rewind cloud locked, no cloud expert, green Private badge):
+  docs/privacy.md (Built, 9c5b4f2); screenshot docs/ui-parity/badge-private-390.png.
+- Rewind deletion at call end and on Forget, own call only, spoken "forget that": docs/privacy.md (Built,
+  12fc35b and 722a745; verified with fakes, the real TwelveLabs delete not run live yet).
+- Memory pack rules (pill line, no dosing, no "you took" claims, no "you already asked / you forgot", gentle
+  Cartesia voice): docs/privacy.md (Built, 58cbe9c). "Same answer to a repeated question": commit 58cbe9c.
 - 400 ms speech floor and loud-room barge-in: commit 7e1b07c.
 - Split answer, "Seen 2:10 ago", count badge, caregiver page (server storage not on main, preview only):
   commit 29dfc06, docs/ui-parity/memory-*.png.
 - Phone as camera and mic: commit 098be75, docs/ui-parity/phone-mic-*.png; build-credits.md lists it.
 - Team and agents: docs/build-credits.md.
 - No face recognition: none in the code; docs/results/rewind.md tested with no faces and no person tagging.
-To verify before submitting: re-check each "(in progress)" item against main; update docs/privacy.md so the
-privacy claims here have a current doc behind them.
+To verify before submitting: re-check each "(in progress)" item against main; run the real TwelveLabs delete
+once live before saying "deleted in TwelveLabs" on stage.
 -->
