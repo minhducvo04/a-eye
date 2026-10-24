@@ -1080,10 +1080,39 @@ svg .fill {
   z-index: 9;
   top: calc(12px + env(safe-area-inset-top));
   right: 16px;
+  display: flex;
+  gap: 6px;
+}
+
+.rewind-badge.hidden {
+  display: none;
+}
+
+.rewind-chip {
   padding: 6px 12px;
   border-radius: 999px;
   font-size: var(--fs-footnote);
   font-weight: 600;
+  color: inherit;
+}
+
+.rewind-steps {
+  display: grid;
+  gap: 8px;
+  padding-left: 0;
+  list-style: none;
+}
+
+.rewind-time {
+  display: inline-block;
+  min-width: 3.5em;
+  font-family: var(--mono);
+  opacity: 0.7;
+}
+
+.rewind-skipped {
+  margin-top: 12px;
+  color: #ffd60a;
 }
 
 .rewind-frame {

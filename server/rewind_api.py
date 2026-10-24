@@ -64,6 +64,10 @@ async def recap(request: Request):
     rewind = registry(request.app).get(value.get('session_id')) if value else None
     if rewind is None:
         return JSONResponse({'error': 'unknown_session'}, status_code=404)
+    for _ in range(20):         # the end-of-call recap can arrive just before the socket close is handled
+        if rewind.end_task is not None or not rewind.on:
+            break
+        await asyncio.sleep(0.1)
     if rewind.end_task is not None:
         try:
             await asyncio.wait_for(asyncio.shield(rewind.end_task), 60)
