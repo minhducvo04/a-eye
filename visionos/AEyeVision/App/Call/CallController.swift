@@ -20,6 +20,9 @@ final class CallController {
     /// Pixel size of the last frame sent. The overlay maps 0..1 draw coordinates through this.
     private(set) var lastFrameSize: CGSize = .zero
 
+    private(set) var pairing = PairingState()
+    private(set) var pairingSocketURL: URL?
+
     private var storedServerURL: String
 
     /// Full server URL as typed in Settings. Saved to `UserDefaults`; an empty string is a real choice
@@ -121,6 +124,8 @@ final class CallController {
         speech.stop()
         speech.releaseAudioSession()
         state = .initial
+        pairing = PairingState()
+        pairingSocketURL = nil
         mode = nil
         callStartedAt = nil
         lastFrameSize = .zero
@@ -142,6 +147,17 @@ final class CallController {
         guard isSocketOpen, let socket else { return }
         socket.send(ClientMessage.powerOff(sessionId: sessionId)) { _ in }
         apply(.powerOffTapped)
+    }
+
+    func requestPairing() {
+        guard isSocketOpen, let socket, !pairing.joined else { return }
+        pairing = PairingState()
+        pairing.status = "Requesting pairing code…"
+        let sentGeneration = generation
+        socket.send(PairingMessage.request(sessionId: sessionId)) { [weak self] sent in
+            guard let self, sentGeneration == self.generation, !sent else { return }
+            self.pairing.status = "Could not request a code. Try again."
+        }
     }
 
     func dismissMarket() {
@@ -253,6 +269,8 @@ final class CallController {
 
     private func connect() {
         guard let mode, mode.pack != nil, let url = serverURL(from: serverURLString) else { return }
+        pairing = PairingState()
+        pairingSocketURL = url
         generation += 1
         let thisGeneration = generation
         socket?.close()
@@ -277,7 +295,16 @@ final class CallController {
     }
 
     private func socketDidReceive(_ data: Data, _ socketGeneration: Int) {
-        guard socketGeneration == generation, let message = ServerMessage.decode(data) else { return }
+        guard socketGeneration == generation else { return }
+        if let message = PairingMessage.decode(data) {
+            let wasJoined = pairing.joined
+            pairing.receive(message)
+            if wasJoined != pairing.joined {
+                state.draw = .empty  // Frame sequence numbers belong to different camera sources.
+            }
+            return
+        }
+        guard let message = ServerMessage.decode(data) else { return }
         if case .ignored(type: "audio") = message {
             if !callVoiceId.isEmpty, let chunk = ServerVoiceMessage.audio(data) { speech.playServerAudio(chunk) }
             return
@@ -297,6 +324,7 @@ final class CallController {
         socket = nil
         isSocketOpen = false
         isFrameInFlight = false
+        pairing = PairingState()
         apply(.disconnected)
         scheduleReconnect()
     }
@@ -324,7 +352,7 @@ final class CallController {
     }
 
     private func sendFrameIfReady() {
-        guard isSocketOpen, !isFrameInFlight, let socket, let jpeg = camera.latestJPEG() else { return }
+        guard !pairing.joined, isSocketOpen, !isFrameInFlight, let socket, let jpeg = camera.latestJPEG() else { return }
         seq += 1
         let message = ClientMessage.frame(
             sessionId: sessionId,

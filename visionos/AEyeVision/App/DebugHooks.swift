@@ -12,7 +12,37 @@ import UIKit
 /// Nothing here exists in a Release build.
 @MainActor
 enum DebugHooks {
+    // Fixtures from contracts/examples.json, plus camera-off/leave transitions.
+    static func checkPairing() {
+        let offer = PairingMessage.decode(Data(#"{"v":2,"type":"pair","code":"4821","expires_in_s":300,"path":"/agent.html?pair=4821","future":true}"#.utf8))!
+        let joined = PairingMessage.decode(Data(#"{"v":2,"type":"pair_status","state":"joined","role":"call","camera_on":true,"source":"camera"}"#.utf8))!
+        let rejected = PairingMessage.decode(Data(#"{"v":2,"type":"pair_status","state":"rejected","role":"camera","detail":"Unknown or expired code."}"#.utf8))!
+        assert(offer.code == "4821" && offer.expires_in_s == 300)
+        assert(rejected.state == "rejected" && rejected.detail == "Unknown or expired code.")
+        let url = offer.link(socketURL: URL(string: "wss://example.test/ws2?token=test%2Btoken%26value")!)!
+        assert(url.scheme == "https" && url.path == "/agent.html")
+        assert(URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!.last!.value == "test+token&value")
+        var pairing = PairingState()
+        pairing.receive(offer)
+        assert(pairing.offer != nil && pairing.expiresAt != nil)
+        pairing.receive(joined)
+        assert(pairing.joined && pairing.cameraOn && pairing.offer == nil)
+        pairing.receive(PairingMessage.decode(Data(#"{"v":2,"type":"pair_status","state":"camera","camera_on":false,"source":"camera"}"#.utf8))!)
+        assert(pairing.joined && !pairing.cameraOn && pairing.status == "Phone camera off")
+        pairing.receive(PairingMessage.decode(Data(#"{"v":2,"type":"pair_status","state":"left","source":"call"}"#.utf8))!)
+        assert(!pairing.joined && pairing.status == "Phone camera left")
+        pairing.receive(offer)
+        pairing.receive(PairingMessage.decode(Data(#"{"v":2,"type":"pair_status","state":"expired"}"#.utf8))!)
+        assert(pairing.offer == nil && pairing.status == "Pairing code expired")
+        let request = try! JSONSerialization.jsonObject(with: PairingMessage.request(sessionId: "debug")) as! [String: Any]
+        assert(request["type"] as? String == "pair_request" && request["session_id"] as? String == "debug")
+        assert(request["v"] as? Int == 2)
+        assert(PairSheet.qrCode(url.absoluteString) != nil)
+        print("PAIRING_DEBUG_CHECKS_PASS")
+    }
+
     static func run(controller: CallController, photo: PhotoSource) {
+        checkPairing()
         let defaults = UserDefaults.standard
         if let path = defaults.string(forKey: "AEyeDebugPhoto"), let image = UIImage(contentsOfFile: path) {
             photo.use(image)

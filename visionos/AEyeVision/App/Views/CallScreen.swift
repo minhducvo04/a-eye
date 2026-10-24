@@ -8,6 +8,7 @@ struct CallScreen: View {
 
     /// Text being typed in typed-input mode.
     @State private var draft = ""
+    @State private var showPairing = false
 
     var body: some View {
         let state = controller.state
@@ -15,7 +16,10 @@ struct CallScreen: View {
         ZStack {
             // Draw ops, under the controls. It fills the same area as the camera preview (which ignores the
             // safe area), so boxes land on the object they mark.
-            OverlayView(draw: state.draw, frameSize: controller.lastFrameSize)
+            GeometryReader { geometry in
+                OverlayView(draw: state.draw, frameSize: controller.pairing.joined
+                            ? geometry.size : controller.lastFrameSize)
+            }
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
@@ -33,6 +37,9 @@ struct CallScreen: View {
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 20)
+        }
+        .sheet(isPresented: $showPairing) {
+            PairSheet(controller: controller)
         }
         .sheet(item: marketBinding) { presentation in
             MarketSheet(market: presentation.response)
@@ -59,6 +66,12 @@ struct CallScreen: View {
             .glass(Capsule())
             .accessibilityElement(children: .combine)
 
+            if !controller.pairing.status.isEmpty, controller.pairing.offer == nil {
+                Text(controller.pairing.status).font(.footnote).foregroundStyle(.white)
+            }
+            if controller.pairing.joined {
+                Label("Phone camera", systemImage: "iphone").font(.caption)
+            }
             if state.link != .live {
                 Text(state.link == .reconnecting ? "Reconnecting…" : "Connecting…")
                     .font(.system(.footnote, design: .monospaced).weight(.semibold))
@@ -174,6 +187,11 @@ struct CallScreen: View {
 
     private var bottomBar: some View {
         HStack(spacing: 28) {
+            Button("Pair phone camera", systemImage: "qrcode") {
+                controller.requestPairing()
+                showPairing = true
+            }
+            .disabled(controller.state.link != .live || controller.pairing.joined)
             micButton
 
             Button {
