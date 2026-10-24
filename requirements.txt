@@ -5,3 +5,5 @@ jsonschema
 python-multipart
 pytest
 websockets
+pillow
+anthropic
