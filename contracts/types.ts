@@ -161,3 +161,7 @@ export interface V2RewindHit { v: V2; type: "rewind_hit"; turn_id?: string; quer
 export interface V2RewindRecap { v: V2; type: "rewind_recap"; turn_id?: string; steps: { t_s: number; text: string }[]; skipped: string[] }
 
 // v2.7 (additive): Rewind privacy. V2Rewind may carry keep?: boolean; V2RewindState may carry locked?: boolean.
+
+// v2.8 (additive): local memory across calls. Both join the server v2 union.
+export interface V2FindItem { v: V2; type: "find_item"; turn_id?: string; item: string; found: boolean; at_ms?: number; when?: string; place?: string; home?: string; say?: string; t_s?: number; start_s?: number; end_s?: number; sure?: boolean; alternatives?: number[]; frame_b64?: string; objects?: SceneObject[]; live?: { object_id: string; bbox: BBox }; count: number; count_item?: number }
+export interface V2MemoryState { v: V2; type: "memory_state"; on: boolean; memory_id?: string; count: number; crops?: number; bytes?: number; encrypted?: boolean; retention_days?: number; item?: string; count_item?: number }

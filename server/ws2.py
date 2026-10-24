@@ -179,8 +179,9 @@ async def scene_loop(session, vision, send, gate=None):
                 previous_seq = None
                 continue
             scan, reason = keyframes.should_scan(sig, monotonic())
-            if scan and getattr(session, 'rewind', None):
-                session.rewind.keyframe(reason)   # Rewind: cut a clip around a real change
+            if getattr(session, 'rewind', None):
+                # Rewind cuts clips on local activity (a hand, an object put down), not only on scene cuts.
+                session.rewind.observe(sig, reason if scan else None)
             if not scan:
                 session.scene_skips += 1
                 continue

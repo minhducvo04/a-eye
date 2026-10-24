@@ -1,5 +1,5 @@
 """An in-process stand-in for TwelveLabs, for rehearsals and tests (REWIND_FAKE_TL=1). Nothing leaves the
-machine. Uploads are 'indexed' at once; search returns every clip of the call, earliest first, so our own
+machine. Uploads are 'indexed' at once; search returns every clip of the call, newest first, so our own
 vision check (rewind.confirm) decides whether the object is really in the frame. Deletes are counted."""
 import itertools
 
@@ -25,7 +25,11 @@ class FakeTwelveLabs:
     async def search(self, index_id, query, video_ids=None, limit=5):
         self.searches += 1
         rows = []
-        for rank, video_id in enumerate(v for v in self.videos if not video_ids or v in video_ids):
+        # No semantics here: newest clip first (for "where did I put X" the latest change is the best guess).
+        # Our own vision check (rewind.confirm) still decides whether the object is in the frame.
+        ids = [v for v in self.videos if not video_ids or v in video_ids]
+        ids.sort(key=lambda v: float(self.videos[v].get('start_s', 0)), reverse=True)
+        for rank, video_id in enumerate(ids):
             meta = self.videos[video_id]
             rows.append({'video_id': video_id, 'rank': rank + 1, 'start': 0.0,
                          'end': max(0.1, float(meta.get('end_s', 0)) - float(meta.get('start_s', 0)))})

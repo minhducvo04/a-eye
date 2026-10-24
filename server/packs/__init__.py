@@ -19,6 +19,25 @@ STYLE = (' Speak one or two sentences per turn. Point and draw only at real thin
          'visible in the scene. Say when unsure; never invent locations.')
 
 
+def with_safety(pack):
+    """Every pack, every brain: home-safety gates before the pack's own refusals, and a post-check on speech."""
+    from dataclasses import replace
+    from server import safety
+    own_refuse, own_guard = pack.refuse, pack.guard
+
+    def refuse(text):
+        return safety.before(text) or own_refuse(text)
+
+    def guard(text, question='', first=False):
+        checked = safety.after(text, question)
+        if checked != text or own_guard is None:
+            return checked
+        return safety.after(own_guard(text, question, first), question)
+
+    return replace(pack, refuse=refuse, guard=guard)
+
+
 def get(pack_id):
     from . import general, pc_build, cooking, assemble, memory
-    return {p.id: p for p in (general.PACK, pc_build.PACK, cooking.PACK, assemble.PACK, memory.PACK)}[pack_id]
+    return with_safety({p.id: p for p in (general.PACK, pc_build.PACK, cooking.PACK, assemble.PACK,
+                                          memory.PACK)}[pack_id])

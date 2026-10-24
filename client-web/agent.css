@@ -1330,6 +1330,95 @@ svg .fill {
   font-weight: 600;
 }
 
+/* Mode names under each disc: shown in the desktop row only. */
+.ring-name {
+  display: none;
+}
+
+/* Desktop (mouse or trackpad): every mode at once in a centred row, no sideways scrolling needed. Coming-soon
+   modes stay dimmed. Phones keep the snap ring. */
+@media (min-width: 700px) and (hover: hover) and (pointer: fine) {
+  .ring {
+    height: auto;
+    overflow: visible;
+    scroll-snap-type: none;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 var(--gutter);
+  }
+
+  .ring > button {
+    flex: 0 0 auto;
+    width: 92px;
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+  }
+
+  .ring > button[data-dist] .disc { --d: 60px; --o: 1; }
+  .ring > button[data-dist="0"] .disc { --d: 72px; box-shadow: inset 0 0 0 4px #fff; }
+  .ring > button:not([data-pack]) .disc { opacity: 0.4; }
+  .ring > button:hover .disc { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.6); }
+  .ring > button[data-dist="0"]:hover .disc { box-shadow: inset 0 0 0 4px #fff; }
+  .ring > button:focus-visible { outline: none; }
+  .ring > button:focus-visible .disc { outline: 2px solid var(--helper); outline-offset: 3px; }
+
+  .ring-name {
+    display: block;
+    font-size: var(--fs-footnote);
+    font-weight: 500;
+    color: var(--text-2);
+    white-space: nowrap;
+  }
+
+  .ring > button[data-dist="0"] .ring-name { color: var(--text); font-weight: 600; }
+  .ring > button:not([data-pack]) .ring-name { color: var(--text-3); }
+}
+
+/* Phone camera: one tap from the call bar on wider screens; first item in Settings everywhere. */
+@media (max-width: 560px) {
+  #pair-call { display: none; }
+}
+
+.pair-qr {
+  display: block;
+  max-width: min(100%, 240px);
+  height: auto;
+  margin: 8px auto 14px;
+}
+
+.pair-qr[hidden] { display: none; }
+
+.pair-link,
+#pair-status {
+  display: block;
+  padding: 0 16px;
+  font-size: var(--fs-subhead);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+#pair-status:not(:empty),
+.pair-link:not(:empty) {
+  padding-bottom: 10px;
+}
+
+/* Sheets scroll with wheel, trackpad and touch; the page behind never steals the scroll. */
+.sheet {
+  max-height: 86dvh;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.sheet:focus {
+  outline: none;
+}
+
 /* ==========================================================================
    UI polish (2026-10-24): first run, one badge style, quiet status lines, calm Memory mode,
    Simple/Advanced settings, switches, projector scale. Same iOS tokens; no new colours except
@@ -1656,33 +1745,8 @@ input[type="checkbox"][role="switch"]:focus-visible {
   line-height: 1;
 }
 
-.pair-out {
-  padding: 0 16px;
-}
-
 .pair-out > p:empty,
 .pair-out > a:empty {
-  display: none;
-}
-
-.pair-out > p,
-.pair-out > a {
-  display: block;
-  padding: 8px 0;
-  font-size: var(--fs-subhead);
-  color: var(--text-2);
-  overflow-wrap: anywhere;
-}
-
-.pair-qr {
-  display: block;
-  max-width: min(100%, 240px);
-  height: auto;
-  margin: 8px auto 14px;
-  border-radius: 12px;
-}
-
-.pair-qr[hidden] {
   display: none;
 }
 

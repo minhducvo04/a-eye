@@ -863,6 +863,7 @@ function boot() {
     for (const other of [marketEl, settingsEl, rewindEl]) if (other && other !== sheet) other.classList.add("hidden");
     sheet.classList.remove("hidden");
     if (backdropEl) backdropEl.classList.remove("hidden");
+    if (typeof sheet.focus === "function") sheet.focus({ preventScroll: true }); // arrows, Page Down and Space scroll it
   }
 
   function closeSheets() {
@@ -1835,6 +1836,74 @@ function boot() {
     });
   }
   document.getElementById("end-call").addEventListener("click", endCall);
+  // One tap to pair a phone camera: open Settings at the top and ask for a pairing code.
+  document.getElementById("pair-call")?.addEventListener?.("click", () => {
+    openSheet(settingsEl);
+    void onSettingsOpen();
+    settingsEl.scrollTop = 0;
+    document.getElementById("pair-request")?.click?.();
+  });
+  // Wheel and trackpad: if the browser did not scroll natively (seen in Brave), scroll it ourselves next frame.
+  // Passive listeners only, no preventDefault; deltaX and deltaY both count. The ring turns a vertical wheel sideways.
+  function wheelScroll(el, horizontal) {
+    el?.addEventListener?.("wheel", (event) => {
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? el.clientHeight : 1;
+      const delta = (horizontal && Math.abs(event.deltaX) < Math.abs(event.deltaY) ? event.deltaY : horizontal ? event.deltaX : event.deltaY) * unit;
+      const before = horizontal ? el.scrollLeft : el.scrollTop;
+      requestAnimationFrame(() => {
+        if ((horizontal ? el.scrollLeft : el.scrollTop) !== before) return;
+        if (horizontal) el.scrollLeft += delta;
+        else el.scrollTop += delta;
+      });
+    }, { passive: true });
+  }
+  wheelScroll(ringEl, true);
+  // An open sheet takes every wheel: over the sheet, scroll it if the browser did not; anywhere else (backdrop,
+  // camera, chips), send the scroll to the sheet. Passive, so no browser can block it.
+  const openSheetEl = () => [settingsEl, marketEl, rewindEl].find((el) => el && !el.classList.contains("hidden"));
+  window.addEventListener("wheel", (event) => {
+    const sheet = openSheetEl();
+    if (!sheet) return;
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? sheet.clientHeight : 1;
+    const delta = event.deltaY * unit;
+    const inside = sheet.contains(event.target);
+    const before = sheet.scrollTop;
+    requestAnimationFrame(() => {
+      if (inside && sheet.scrollTop !== before) return;
+      sheet.scrollTop += delta;
+    });
+  }, { passive: true });
+  // Mouse or pen drag on the phone-width ring (touch scrolls natively); a drag never counts as a tap.
+  if (ringEl && typeof ringEl.addEventListener === "function") {
+    let drag = null;
+    ringEl.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "touch" || ringEl.scrollWidth <= ringEl.clientWidth) return;
+      drag = { x: event.clientX, left: ringEl.scrollLeft, moved: false };
+    });
+    window.addEventListener("pointermove", (event) => {
+      if (!drag) return;
+      const dx = event.clientX - drag.x;
+      if (Math.abs(dx) > 5) drag.moved = true;
+      if (drag.moved) ringEl.scrollLeft = drag.left - dx;
+    });
+    window.addEventListener("pointerup", (event) => {
+      if (drag && drag.moved) {
+        if (ringEl.contains(event.target)) ringEl.addEventListener("click", (event) => { event.stopPropagation(); event.preventDefault(); }, { capture: true, once: true });
+        scrollRingTo(Math.round(ringEl.scrollLeft / RING_SLOT), true);
+      }
+      drag = null;
+    });
+  }
+  document.addEventListener?.("keydown", (event) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    if (picker.classList.contains("hidden") || (ringEl && ringEl.contains(event.target))) return;
+    if (event.target && /^(INPUT|SELECT|TEXTAREA)$/.test(event.target.tagName || "")) return;
+    if (!settingsEl.classList.contains("hidden")) return;
+    event.preventDefault();
+    ringIndex = Math.max(0, Math.min(MODES.length - 1, ringIndex + (event.key === "ArrowRight" ? 1 : -1)));
+    renderRing();
+    scrollRingTo(ringIndex, true);
+  });
   const openers = typeof document.querySelectorAll === "function" ? document.querySelectorAll(".open-settings") : [];
   for (const opener of openers) opener.addEventListener("click", () => openSheet(settingsEl));
   for (const opener of openers) opener.addEventListener("click", () => void onSettingsOpen());
@@ -1936,6 +2005,7 @@ function boot() {
   const typingTarget = (el) => el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
   window.addEventListener("keydown", (event) => {
     if (event.code !== "Space" || event.repeat || typingTarget(document.activeElement)) return;
+    if (backdropEl && !backdropEl.classList.contains("hidden")) return; // a sheet is open: Space scrolls it
     event.preventDefault();
     void onHoldDown();
   });

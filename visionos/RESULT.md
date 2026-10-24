@@ -63,3 +63,67 @@ There is no phone frame preview or frame-size metadata: draw ops appear on a neu
 Test: `xcodebuild -project visionos/AEyeVision/AEyeVision.xcodeproj -scheme AEyeVision -destination 'generic/platform=visionOS Simulator' -derivedDataPath /tmp/a-eye-pair-vision-build CODE_SIGNING_ALLOWED=NO build` - FAIL (exit 74; sandbox cache/CoreSimulator access blocked before compilation).
 
 Exact result: `xcodebuild: error: Could not resolve package dependencies:`. Escalation retry failed with `Rejected("approval request failed")`. Swift syntax parsing and `git diff --check` pass; debug decode/state/QR checks are added but have not run. No simulator or integration success is claimed for this addition.
+
+## Round 2 (pkg/visionos-2)
+
+Parity with iOS c39cb5d and the web call page, the paired phone as camera + mic, and the memory-aid views.
+
+- Waveform strip, wait card and scan sweep: copied from `ios/AEye` (`ListeningStrip`, `WaitCard`, `ScanSweep`,
+  the RMS level patch in `SpeechIn`).
+- `EXPERT m.s s` chip while `turn.stage` is `expert`, cleared by its own `expert_done` (web `turn.js`).
+- Rewind: bottom-bar button and Settings switch (one state), TwelveLabs upload notice on the first switch-on, Keep
+  clips, "Forget this call's clips" (`POST /api/rewind/forget`), "Rewind on" + Recap chip (`POST
+  /api/rewind/recap`), Recap sheet at the end of a call that had Rewind on, `rewind_recap` messages.
+- Private mode: Settings > Privacy toggle (saved), `hello.private`, server voice, Rewind off and disabled, green
+  Private badge in the pill. Speech recognition stays on-device (Apple, `requiresOnDeviceRecognition`).
+- Paired phone: the pair sheet closes on join, the headset mic mutes while the phone is camera + mic and comes back
+  after, a `cancelled` turn stops the headset's voice.
+- Memory aid: `rewind_hit` opens the Then/Now split (earlier frame boxed with its time, live picture with an arrow to
+  the matching `track` box; matches `renderSplit` in `client-web/memory.js` on pkg/memory-ui), count chip
+  "Remembering N things today" with Forget that / Forget today. They use `/api/memory/*` when it exists and fall back
+  to this call's Rewind clips, as the web client does.
+- Server voice falls back to the headset's system voice when no `audio` arrives 2 s after the first line.
+- Wire additions the shared `AEyeCore` lacks are in `App/Call/CallExtras.swift`; `ios/` is untouched.
+
+### Not possible without a server change: phone video on the headset
+
+`server/pairing.py` stores the phone's frames in the call's session only; nothing is relayed to the call socket, and
+`pair_status` carries no frame size. While paired the headset shows a dark canvas with the overlay stretched to it.
+To show the live phone picture, the server would need, for example, an additive v2 server message (say
+`camera_frame`: `seq`, `w`, `h`, `jpeg_b64`) sent to the call socket at most once a second, or at least `w`/`h` on
+`pair_status`. No server or contract file was changed.
+
+### Limits
+
+- Simulator only. No mic was opened (typed input); speech in, both voices and barge-in still need the headset.
+- The wait card, EXPERT chip, split view and Recap steps were rendered from injected server messages
+  (`-AEyeDebugInject`), because the mock server answers in about 90 ms and has no TwelveLabs.
+- The memory routes and the caregiver "place" line wait for pkg/memory-ui and pkg/local-memory to land.
+
+### Test
+
+- `swift test --package-path ios/AEyeCore` - PASS (51 tests, 0 failures, exit 0)
+- visionOS simulator build, `CODE_SIGNING_ALLOWED=NO` - PASS (exit 0); device SDK build
+  (`-destination generic/platform=visionOS`, unsigned) - PASS (exit 0)
+- Simulator against `A_EYE_MOCK=1` on :8447: `hello` with private logged `tts:server stt:server`; Rewind polled
+  `/api/rewind/status`; Forget hit `/api/memory/forget` 405 then `/api/rewind/forget` 200; call end hit
+  `/api/rewind/recap` 200; a fake phone joined with the on-screen code (`pair_joined`), its `audio_in` made a turn
+  (`turn_done`), the headset showed the caption and the draw. Screenshots: `screenshots/round2/`.
+
+## Real headset run (not done; Duc runs it while wearing the headset)
+
+Run from the repo root on the Mac, with the headset paired in Xcode (Window > Devices and Simulators) and
+Developer Mode on. The team id comes from an environment variable and never goes in a tracked file.
+
+```sh
+export AEYE_TEAM=<your 10-character team id>      # Xcode > Settings > Accounts
+xcodebuild -project visionos/AEyeVision/AEyeVision.xcodeproj -scheme AEyeVision -configuration Debug \
+  -destination 'generic/platform=visionOS' -derivedDataPath build/visionos \
+  -allowProvisioningUpdates DEVELOPMENT_TEAM="$AEYE_TEAM" build
+xcrun devicectl list devices                      # note the headset's identifier
+xcrun devicectl device install app --device <headset-id> build/visionos/Build/Products/Debug-xros/AEyeVision.app
+xcrun devicectl device process launch --device <headset-id> ai.aeye.vision -- -serverURL ws://<mac-lan-ip>:8000/ws2
+```
+
+If the bundle id `ai.aeye.vision` is taken for that team, add `PRODUCT_BUNDLE_IDENTIFIER=<your.id>` to the build
+line and use it in the launch line.

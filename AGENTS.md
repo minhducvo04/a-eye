@@ -51,11 +51,14 @@ Each skill pack has a `refuse()` check that runs before any model call. The PC p
 
 ## Privacy
 
-- No raw video, frames or audio are stored: not in git, not in the database, not in logs.
+- No raw video, frames or audio are stored on our machines: not in git, not in the database, not in logs. The one
+  exception is Rewind, when the user turns it on: silent clips go to TwelveLabs for search and are deleted at call
+  end unless the user keeps them.
 - Eval clips stay local, outside the repo (for example `~/a-eye-private/clips/`). `.gitignore` blocks `clips/`,
   `frames/`, `*.mp4`, `*.mov`, `*.wav`. Coding agents never get real clips; use synthetic or prop-board frames.
-- Frames go only to our own vision host. The cloud brain gets the scene as text (caption and object list), not
-  pictures; small crops only through `server/llm.py`'s size check. `LOCAL_ONLY=1` blocks cloud models entirely.
+- Frames go only to our own vision host, except Rewind clips when Rewind is on. The cloud brain gets the scene as
+  text (caption and object list), plus at most one small crop through `server/llm.py`'s size check. `LOCAL_ONLY=1`
+  or Private mode blocks every cloud service: Claude, Cartesia and TwelveLabs.
 - Cartesia receives only the AI's own sentences.
 
 ## Secrets

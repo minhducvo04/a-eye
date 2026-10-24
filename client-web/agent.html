@@ -29,6 +29,7 @@
     <symbol id="i-rewind" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4 4.5v3.7h3.7"/><path d="M12 8v4.2l2.8 1.8"/></symbol>
     <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></symbol>
     <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5.5c0 4.4-3 8-7 9.5-4-1.5-7-5.1-7-9.5V6z"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></symbol>
     <symbol id="i-bolt-off" viewBox="0 0 24 24"><path d="M13 3L6 13h5l-1 8 7-10h-5z"/><path d="M3.5 3.5l17 17"/></symbol>
   </svg>
 
@@ -57,14 +58,14 @@
           <p id="ring-hint" class="ring-hint">tap to start</p>
         </div>
         <div id="ring" class="ring">
-          <button type="button" data-mode="general" data-pack="general" aria-label="General"><span class="disc"><svg><use href="#i-sparkles"/></svg></span></button>
-          <button type="button" data-mode="pc_build" data-pack="pc_build" aria-label="PC Build"><span class="disc"><svg><use href="#i-desktop"/></svg></span></button>
-          <button type="button" data-mode="cooking" data-pack="cooking" aria-label="Cooking"><span class="disc"><svg><use href="#i-pan"/></svg></span></button>
-          <button type="button" data-mode="assemble" data-pack="assemble" aria-label="Assembly"><span class="disc"><svg><use href="#i-hammer"/></svg></span></button>
-          <button type="button" data-mode="memory" data-pack="memory" aria-label="Memory"><span class="disc"><svg><use href="#i-pin"/></svg></span></button>
-          <button type="button" data-mode="mechanic" aria-label="Mechanic, coming soon"><span class="disc"><svg><use href="#i-car"/></svg></span></button>
-          <button type="button" data-mode="plumbing" aria-label="Plumbing, coming soon"><span class="disc"><svg><use href="#i-drop"/></svg></span></button>
-          <button type="button" data-mode="engineering" aria-label="Engineering, coming soon"><span class="disc"><svg><use href="#i-gears"/></svg></span></button>
+          <button type="button" data-mode="general" data-pack="general" aria-label="General"><span class="disc"><svg><use href="#i-sparkles"/></svg></span><span class="ring-name" aria-hidden="true">General</span></button>
+          <button type="button" data-mode="pc_build" data-pack="pc_build" aria-label="PC Build"><span class="disc"><svg><use href="#i-desktop"/></svg></span><span class="ring-name" aria-hidden="true">PC Build</span></button>
+          <button type="button" data-mode="cooking" data-pack="cooking" aria-label="Cooking"><span class="disc"><svg><use href="#i-pan"/></svg></span><span class="ring-name" aria-hidden="true">Cooking</span></button>
+          <button type="button" data-mode="assemble" data-pack="assemble" aria-label="Assembly"><span class="disc"><svg><use href="#i-hammer"/></svg></span><span class="ring-name" aria-hidden="true">Assembly</span></button>
+          <button type="button" data-mode="memory" data-pack="memory" aria-label="Memory"><span class="disc"><svg><use href="#i-pin"/></svg></span><span class="ring-name" aria-hidden="true">Memory</span></button>
+          <button type="button" data-mode="mechanic" aria-label="Mechanic, coming soon"><span class="disc"><svg><use href="#i-car"/></svg></span><span class="ring-name" aria-hidden="true">Mechanic</span></button>
+          <button type="button" data-mode="plumbing" aria-label="Plumbing, coming soon"><span class="disc"><svg><use href="#i-drop"/></svg></span><span class="ring-name" aria-hidden="true">Plumbing</span></button>
+          <button type="button" data-mode="engineering" aria-label="Engineering, coming soon"><span class="disc"><svg><use href="#i-gears"/></svg></span><span class="ring-name" aria-hidden="true">Engineering</span></button>
         </div>
       </div>
     </section>
@@ -129,6 +130,7 @@
         </form>
         <div class="bottom">
           <button type="button" id="start-camera" class="glass round r56" aria-pressed="false" aria-label="Camera on"><svg><use id="camera-icon" href="#i-camera-off"/></svg></button>
+          <button type="button" id="pair-call" class="glass round r56" aria-label="Use my phone" title="Use my phone (camera + mic)"><svg><use href="#i-phone"/></svg></button>
           <button type="button" id="mic" class="glass round r56" aria-pressed="false" aria-label="Start microphone"><svg><use id="mic-icon" href="#i-mic-off"/></svg></button>
           <button type="button" id="end-call" class="round r68 end" aria-label="End call"><svg><use href="#i-phone-down"/></svg></button>
           <button type="button" id="rewind-btn" class="glass round r56" aria-pressed="false" aria-label="Rewind off" title="Rewind: keep clips of this call to ask about later"><svg><use href="#i-rewind"/></svg></button>
@@ -153,7 +155,7 @@
   <div id="backdrop" class="backdrop hidden"></div>
 
   <!-- Rewind answer: the kept frame with the object boxed, and the call time. -->
-  <section id="rewind-sheet" class="sheet hidden" aria-live="polite" aria-labelledby="rewind-title">
+  <section id="rewind-sheet" class="sheet hidden" tabindex="-1" aria-live="polite" aria-labelledby="rewind-title">
     <div class="grabber" aria-hidden="true"></div>
     <div class="sheet-head">
       <p id="rewind-title" class="sheet-title">Rewind</p>
@@ -163,7 +165,7 @@
   </section>
 
   <!-- MarketSheet.swift -->
-  <section id="market" class="sheet hidden" aria-live="polite" aria-labelledby="market-title">
+  <section id="market" class="sheet hidden" tabindex="-1" aria-live="polite" aria-labelledby="market-title">
     <div class="grabber" aria-hidden="true"></div>
     <div class="sheet-head">
       <div>
@@ -176,12 +178,23 @@
   </section>
 
   <!-- SettingsSheet.swift, plus the web-only voice and mic controls. Simple first; the rest under Advanced. -->
-  <section id="settings" class="sheet hidden" aria-labelledby="settings-title">
+  <section id="settings" class="sheet hidden" tabindex="-1" aria-labelledby="settings-title">
     <div class="grabber" aria-hidden="true"></div>
     <div class="sheet-head">
       <p id="settings-title" class="sheet-title">Settings</p>
       <button type="button" id="settings-done" class="text-btn strong">Done</button>
     </div>
+
+    <p class="group-title">Phone camera</p>
+    <div class="group">
+      <button type="button" id="pair-request" class="row text-btn">Use my phone (camera + mic)</button>
+      <div class="pair-out">
+        <p id="pair-status" role="status"></p>
+        <a id="pair-link" class="pair-link"></a>
+        <canvas id="pair-qr" class="pair-qr" hidden aria-label="Phone camera pairing QR code"></canvas>
+      </div>
+    </div>
+    <p class="group-foot">Use your phone as the camera and mic for this call. Scan the code with the phone.</p>
 
     <p class="group-title">Privacy</p>
     <div class="group">
@@ -204,14 +217,8 @@
       <label class="row">Volume <input id="volume" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume"></label>
     </div>
 
-    <p class="group-title">Camera</p>
+    <p class="group-title">Photo</p>
     <div class="group">
-      <button type="button" id="pair-request" class="row text-btn">Use my phone (camera + mic)</button>
-      <div class="pair-out">
-        <p id="pair-status" role="status"></p>
-        <a id="pair-link" class="pair-link"></a>
-        <canvas id="pair-qr" class="pair-qr" hidden aria-label="Phone camera pairing QR code"></canvas>
-      </div>
       <label class="row file-btn">Upload a photo instead of the camera<input id="upload" type="file" accept="image/*"></label>
     </div>
 

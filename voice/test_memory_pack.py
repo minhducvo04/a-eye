@@ -55,7 +55,7 @@ def test_where_answers_start_with_the_items_home_once():
 
 def test_pack_registered_with_warm_cartesia_voice():
     pack = packs.get('memory')
-    assert pack.voice.startswith('cartesia:') and pack.guard is memory.guard
+    assert pack.voice.startswith('cartesia:') and pack.guard('You took your pill.', 'pill?') == memory.pill_line()
     assert 'already asked' in pack.system_prompt and 'pill' in pack.system_prompt
 
 
