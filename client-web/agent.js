@@ -142,6 +142,7 @@ function boot() {
   const grayCanvas = document.createElement("canvas");
   const devOn = new URLSearchParams(location.search).get("dev") === "1";
   const devEl = devOn ? document.createElement("p") : null;
+  if (devOn && document.body && document.body.classList) document.body.classList.add("dev");
   if (devEl) {
     devEl.className = "dev-hud";
     devEl.setAttribute("aria-hidden", "true");
@@ -248,7 +249,12 @@ function boot() {
   const memoryCountEl = document.getElementById("memory-count");
   const memoryActions = document.getElementById("memory-actions");
   let powerConfirmed = false;
-  let ringIndex = DEFAULT_MODE;
+  // ?mode=memory centres a mode at launch (demo and caregiver links); otherwise PC Build, as iOS.
+  // Page links keep the access token (hosted demo).
+  const caregiverLink = document.getElementById("caregiver-link");
+  if (caregiverLink && params.get("token")) caregiverLink.href = `caregiver.html?token=${encodeURIComponent(params.get("token"))}`;
+  const askedMode = MODES.findIndex((m) => m.id === params.get("mode"));
+  let ringIndex = askedMode >= 0 ? askedMode : DEFAULT_MODE;
   let voice = null;
   let listening = false;
   let raf = 0;
@@ -453,7 +459,11 @@ function boot() {
       ui.dispatch({ type: "turn_times", timestamps: turn.timestamps });
       renderTranscript(ui.getState());
     }
-    document.getElementById("pipeline").textContent = statusLine(turn, Date.now());
+    const pipelineEl = document.getElementById("pipeline");
+    pipelineEl.textContent = statusLine(turn, Date.now());
+    // Styling hooks only: the line shows for problems (or ?dev=1); Expert shows as a badge.
+    if (pipelineEl.dataset) pipelineEl.dataset.stage = turn.stage || "idle";
+    document.getElementById("expert-badge")?.classList?.toggle("hidden", turn.expertAt == null);
   }
 
   const pipelineTimer = window.setInterval(() => {
@@ -1277,7 +1287,7 @@ function boot() {
         showPermission("Camera access is off",
           "A-eye looks through the camera to point at parts while you work. Allow the camera for this site in your browser settings, or upload a photo from Settings.");
       } else {
-        showProblem("Camera unavailable. Use Upload photo.");
+        showProblem("The camera is not available. You can use your phone or a photo from Settings.");
       }
     } finally {
       starting = false;
@@ -1493,6 +1503,7 @@ function boot() {
     memoryTimer = window.setInterval(() => void refreshMemory(), 10000);
     void memoryApi.settings().then((s) => { memoryItems = s.items; }, () => {});
     packLabel.textContent = PACK_LABEL[next];
+    if (document.body && document.body.dataset) document.body.dataset.mode = next; // calm Memory look in CSS
     link = "connecting";
     renderPresence();
     renderCamera();
@@ -1547,6 +1558,7 @@ function boot() {
     socket = null;
     if (ws) ws.close();
     pack = "";
+    if (document.body && document.body.dataset) delete document.body.dataset.mode;
     callStartedAt = 0;
     drawState = applyDraw(null, null, 0);
     agents = { helper: "idle", shopper: "idle" };
@@ -1710,7 +1722,7 @@ function boot() {
     errorEl.classList.toggle("hidden", !st.error);
     powerGate.classList.toggle("hidden", pack !== "pc_build" || powerConfirmed);
     renderLink();
-    const notes = [sttForMic ? "" : st.sttNotice, st.voiceNotice, deviceNotice, rewind.notice ? REWIND_NOTICE : ""].filter(Boolean);
+    const notes = [sttForMic || !devOn ? "" : st.sttNotice /* which recognizer runs: dev only */, st.voiceNotice, deviceNotice, rewind.notice ? REWIND_NOTICE : ""].filter(Boolean);
     noticeEl.textContent = notes.join(" ");
     noticeEl.classList.toggle("hidden", notes.length === 0);
     renderReplies(st);
