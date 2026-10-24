@@ -7,7 +7,7 @@ Runs a real Chromium (Playwright) with a fake camera and microphone against a ru
 
 Checks: no console errors or page errors from load to the end; the pack picker starts a session; Camera on flips
 its state and frames start; Mic flips its state; Hold to talk can be pressed; a typed question gets a reply
-caption. Exit 0 on pass. Synthetic media only (Chromium's fake devices).
+caption; Settings shows Use my phone first and scrolls with the wheel. Exit 0 on pass. Synthetic media only (Chromium's fake devices).
 """
 import json
 import os
@@ -92,6 +92,25 @@ def main():
         text = page.locator("body").inner_text()
         if "Helper" not in text:
             problems.append("no helper reply caption after a typed question")
+
+        # Settings: the phone pairing button is first and in view; the sheet scrolls with the mouse wheel.
+        page.locator("#call .open-settings").click()
+        page.wait_for_timeout(500)
+        pair = page.locator("#pair-request").bounding_box()
+        if not pair or pair["y"] + pair["height"] > page.viewport_size["height"]:
+            problems.append("Use my phone is not visible when Settings opens")
+        sheet = page.locator("#settings").bounding_box()
+        page.mouse.move(sheet["x"] + sheet["width"] / 2, sheet["y"] + sheet["height"] / 2)
+        page.mouse.wheel(0, 400)
+        page.wait_for_timeout(500)
+        scrolled = page.evaluate("document.getElementById('settings').scrollTop")
+        if scrolled <= 0:
+            problems.append("Settings did not scroll with the mouse wheel")
+        page.mouse.move(5, 5)  # over the backdrop: the open sheet still scrolls
+        page.mouse.wheel(0, -400)
+        page.wait_for_timeout(500)
+        if page.evaluate("document.getElementById('settings').scrollTop") >= scrolled:
+            problems.append("wheel over the backdrop did not scroll Settings")
         browser.close()
 
     print(redact(json.dumps({"frames_sent": frames, "problems": problems}, indent=1)))
