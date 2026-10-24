@@ -8,3 +8,4 @@ websockets
 pillow
 anthropic
 pyjwt[crypto]
+pyserial  # Arduino USB wake bridge
