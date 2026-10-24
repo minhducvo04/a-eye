@@ -1,5 +1,7 @@
 # Contract changelog and freeze
 
+- Additive shopping payload: `shopping_offer` and `shopping_response` accepted by v2 `market_results`; original PC market payload and wire versions unchanged.
+
 `schema.json` is the source of truth. Minor v2 revisions retain wire `v: 2`; market payloads still use `v: 1`. This inventory records the checked-in contract, not release dates or deployment status.
 
 ## Freeze rule

@@ -261,10 +261,14 @@ def test_shopping_question_brings_in_shopper_even_if_model_forgets():
             yield 'SAY: I can look.'
 
     async def check():
-        session = Session('s')
+        from types import SimpleNamespace
+        from server.test_agent import FRAME
+        from server.shopping import FixtureSource
+        session = Session('s', frame=FRAME, scene_seq=1)
         session.scene = SCENE
         session.scene_time = monotonic()
-        messages = await run_turn(session, 'Is there cheaper RAM?', vision=Vision(), llm=ForgetfulBrain())
+        app = SimpleNamespace(state=SimpleNamespace(offer_source=FixtureSource()))
+        messages = await run_turn(session, 'Is there cheaper RAM?', vision=Vision(), llm=ForgetfulBrain(), app=app)
         for msg in messages:
             validate('server_message_v2', msg)
         assert any(m['type'] == 'market_results' for m in messages)
