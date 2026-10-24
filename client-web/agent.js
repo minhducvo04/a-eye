@@ -1452,7 +1452,7 @@ function boot() {
       listening: () => Boolean(micRoute.phone || voice?.isListening()),
       wake: async (line) => {
         if (!voice) voice = await rebuildVoice();
-        if (!micRoute.phone && !voice.isListening()) await startMic();
+        if (ui.getState().micOn && !micRoute.phone && !voice.isListening()) await startMic();
         onServer({ v: 2, type: 'say', agent: 'helper', text: line,
           utterance_id: randomId(), final: true });
       },
