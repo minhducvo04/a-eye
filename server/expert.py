@@ -160,6 +160,7 @@ class ExpertDesk:
                                              float(os.environ.get('EXPERT_TIMEOUT_S', '45')))
                 event('expert_call', session.session_id, turn_id=turn_id, **result['metrics'])
                 logged = True
+                await stage('speaking', 'Brain: expert / ' + result['metrics']['model'])
                 await speak('The expert says: ' + result['text'])
                 session.history.append('expert: ' + result['text'])
                 session.history[:] = session.history[-10:]

@@ -202,6 +202,20 @@ function boot() {
   let retryTimer = 0;
   let reconnectDelay = 500;
   let turn = nextTurnState(null, {}, Date.now());
+  async function refreshProof() {
+    try {
+      const response = await apiFetch('/api/proof');
+      if (!response.ok) throw new Error('Proof unavailable');
+      const proof = await response.json();
+      document.getElementById('proof-pictures').textContent = `Pictures saved: ${proof.pictures_saved ?? 'unknown'}`;
+      document.getElementById('proof-network').textContent = proof.online ? 'Online' : 'Offline';
+    } catch {
+      document.getElementById('proof-pictures').textContent = 'Pictures saved: unknown';
+      document.getElementById('proof-network').textContent = 'Connection unknown';
+    }
+  }
+  refreshProof();
+  window.setInterval(refreshProof, 10000);
   let pendingText = null;
   let seq = 0;
   let cameraOn = false;
@@ -593,6 +607,9 @@ function boot() {
     if (message.type === "pair_status") routeMic(message);
     const now = Date.now();
     if (message.type === "turn") {
+      if (message.stage === 'received') document.getElementById('proof-safety')?.classList.add('hidden');
+      if (message.detail === 'Stopped by code') document.getElementById('proof-safety')?.classList.remove('hidden');
+      if (message.detail?.startsWith('Brain: ')) document.getElementById('proof-brain').textContent = message.detail;
       wait = waitAfterTurn(wait, message, now);
       if (message.stage === "failed" && message.detail) ui.dispatch({ type: "error", message: String(message.detail) });
       if (message.stage === "received") pendingText = null;

@@ -103,6 +103,12 @@
         <p id="link" class="chip glass warn" role="status">Connecting…</p>
         <p id="notice" class="chip glass soft hidden" role="status"></p>
         <p id="pipeline" class="pipeline" role="status">Ready</p>
+        <p id="proof-strip" class="pipeline" aria-live="off">
+          <span id="proof-pictures">Pictures saved: unknown</span> ·
+          <span id="proof-network" title="Server TCP check to 1.1.1.1:443; checked every 10 seconds">Checking connection</span> ·
+          <span id="proof-brain">Brain: awaiting answer</span>
+          <span id="proof-safety" class="hidden"> · Stopped by code</span>
+        </p>
         <!-- Memory aid: what is remembered today, and the two Forget buttons. -->
         <div id="memory" class="memory hidden">
           <button type="button" id="memory-count" class="chip glass soft" aria-expanded="false" aria-controls="memory-actions">Nothing remembered today</button>

@@ -126,6 +126,12 @@ for (const headset of [false, true]) test(headset ? 'headset call never acquires
     assert.ok(socket);
     socket.open();
     assert.equal(socket.messages[0].camera, false);
+    socket.message({ type: 'turn', stage: 'speaking', turn_id: 'proof', detail: 'Brain: local / fixture-model' });
+    assert.equal(node('proof-brain').textContent, 'Brain: local / fixture-model');
+    socket.message({ type: 'turn', stage: 'speaking', turn_id: 'proof', detail: 'Stopped by code' });
+    assert.equal(node('proof-safety').classList.contains('hidden'), false);
+    socket.message({ type: 'turn', stage: 'received', turn_id: 'next' });
+    assert.equal(node('proof-safety').classList.contains('hidden'), true);
     if (headset) {
       node('start-camera').handlers.click();
       node('permission-retry').handlers.click();

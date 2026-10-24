@@ -355,6 +355,9 @@ svg .fill {
   text-overflow: ellipsis;
 }
 
+#proof-strip { white-space: normal; }
+#proof-safety { color: var(--accent); }
+
 /* PresenceDot.swift: 16 px box, 8 px dot; speaking pulses with a halo, thinking spins a 70% ring,
    listening has a steady ring, idle keeps the space empty. */
 .presence-dot {

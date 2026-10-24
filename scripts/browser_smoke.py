@@ -59,6 +59,9 @@ def main():
 
         page.goto(page_url())
         page.wait_for_timeout(1200)
+        page.wait_for_function("/^Pictures saved: [0-9]+$/.test(document.getElementById('proof-pictures').textContent)")
+        if page.locator('#proof-network').inner_text() not in ('Online', 'Offline'):
+            problems.append('proof strip did not receive a server connectivity result')
         page.click('button[data-pack="general"]')
         page.wait_for_timeout(600)
         if page.locator("#start-overlay:not(.hidden)").count():

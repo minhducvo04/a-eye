@@ -21,7 +21,7 @@ class NoCacheStatic(StaticFiles):
 from fastapi.responses import JSONResponse
 from server.auth import authorized, accept_socket, mint_owner, warn_unconfigured
 from server.logs import event, protect_transport_logs
-from server import api, mock, rewind_api
+from server import api, mock, rewind_api, proof_wall
 from jsonschema import ValidationError
 
 from contracts import validate
@@ -163,6 +163,7 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
 
     app.include_router(ws2.router)
     app.include_router(api.router)
+    app.include_router(proof_wall.router)
     app.include_router(rewind_api.router)
     # Routes must precede the catch-all static mount. The client package owns this directory.
     if Path(static_dir).is_dir():
