@@ -111,6 +111,46 @@ Planned, confirmed in this list only once it runs in the demo:
 Cartesia (voice), Claude by Anthropic (reasoning), Apify and Bright Data (live prices), Convex (project memory).
 Open models on our own GPU: Qwen2.5-VL (vision), Whisper (speech to text, optional).
 
+## Voice: Cartesia
+
+Voice is how you use A-eye: you talk while your hands are on the board, and it talks back while it
+draws on the picture. You can cut in at any time and it stops.
+
+**Setup.** Put `CARTESIA_API_KEY` in `.env` (server side only, never sent to the browser) and run
+`make server`. Cartesia is then the default voice. `CARTESIA_VOICE_ID` picks a voice; Katie is the
+default. Kokoro on the GPU box is the fallback, and `?tts=browser` selects browser speech.
+
+**Cartesia features used** (`voice/cartesia_ws.py`):
+- Sonic 3.6 streaming over the TTS WebSocket. One socket per call, opened at hello, so a turn does
+  not pay the TLS handshake. PCM s16le at 16 kHz goes straight to the page.
+- One `context_id` per turn. A Claude Haiku talker streams its reply clause by clause; each clause is
+  pushed into the same context (`continue`, `flush`, `max_buffer_delay_ms: 0`), so prosody flows
+  across the reply and speech starts on the first clause.
+- Cancel on barge-in. When the user starts talking, the server sends `cancel` for that context and
+  the page stops playback.
+- The voice library. `/api/voices` offers Katie (friendly), Cathy (coworker) and Parker (supportive
+  pal).
+
+**Latency.** Server speech recognition, 6 turns each, synthetic speech, timed from the final audio
+chunk (`voice/bench_stt.py`):
+
+| Setup | Transcribed | First audio |
+|---|---|---|
+| Before: full-clip Whisper, Kokoro | 838 ms | 2062 ms |
+| Partial Whisper while speaking, Kokoro | 41 ms | 1117 ms |
+| Partial Whisper while speaking, Cartesia Katie | 37 ms | **1008 ms** |
+
+One Cartesia clause takes 118 ms warm and 284 ms cold. More detail is in
+[docs/voice-options.md](docs/voice-options.md).
+
+**Known limitations.**
+- Measured with synthetic speech, not a person in the hall.
+- Turn-taking is not truly full duplex: barge-in comes from voice activity detection, not from the
+  model.
+- If Cartesia fails mid-clause after audio has started, the rest of that clause is lost. Kokoro
+  takes over only when Cartesia fails before any audio.
+- In a loud room, hold to talk (button or Space) is more reliable than hands-free.
+
 ## Run it
 
 Needs Python 3.11+, [uv](https://github.com/astral-sh/uv), and Node 20+ for the web tests.
