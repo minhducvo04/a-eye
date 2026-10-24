@@ -60,7 +60,7 @@ def test_auto(monkeypatch, local, key, provider):
         assert not local[1]
     else:
         assert not fake.calls
-        assert result.model == 'qwen3.5:9b-q4_K_M'
+        assert result.model == 'qwen3.6:35b-a3b-q4_K_M'  # not the vision model
 
 
 @pytest.mark.parametrize('kind', ['connection', 'rate', 'status', 'unexpected', 'refusal'])
@@ -124,7 +124,7 @@ def test_local_payload(monkeypatch, local):
     request = local[1][0]
     assert str(request.url) == 'http://localhost:11434/api/chat'
     assert json.loads(request.content) == {
-        'model': 'custom-local', 'stream': False, 'think': False, 'options': {'num_predict': 23, 'num_ctx': 4096}, 'keep_alive': '30m',
+        'model': 'custom-local', 'stream': False, 'think': False, 'options': {'num_ctx': 4096, 'num_gpu': 0, 'num_thread': 8, 'num_predict': 23}, 'keep_alive': '2h',
         'messages': [{'role': 'system', 'content': 'System'},
                      {'role': 'user', 'content': 'Question', 'images': ['YQ==']}]}
     assert request.extensions['timeout']['read'] == 20
@@ -195,3 +195,29 @@ def test_stream_local_only_and_canned(monkeypatch):
     async def check():
         return [chunk async for chunk in LLMClient().stream('', '')]
     assert asyncio.run(check()) == ['OK.']
+
+
+def test_private_talker_is_never_the_vision_model_and_waits_for_a_cpu_model(monkeypatch):
+    """Seen live: Private mode's talker ran on qwen3.5:9b (the vision model, +62% on grounding), and a cold
+    local model answered 'The brain is unavailable' after about 11 s."""
+    import asyncio
+    import json
+    from server import llm as llm_mod
+    assert llm_mod.local_model() not in llm_mod.VISION_MODELS
+    assert llm_mod.local_options(10)['num_gpu'] == 0
+    monkeypatch.setenv('LLM_PROVIDER', 'local')
+    monkeypatch.setenv('LOCAL_FIRST_TOKEN_S', '15')
+
+    async def slow_body():
+        await asyncio.sleep(4)        # longer than the Claude first-token timeout (3.5 s), as a cold CPU model is
+        yield (json.dumps({'message': {'content': 'Medium high heat.'}}) + '\n').encode()
+        yield (json.dumps({'done': True}) + '\n').encode()
+
+    async def handler(request):
+        return httpx.Response(200, content=slow_body())
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            text = ''.join([d async for d in llm_mod.LLMClient(httpx_client=http).stream('s', 'How hot to sear?')])
+        assert text == 'Medium high heat.'
+    asyncio.run(check())

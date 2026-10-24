@@ -21,7 +21,30 @@ import httpx
 
 
 # Benchmarks (docs/pc-benchmarks.md): qwen3.5:9b with think off, about 125 tok/s, 7.3 GB, sits next to the VLM.
-LOCAL_DEFAULT = 'qwen3.5:9b-q4_K_M'
+# Private mode and the no-key fallback talk through this model. Not the vision model: a talker on qwen3.5:9b
+# slowed grounding from about 0.53 s to 0.87 s (+62%) in our run; qwen3.6:35b-a3b on CPU only (8 threads) to
+# 0.66 s (+23%, builder measured +3%), first token about 0.22 s warm. Benchmarks: docs/results/local-brain.md.
+LOCAL_DEFAULT = 'qwen3.6:35b-a3b-q4_K_M'
+VISION_MODELS = {os.environ.get('VISION_GROUND_MODEL', 'qwen3.5:9b-q4_K_M'),
+                 os.environ.get('VISION_CAPTION_MODEL', 'qwen2.5vl:7b-q4_K_M')}
+
+
+def local_model():
+    return os.environ.get('LOCAL_LLM_MODEL', LOCAL_DEFAULT)
+
+
+def local_options(max_tokens=None):
+    """The same options on every call (warm-up included): a different num_ctx or num_gpu reloads the model."""
+    options = {'num_ctx': 4096}
+    if local_model() not in VISION_MODELS:
+        options['num_gpu'] = int(os.environ.get('BRAIN_NUM_GPU', '0'))       # CPU only, so vision keeps the GPU
+        options['num_thread'] = int(os.environ.get('BRAIN_NUM_THREAD', '8'))
+    if max_tokens:
+        options['num_predict'] = max_tokens
+    return options
+
+
+LOCAL_KEEP_ALIVE = os.environ.get('LOCAL_KEEP_ALIVE', '2h')   # a cold CPU load takes many seconds
 _CLIENTS = {}
 TURN_USAGE = ContextVar('turn_usage', default=None)
 
@@ -162,13 +185,13 @@ class LLMClient:
                 pass
 
         if provider in ('auto', 'claude', 'local'):
-            model = os.environ.get('LOCAL_LLM_MODEL', LOCAL_DEFAULT)
+            model = local_model()
             try:
                 message = {'role': 'user', 'content': user}
                 if images:
                     message['images'] = images
                 payload = {'model': model, 'stream': False, 'think': False,
-                           'options': {'num_predict': max_tokens, 'num_ctx': 4096}, 'keep_alive': '30m',
+                           'options': local_options(max_tokens), 'keep_alive': LOCAL_KEEP_ALIVE,
                            'messages': [{'role': 'system', 'content': system}, message]}
                 url = os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434').rstrip('/') + '/api/chat'
                 if self._httpx_client is not None:
@@ -243,14 +266,15 @@ class LLMClient:
                     await on_backup()
         if provider in ('auto', 'claude', 'local'):
             try:
-                async with asyncio.timeout(timeout) as deadline, AsyncExitStack() as stack:
+                local_wait = float(os.environ.get('LOCAL_FIRST_TOKEN_S', '15'))
+                async with asyncio.timeout(local_wait) as deadline, AsyncExitStack() as stack:
                     client = self._httpx_client or _shared_async_client()
-                    payload = dict(model=os.environ.get('LOCAL_LLM_MODEL', LOCAL_DEFAULT),
-                                   stream=True, think=False, options={'num_predict': max_tokens, 'num_ctx': 4096}, keep_alive='30m',
+                    payload = dict(model=local_model(), stream=True, think=False,
+                                   options=local_options(max_tokens), keep_alive=LOCAL_KEEP_ALIVE,
                                    messages=[{'role': 'system', 'content': system},
                                              {'role': 'user', 'content': user}])
                     url = os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434').rstrip('/') + '/api/chat'
-                    async with client.stream('POST', url, json=payload, timeout=20) as response:
+                    async with client.stream('POST', url, json=payload, timeout=max(20, local_wait + 5)) as response:
                         response.raise_for_status()
                         async for line in response.aiter_lines():
                             if not line.strip():
