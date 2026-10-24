@@ -22,6 +22,18 @@ struct SettingsSheet: View {
                     Text(hint)
                 }
 
+                Section {
+                    SecureField("Leave empty on home Wi-Fi", text: $controller.accessToken)
+                        .textContentType(.password)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .submitLabel(.done)
+                } header: {
+                    Text("Access token")
+                } footer: {
+                    Text("Only needed when the server was started with A_EYE_TOKEN, for example over Tailscale. Kept in the Keychain.")
+                }
+
                 Section("Connection") {
                     Text(status)
                 }
