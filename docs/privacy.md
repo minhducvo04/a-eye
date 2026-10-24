@@ -120,9 +120,9 @@ Camera frames for detection and captions, server speech recognition (Whisper), K
 1. **TwelveLabs training, and the live delete.** Deletion at call end and on Forget is built (`12fc35b`) but was
    verified only against fakes; the real delete has not been run live. Clips kept with "Keep clips after the call"
    stay until Forget. All calls share one index. TwelveLabs may train on clips unless the account opts out in its
-   settings: **not done yet** (an account setting for the owner).
-2. **Cartesia may train on A-eye's replies** unless the account used the opt-out form or is on Enterprise ZDR: **not
-   done yet** (an account setting for the owner). A reply can repeat what the user said ("your blood pressure cuff
+   settings: **done 2026-10-24** by the owner (account settings; applies going forward).
+2. **Cartesia may train on A-eye's replies** unless the account used the opt-out form or is on Enterprise ZDR: the
+   owner submitted the data-controls opt-out form on **2026-10-24** (applies going forward only, not to earlier data). A reply can repeat what the user said ("your blood pressure cuff
    is on the left"). The Memory pack uses Cartesia in the normal mode; Private mode avoids Cartesia entirely.
 3. **Fixed (`9c5b4f2`, `12fc35b`):** `LOCAL_ONLY=1` and Private mode now stop Claude, Cartesia and every TwelveLabs
    call. Still true: in the normal mode, Rewind sends frames to TwelveLabs while it is switched on, so the
@@ -155,7 +155,7 @@ Camera frames for detection and captions, server speech recognition (Whisper), K
 | Delete the whole index on a schedule as a backstop | Proposed |
 | Rewind searches only the caller's own call; drop the newest-call fallback and bind HTTP search to the caller | **Built** (`12fc35b`) |
 | Memory pack: fixed pill line, no dosing advice, no "you took" claims, no "you forgot" | **Built** (`58cbe9c`) |
-| Opt out of training on the TwelveLabs account settings and the Cartesia data-controls form; record the date here | Proposed (account action for the owner; not done yet) |
+| Opt out of training on the TwelveLabs account settings and the Cartesia data-controls form; record the date here | Done 2026-10-24 by the owner (both; going forward only) |
 | No transcript logging, enforced by a test that greps log output for the question text | **Built** (`voice/test_private.py::test_server_never_logs_transcripts`) |
 | Private mode never picks a Covered Model (Fable) for the expert | **Built** (Private mode never calls the cloud expert, `server/expert.py:61`) |
 | Ask Anthropic for ZDR on the non Covered Models | Proposed (account action) |
