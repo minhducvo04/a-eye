@@ -975,7 +975,7 @@ export function createVoice(options = {}) {
     meterSmooth = meterSmooth * 0.72 + e * 0.28;
     const level = Math.min(1, meterSmooth / 0.12);
     try {
-      onLevel(level);
+      onLevel(level, e);
     } catch {
       // the page owns the meter
     }
