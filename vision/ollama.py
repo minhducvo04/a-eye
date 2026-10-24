@@ -15,6 +15,19 @@ from PIL import Image
 
 BOARDS = Path(__file__).resolve().parents[1] / "data" / "boards"
 
+# Native corner order and units, shared by prompts and parsing.
+BOX_FORMATS = {
+    "qwen2.5vl": ("x1,y1,x2,y2", "pixels"),
+    "qwen3.5": ("x1,y1,x2,y2", "0 to 1000"),
+    "gemma4:12b": ("x1,y1,x2,y2", "0 to 1000"),
+    "gemma4:26b": ("y1,x1,y2,x2", "0 to 1000"),
+}
+
+
+def box_format(model):
+    return next((value for family, value in BOX_FORMATS.items() if model.startswith(family)),
+                BOX_FORMATS["qwen3.5"])
+
 
 def parse_json(text):
     """Read the first JSON array/object, including fenced answers with prose."""
@@ -61,10 +74,11 @@ def box_rows(answer):
     return []
 
 
-def box_prompt(label, printed=False):
+def box_prompt(label, printed=False, model="qwen3.5"):
+    order, units = box_format(model)
     return ('Locate only ' + json.dumps(label) +
             ('. Box the printed text, not the connector' if printed else '') +
-            '. Return one JSON {"label":str,"bbox_2d":[x1,y1,x2,y2]} in image pixels. '
+            '. Return one JSON {"label":str,"bbox_2d":[' + order + ']} in ' + units + '. '
             'Use the exact label. If absent return {}.')
 
 
@@ -99,11 +113,16 @@ def match_header(label, headers, fuzzy=False):
     return None, 0
 
 
-def box_normalized(box, width, height):
+def box_normalized(box, width, height, model="qwen2.5vl"):
     if not isinstance(box, list) or len(box) != 4:
         return None
     if any(type(value) not in (int, float) or not math.isfinite(value) for value in box):
         return None
+    order, units = box_format(model)
+    if order == "y1,x1,y2,x2":
+        box = [box[1], box[0], box[3], box[2]]
+    if units != "pixels":
+        width = height = 1000
     x1, y1, x2, y2 = [max(0, min(1, value / size))
                       for value, size in zip(box, (width, height, width, height))]
     if x2 <= x1 or y2 <= y1:
@@ -114,12 +133,17 @@ def box_normalized(box, width, height):
 class OllamaBackend:
     def __init__(self, *, url=None, model=None, transport=None, client=None):
         self.url = (url or os.environ.get("OLLAMA_URL", "http://100.93.176.7:11434")).rstrip("/")
-        self.model = model or os.environ.get("VISION_MODEL", "qwen2.5vl:7b-q4_K_M")
+        self.model = model or os.environ.get("VISION_GROUND_MODEL", "qwen3.5:9b-q4_K_M")
+        self.caption_model = os.environ.get("VISION_CAPTION_MODEL", "qwen2.5vl:7b-q4_K_M")
+        self.fallback_model = os.environ.get("VISION_FALLBACK_MODEL", "qwen2.5vl:7b-q4_K_M")
+        self.last_ground_model = self.model
         self.client = client if client is not None else httpx.Client(transport=transport, timeout=8,
             limits=httpx.Limits(keepalive_expiry=1800))
         self.last_timings = {}
 
-    def _chat(self, body, prompt, num_predict=40):
+    def _chat(self, body, prompt, num_predict=40, model=None):
+        model = model or self.model
+        self.last_timings = {}
         with Image.open(BytesIO(base64.b64decode(body["image_b64"]))) as original:
             width, height = original.size
             scale = 1280 / max(width, height)
@@ -127,13 +151,16 @@ class OllamaBackend:
             resized = original.convert("RGB").resize(size, Image.Resampling.LANCZOS)
             buffer = BytesIO()
             resized.save(buffer, format="JPEG")
-        response = self.client.post(self.url + "/api/chat", timeout=8, json={
-            "model": self.model, "stream": False, "options": {"temperature": 0, "num_ctx": 4096,
+        payload = {
+            "model": model, "stream": False, "options": {"temperature": 0, "num_ctx": 4096,
                                                           "num_predict": num_predict},
             "keep_alive": "30m",
             "messages": [{"role": "user", "content": prompt,
                           "images": [base64.b64encode(buffer.getvalue()).decode("ascii")]}],
-        })
+        }
+        if model.startswith(("qwen3.5", "gemma4")):
+            payload["think"] = False
+        response = self.client.post(self.url + "/api/chat", timeout=8, json=payload)
         response.raise_for_status()
         self.last_timings = {}
         try:
@@ -154,6 +181,26 @@ class OllamaBackend:
             answer = None
         return answer, size
 
+    def _ground(self, body, label, match, printed=False):
+        """Try one native-format box, then exactly one fallback attempt."""
+        for attempt, model in enumerate((self.model, self.fallback_model)):
+            self.last_ground_model = model
+            try:
+                answer, (width, height) = self._chat(
+                    body, box_prompt(label, printed=printed, model=model), 60, model=model)
+            except httpx.HTTPError:
+                if attempt == 1:
+                    raise
+                continue
+            for row in box_rows(answer):
+                if not isinstance(row, dict):
+                    continue
+                conf = match(row.get("label"))
+                box = box_normalized(row.get("bbox_2d"), width, height, model)
+                if conf and box:
+                    return box, conf
+        return None, 0
+
     def health(self):
         responses = []
         for endpoint in ("ps", "tags"):
@@ -161,14 +208,15 @@ class OllamaBackend:
             response.raise_for_status()
             responses.append(response.json().get("models", []))
         loaded, available = responses
-        def is_model(row):
-            return self.model in (row.get("name"), row.get("model"))
-        current = next((row for row in loaded if is_model(row)), None)
+        def is_model(row, model):
+            return model in (row.get("name"), row.get("model"))
+        current = next((row for row in loaded if is_model(row, self.model)), None)
         gpu = "not_loaded"
         if current is not None:
             vram, size = current.get("size_vram", 0), current.get("size", 0)
             gpu = "cpu" if vram == 0 else "gpu" if vram == size else "partial"
-        return {"ok": any(is_model(row) for row in available), "models": [self.model],
+        models = [self.model, self.caption_model]
+        return {"ok": all(any(is_model(row, model) for row in available) for model in models), "models": models,
                 "gpu": gpu, "fake": False}
 
     def warmup(self):
@@ -183,24 +231,21 @@ class OllamaBackend:
         queries = body.get("queries", [])[:3]
         limit = body.get("max_objects", 8)
         result = {"caption": "", "objects": [], "source": "ollama"}
-        if not queries:
-            answer, _ = self._chat(body,
-                'Describe the frame briefly. Return JSON {"caption":str}. No boxes.', 40)
-            caption = answer.get("caption") if isinstance(answer, dict) else None
-            result["caption"] = caption.strip() if isinstance(caption, str) and caption.strip() else "Could not describe the frame."
-            return result
         for query in queries:
             if perf_counter() - started >= 1.5 or len(result["objects"]) >= limit:
                 break
-            answer, (width, height) = self._chat(body, box_prompt(query), 60)
-            for row in box_rows(answer):
-                if not isinstance(row, dict) or not isinstance(row.get("label"), str):
-                    continue
-                box = box_normalized(row.get("bbox_2d"), width, height)
-                if normalized(row["label"]) == normalized(query) and box:
-                    result["objects"].append({"id": f'o{len(result["objects"]) + 1}',
-                                              "label": query, "bbox": box, "conf": .7})
-                    break
+            box, conf = self._ground(body, query, lambda label:
+                .7 if isinstance(label, str) and normalized(label) == normalized(query) else 0)
+            if box:
+                result["objects"].append({"id": f'o{len(result["objects"]) + 1}',
+                                          "label": query, "bbox": box, "conf": conf})
+        # Captions must not consume the budget for starting grounding queries.
+        if not queries or body.get("caption", False):
+            answer, _ = self._chat(body,
+                'Describe the frame briefly. Return JSON {"caption":str}. No boxes.',
+                40, model=self.caption_model)
+            caption = answer.get("caption") if isinstance(answer, dict) else None
+            result["caption"] = caption.strip() if isinstance(caption, str) and caption.strip() else "Could not describe the frame."
         return result
 
     def identify(self, body, scenario):
@@ -228,15 +273,12 @@ class OllamaBackend:
             if perf_counter() - started >= 1.5:
                 break
             label = candidate.get("silkscreen", candidate["name"])
-            answer, (width, height) = self._chat(body, box_prompt(label, printed=True), 60)
-            for row in box_rows(answer):
-                if not isinstance(row, dict):
-                    continue
-                header, conf = match_header(row.get("label"), headers, fuzzy=True)
-                box = box_normalized(row.get("bbox_2d"), width, height)
-                if header == candidate and box:
-                    found[header["name"]] = {"header": header["name"], "bbox": box, "conf": conf}
-                    break
+            def match(label):
+                header, conf = match_header(label, headers, fuzzy=True)
+                return conf if header == candidate else 0
+            box, conf = self._ground(body, label, match, printed=True)
+            if box:
+                found[candidate["name"]] = {"header": candidate["name"], "bbox": box, "conf": conf}
         requested = found.pop(target["name"], None)
         result = {"found": requested is not None, "conf": requested["conf"] if requested else 0,
                   "others": list(found.values())}

@@ -73,7 +73,7 @@ def test_ollama_scene(body):
     def handle(request):
         requests.append(request)
         return httpx.Response(200, json={"message": {"content": "```json\n" + json.dumps(answer) + "\n```"}})
-    backend = OllamaBackend(transport=httpx.MockTransport(handle))
+    backend = OllamaBackend(model="qwen2.5vl:7b-q4_K_M", transport=httpx.MockTransport(handle))
     result = backend.scene(body, "ok")
     validate("scene_response", {**result, "ms": 0})
     assert result["source"] == "ollama" and result["caption"] == ""
@@ -95,7 +95,7 @@ def test_ollama_scene(body):
 def test_auto_scene(body, error):
     def handle(request):
         raise error("unreachable", request=request)
-    backend = AutoBackend(OllamaBackend(transport=httpx.MockTransport(handle)), FakeBackend())
+    backend = AutoBackend(OllamaBackend(model="qwen2.5vl:7b-q4_K_M", transport=httpx.MockTransport(handle)), FakeBackend())
     assert backend.scene(body, "ok") == FakeBackend().scene(body, "ok")
     assert backend.scene(body, "blurry")["objects"] == []
 
@@ -109,7 +109,7 @@ def test_scene_probe(monkeypatch, capsys):
             "caption": "Three colored shapes.", "objects": [
                 {"label": "red square", "bbox_2d": [100, 100, 300, 300]}]})}})
     monkeypatch.setattr(probe_ollama, "OllamaBackend",
-                        lambda: OllamaBackend(transport=httpx.MockTransport(handle)))
+                        lambda: OllamaBackend(model="qwen2.5vl:7b-q4_K_M", transport=httpx.MockTransport(handle)))
     probe_ollama.main(["--scene"])
     output = capsys.readouterr().out
     assert '"caption": ""' in output and '"objects"' in output and '"ms"' in output
