@@ -327,7 +327,8 @@ async def plan_scene(session, planner, base_system, user, scene, seq, text, emit
     note = head.get('note') if isinstance(head.get('note'), str) else ''
     return clean, safe_speech(note)[:160], head.get('speak') is True
 
-async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None, planner=None, stt_ms=None):
+async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None, planner=None, stt_ms=None,
+                   app=None):
     """One voice turn. With planner set (talker + thinker mode), llm only talks and planner draws in parallel."""
     usage = []
     TURN_USAGE.set(usage)
@@ -457,8 +458,10 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                 drained.cancel()
                 await asyncio.gather(drained, return_exceptions=True)
 
-    offered_tools = rewind_tools.tools_for(session)
-    on_tool = rewind_callback(session, emit, vision=vision, turn_id=turn_id, speak=tool_first_line)
+    memory_tools = rewind_tools.memory_tools_for(session, app) if app is not None else []
+    # Local memory first (find_item is preferred for objects), then the Rewind recording tools.
+    offered_tools = memory_tools + rewind_tools.tools_for(session)
+    on_tool = rewind_callback(session, emit, vision=vision, app=app, turn_id=turn_id, speak=tool_first_line)
     tool_options = dict(tools=offered_tools, on_tool=on_tool) if offered_tools else {}
 
     turn = dict(agent='helper', draw=[])
@@ -503,7 +506,14 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         if route == 'past' or (route == 'expert' and session.expert_start):
             if route == 'past':
                 tool = past_tool(text)
-                result = await on_tool(tool, {'query': text} if tool == 'search_past' else {})
+                result = None
+                if tool == 'search_past' and memory_tools:
+                    # An object question asks this person's local memory first; the recording is the fallback.
+                    result = await on_tool('find_item', {'item': text})
+                    if not result.get('found'):
+                        result = None
+                if result is None:
+                    result = await on_tool(tool, {'query': text} if tool == 'search_past' else {})
                 await speech(result['say'], final=True)
             else:
                 await tool_first_line('Let me get the expert on this, one moment.')

@@ -346,7 +346,8 @@ async def websocket(ws: WebSocket):
             else:
                 messages = await run_turn(session, text, vision=vision, llm=TurnBrain(),
                                           started_at=lifecycle.started, turn_id=lifecycle.id,
-                                          planner=llm if duo else None, stt_ms=getattr(lifecycle, 'stt_ms', None))
+                                          planner=llm if duo else None, stt_ms=getattr(lifecycle, 'stt_ms', None),
+                                          app=ws.app)
                 slow = slow_part(next((m for m in reversed(messages or []) if m['type'] == 'metrics'), {}))
                 if slow:
                     await lifecycle.stage('done', detail=slow)

@@ -311,3 +311,37 @@ def test_spoken_forget_deletes_clips_like_the_button():
         assert any(m['type'] == 'rewind_state' and m['clips'] == 0 for m in messages)
         assert [m['text'] for m in messages if m['type'] == 'say'] == ['Done. I deleted 1 clip of this call.']
     asyncio.run(check())
+
+
+@pytest.mark.parametrize('found', [True, False])
+def test_past_route_asks_local_memory_first_then_the_recording(monkeypatch, found):
+    """Local memory (find_item) answers object questions first; search_past is the fallback."""
+    monkeypatch.setenv('ROUTER', 'on')
+
+    async def aroute(text, recent):
+        return {'label': 'past', 'confidence': .95}
+    monkeypatch.setitem(sys.modules, 'router.route', NS(aroute=aroute))
+    calls = []
+
+    async def memory_tool(name, args, session, app, turn_id=None):
+        calls.append(name)
+        return ({'found': True, 'say': 'Under the left red cup.'} if found else {'found': False, 'say': 'Not sure.'}), []
+
+    async def rewind_tool(name, args, session, **kw):
+        calls.append(name)
+        return {'say': 'That was 10 seconds in.'}, []
+    monkeypatch.setattr(rewind_tools, 'memory_tools_for', lambda session, app: list(rewind_tools.MEMORY_TOOLS))
+    monkeypatch.setattr(rewind_tools, 'run_memory_tool', memory_tool)
+    monkeypatch.setattr(rewind_tools, 'run_tool', rewind_tool)
+
+    async def check():
+        s = Session('s', camera=False, history=[])
+        s.rewind = NS(on=True, clips=[])
+        messages = await run_turn(s, 'where are my keys?', vision=Vision(), llm=LLMClient(anthropic_client=Client()),
+                                  app=object())
+        says = [m['text'] for m in messages if m['type'] == 'say']
+        if found:
+            assert calls == ['find_item'] and says[-1] == 'Under the left red cup.'
+        else:
+            assert calls == ['find_item', 'search_past'] and says[-1] == 'That was 10 seconds in.'
+    asyncio.run(check())
