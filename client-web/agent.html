@@ -69,6 +69,14 @@
         <p id="link" class="chip glass warn" role="status">Connecting…</p>
         <p id="notice" class="chip glass soft hidden" role="status"></p>
         <p id="pipeline" class="pipeline" role="status">Ready</p>
+        <!-- Memory aid: what is remembered today, and the two Forget buttons. -->
+        <div id="memory" class="memory hidden">
+          <button type="button" id="memory-count" class="chip glass soft" aria-expanded="false" aria-controls="memory-actions">Nothing remembered today</button>
+          <div id="memory-actions" class="memory-actions hidden">
+            <button type="button" id="forget-last" class="chip glass">Forget that</button>
+            <button type="button" id="forget-today" class="chip glass warn-text">Forget today</button>
+          </div>
+        </div>
         <p id="mic-line" class="pipeline mic-line" aria-live="off">Mic off · Default</p>
       </div>
       <div class="lower">

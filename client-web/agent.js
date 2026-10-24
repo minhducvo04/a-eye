@@ -4,7 +4,8 @@ import { bootPairCamera, phoneMicRoute, setupPairCall } from './pair.js';
 
 import { paintDraw, applyDraw, pruneDraw, viewTransform, visibleOps } from "./draw.js";
 import { writeFrame } from "./live.js";
-import { fetchRecap, forgetRewind, initialRewind, nextRewind, NOTICE as REWIND_NOTICE, PROMPTS as REWIND_PROMPTS, renderHit, renderRecap, showsRewindChip } from "./rewind.js";
+import { agoLine, countAt, countLine, createMemoryApi, placeFor, renderSplit } from "./memory.js";
+import { fetchRecap, forgetRewind, initialRewind, nextRewind, NOTICE as REWIND_NOTICE, PROMPTS as REWIND_PROMPTS, renderRecap, showsRewindChip } from "./rewind.js";
 import { sharpCanvasSize } from "./overlay.js";
 import {
   AUDIO_FALLBACK_MS,
@@ -216,6 +217,18 @@ function boot() {
   let link = "connecting";
   let ended = false;
   let callStartedAt = 0;
+  // Memory aid (memory.js): live boxes for the split answer's arrow, caregiver homes, the remembered count.
+  const memoryApi = createMemoryApi();
+  let liveObjects = [];
+  let splitUpdate = null;
+  let memoryItems = [];
+  let memoryCount = 0;
+  let memoryShown = 0;
+  let memoryTimer = 0;
+  let memorySource = ""; // "memory" once /api/memory answers; until then the Rewind clip count stands in
+  const memoryEl = document.getElementById("memory");
+  const memoryCountEl = document.getElementById("memory-count");
+  const memoryActions = document.getElementById("memory-actions");
   let powerConfirmed = false;
   let ringIndex = DEFAULT_MODE;
   let voice = null;
@@ -569,6 +582,8 @@ function boot() {
     if (message.type === "track") {
       hud = noteFrameReply(hud, message, now);
       commitTracker("track", message.seq, message.objects);
+      liveObjects = Array.isArray(message.objects) ? message.objects : [];
+      if (splitUpdate && !rewindEl.classList.contains("hidden")) splitUpdate(liveObjects);
       return;
     }
     if (message.type === "metrics") {
@@ -636,17 +651,20 @@ function boot() {
     }
     if (message.type === "rewind_state") {
       rewind = nextRewind(rewind, { type: "server", on: message.on, clips: message.clips });
+      if (memorySource !== "memory" && Number.isInteger(message.clips)) setMemoryCount(message.clips);
+      else void refreshMemory();
       showRewind(Boolean(message.on));
       return;
     }
     if (message.type === "rewind_recap") {
+      rewindEl.classList.remove("wide");
       renderRecap(document, rewindBody, message);
       openSheet(rewindEl);
       return;
     }
-    if (message.type === "rewind_hit") {
-      renderHit(document, rewindBody, message);
-      openSheet(rewindEl);
+    // A find answer. TODO(rewind builder): a local `find_item` with the same fields (+ `place`) lands here too.
+    if (message.type === "rewind_hit" || message.type === "find_item") {
+      showFind(message);
       return;
     }
     if (message.type === "error") {
@@ -772,6 +790,7 @@ function boot() {
 
   // Recap over HTTP: the Recap chip during a call, and the end-of-call sheet when Rewind was on.
   async function showRecap(id) {
+    rewindEl.classList.remove("wide");
     renderRecap(document, rewindBody, { pending: true });
     openSheet(rewindEl);
     try {
@@ -781,7 +800,56 @@ function boot() {
     }
   }
 
+  function showFind(hit) {
+    const labels = (hit.objects || []).map((o) => o.label).join(" ");
+    const place = hit.place || placeFor(`${hit.query || ""} ${labels}`, memoryItems);
+    const callNow = callStartedAt ? (Date.now() - callStartedAt) / 1000 : hit.t_s;
+    const line = hit.sure === false ? `Best guess · ${agoLine(hit.t_s, callNow, place)}` : agoLine(hit.t_s, callNow, place);
+    const stream = cameraOn && video.srcObject ? video.srcObject : null;
+    splitUpdate = renderSplit(document, rewindBody, { hit, line, stream });
+    splitUpdate(liveObjects);
+    rewindEl.classList.add("wide");
+    openSheet(rewindEl);
+  }
+
+  // "Remembering 12 things today"; the number counts down when something is forgotten.
+  function setMemoryCount(next) {
+    const from = memoryShown;
+    memoryCount = Math.max(0, Number(next) || 0);
+    const started = performance.now();
+    const step = () => {
+      memoryShown = countAt(from, memoryCount, performance.now() - started);
+      memoryCountEl.textContent = countLine(memoryShown);
+      if (memoryShown !== memoryCount) requestAnimationFrame(step);
+      else memoryEl.classList.toggle("hidden", memoryCount === 0 && memoryActions.classList.contains("hidden"));
+    };
+    memoryEl.classList.remove("hidden");
+    step();
+  }
+
+  async function refreshMemory() {
+    if (!pack) return;
+    try {
+      const s = await memoryApi.status(sessionId);
+      memorySource = s.source;
+      if (s.count !== memoryCount) setMemoryCount(s.count);
+    } catch {
+      // the badge keeps its last number
+    }
+  }
+
+  async function forgetMemory(scope) {
+    try {
+      const r = await memoryApi.forget(sessionId, scope, rewindOn || rewind.clips > 0);
+      setMemoryCount(r.count);
+      if (scope === "today" || r.count === 0) rewind = nextRewind(rewind, { type: "reset" });
+    } catch {
+      showProblem("Nothing to forget.");
+    }
+  }
+
   function openSheet(sheet) {
+    if (sheet !== rewindEl && rewindEl) rewindEl.classList.remove("wide");
     for (const other of [marketEl, settingsEl, rewindEl]) if (other && other !== sheet) other.classList.add("hidden");
     sheet.classList.remove("hidden");
     if (backdropEl) backdropEl.classList.remove("hidden");
@@ -1396,6 +1464,11 @@ function boot() {
     agents = { helper: "idle", shopper: "idle" };
     callStartedAt = Date.now();
     elapsedEl.textContent = "0:00";
+    memoryShown = 0;
+    setMemoryCount(0);
+    window.clearInterval(memoryTimer);
+    memoryTimer = window.setInterval(() => void refreshMemory(), 10000);
+    void memoryApi.settings().then((s) => { memoryItems = s.items; }, () => {});
     packLabel.textContent = PACK_LABEL[next];
     link = "connecting";
     renderPresence();
@@ -1434,6 +1507,8 @@ function boot() {
   // CallController.end: back to the mode ring with the same mode selected.
   function endCall() {
     if (!pack) return;
+    window.clearInterval(memoryTimer);
+    memoryEl.classList.add("hidden");
     ended = true;
     if (cameraOn || video.srcObject) stopCamera();
     holdPressed = false;
@@ -1762,6 +1837,13 @@ function boot() {
   if (rewindEl) document.getElementById("rewind-dismiss").addEventListener("click", closeSheets);
   const keepBox = document.getElementById("rewind-keep");
   if (keepBox) keepBox.addEventListener("change", sendRewind);
+  memoryCountEl.addEventListener("click", () => {
+    const open = memoryActions.classList.contains("hidden");
+    memoryActions.classList.toggle("hidden", !open);
+    memoryCountEl.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+  document.getElementById("forget-last").addEventListener("click", () => void forgetMemory("last"));
+  document.getElementById("forget-today").addEventListener("click", () => void forgetMemory("today"));
   const forgetBtn = document.getElementById("rewind-forget");
   if (forgetBtn) forgetBtn.addEventListener("click", () => void forgetRewind(sessionId).then(
     (r) => showProblem(`Forgot ${r.deleted} clip${r.deleted === 1 ? "" : "s"}.`), () => showProblem("Nothing to forget.")));
