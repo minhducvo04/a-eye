@@ -739,3 +739,65 @@ test("speech with syllable dips in 2.7 ms frames still reaches the 400 ms floor"
   for (let u = 10; u < 260; u += 2.7) burst.push(0.2, u);
   for (let u = 260; u < 700; u += 2.7) assert.equal(burst.push(0.001, u), "silence");
 });
+
+
+test("family local speech blocks commands and VAD until completion, then accepts input", async () => {
+  const h = harness({ options: { neuralVad: false } });
+  const local = { localService: true, lang: "en-US" };
+  h.synth.getVoices = () => [local];
+  h.voice.startListening();
+  const done = h.voice.speak("family", "Parent replied. stop", { localOnly: true });
+  h.rec.onresult(result("stop", true));
+  h.rec.onresult(result("find a replacement part", true));
+  h.voice.vadEvent("start");
+  h.voice.vadEvent("real_start");
+  assert.deepEqual(h.events.finals, []);
+  assert.deepEqual(h.events.barges, []);
+  assert.equal(h.synth.current.voice, local);
+  h.synth.current.onend();
+  await done;
+  h.rec.onresult(result("find a replacement part", true));
+  assert.deepEqual(h.events.finals, ["find a replacement part"]);
+  h.voice.stopListening();
+});
+
+test("family local speech drops server mic audio, including preroll, until completion", async () => {
+  const cap = serverCapture(), chunks = [], clock = { t: 0 }, synth = fakeSynth();
+  synth.getVoices = () => [{ localService: true, lang: "en-US" }];
+  const voice = createVoice({
+    sttMode: "server", synth, neuralVad: false,
+    audioContextFactory: () => cap.ctx, getUserMedia: cap.getUserMedia,
+    now: () => clock.t, onAudioChunk: (...args) => chunks.push(args),
+  });
+  await voice.startListening();
+  for (let t = 0; t <= 1100; t += 100) cap.feed(480, 0.001, t, clock);
+  const done = voice.speak("family", "Parent replied. stop", { localOnly: true });
+  for (let t = 1200; t < 2700; t += 50) cap.feed(2400, 0.5, t, clock);
+  assert.equal(chunks.length, 0);
+  assert.equal(voice.holdStart(), false);
+  synth.current.onend();
+  await done;
+  cap.feed(48, 0, 2800, clock);
+  assert.deepEqual(chunks, []);
+  for (let t = 2900; t < 3900; t += 50) cap.feed(2400, 0.5, t, clock);
+  cap.feed(48, 0, 4400, clock);
+  assert.ok(chunks.length > 0);
+  assert.equal(chunks.at(-1)[2], true);
+  voice.stopListening();
+});
+
+
+test("family read aloud fails closed on missing local voice, error, or cancellation", async () => {
+  const h = harness();
+  h.synth.getVoices = () => [{ localService: false, lang: "en-US" }];
+  await assert.rejects(h.voice.speak("family", "note", { localOnly: true }), /on-device/);
+  assert.equal(h.synth.spoken.length, 0);
+  h.synth.getVoices = () => [{ localService: true, lang: "en-US" }];
+  for (const finish of [() => h.synth.current.onerror(), () => h.voice.cancel()]) {
+    const done = h.voice.speak("family", "note", { localOnly: true });
+    const rejected = assert.rejects(done, /did not finish/);
+    finish();
+    await rejected;
+    assert.equal(h.voice.isInputBlocked(), false);
+  }
+});

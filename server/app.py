@@ -21,7 +21,7 @@ class NoCacheStatic(StaticFiles):
 from fastapi.responses import JSONResponse
 from server.auth import authorized, accept_socket, mint_owner, warn_unconfigured
 from server.logs import event, protect_transport_logs
-from server import api, mock, rewind_api, proof_wall, cloud_meter
+from server import api, mock, rewind_api, proof_wall, cloud_meter, step_check_api
 from jsonschema import ValidationError
 
 from contracts import validate
@@ -37,7 +37,9 @@ from server.vision_client import VisionClient, VisionUnavailable
 CLIENT_WEB = Path(__file__).resolve().parents[1] / 'client-web'
 
 
-def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
+def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None, *, presenter=False):
+    if presenter and os.environ.get("LOCAL_ONLY") != "1":
+        raise ValueError("Presenter requires LOCAL_ONLY=1")
     @asynccontextmanager
     async def lifespan(app):
         protect_transport_logs()
@@ -58,6 +60,7 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
     app.state.vision = vision if vision is not None else VisionClient()
     app.state.llm = llm if llm is not None else make_llm()
     app.state.llm_v2 = app.state.llm
+    app.state.presenter = presenter
     app.state.mock = os.environ.get('A_EYE_MOCK') == '1'
     if os.environ.get('REWIND_FAKE_TL') == '1':
         # Rehearsals: Rewind runs end to end with an in-process TwelveLabs stand-in (nothing uploaded).
@@ -79,7 +82,11 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
                 if session_id else None)
         token = cloud_meter.CURRENT.set(getattr(call, 'cloud_meter', None))
         try:
-            return await call_next(request)
+            response = await call_next(request)
+            if response.headers.get('content-type', '').split(';')[0] == 'text/html':
+                response.headers['Content-Security-Policy'] = "frame-ancestors 'none'"
+                response.headers['X-Frame-Options'] = 'DENY'
+            return response
         finally:
             cloud_meter.CURRENT.reset(token)
 
@@ -171,7 +178,13 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
     app.include_router(__import__('server.trigger', fromlist=['router']).router)
     app.include_router(ws2.router)
     app.include_router(api.router)
+    if presenter:
+        from server.dad_demo import router as presenter_router
+        app.include_router(presenter_router)
     app.include_router(proof_wall.router)
+    app.include_router(step_check_api.router)
+    from server.family_note import router as family_router
+    app.include_router(family_router)
     app.include_router(rewind_api.router)
     # Routes must precede the catch-all static mount. The client package owns this directory.
     if Path(static_dir).is_dir():

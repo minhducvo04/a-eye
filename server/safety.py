@@ -25,7 +25,43 @@ def _re(pattern):
     return re.compile(pattern, re.I)
 
 
+# Conservative text backstops, not a substitute for visual hazard detection.
+_WATER = r"\b(water|wet|leak\w*|drip\w*|puddle)\b"
+_ELECTRIC = r"\b(outlet|socket|live cord|powered cord|plugged.in cord|extension cord)\b"
+_PANEL = r"\b(electrical panel|electric panel|breaker (box|panel)|fuse box)\b"
+_OPEN = r"\b(open\w*|remov\w*|unscrew\w*|take off|inside)\b"
+_LADDER = r"\b(ladder|stepladder)\b"
+_UNSAFE = r"\b(top (rung|step)|wobbl\w*|unstable|uneven|overreach\w*|lean\w* sideways)\b"
+_WATER_ON = r"\bwater\b.{0,20}\b(still on|is on|running|not off)\b"
+WATER_OFF_LINE = ("Stop here until the step checker confirms the water is off. "
+                  "Show the shutoff valve and the tap with no water flowing.")
+
+
+def _pair(a, b):
+    return _re(a + r"[\s\S]{0,100}" + b + '|' + b + r"[\s\S]{0,100}" + a)
+
+
+def plumbing_stop(water_off_passed):
+    """Only a trusted checker boolean can unlock a plumbing step; missing is not passed."""
+    return None if water_off_passed is True else WATER_OFF_LINE
+
+
+def _stop(id, pattern, line):
+    # For these out-of-scope actions, any proposed instruction is stopped.
+    return Gate(id, pattern, pattern, _re(r"[\s\S]+"), line)
+
+
 GATES = (
+    _stop('water_electric', _pair(_WATER, _ELECTRIC),
+          "Stop and move away from the wet area; don't touch cords, outlets or switches. "
+          "Keep others away and call an electrician before continuing."),
+    _stop('electrical_panel', _pair(_OPEN, _PANEL),
+          "Stop; don't open or touch the electrical panel. Call a qualified electrician."),
+    _stop('gas_line', _re(r"\b(gas|propane)\s+(line|pipe|hose|fitting)s?\b"),
+          "Stop; don't touch or repair a gas line. Call the gas company or a qualified gas technician."),
+    _stop('unsafe_ladder', _pair(_LADDER, _UNSAFE),
+          "Stop and don't reach or climb higher. Get help to come down safely and use stable access."),
+    _stop('water_on', _re(_WATER_ON), WATER_OFF_LINE),
     Gate('hot_oil',
          _re(r"\b(oil|grease|fat|pan)\b.{0,40}\b(smok\w*|on fire|fire|flames?|flaming|burning)\b|"
              r"\b(smok\w*|fire|flames?|flaming)\b.{0,30}\b(oil|grease|fat|pan)\b|\bgrease fire\b"),
@@ -76,7 +112,8 @@ LINES = {gate.line for gate in GATES}
 
 def before(question):
     """The fixed line for a hazard question, or None. Runs before any model."""
-    for gate in GATES:
+    ordered = sorted(GATES, key=lambda g: g.id != 'gas_smell')
+    for gate in ordered:
         if gate.ask.search(question or ''):
             return gate.line
     return None

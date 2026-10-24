@@ -1,4 +1,6 @@
 import { triggerClient } from './trigger.js';
+import { setupFamily } from './family-note.js';
+import { createValveCard } from './step-check.js';
 import { isHeadset, requestLocalMedia } from './headset.js';
 import { bootPairCamera, phoneMicRoute, setupPairCall } from './pair.js';
 import { callOwner, ownerHeaders, ownerQuery, resetCallOwner } from './call-owner.js';
@@ -65,7 +67,7 @@ const MODES = [
   { id: "assemble", title: "Assembly", pack: "assemble" },
   { id: "memory", title: "Memory", pack: "memory" },
   { id: "mechanic", title: "Mechanic", pack: null },
-  { id: "plumbing", title: "Plumbing", pack: null },
+  { id: "plumbing", title: "Sink", pack: "home" },
   { id: "engineering", title: "Engineering", pack: null },
 ];
 const DEFAULT_MODE = MODES.findIndex((m) => m.id === "memory");
@@ -159,6 +161,13 @@ function boot() {
   }
 
   let sessionId = randomId();
+  const family = setupFamily({ session: () => sessionId,
+    speak: text => voice.speak("family-note", text, { localOnly: true }), request: async (path, data) => {
+    const result = await apiFetch(path, data);
+    const body = await result.json();
+    if (!result.ok) throw new Error(body.detail || 'Family note unavailable.');
+    return body;
+  } });
   const params = new URLSearchParams(location.search);
   // Server voice (Cartesia when keyed, else Kokoro on the box) by default; the browser voice is the last resort.
   // ?tts=cartesia means server TTS with a Cartesia voice from /api/voices.
@@ -199,6 +208,7 @@ function boot() {
   let ui = createCallUi({ storage: safeStorage() });
 
   let pack = "";
+  let homeStartPending = false;
   let socket = null;
   let retryTimer = 0;
   let reconnectDelay = 500;
@@ -319,6 +329,7 @@ function boot() {
         if (reading.noisy && reading.calibrated && !holdMode) void enableHold();
       },
       onFinal: (text) => {
+        if (voice?.isInputBlocked()) return;
         const clean = String(text || "").trim();
         if (!clean) return;
         ui.dispatch({ type: "final", text: clean, now: Date.now() });
@@ -406,6 +417,7 @@ function boot() {
       },
       sttMode: stt,
       onAudioChunk: (pcm16Base64, audioSeq, final) => {
+        if (voice?.isInputBlocked()) return;
         if (turn.stage === "hearing") turnEvent({ type: "interim", text: "Speech detected" });
         if (final) turnEvent({ type: "sent" });
         send({
@@ -506,6 +518,7 @@ function boot() {
   function sendUser(text, source) {
     const clean = String(text || "").trim();
     if (!clean) return false;
+    if (family.consume(clean, source)) return true;
     pendingText = {
       v: 2,
       type: "user_text",
@@ -546,6 +559,7 @@ function boot() {
   }
 
   function connect() {
+    valveCard.reset();
     if (!pack) return;
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
     const ws = new WebSocket(wsUrl());
@@ -582,6 +596,7 @@ function boot() {
     ws.addEventListener('close', () => { if (socket === ws) stopTrigger?.(); });
     ws.addEventListener("close", (event) => {
       if (socket !== ws) return;
+      valveCard.reset();
       socket = null;
       window.clearTimeout(retryTimer);
       setLink("reconnecting");
@@ -607,15 +622,43 @@ function boot() {
 
   // A getter: sessionId changes when a new call starts, and a captured value sent stale ids (seen in the two-page run).
   const onPair = setupPairCall(send, () => sessionId);
+  const valveCard = createValveCard(document.getElementById('valve-check'));
+
+  async function presenter(action) {
+    const response = await apiFetch('/api/dad-demo?session_id=' + encodeURIComponent(sessionId) + (action?.state ? '&action=verdict' : ''),
+      action);
+    if (!response.ok) throw new Error('Presenter controls unavailable.');
+    const data = await response.json();
+    document.getElementById('dad-presenter')?.classList.remove('hidden');
+    const toggle = document.getElementById('dad-test');
+    if (toggle) toggle.checked = data.enabled;
+    document.getElementById('dad-test-label')?.classList.toggle('hidden', !data.enabled);
+    const pass = document.getElementById('dad-pass');
+    if (pass) pass.disabled = !data.enabled;
+    return true;
+  }
+  document.getElementById('dad-test')?.addEventListener('change', async event => {
+    try { await presenter({ enabled: event.target.checked }); }
+    catch { showProblem('Presenter controls unavailable.'); }
+  });
+  document.getElementById('dad-pass')?.addEventListener('click', async () => {
+    try { if (await presenter({ state: 'closed' })) sendUser('next', 'typed'); }
+    catch { showProblem('Presenter check unavailable.'); }
+  });
+  document.getElementById('dad-stop')?.addEventListener('click', () => sendUser('water near the outlet', 'typed'));
 
   function onServer(message) {
     if (!message || typeof message !== "object") return;
+    if (message.detail === 'Presenter available') void presenter().catch(() => {});
+    valveCard.event(message);
     onPair(message);
     if (message.type === "pair_status") routeMic(message);
     const now = Date.now();
     if (message.type === "turn") {
       if (message.stage === 'received') document.getElementById('proof-safety')?.classList.add('hidden');
       if (message.detail === 'Stopped by code') document.getElementById('proof-safety')?.classList.remove('hidden');
+      if (message.detail === 'Home: complete') family.complete('sink');
+      if (message.detail === 'Home: sink') { pack = 'home'; packLabel.textContent = 'Sink'; }
       if (message.detail?.startsWith('Brain: ')) document.getElementById('proof-brain').textContent = message.detail;
       wait = waitAfterTurn(wait, message, now);
       if (message.stage === "failed" && message.detail) ui.dispatch({ type: "error", message: String(message.detail) });
@@ -655,6 +698,10 @@ function boot() {
       return;
     }
     if (message.type === "agent_state") {
+      if (homeStartPending && message.state === 'listening') {
+        homeStartPending = false;
+        sendUser('sink', 'typed');
+      }
       // Phone speech barged in on the server: stop this laptop's playback as its own VAD would.
       if (micRoute.phone && message.state === "listening") stopLocalPlayback();
       wait = waitAfterAgentState(wait, message.agent, message.state, now);
@@ -1259,6 +1306,7 @@ function boot() {
   }
 
   function stopCamera() {
+    valveCard.reset();
     const stream = video.srcObject;
     if (stream && typeof stream.getTracks === "function") {
       for (const track of stream.getTracks()) track.stop();
@@ -1452,7 +1500,7 @@ function boot() {
       listening: () => Boolean(micRoute.phone || voice?.isListening()),
       wake: async (line) => {
         if (!voice) voice = await rebuildVoice();
-        if (!micRoute.phone && !voice.isListening()) await startMic();
+        if (ui.getState().micOn && !micRoute.phone && !voice.isListening()) await startMic();
         onServer({ v: 2, type: 'say', agent: 'helper', text: line,
           utterance_id: randomId(), final: true });
       },
@@ -1560,6 +1608,8 @@ function boot() {
   async function choosePack(next) {
     if (!PACK_LABEL[next] || pack) return;
     pack = next;
+    homeStartPending = next === 'home';
+    document.getElementById('dad-presenter')?.classList.add('hidden');
     ended = false;
     sessionId = randomId();
     resetCallOwner();
@@ -1615,6 +1665,7 @@ function boot() {
 
   // CallController.end: back to the mode ring with the same mode selected.
   function endCall() {
+    valveCard.reset();
     stopTrigger?.();
     if (!pack) return;
     window.clearInterval(memoryTimer);
@@ -2529,11 +2580,12 @@ function safeStorage() {
 
 // Same-origin API calls carry the page token when there is one (LAN, quick tunnel). Behind Cloudflare Access the
 // cookie rides along by itself. Seen live: /api/voices returned 401 on a token server because no token was sent.
-async function apiFetch(path) {
+async function apiFetch(path, data) {
   const token = new URLSearchParams(location.search).get("token");
   const headers = await ownerHeaders();
   if (token) headers.Authorization = `Bearer ${token}`;
-  return fetch(path, { headers });
+  if (data !== undefined) headers['Content-Type'] = 'application/json';
+  return fetch(path, { headers, ...(data !== undefined ? { method: 'POST', body: JSON.stringify(data) } : {}) });
 }
 
 if (typeof document !== "undefined") boot();

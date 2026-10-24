@@ -94,7 +94,7 @@ export interface MarketResponse { v: V; query_key: string; category: PartCategor
 // =====================================================================
 export type V2 = 2;
 export type AgentId = "helper" | "shopper";
-export type PackId = "general" | "pc_build" | "cooking" | "assemble" | "memory";
+export type PackId = "general" | "pc_build" | "cooking" | "assemble" | "memory" | "home";
 export type PresenceState = "idle" | "listening" | "thinking" | "speaking";
 export type DrawRole = "target" | "info" | "warn" | "ok";
 

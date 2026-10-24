@@ -66,7 +66,7 @@ Arduino IDE alternative: open `device/arduino/aeye_wake/aeye_wake.ino`, choose *
 
 ## 6. Run with A-eye
 
-Start the existing server and open an agent call. Pair the phone using the existing phone-camera flow. Grant microphone/audio permission with the normal call controls before testing unattended wake. A remote phone page needs the existing HTTPS flow; the Shortcut's server POST may use the Mac's LAN HTTP address.
+Start the existing server and open an agent call. Pair the phone using the existing phone-camera flow. Grant microphone/audio permission with the normal call controls before testing unattended wake. Leave the microphone enabled for unattended listening: wake does not turn a user-off mic back on, but still speaks the reminder. A remote phone page needs the existing HTTPS flow; the Shortcut's server POST may use the Mac's LAN HTTP address.
 
 Install Python dependencies in the project's virtual environment (`pyserial` is added for USB access). Set `A_EYE_TOKEN` to the same token as the server and `A_EYE_OWNER` to this call's capability. Do not paste either into logs or screenshots. In the active agent page's developer console, `await (await import('./call-owner.js')).callOwner()` retrieves the current capability locally. It changes for each new token-based call; a token alone intentionally cannot select somebody else's call. Access-authenticated callers instead use the same verified identity.
 
