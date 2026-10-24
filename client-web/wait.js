@@ -68,7 +68,7 @@ export function waitCopy(wait, elapsedMs) {
   if (wait.stage === "received") return { eyebrow: "GOT IT", line: "Hold the camera steady…" };
   if (wait.stage === "transcribing") return { eyebrow: "LISTENING", line: "Catching your words…" };
   if (wait.stage === "backup") return { eyebrow: "LOOKING CLOSER", line: "Taking a bit longer. Keep holding." };
-  return { eyebrow: "SCANNING", line: isSlow ? "Almost there. Keep holding." : "Hold the camera steady…" };
+  return { eyebrow: "LOOKING", line: isSlow ? "Almost there. Keep holding." : "Hold the camera steady…" };
 }
 
 // Swift's String.capitalized, for the spoken label: "LOOKING CLOSER" -> "Looking Closer".

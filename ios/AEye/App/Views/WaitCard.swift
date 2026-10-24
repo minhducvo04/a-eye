@@ -75,7 +75,7 @@ struct WaitCard: View {
         case .backup:
             return ("LOOKING CLOSER", "Taking a bit longer. Keep holding.")
         case .thinking, .speaking, .done, .failed, .cancelled, .expert, .expertDone:
-            return ("SCANNING", isSlow ? "Almost there. Keep holding." : "Hold the camera steady…")
+            return ("LOOKING", isSlow ? "Almost there. Keep holding." : "Hold the camera steady…")
         }
     }
 }

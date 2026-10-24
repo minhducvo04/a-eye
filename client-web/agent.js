@@ -1916,7 +1916,7 @@ function boot() {
   function renderWait(now) {
     const shown = pack ? visibleWait(wait, now) : null;
     waitEl.classList.toggle("hidden", !shown);
-    scanEl.classList.toggle("hidden", !shown || shown.agent !== "helper");
+    scanEl.classList.add("hidden"); // The model always sees the whole frame; no sweep animation.
     if (!shown) {
       waitShown = "";
       return;

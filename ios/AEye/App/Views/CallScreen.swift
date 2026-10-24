@@ -32,7 +32,7 @@ struct CallScreen: View {
             // Viewfinder sweep while the helper reads the picture. Memory mode keeps the screen still.
             if !isMemory {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
-                    if let wait = visibleWait(state, at: context.date), wait.agent == .helper {
+                    if Tuning.showScanSweep, let wait = visibleWait(state, at: context.date), wait.agent == .helper {
                         ScanSweep(color: Palette.helper)
                             .ignoresSafeArea()
                             .transition(.opacity)
