@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from jsonschema import ValidationError
 
 from contracts import validate
+from server import ws2
 from server.boards import load_board
 from server.steps import Session, error
 from server.vision_client import VisionClient, VisionUnavailable
@@ -69,6 +70,7 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB):
         except WebSocketDisconnect:
             pass
 
+    app.include_router(ws2.router)
     # Routes must precede the catch-all static mount. The client package owns this directory.
     if Path(static_dir).is_dir():
         app.mount('/', StaticFiles(directory=static_dir, html=True, check_dir=False), name='client')
