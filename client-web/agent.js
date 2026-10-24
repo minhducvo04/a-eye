@@ -343,7 +343,10 @@ function boot() {
           turnId: speech.turnId,
           now,
         });
-        if (tts === "server") armFallback(line.utteranceId);
+        utteranceTurn.set(line.utteranceId, speech.turnId);
+        // Server audio is synthesized sentence by sentence, so later sentences can wait longer than 1.5 s.
+        // Arm the browser fallback only until the first audio of this turn arrives.
+        if (tts === "server" && !audioTurns.has(speech.turnId)) armFallback(line.utteranceId);
       }
       if (tts === "browser" && result.speak.length) enqueueTalk(result.speak);
       renderCall();
@@ -351,6 +354,11 @@ function boot() {
     }
     if (message.type === "audio" && voice) {
       const id = typeof message.utterance_id === "string" ? message.utterance_id : "";
+      const turnOfAudio = utteranceTurn.get(id);
+      if (turnOfAudio != null) {
+        audioTurns.add(turnOfAudio);
+        for (const [uid, tid] of utteranceTurn) if (tid === turnOfAudio) clearFallback(uid);
+      }
       clearFallback(id);
       ui.dispatch({ type: "audio_started", utteranceId: id, now });
       markSound();
@@ -595,6 +603,9 @@ function boot() {
     for (const timer of fallbackTimers.values()) window.clearTimeout(timer);
     fallbackTimers.clear();
   }
+
+  const utteranceTurn = new Map();
+  const audioTurns = new Set();
 
   function armFallback(id) {
     if (tts !== "server") return;
