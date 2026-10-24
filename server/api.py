@@ -111,6 +111,32 @@ async def dependency(app, name):
     return dict(ok=ok, ms=round((monotonic() - started) * 1000, 2), detail=detail)
 
 
+@router.get('/voices')
+async def voices():
+    """Server voices the picker can offer, most natural first. Cartesia appears only when keyed."""
+    from voice.kokoro import KOKORO_VOICES, default_voice
+    listed = [dict(id=v, label=f'Kokoro {v}', default=v == default_voice()) for v in KOKORO_VOICES]
+    if os.environ.get('CARTESIA_API_KEY') and os.environ.get('CARTESIA_VOICE_ID'):
+        listed.insert(0, dict(id='cartesia:' + os.environ['CARTESIA_VOICE_ID'], label='Cartesia Sonic', default=True))
+    return dict(voices=listed)
+
+
+@router.get('/voice_sample')
+async def voice_sample(voice: str = ''):
+    """A short Kokoro sample for the Test voice button: raw PCM16 16 kHz, base64 in JSON."""
+    import base64
+    from voice.kokoro import KOKORO_VOICES, default_voice
+    picked = voice if voice in KOKORO_VOICES else default_voice()
+    try:
+        async with httpx.AsyncClient(timeout=6) as client:
+            response = await client.post(box_url() + '/tts', json=dict(
+                text="Hey, I can hear you. Show me what you're working on.", voice=picked))
+            response.raise_for_status()
+    except Exception:
+        return JSONResponse(dict(error='voice_unavailable'), status_code=503)
+    return dict(voice=picked, sample_rate=16000, pcm16_b64=base64.b64encode(response.content).decode())
+
+
 @router.get('/status')
 async def status(request: Request):
     app = request.app

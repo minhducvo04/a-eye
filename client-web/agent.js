@@ -92,7 +92,11 @@ function boot() {
 
   const sessionId = randomId();
   const params = new URLSearchParams(location.search);
-  const tts = params.get("tts") === "server" ? "server" : "browser";
+  // Server voice (Kokoro on the box, or Cartesia when keyed) by default; the browser voice is the last resort.
+  const storedVoice = (() => { try { return safeStorage()?.getItem("aeye.voice") || ""; } catch { return ""; } })();
+  let tts = params.get("tts") === "browser" || storedVoice === "browser" ? "browser" : "server";
+  let ttsVoice = storedVoice && storedVoice !== "browser" ? storedVoice : "";
+  const voicePick = document.getElementById("voice-pick");
   let stt = params.get("stt") === "server" ? "server" : "browser";
   const sttLabel = document.getElementById("stt-mode");
   const reducedQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -314,6 +318,7 @@ function boot() {
       stt,
       camera: cameraOn,
     };
+    if (tts === "server" && ttsVoice) hello.voice = ttsVoice;
     if (pack === "pc_build") hello.board_id = BOARD_ID;
     const ok = send(hello);
     if (ok) ui.dispatch({ type: "hello_sent" });
@@ -1005,11 +1010,60 @@ function boot() {
     if (voice.supported && voice.supported.stt) void startMic();
   }
 
-  function onTestVoice() {
+  async function onTestVoice() {
     if (!voice) return;
     void voice.unlockAudio();
     applyAudioPrefs();
+    if (tts === "server") {
+      try {
+        const reply = await fetch(`/api/voice_sample?voice=${encodeURIComponent(ttsVoice)}`);
+        if (reply.ok) {
+          const sample = await reply.json();
+          voice.playPcm("test-voice", sample.pcm16_b64, true);
+          return;
+        }
+      } catch {
+        // fall through to the browser voice
+      }
+    }
     voice.speak("test-voice", TEST_LINE);
+  }
+
+  async function loadVoices() {
+    if (!voicePick) return;
+    let listed = [];
+    try {
+      const reply = await fetch("/api/voices");
+      if (reply.ok) listed = (await reply.json()).voices || [];
+    } catch {
+      listed = [];
+    }
+    voicePick.textContent = "";
+    for (const item of listed) {
+      const option = document.createElement("option");
+      option.value = item.id;
+      option.textContent = item.label + (item.default ? " (default)" : "");
+      voicePick.append(option);
+    }
+    const browserOption = document.createElement("option");
+    browserOption.value = "browser";
+    browserOption.textContent = "Browser voice (robotic)";
+    voicePick.append(browserOption);
+    const fallback = (listed.find((item) => item.default) || listed[0] || { id: "browser" }).id;
+    voicePick.value = tts === "browser" ? "browser" : (ttsVoice || fallback);
+  }
+
+  function onVoicePick() {
+    const picked = voicePick.value;
+    tts = picked === "browser" ? "browser" : "server";
+    ttsVoice = picked === "browser" ? "" : picked;
+    try {
+      safeStorage()?.setItem("aeye.voice", picked);
+    } catch {
+      // per-viewer convenience only
+    }
+    sendHello();
+    void onTestVoice();
   }
 
   async function choosePack(next) {
@@ -1245,6 +1299,10 @@ function boot() {
     ui.dispatch({ type: "volume", volume: Number(volumeEl.value) });
     applyAudioPrefs();
   });
+  if (voicePick) {
+    voicePick.addEventListener("change", onVoicePick);
+    void loadVoices();
+  }
   document.getElementById("test-voice").addEventListener("click", () => {
     onTestVoice();
   });

@@ -1966,6 +1966,11 @@
     "camera": {
      "type": "boolean",
      "description": "false: voice only; the server makes no scene calls and attaches no frame."
+    },
+    "voice": {
+     "type": "string",
+     "pattern": "^[a-z0-9_:-]{1,64}$",
+     "description": "Optional server TTS voice: a Kokoro voice id (af_kore) or cartesia:<voice id>. Unknown ids fall back to the server default."
     }
    }
   },

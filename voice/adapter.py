@@ -92,8 +92,11 @@ def _check_kokoro():
 
 
 def make_adapter(**kwargs: Any) -> VoiceAdapter:
-    """Prefer local Kokoro, then configured Cartesia, then browser speech."""
+    """Prefer Cartesia Sonic when keyed (most natural), then local Kokoro, then browser speech."""
     mode = os.environ.get('VOICE', 'auto')
+    if mode == 'auto' and os.environ.get('CARTESIA_API_KEY') and os.environ.get('CARTESIA_VOICE_ID'):
+        from voice.cartesia import CartesiaAdapter
+        return CartesiaAdapter(**kwargs)
     if mode == 'kokoro' or (mode == 'auto' and _kokoro_available()):
         from voice.kokoro import KokoroAdapter
         return KokoroAdapter(**kwargs)

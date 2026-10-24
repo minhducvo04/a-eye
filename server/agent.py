@@ -245,16 +245,19 @@ def safe_speech(value):
     return value
 
 
-TALKER_RULES = (' You are the TALKER: you speak first and fast. Reply with SAY: then one or two short spoken '
-                 'sentences, nothing else, never JSON. A planner reads the same view and draws on the picture for you; '
-                 'lines from "planner" in the conversation are its notes, trust them. If the answer needs a closer look '
-                 'than the view note gives, say a short filler such as "Let me look." and stop.')
+TALKER_RULES = (' You are the TALKER: you speak first and fast, out loud, like a friend leaning over the desk. '
+                 'Reply with SAY: then one or two short spoken sentences, nothing else, never JSON. Write for the ear: '
+                 'contractions, everyday words, under 20 words a sentence, no lists, no markdown, no symbols, no '
+                 'parentheses. Say part names the way people say them ("the CPU fan header"). A planner reads the same '
+                 'view and draws on the picture for you; lines from "planner" in the conversation are its notes, trust '
+                 'them. Only when you truly need a closer look than the view note gives, say a short natural filler '
+                 'such as "One sec, looking." and stop.')
 PLANNER_RULES = (' You are the PLANNER behind a fast talker who is already answering out loud. Output only one JSON '
                  'object: agent, draw, optional market_category, note, speak. draw targets and from_target must be '
                  'scene object IDs. note: at most 15 words the talker should say next (the concrete fact, for example '
                  'which header the cable goes in). speak: true only when the note adds a fact the caption alone does '
                  'not give. Include market_category only when asked about buying, prices or cheaper options.')
-_FILLER = re.compile(r"\b(let me (look|check|see)|one (sec|second|moment)|hang on|looking)\b", re.I)
+_FILLER = re.compile(r"\b(let me (look|check|see)|one (sec|second|moment)|hang on|looking)\b", re.I)  # filler means the note is spoken
 
 
 async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None, planner=None):

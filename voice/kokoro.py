@@ -7,11 +7,20 @@ from server.box_client import BoxClient
 from voice.adapter import VoiceAdapter
 
 
+# Most human of the box voices in a blind proxy listen test (docs/voice-options.md, voice/voice_pick.py).
+KOKORO_VOICES = ('af_kore', 'af_sarah', 'af_heart', 'bf_emma', 'am_fenrir', 'am_puck', 'am_michael', 'bm_george', 'af_bella')
+
+
+def default_voice():
+    return os.environ.get('KOKORO_VOICE', 'af_kore')
+
+
 class KokoroAdapter(VoiceAdapter):
     def __init__(self, client=None, **kwargs):
         super().__init__(**kwargs)
         self.box = BoxClient(client)
         self.tasks = {}
+        self.voice = None  # per session, from hello.voice
 
     def stop(self, utterance_id):
         task = self.tasks.get(utterance_id)
@@ -25,7 +34,7 @@ class KokoroAdapter(VoiceAdapter):
         self.tasks[utterance_id] = asyncio.current_task()
         try:
             async with self.box.client.stream('POST', self.box.url + '/tts', json=dict(
-                    text=text, voice=os.environ.get('KOKORO_VOICE', 'af_heart')), timeout=5) as response:
+                    text=text, voice=self.voice if self.voice in KOKORO_VOICES else default_voice()), timeout=5) as response:
                 response.raise_for_status()
                 async for chunk in response.aiter_bytes(2048):
                     if self._stopped(utterance_id):

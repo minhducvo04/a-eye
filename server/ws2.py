@@ -341,6 +341,7 @@ async def websocket(ws: WebSocket):
                     candidate = await asyncio.to_thread(factory)
                     if not isinstance(candidate, FakeAdapter):
                         voice = candidate
+                        voice.voice = incoming.get('voice')  # schema-checked id; the adapter checks its own kind
                     else:
                         event('fallback_used', session.session_id, dependency='tts', to='browser')
                 session.speak = speech_audio if voice else None

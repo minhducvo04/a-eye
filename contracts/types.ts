@@ -110,7 +110,7 @@ export type DrawOp =
   | (OpBase & { kind: "clear" });
 
 // client -> server
-export interface V2Hello { v: V2; type: "hello"; session_id: string; pack: PackId; board_id?: string; client?: "web" | "ios"; tts?: "server" | "browser"; stt?: "browser" | "server" }
+export interface V2Hello { v: V2; type: "hello"; session_id: string; pack: PackId; board_id?: string; client?: "web" | "ios"; tts?: "server" | "browser"; stt?: "browser" | "server"; voice?: string }
 export interface V2Frame { v: V2; type: "frame"; session_id: string; seq: number; ts_ms: number; w: number; h: number; jpeg_b64: string }
 export interface V2UserText { v: V2; type: "user_text"; session_id: string; text: string; final: boolean; source?: "browser_stt" | "whisper" | "typed" }
 export interface V2BargeIn { v: V2; type: "barge_in"; session_id: string; utterance_id: string; at_ms: number }

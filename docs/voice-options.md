@@ -108,3 +108,29 @@ pricing and VAD guides; ai.google.dev Live API, pricing and ephemeral tokens; ca
 docs; deepgram.com pricing and Voice Agent docs; elevenlabs.io agents LLM docs; dev.hume.ai; LiveKit
 turn detector; Pipecat speech input; huggingface.co/nvidia/personaplex-7b-v1; github.com/kyutai-labs/unmute;
 cal-hacks-13-0.devpost.com.
+
+## Which voices sound most human (2026-10-24)
+
+The default is now the server voice (`?tts=browser` or the picker brings back browser speech, which
+sounds robotic). Order: Cartesia Sonic when `CARTESIA_API_KEY` and `CARTESIA_VOICE_ID` are set, then
+Kokoro on the box, then the browser. The picker sits next to Test voice, which plays a server sample.
+
+Kokoro voices, scored by `voice/voice_pick.py`. Each clip is the AI's own synthetic line, rated 1 to 5
+for human-likeness by Gemini under shuffled labels, over 7 passes in two runs. This is a **proxy** for a
+blind listen test: nobody has listened yet. First audio is the box `/tts` first chunk from the Mac,
+median of 3.
+
+| Voice | Proxy score (run 1, run 2) | First audio |
+|---|---|---|
+| af_kore (default) | 4.0, 3.6 | 343-346 ms |
+| af_sarah | 4.0, 3.6 | 289-402 ms |
+| am_puck | 4.0, 3.2 | 313-387 ms |
+| af_heart (old default) | 3.5, 3.4 | 335-436 ms |
+| bf_emma | 3.0, 3.6 | 371-388 ms |
+| am_fenrir | 3.0, 3.8 | 316-373 ms |
+| am_michael | 2.5, 3.0 | 418-442 ms |
+| af_nicole, af_sky, af_aoede, am_echo, bm_fable | 2.4-2.8 | 312-483 ms |
+
+The talker prompt now writes for the ear: contractions, short sentences, no lists or symbols, and a
+filler ("One sec, looking.") only when it truly waits. Typed final words to first Kokoro audio with
+af_kore and the new prompt: 1440 ms median [1030-1527], n=4 (`BENCH_TTS=server voice/bench_ws.py`).

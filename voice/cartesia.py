@@ -49,7 +49,8 @@ class CartesiaAdapter(VoiceAdapter):
         return key
 
     def _voice_id(self) -> str:
-        voice_id = os.environ.get("CARTESIA_VOICE_ID") or ""
+        picked = getattr(self, "voice", None) or ""
+        voice_id = picked.split(":", 1)[1] if picked.startswith("cartesia:") else os.environ.get("CARTESIA_VOICE_ID") or ""
         if not voice_id:
             raise RuntimeError("CARTESIA_VOICE_ID is not set")
         return voice_id
