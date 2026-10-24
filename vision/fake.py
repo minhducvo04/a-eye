@@ -14,6 +14,21 @@ class FakeBackend:
     def health(self):
         return {"ok": True, "models": ["fake"], "fake": True}
 
+    def scene(self, body, scenario):
+        if scenario == "blurry":
+            return {"caption": "too blurry to see", "objects": [], "source": "fake"}
+        queries = body.get("queries", [])
+        labels = queries + [label for label in ["motherboard", "fan cable", "table"]
+                            if label not in queries]
+        objects = [
+            {"id": f"o{index + 1}", "label": label,
+             "bbox": [.05 + (index % 4) * .24, .05 + (index // 4) * .3, .18, .2],
+             "conf": .7 if index < len(queries) else .5}
+            for index, label in enumerate(labels[:body.get("max_objects", 8)])
+        ]
+        return {"caption": "A motherboard and fan cable sit on a table.",
+                "objects": objects, "source": "fake"}
+
     def identify(self, body, scenario):
         if scenario == "unknown_item":
             return {"item": "unknown", "conf": 0.2}

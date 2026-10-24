@@ -1,7 +1,7 @@
 # Fake vision service
 
 Run `make vision` from the repository root to serve `vision.app:app` on port 8001.
-Use `GET /health` and JSON `POST /identify`, `/locate`, `/verify` with the request
+Use `GET /health` and JSON `POST /identify`, `/locate`, `/verify`, `/scene` with the request
 shapes in `contracts/examples.json`. Requests and successful responses are checked
 with `contracts.validate`. Invalid JSON, contract violations and unsupported
 scenario names return HTTP 422 with a short message that excludes input values.
@@ -29,7 +29,7 @@ pins. These coordinates are not suitable for guiding work on a real board.
 
 `app.py` owns HTTP parsing, validation, scenario selection and timing. Its
 `backend` object exposes `health()`, `identify(body, scenario)`,
-`locate(body, scenario)` and `verify(body, scenario)`; replace that object to
+`locate(body, scenario)`, `verify(body, scenario)` and `scene(body, scenario)`; replace that object to
 integrate a real model. Backend POST methods return response fields without `ms`.
 The fake ignores image contents and performs no decoding, storage, logging or
 network calls. Verification deliberately succeeds by default even for unknown
@@ -95,3 +95,39 @@ unreachable PC cannot produce a misleading fake success. The integrator must run
 this on a machine with PC access; mocked tests do not establish GPU accuracy.
 `OllamaBackend(client=...)` or `OllamaBackend(transport=httpx.MockTransport(...))`
 allows offline testing. Callers supplying a client retain ownership of it.
+
+## General scene grounding
+
+`POST /scene` accepts `image_b64`, optional `queries` (up to eight strings), and
+optional `max_objects` (1–20, default 8). It returns a short `caption`, `objects`
+with consecutive `o1`, `o2`, … IDs, normalized `[x,y,w,h]` boxes and confidence,
+plus `source` and measured `ms`. The object cap applies even if more queries
+were supplied. Query matches precede other salient objects.
+
+Fake scenes use query labels verbatim at fixed spread-out positions, then canned
+motherboard, fan cable and table objects within the cap. The `blurry` scenario
+returns no objects and caption `too blurry to see`; other scenarios use the
+normal canned scene. These objects do not describe the submitted image.
+
+Ollama scenes use one chat call and the same 1280-pixel resize and fenced-JSON
+parser as locate. The prompt asks for visible query matches first, labelled with
+the exact query text, followed by other salient objects. Code orders matches by
+query order, enforces the cap, clips boxes to the image and drops zero-area or
+invalid boxes. Labels match queries with case, whitespace and underscores
+ignored. Query matches receive 0.7 confidence and other objects 0.5: these are
+heuristics, not calibrated scores. If the model paraphrases a query label, it is
+treated as an ordinary object. Unparseable answers return an empty scene with
+`Could not describe the frame.`; invalid object rows are omitted. Ollama ignores
+fake scenarios and does not independently detect blur. Auto mode falls back to
+fake on connection errors and timeouts, as with the other endpoints.
+
+Run the additional synthetic scene probe on the real PC:
+
+```sh
+.venv/bin/python -m vision.probe_ollama --scene
+```
+
+It draws labelled red, blue and green shapes in memory, queries `red square`, and
+prints health, caption, objects and milliseconds without printing or saving the
+image. Offline tests exercise the HTTP boundary and mocked Ollama transport;
+they do not establish real-model grounding accuracy.
