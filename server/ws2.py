@@ -25,7 +25,8 @@ from server.keyframes import signature
 from server import packs, pairing
 from server import rewind as rewind_mod
 from server.agent import Session, Turn, message, run_turn, say, state
-from server.llm import LLMClient
+from server.llm import LLMClient, TURN_USAGE
+from server.expert import DESK as expert_desk, cancel as cancel_expert
 from voice import adapter
 from voice.fake import FakeAdapter
 
@@ -251,7 +252,9 @@ async def websocket(ws: WebSocket):
     async def send(msg):
         validate('server_message_v2', msg)
         if msg['type'] == 'metrics' and 'turn_id' in msg:
-            event('turn_end', session.session_id if session else None, **{k: v for k, v in msg.items() if k.endswith('_ms')})
+            event('turn_end', session.session_id if session else None,
+                  cache_read_tokens=sum(x['cache_read_tokens'] for x in (TURN_USAGE.get() or [])),
+                  **{k: v for k, v in msg.items() if k.endswith('_ms')})
         async with send_lock:
             await ws.send_json(msg)
 
@@ -372,6 +375,10 @@ async def websocket(ws: WebSocket):
 
     async def start_text(text, lifecycle):
         nonlocal turn_task
+        if re.fullmatch(r'\s*stop[.!]?\s*', text, re.I):
+            await cancel_expert(session)
+        session.expert_start = lambda question, system, scene, seq, turn_id, planner: expert_desk.start(
+            session, question, system, scene, seq, llm, send, turn_id, planner)
         session.voice_pending = True
         turn_task = asyncio.create_task(turn(text, lifecycle))
 
@@ -520,6 +527,7 @@ async def websocket(ws: WebSocket):
                 except (OSError, ValueError, ValidationError, KeyError):
                     await send(message('error', code='bad_message', message='Unknown or invalid board or pack.'))
                     continue
+                await cancel_expert(session)
                 await cancel_stt()
                 await cancel_turn()
                 await cancel_audio()
@@ -655,6 +663,7 @@ async def websocket(ws: WebSocket):
                 session.rewind.set_on(incoming['on'])
                 await send(rewind_mod.state_message(session.rewind))
             elif kind == 'barge_in':
+                await cancel_expert(session)
                 await cancel_stt()
                 reset_audio()
                 await cancel_turn()
@@ -670,6 +679,7 @@ async def websocket(ws: WebSocket):
             for pending in (ws_read, phone_read):
                 if pending is not None:
                     pending.cancel()
+            await cancel_expert(session)
             if paired_call:
                 with CancelScope(shield=True):
                     await paired_call.close()
