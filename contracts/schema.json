@@ -2558,7 +2558,7 @@
      "$ref": "#/$defs/v2_rewind_recap"
     },
     {
-     "$ref": "#/$defs/v2_memory_hit"
+     "$ref": "#/$defs/v2_find_item"
     },
     {
      "$ref": "#/$defs/v2_memory_state"
@@ -3091,7 +3091,7 @@
     }
    }
   },
-  "v2_memory_hit": {
+  "v2_find_item": {
    "description": "Server to client: where an object was last seen, from the person's local memory across calls. Carries the rewind_hit fields so the same card renders it: frame_b64 is a small crop of the item (never a full frame) and objects box the item on it; t_s is seconds since this call started (negative for an earlier call). live points at the item or its last place in the current view.",
    "type": "object",
    "additionalProperties": false,
@@ -3107,7 +3107,7 @@
      "$ref": "#/$defs/v2"
     },
     "type": {
-     "const": "memory_hit"
+     "const": "find_item"
     },
     "turn_id": {
      "type": "string"

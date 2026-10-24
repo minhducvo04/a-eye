@@ -8,9 +8,9 @@ From now on, changes may only add optional fields or new message types. Do not r
 
 ## v2.8: local memory across calls
 
-- New `v2_memory_hit` (server): required `v`, `type:memory_hit`, `item`, `found`, `count`; optional `turn_id`, `at_ms`, `when`, `place`, `home`, `say`, `live` (`object_id`, `bbox` in the current view), `count_item`, and the `rewind_hit` fields `t_s` (seconds since this call started, negative for an earlier call), `start_s`, `end_s`, `sure`, `alternatives`, `frame_b64` (a small crop of the item, never a full frame) and `objects` (the item's box on that crop).
+- New `v2_find_item` (server): required `v`, `type:find_item`, `item`, `found`, `count`; optional `turn_id`, `at_ms`, `when`, `place`, `home`, `say`, `live` (`object_id`, `bbox` in the current view), `count_item`, and the `rewind_hit` fields `t_s` (seconds since this call started, negative for an earlier call), `start_s`, `end_s`, `sure`, `alternatives`, `frame_b64` (a small crop of the item, never a full frame) and `objects` (the item's box on that crop).
 - New `v2_memory_state` (server): required `v`, `type:memory_state`, `on`, `count`; optional `memory_id`, `crops`, `bytes`, `encrypted`, `retention_days`, `item`, `count_item`.
-- Added memory_hit and memory_state to `server_message_v2`.
+- Added find_item and memory_state to `server_message_v2`.
 
 ## v2.7: Rewind privacy
 

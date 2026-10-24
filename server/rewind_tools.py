@@ -176,7 +176,7 @@ def memory_hit_message(result, turn_id=None, call_started=None):
         out['live'] = {k: result['live'][k] for k in ('object_id', 'bbox')}
     if turn_id:
         out['turn_id'] = turn_id
-    return message('memory_hit', **out)
+    return message('find_item', **out)
 
 
 def memory_state_message(store, item=None):

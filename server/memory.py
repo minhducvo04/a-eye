@@ -642,13 +642,13 @@ class Memories:
     def auto_attach(self, rewind):
         """At call start, and when settings change: attach while the person has both consents and remembering on."""
         store = self.for_owner(rewind.owner)
-        if store.remembering() and rewind.session_id not in self.calls:
+        if store.remembering() and rewind.memory_writer is None:
             _, writer = self.attach(rewind.session_id, store.id, rewind.owner)
             rewind.memory_writer = writer
             if not any(c.video_id for c in rewind.clips):
                 rewind.index_name, rewind.index_id = f'a-eye-{store.id}', None
             rewind.on_upload = store.add_video
-        elif not store.remembering() and rewind.session_id in self.calls:
+        elif not store.remembering() and rewind.memory_writer is not None:
             self.detach(rewind.session_id)
             rewind.memory_writer = None
         return store

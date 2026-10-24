@@ -1055,10 +1055,10 @@
    ]
   }
  ],
- "v2_memory_hit": [
+ "v2_find_item": [
   {
    "v": 2,
-   "type": "memory_hit",
+   "type": "find_item",
    "turn_id": "t-3",
    "item": "keys",
    "found": true,

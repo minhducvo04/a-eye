@@ -280,7 +280,7 @@ def test_two_calls_tag_in_one_ask_in_the_other(tmp_path, monkeypatch):
             ws.send_json(frame('call-two', 2))
             until(ws, 'track')
             ws.send_json(dict(v=2, type='user_text', session_id='call-two', text='Where are my keys?', final=True))
-            hit = until(ws, 'memory_hit')
+            hit = until(ws, 'find_item')
             arrow = until(ws, 'draw')
             said = until(ws, 'say')
             while said.get('final') is not True:

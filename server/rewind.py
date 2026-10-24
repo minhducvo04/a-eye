@@ -603,6 +603,9 @@ class Registry:
         if rewind is None:
             return None
         rewind.close()
+        if self.memories is not None:
+            self.memories.detach(session_id)      # local memory stops writing when the call ends
+        rewind.memory_writer = None
         if rewind.keep and rewind.on:
             rewind.end_task = self.spawn(rewind.flush(wait=False))
         elif any(c.video_id for c in rewind.clips) or rewind.waits or rewind.lock.locked():
