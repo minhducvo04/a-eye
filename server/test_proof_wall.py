@@ -87,7 +87,7 @@ def test_readonly_count_and_auth(tmp_path, monkeypatch):
     assert client.get('/api/proof').status_code == 401
     assert client.get('/api/proof?token=wrong').status_code == 401
     response = client.get('/api/proof', headers={'Authorization': 'Bearer fixture-token'})
-    assert response.json() == dict(pictures_saved=1, cloud_ai_calls=None, bytes_to_cloud=None)
+    assert response.json() == dict(pictures_saved=1, pictures_sent=None, cloud_ai_calls=None, bytes_to_cloud=None)
     assert response.headers['cache-control'] == 'no-store'
     assert sorted(p.name for p in tmp_path.iterdir()) == ['crop.JPG', 'link.png', 'note.txt']
 

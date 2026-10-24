@@ -1,3 +1,4 @@
+import { liveSettings } from './gemini-live.js';
 import { triggerClient } from './trigger.js';
 import { setupFamily } from './family-note.js';
 import { createValveCard } from './step-check.js';
@@ -69,6 +70,7 @@ const MODES = [
   { id: "mechanic", title: "Mechanic", pack: null },
   { id: "plumbing", title: "Sink", pack: "home" },
   { id: "engineering", title: "Engineering", pack: null },
+  { id: "gemini-live", title: "Gemini Live", pack: "gemini-live" },
 ];
 const DEFAULT_MODE = MODES.findIndex((m) => m.id === "memory");
 const RING_SLOT = 84;
@@ -177,6 +179,7 @@ function boot() {
   let ttsVoice = storedVoice && storedVoice !== "browser" ? storedVoice : "";
   const voicePick = document.getElementById("voice-pick");
   let stt = params.get("stt") === "server" ? "server" : "browser";
+  let beforeLiveAudio = null;
   // Device choice (Settings > Devices), remembered per browser. "" means the browser default.
   const micLineEl = document.getElementById("mic-line");
   const micLevelEl = document.getElementById("mic-level");
@@ -221,10 +224,14 @@ function boot() {
       const proof = await response.json();
       if (proofSession !== sessionId) return;
       document.getElementById('proof-pictures').textContent = `Pictures saved: ${proof.pictures_saved ?? 'unknown'}`;
+      const sentPictures = document.getElementById('proof-pictures-sent');
+      if (sentPictures) sentPictures.textContent = `Pictures sent: ${proof.pictures_sent ?? 'unknown'}`;
       document.getElementById('proof-cloud-calls').textContent = `Cloud AI calls: ${proof.cloud_ai_calls ?? 'unknown'}`;
       document.getElementById('proof-cloud-bytes').textContent = `Bytes to cloud: ${proof.bytes_to_cloud ?? 'unknown'}`;
     } catch {
       document.getElementById('proof-pictures').textContent = 'Pictures saved: unknown';
+      const sentPictures = document.getElementById('proof-pictures-sent');
+      if (sentPictures) sentPictures.textContent = 'Pictures sent: unknown';
       document.getElementById('proof-cloud-calls').textContent = 'Cloud AI calls: unknown';
       document.getElementById('proof-cloud-bytes').textContent = 'Bytes to cloud: unknown';
     }
@@ -243,9 +250,9 @@ function boot() {
   // Private mode: hello.private makes the server keep everything local; the page uses server STT (browser
   // recognition can send audio to Google), the server voice (Kokoro) and keeps Rewind off.
   let privateMode = (() => { try { return safeStorage()?.getItem("aeye.private") === "1"; } catch { return false; } })();
-  // Home first: three named cloud switches (server/privacy.py enforces them). Defaults: Claude and Cartesia on,
-  // TwelveLabs off. The TwelveLabs switch and the Rewind toggle are one consent.
-  const CLOUD_DEFAULTS = { claude: true, cartesia: true, twelvelabs: false };
+  // Home first: four cloud switches. Claude and Cartesia default on; Google and TwelveLabs off.
+  // The TwelveLabs switch and the Rewind toggle are one consent.
+  const CLOUD_DEFAULTS = { claude: true, cartesia: true, twelvelabs: false, google: false };
   let cloud = (() => {
     try {
       const saved = JSON.parse(safeStorage()?.getItem("aeye.cloud") || "null");
@@ -255,6 +262,7 @@ function boot() {
     }
   })();
   const cloudBoxes = {
+    google: document.getElementById("cloud-google"),
     claude: document.getElementById("cloud-claude"),
     cartesia: document.getElementById("cloud-cartesia"),
     twelvelabs: document.getElementById("cloud-twelvelabs"),
@@ -441,7 +449,8 @@ function boot() {
   function wsUrl() {
     const scheme = location.protocol === "https:" ? "wss:" : "ws:";
     const token = new URLSearchParams(location.search).get("token");
-    return `${scheme}//${location.host}/ws2${token ? `?token=${encodeURIComponent(token)}${ownerQuery()}` : ""}`;
+    const base = `${scheme}//${location.host}/ws2${token ? `?token=${encodeURIComponent(token)}${ownerQuery()}` : ""}`;
+    return pack === "gemini-live" ? `${base}${base.includes("?") ? "&" : "?"}mode=gemini-live&google=${cloud.google && !privateMode ? "1" : "0"}` : base;
   }
 
   function reducedMotion() {
@@ -540,7 +549,7 @@ function boot() {
       v: 2,
       type: "hello",
       session_id: sessionId,
-      pack,
+      pack: pack === "gemini-live" ? "general" : pack,
       client: "web",
       tts,
       stt,
@@ -1594,6 +1603,7 @@ function boot() {
 
   function onVoicePick() {
     const picked = voicePick.value;
+    if (pack === "gemini-live" && picked === "browser") return;
     tts = picked === "browser" ? "browser" : "server";
     ttsVoice = picked === "browser" ? "" : picked;
     try {
@@ -1607,7 +1617,13 @@ function boot() {
 
   async function choosePack(next) {
     if (!PACK_LABEL[next] || pack) return;
+    if (next === "gemini-live" && !liveSettings(next, cloud.google, privateMode).allowed) {
+      showProblem("Gemini Live needs the Google switch on and Private mode off. Open Settings to choose.");
+      openSheet(settingsEl);
+      return;
+    }
     pack = next;
+    renderLeaves();
     homeStartPending = next === 'home';
     document.getElementById('guide-presenter')?.classList.add('hidden');
     ended = false;
@@ -1615,6 +1631,11 @@ function boot() {
     resetCallOwner();
     try { await callOwner(); }
     catch { pack = null; showProblem('Could not create a private call. Please try again.'); return; }
+    if (next === "gemini-live") {
+      beforeLiveAudio = { stt, tts };
+      stt = "server"; tts = "server";
+      renderLeaves();
+    }
     ui = createCallUi({ storage: safeStorage() });
     turn = nextTurnState(null, {}, Date.now());
     speech = emptySpeech();
@@ -1684,6 +1705,11 @@ function boot() {
     const ws = socket;
     socket = null;
     if (ws) ws.close();
+    if (beforeLiveAudio) {
+      stt = privateMode ? "server" : beforeLiveAudio.stt;
+      tts = privateMode ? "server" : beforeLiveAudio.tts;
+      beforeLiveAudio = null;
+    }
     pack = "";
     if (document.body && document.body.dataset) delete document.body.dataset.mode;
     callStartedAt = 0;
@@ -1778,6 +1804,7 @@ function boot() {
     if (!leavesList) return;
     const on = (name) => !privateMode && Boolean(cloud[name]);
     const lines = [];
+    if (on("google")) lines.push(liveSettings(pack, true, privateMode).notice);
     if (on("claude")) lines.push("Your question and a written note about the scene go to Claude. Sometimes one small close-up photo.");
     if (on("cartesia")) lines.push("A-eye's reply sentence goes to Cartesia, which turns it into speech.");
     if (on("twelvelabs") && rewindOn) lines.push("Short silent video clips go to TwelveLabs. They are deleted when the call ends.");
@@ -1791,7 +1818,7 @@ function boot() {
     }
     const home = document.createElement("li");
     home.className = "home";
-    home.textContent = "Always stays home: the camera picture, the memory log, and (with server speech) your voice.";
+    home.textContent = on("google") ? "The memory log stays home. Only requested tool result text goes to Google." : "Always stays home: the camera picture, the memory log, and (with server speech) your voice.";
     leavesList.append(home);
   }
 
@@ -1807,13 +1834,15 @@ function boot() {
     cloud[name] = Boolean(on);
     if (on && privateMode) privateMode = false; // switching a cloud feature on leaves Private mode
     try {
-      safeStorage()?.setItem("aeye.cloud", JSON.stringify({ claude: cloud.claude, cartesia: cloud.cartesia }));
+      safeStorage()?.setItem("aeye.cloud", JSON.stringify({ claude: cloud.claude, cartesia: cloud.cartesia, google: cloud.google }));
       safeStorage()?.setItem("aeye.private", privateMode ? "1" : "0");
     } catch {
       // per-viewer convenience only
     }
     renderPrivate();
-    sendHello();
+    if (name === "google" && pack === "gemini-live" && socket) {
+      socket.close(); // reconnect carries the new explicit Google setting
+    } else sendHello();
   }
 
   async function setPrivate(on) {

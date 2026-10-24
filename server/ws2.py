@@ -29,6 +29,7 @@ from server.routing import forget_request, route_turn
 from server.agent import Session, Turn, message, run_turn, say, state
 from server.llm import LLMClient, TURN_USAGE
 from server import privacy
+from server.gemini_live import LiveBridge, FALLBACK_LINE
 from server.privacy import claude_allowed
 from server.expert import DESK as expert_desk, cancel as cancel_expert
 from voice import adapter
@@ -247,6 +248,7 @@ async def websocket(ws: WebSocket):
     active_audio = set()
     stt_mode = 'browser'
     stt_failed = False
+    live = None
     audio_buffer = bytearray()
     stt_task = None
     # Incremental STT: partial transcripts of the growing utterance while the user talks, so the final
@@ -507,6 +509,25 @@ async def websocket(ws: WebSocket):
         if voice is not None and hasattr(voice, 'aclose'):
             await voice.aclose()
 
+    async def close_live():
+        nonlocal live
+        if live:
+            await live.close()
+            live = None
+
+    async def live_fixed_line(text):
+        # A fresh caption cancels the previous client utterance; normal server TTS speaks the fixed line.
+        await cancel_audio()
+        await emit(say(text))
+
+    async def open_live():
+        nonlocal live
+        await close_live()
+        factory = getattr(ws.app.state, 'live_factory_v2', LiveBridge)
+        live = factory(session, vision, ws.app, send, live_fixed_line)
+        if not await live.start():
+            await live_fixed_line(FALLBACK_LINE)
+
     async def end_rewind():
         nonlocal rewind_task
         if rewind_task:
@@ -581,6 +602,7 @@ async def websocket(ws: WebSocket):
                 except (OSError, ValueError, ValidationError, KeyError):
                     await send(message('error', code='bad_message', message='Unknown or invalid board or pack.'))
                     continue
+                await close_live()
                 await cancel_expert(session)
                 await cancel_stt()
                 await cancel_turn()
@@ -599,7 +621,11 @@ async def websocket(ws: WebSocket):
                 private = bool(incoming.get('private', False))
                 new_session.private = private
                 # Home first: this call's cloud switches (hello.cloud; Private mode or LOCAL_ONLY=1 = all off).
-                privacy.set_call(incoming.get('cloud'), private=private, rewind=incoming.get('rewind', False))
+                switches = incoming.get('cloud')
+                # Query settings keep the frozen hello schema unchanged. Explicit Google consent only.
+                if ws.query_params.get('mode') == 'gemini-live':
+                    switches = dict(switches or {}, google=ws.query_params.get('google') == '1')
+                privacy.set_call(switches, private=private, rewind=incoming.get('rewind', False))
                 stt_mode = 'server' if private else incoming.get('stt', 'browser')
                 if private:
                     new_session.tts = 'server'
@@ -642,6 +668,9 @@ async def websocket(ws: WebSocket):
                 rewind_task = asyncio.create_task(session.rewind.follow(session))
                 if session.rewind.on:
                     await send(rewind_mod.state_message(session.rewind))
+                if ws.query_params.get('mode') == 'gemini-live':
+                    stt_mode = 'server'
+                    await open_live()
                 await send(state('listening'))
                 if getattr(ws.app.state, 'presenter', False) and private and session.pack.id == 'home':
                     await send(message('turn', turn_id='presenter', stage='done', detail='Presenter available',
@@ -662,6 +691,17 @@ async def websocket(ws: WebSocket):
             if kind == 'camera':
                 paired_call.local_on = incoming['on']
             if kind in ('camera', 'frame') and paired_call.camera is not None:
+                continue
+            if live and live.active and kind in ('audio_in', 'user_text', 'barge_in'):
+                if kind == 'audio_in':
+                    try:
+                        await live.audio(incoming['pcm16_b64'], incoming.get('final', False))
+                    except ValueError:
+                        await send(message('error', code='bad_message', message='Invalid audio.'))
+                elif kind == 'user_text' and incoming['final']:
+                    await live.text(incoming['text'])
+                elif kind == 'barge_in':
+                    await live.interrupt()
                 continue
             server_audio = kind == 'audio_in' and stt_mode == 'server'
             final_input = (kind == 'user_text' or server_audio) and incoming.get('final', False)
@@ -745,6 +785,9 @@ async def websocket(ws: WebSocket):
                 session.rewind.set_on(incoming['on'])
                 session.rewind.keep = incoming.get('keep', session.rewind.keep)
                 await send(rewind_mod.state_message(session.rewind))
+                if live and live.active:
+                    # Tool declarations are fixed at setup; replace, never overlap, sessions.
+                    await open_live()
             elif kind == 'barge_in':
                 await cancel_expert(session)
                 await cancel_stt()
@@ -759,6 +802,7 @@ async def websocket(ws: WebSocket):
     finally:
         # Shielded: a closing socket can cancel this task mid-cleanup (seen with the extra phone-mic read).
         with CancelScope(shield=True):
+            await close_live()
             for pending in (ws_read, phone_read):
                 if pending is not None:
                     pending.cancel()

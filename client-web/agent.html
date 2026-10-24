@@ -66,6 +66,7 @@
           <button type="button" data-mode="mechanic" aria-label="Mechanic, coming soon"><span class="disc"><svg><use href="#i-car"/></svg></span><span class="ring-name" aria-hidden="true">Mechanic</span></button>
           <button type="button" data-mode="plumbing" data-pack="home" aria-label="Sink"><span class="disc"><svg><use href="#i-drop"/></svg></span><span class="ring-name" aria-hidden="true">Sink</span></button>
           <button type="button" data-mode="engineering" aria-label="Engineering, coming soon"><span class="disc"><svg><use href="#i-gears"/></svg></span><span class="ring-name" aria-hidden="true">Engineering</span></button>
+          <button type="button" data-mode="gemini-live" data-pack="gemini-live" aria-label="Gemini Live"><span class="disc"><svg><use href="#i-sparkles"/></svg></span><span class="ring-name" aria-hidden="true">Gemini Live</span></button>
         </div>
       </div>
     </section>
@@ -105,6 +106,7 @@
         <p id="pipeline" class="pipeline" role="status">Ready</p>
         <p id="proof-strip" class="pipeline" aria-live="off">
           <span id="proof-pictures">Pictures saved: unknown</span> ·
+          <span id="proof-pictures-sent">Pictures sent: unknown</span> ·
           <span id="proof-cloud-calls" title="Current call: outgoing public provider request attempts, including retries">Cloud AI calls: unknown</span> ·
           <span id="proof-cloud-bytes" title="Outgoing request payload bytes; excludes headers and network overhead">Bytes to cloud: unknown</span> ·
           <span id="proof-brain">Brain: awaiting answer</span>
@@ -259,6 +261,7 @@
     <div class="group">
       <label class="row">Private mode <input id="private-toggle" type="checkbox" role="switch" aria-describedby="private-notice"></label>
       <label class="row"><span>Smarter answers (Claude)<span class="leak">Sends your question and a written scene note, sometimes one small close-up</span></span><input id="cloud-claude" type="checkbox" role="switch"></label>
+      <label class="row"><span>Gemini Live (Google)<span class="leak">During Gemini Live calls, sends microphone audio and downscaled camera video to Google</span></span><input id="cloud-google" type="checkbox" role="switch"></label>
       <label class="row"><span>Natural voice (Cartesia)<span class="leak">Sends only A-eye's reply sentence</span></span><input id="cloud-cartesia" type="checkbox" role="switch"></label>
       <label class="row"><span>Video memory search (TwelveLabs)<span class="leak">Uploads short silent clips; deleted at call end</span></span><input id="cloud-twelvelabs" type="checkbox" role="switch"></label>
     </div>

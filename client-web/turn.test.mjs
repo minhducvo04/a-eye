@@ -78,7 +78,7 @@ test('early final uses latest interim at 700ms and never sends a late correction
   assert.equal(sent.length, 2);
 });
 
-for (const [headset, home] of [[false, false], [true, false], [false, true]]) test(home ? 'sink selection and presenter controls use real client contracts' : headset ? 'headset call never acquires local video through camera or permission controls' : 'call page toggles camera, keeps voice-only hello, retries text, reconnects, and renders streamed replies', async () => {
+for (const [headset, home, live] of [[false, false], [true, false], [false, true], [false, false, true]]) test(live ? 'Live selection requires consent and uses existing hello and caption messages' : home ? 'sink selection and presenter controls use real client contracts' : headset ? 'headset call never acquires local video through camera or permission controls' : 'call page toggles camera, keeps voice-only hello, retries text, reconnects, and renders streamed replies', async () => {
   const saved = new Map();
   const put = (key, value) => { saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { value, configurable: true, writable: true }); };
   const nodes = new Map(), intervals = new Map(), timeouts = new Map();
@@ -120,7 +120,7 @@ for (const [headset, home] of [[false, false], [true, false], [false, true]]) te
   const node = id => { if (!nodes.has(id)) nodes.set(id, new Element()); return nodes.get(id); };
   class Socket {
     static OPEN = 1; static CONNECTING = 0; static all = [];
-    constructor() { this.readyState = 0; this.handlers = {}; this.messages = []; Socket.all.push(this); }
+    constructor(url) { this.url = url; this.readyState = 0; this.handlers = {}; this.messages = []; Socket.all.push(this); }
     addEventListener(name, fn) { this.handlers[name] = fn; }
     send(text) { this.messages.push(JSON.parse(text)); }
     open() { this.readyState = 1; this.handlers.open(); }
@@ -142,13 +142,34 @@ for (const [headset, home] of [[false, false], [true, false], [false, true]]) te
   let now = 1000;
   Date.now = () => now;
   try {
-    await import(`./agent.js?headset-test=${headset}&home=${home}`);
-    node('picker').handlers.click({ target: { closest: () => ({ getAttribute: name => home ? (name === 'data-pack' ? 'home' : 'plumbing') : 'general' }) } });
+    await import(`./agent.js?headset-test=${headset}&home=${home}&live=${live}`);
+    const choose = () => node('picker').handlers.click({ target: { closest: () => ({ getAttribute: name => live ? 'gemini-live' : home ? (name === 'data-pack' ? 'home' : 'plumbing') : 'general' }) } });
+    if (live) {
+      choose();
+      await settle();
+      assert.equal(Socket.all.length, 0, 'Google defaults off');
+      node('cloud-google').checked = true;
+      node('cloud-google').handlers.change();
+    }
+    choose();
     await settle();
     const socket = Socket.all[0];
     assert.ok(socket);
     socket.open();
     assert.equal(socket.messages[0].camera, false);
+    if (live) {
+      assert.equal(new URL(socket.url).searchParams.get('mode'), 'gemini-live');
+      assert.equal(new URL(socket.url).searchParams.get('google'), '1');
+      assert.equal(socket.messages[0].pack, 'general');
+      assert.equal(socket.messages[0].stt, 'server');
+      assert.equal(socket.messages[0].tts, 'server');
+      socket.message({ type: 'say', agent: 'helper', utterance_id: 'live', text: 'A blue board.' });
+      assert.equal(node('replies').children[0].textContent, 'A blue board.');
+      node('cloud-google').checked = false;
+      node('cloud-google').handlers.change();
+      assert.equal(socket.readyState, 3, 'revoking Google closes its session');
+      return;
+    }
     if (home) {
       assert.equal(socket.messages[0].pack, 'home');
       socket.message({ type: 'agent_state', agent: 'helper', state: 'listening' });
@@ -285,7 +306,7 @@ for (const [headset, home] of [[false, false], [true, false], [false, true]]) te
     assert.ok([...timeouts.keys()].every(id => id <= lastTimer), 'End call does not schedule a reconnect');
     assert.equal(node('call').classList.contains('hidden'), true);
   } finally {
-    if (home) node('end-call').handlers.click();
+    if (home || live) node('end-call').handlers.click();
     Date.now = realNow;
     for (const [key, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; }
   }
