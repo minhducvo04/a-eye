@@ -1013,5 +1013,25 @@
     }
    ]
   }
+ ],
+ "v2_rewind_recap": [
+  {
+   "v": 2,
+   "type": "rewind_recap",
+   "turn_id": "t-2",
+   "steps": [
+    {
+     "t_s": 42.0,
+     "text": "Installed the CPU"
+    },
+    {
+     "t_s": 130.0,
+     "text": "Plugged in the CPU fan cable"
+    }
+   ],
+   "skipped": [
+    "install the RAM"
+   ]
+  }
  ]
 }

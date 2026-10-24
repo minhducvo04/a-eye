@@ -2548,6 +2548,9 @@
     },
     {
      "$ref": "#/$defs/v2_rewind_hit"
+    },
+    {
+     "$ref": "#/$defs/v2_rewind_recap"
     }
    ]
   },
@@ -3013,6 +3016,55 @@
      "type": "array",
      "items": {
       "$ref": "#/$defs/scene_object"
+     }
+    }
+   }
+  },
+  "v2_rewind_recap": {
+   "description": "Server to client: a Rewind recap of the call from clips already uploaded while Rewind was on. steps are in call order (t_s = seconds since the call started); skipped names typical steps of the current mode that look skipped.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "v",
+    "type",
+    "steps",
+    "skipped"
+   ],
+   "properties": {
+    "v": {
+     "$ref": "#/$defs/v2"
+    },
+    "type": {
+     "const": "rewind_recap"
+    },
+    "turn_id": {
+     "type": "string"
+    },
+    "steps": {
+     "type": "array",
+     "maxItems": 12,
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "t_s",
+       "text"
+      ],
+      "properties": {
+       "t_s": {
+        "type": "number",
+        "minimum": 0
+       },
+       "text": {
+        "type": "string"
+       }
+      }
+     }
+    },
+    "skipped": {
+     "type": "array",
+     "items": {
+      "type": "string"
      }
     }
    }

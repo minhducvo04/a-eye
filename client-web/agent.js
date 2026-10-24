@@ -4,7 +4,7 @@ import { bootPairCamera, setupPairCall } from './pair.js';
 
 import { paintDraw, applyDraw, pruneDraw, viewTransform, visibleOps } from "./draw.js";
 import { writeFrame } from "./live.js";
-import { renderHit } from "./rewind.js";
+import { fetchRecap, renderHit, renderRecap } from "./rewind.js";
 import { sharpCanvasSize } from "./overlay.js";
 import {
   AUDIO_FALLBACK_MS,
@@ -615,6 +615,11 @@ function boot() {
       showRewind(Boolean(message.on));
       return;
     }
+    if (message.type === "rewind_recap") {
+      renderRecap(document, rewindBody, message);
+      openSheet(rewindEl);
+      return;
+    }
     if (message.type === "rewind_hit") {
       renderHit(document, rewindBody, message);
       openSheet(rewindEl);
@@ -706,6 +711,17 @@ function boot() {
     rewindOn = on;
     if (rewindToggle) rewindToggle.checked = on;
     if (rewindBadge) rewindBadge.classList.toggle("hidden", !on);
+  }
+
+  // Recap over HTTP: the Recap chip during a call, and the end-of-call sheet when Rewind was on.
+  async function showRecap(id) {
+    renderRecap(document, rewindBody, { pending: true });
+    openSheet(rewindEl);
+    try {
+      renderRecap(document, rewindBody, await fetchRecap(id));
+    } catch {
+      renderRecap(document, rewindBody, { steps: [], say: "The recap isn't available right now." });
+    }
   }
 
   function openSheet(sheet) {
@@ -1389,6 +1405,7 @@ function boot() {
     picker.classList.remove("hidden");
     renderLink();
     paint(Date.now());
+    if (rewindOn) void showRecap(sessionId);   // end-of-call recap; the server uploads the last clips first
   }
 
   function ringButtons() {
@@ -1655,6 +1672,8 @@ function boot() {
   wireDevices();
   document.getElementById("settings-done").addEventListener("click", closeSheets);
   if (rewindEl) document.getElementById("rewind-dismiss").addEventListener("click", closeSheets);
+  const recapBtn = document.getElementById("rewind-recap");
+  if (recapBtn) recapBtn.addEventListener("click", () => void showRecap(sessionId));
   if (rewindToggle) {
     rewindToggle.addEventListener("change", () => {
       showRewind(rewindToggle.checked);

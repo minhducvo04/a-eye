@@ -42,3 +42,50 @@ export function renderHit(doc, body, hit) {
   line.textContent = hitCaption(hit);
   body.append(line);
 }
+
+// Recap: ordered steps with call times, then what looks skipped for this mode.
+export function renderRecap(doc, body, recap) {
+  body.replaceChildren();
+  const steps = (recap && recap.steps) || [];
+  if (recap && recap.pending) {
+    const wait = doc.createElement("p");
+    wait.className = "rewind-when";
+    wait.textContent = "Making your recap from the Rewind clips…";
+    body.append(wait);
+    return;
+  }
+  if (!steps.length) {
+    const none = doc.createElement("p");
+    none.className = "rewind-when";
+    none.textContent = (recap && recap.say) || "Nothing to recap yet.";
+    body.append(none);
+    return;
+  }
+  const list = doc.createElement("ol");
+  list.className = "rewind-steps";
+  for (const step of steps) {
+    const item = doc.createElement("li");
+    const time = doc.createElement("span");
+    time.className = "rewind-time";
+    time.textContent = fmtCallTime(step.t_s);
+    item.append(time, doc.createTextNode(` ${String(step.text || "")}`));
+    list.append(item);
+  }
+  body.append(list);
+  const skipped = doc.createElement("p");
+  skipped.className = "rewind-skipped";
+  skipped.textContent = (recap.skipped || []).length
+    ? `Maybe skipped: ${recap.skipped.join(", ")}`
+    : "No typical step looks skipped.";
+  body.append(skipped);
+}
+
+// POST /api/rewind/recap with the page token when there is one (same rule as the other /api calls).
+export async function fetchRecap(sessionId, search = globalThis.location ? globalThis.location.search : "") {
+  const token = new URLSearchParams(search).get("token");
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const reply = await fetch("/api/rewind/recap", { method: "POST", headers, body: JSON.stringify({ session_id: sessionId }) });
+  if (!reply.ok) throw new Error(`recap ${reply.status}`);
+  return reply.json();
+}
