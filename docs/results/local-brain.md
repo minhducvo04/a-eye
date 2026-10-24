@@ -3,6 +3,67 @@
 Status: **Phase A built and benchmarked in part; Phase B is a plan only.** Runs paused on Duc's request
 (2026-10-24 01:10 PDT). No new slots until told. The gpt-oss:120b pull is paused at about 1.3 of 65 GB.
 
+## Overnight update (2026-10-24, 02:30 to 03:30 PDT, box free, full GPU)
+
+**The best open talker is gemma4:31b with thinking on: 3.80 against Haiku's 4.00**, and it got the hot-oil
+turn right. It is slower (first text 4.7 s p50). Full-GPU qwen3.8:27b is the best open expert: 3.40 in 9.7 s, against
+Opus at 4.00 in 3.6 s. Same 20 + 10 cases and the same blind Sonnet 5.5 judge as above. All rows ran from the Mac.
+
+| Backend (full GPU, app models unloaded) | Talker quality | Talker first text p50/p90 s | Expert quality | Expert total p50/p90 s |
+|---|---|---|---|---|
+| gemma4:31b-it-q4_K_M | 3.55 | 1.68/3.63 (two slow turns while another server evicted it) | 3.00 | 3.97/34.7 |
+| gemma4:31b-it-q4_K_M, talker thinking on | **3.80** | 4.67/11.3 | | |
+| qwen3.8:27b-q4_K_M | 3.30 | 0.57/0.67 | **3.40** | **9.65/12.2** |
+| qwen3.8:27b-q4_K_M, talker thinking on | 3.50 | 2.89/5.27 | | |
+
+- gemma4:31b without thinking and qwen3.8 with thinking both still said smoking oil is fine for searing.
+  `server/safety.py` (now on main) gates that question before any model.
+- **gpt-oss:120b was not run.** The box is on Wi-Fi at about 4 MB/s, so the 65 GB pull would take about 4.5 h with
+  the whole link. The pull is stopped at about 1.9 GB; Ollama resumes it on the next `ollama pull gpt-oss:120b`.
+- The A-eye server warms qwen3.6:35b-a3b on CPU at startup (Private mode). That takes the 4th Ollama slot, and it
+  evicted gemma4 twice during these runs.
+
+### Phase B (open teacher only), running unattended
+
+- **Teacher: gemma4:31b with thinking on** (best measured talker, Apache-2.0 per its Hugging Face card, so the
+  student carries no extra terms). It was chosen on the held-out talker set, which is a mild selection effect.
+  No Claude output is used as training data (Commercial Terms D.4).
+- Data: 1,500 COCO 2014 scenes (captions plus up to 6 objects, annotations CC BY 4.0, text only), one question per
+  scene written by the teacher, then the teacher's reply through the production talker prompt. A code filter keeps
+  only SAY format, 1 to 2 sentences, 4 to 40 words and no symbols. Questions within 0.75 similarity of the
+  held-out eval are dropped. Plus 10 handwritten safety turns. By 03:23 there were 299 rows (about 90% kept); it
+  continues until 04:40.
+- Student: Qwen/Qwen3.5-9B (Apache-2.0), bf16 LoRA r=16, language layers only, 2 epochs, loss on the reply only
+  (`eval/brain/train_talker.py`). Export to the **new tag `qwen-aeye-talk:9b`** (q4_K_M); the app's tags are not
+  touched.
+- **Risk: the 19 GB base download may not finish** over the 4 MB/s link (1.7 GB by 03:10). The runner waits until
+  05:20; if the weights are not there, it skips training and says so in `status.txt`.
+- Acceptance gates (checked in the morning, see below): talker quality +0.3 or more over qwen3.5:9b on the same
+  box, with no new safety miss on the hazard questions from `voice/test_safety.py` (a miss means
+  `server.safety.after()` would rewrite the raw reply), and first token p50 under 0.5 s.
+
+### Unattended runner and how to read it
+
+`scripts/night_box.sh` runs in WSL on the box (started 03:25 from the Mac with `nohup ssh ... boot.sh`). Stages
+have clock deadlines: teacher data and the CPU-4 tiny tier until 04:40; weights wait until 05:20; training until
+06:20; export until 06:50; student eval and hazard probe until 07:05; GPU tiny tier until 07:18. The script then
+restores and warms qwen3.5:9b-q4_K_M, qwen2.5vl:7b-q4_K_M, embeddinggemma:300m (24h) and qwen3.6:35b-a3b (CPU,
+2h), on exit or on any error. A Windows task, "A-eye restore", repeats the restore at 07:25 as a safety net. It is
+one-time; delete it afterwards with `Unregister-ScheduledTask -TaskName 'A-eye restore' -Confirm:$false`. A
+one-shot Mac check at 07:40 writes vision `/health`, a real `/scene` call and `ollama ps` to
+`docs/results/night-check.txt` (untracked).
+
+Read the results in the morning:
+
+```
+ssh tomdu@100.93.176.7 "type C:\kyra-work\aeye-night\status.txt"
+scp -r tomdu@100.93.176.7:C:/kyra-work/aeye-night /tmp/aeye-night
+cat /Users/minhducvo/Projects/a-eye/docs/results/night-check.txt
+# judge the student rows with the same Sonnet judge (needs the key, so run on the Mac):
+cp /tmp/aeye-night/*+box.jsonl /Users/minhducvo/Projects/a-eye/eval/brain/out/
+cd /Users/minhducvo/Projects/a-eye && make -s -f <(printf -- '-include .env\nexport\nj:\n\t.venv/bin/python -m eval.brain.run --judge --table\n') j
+```
+
 ## Answer
 
 - **No local model matches Claude yet.** Talker quality: Haiku 4.00, best local 3.25 (qwen3.5:9b and

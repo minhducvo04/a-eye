@@ -20,7 +20,7 @@ from eval.backends.run import CPU4, OLLAMA, image_b64, iou, kw_hit, load_cases
 def ask(model, prompt, b64, options):
     t0 = time.perf_counter()
     r = httpx.post(OLLAMA + '/api/chat', timeout=900, json={
-        'model': model, 'stream': False, 'keep_alive': '30m',
+        'model': model, 'stream': False, 'keep_alive': '30m', 'think': False,  # qwen3-vl thinks by default
         'options': {'temperature': 0, 'num_ctx': 4096, 'num_predict': 80, **options},
         'messages': [{'role': 'user', 'content': prompt, 'images': [b64]}]})
     r.raise_for_status()
