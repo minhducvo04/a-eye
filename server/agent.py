@@ -7,6 +7,7 @@ from time import monotonic, time
 from collections import deque
 from statistics import median
 from contextlib import aclosing
+import os
 from uuid import uuid4
 
 from contracts import schema, validate
@@ -244,7 +245,20 @@ def safe_speech(value):
     return value
 
 
-async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None):
+TALKER_RULES = (' You are the TALKER: you speak first and fast. Reply with SAY: then one or two short spoken '
+                 'sentences, nothing else, never JSON. A planner reads the same view and draws on the picture for you; '
+                 'lines from "planner" in the conversation are its notes, trust them. If the answer needs a closer look '
+                 'than the view note gives, say a short filler such as "Let me look." and stop.')
+PLANNER_RULES = (' You are the PLANNER behind a fast talker who is already answering out loud. Output only one JSON '
+                 'object: agent, draw, optional market_category, note, speak. draw targets and from_target must be '
+                 'scene object IDs. note: at most 15 words the talker should say next (the concrete fact, for example '
+                 'which header the cable goes in). speak: true only when the note adds a fact the caption alone does '
+                 'not give. Include market_category only when asked about buying, prices or cheaper options.')
+_FILLER = re.compile(r"\b(let me (look|check|see)|one (sec|second|moment)|hang on|looking)\b", re.I)
+
+
+async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None, planner=None):
+    """One voice turn. With planner set (talker + thinker mode), llm only talks and planner draws in parallel."""
     messages = []
     owner = asyncio.current_task()
 
@@ -292,11 +306,13 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None)
     if fresh and session.scene is not None:
         scene, seq = session.scene, session.scene_seq
     system = session.pack.system_prompt
+    duo = planner is not None
     if not session.camera:
         system += ' The camera is off. Answer by voice only; do not draw.'
     if session.pack.id == 'pc_build':
         system += board_prompt(session.board)
-    system += (' Line 1: one JSON object with agent, draw and optional market_category. '
+    base_system = system
+    system += TALKER_RULES if duo else (' Line 1: one JSON object with agent, draw and optional market_category. '
                'Do not include say in that object. Next line: SAY: then spoken text. '
                'Start speech with a short first clause of 4 to 8 words, ending in a comma or period. '
                'Draw targets and from_target must be scene object IDs, never coordinates. '
@@ -306,6 +322,27 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None)
     user = json.dumps(dict(caption=scene['caption'], objects=[
         {k: obj[k] for k in ('id', 'label', 'bbox')} for obj in scene['objects']],
         conversation=session.history[-10:], text=text))
+    planner_task = None
+
+    async def plan():
+        planner_system = base_system + PLANNER_RULES + ' Draw item schema: ' + json.dumps(
+            schema()['$defs']['brain_turn']['properties']['draw'])
+        raw = ''
+        async with aclosing(planner.stream(planner_system, user, max_tokens=400,
+                                           model=os.environ.get('ANTHROPIC_MODEL', 'claude-sonnet-5-5'))) as stream:
+            async for delta in stream:
+                raw += delta
+        parsed = stream_header(raw)
+        head = parsed[0] if parsed else {}
+        clean = sanitize_header(head, {obj['id'] for obj in scene['objects']})
+        validate('brain_turn', dict(clean, say='plan'))
+        if session.camera and clean['draw']:
+            await emit(resolve(clean, scene, seq)[0])
+        note = head.get('note') if isinstance(head.get('note'), str) else ''
+        return clean, safe_speech(note)[:160], head.get('speak') is True
+
+    if duo:
+        planner_task = asyncio.create_task(plan())
     queue = asyncio.Queue()
     first_audio = None
 
@@ -340,7 +377,7 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None)
 
     turn = dict(agent='helper', draw=[])
     buffer = ''
-    header = False
+    header = duo
     marker = False
     pending = None
     first_token = None
@@ -367,6 +404,8 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None)
             async for delta in stream:
                 if first_token is None:
                     first_token = (monotonic() - brain_started) * 1000
+                    if duo:
+                        await emit(state('speaking'))
                 buffer += delta
                 if not header:
                     parsed = stream_header(buffer)
@@ -448,6 +487,21 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None)
         if pending or part == 0:
             await speech(pending or 'Please tell me what you need.',
                          final=not bool(turn.get('market_category')), agent=turn['agent'])
+        if planner_task is not None:
+            # The thinker's note is spoken only when it adds a fact, or when the talker stalled with a filler.
+            planned_at = monotonic()
+            try:
+                planned, note, speak_note = await asyncio.wait_for(
+                    asyncio.shield(planner_task), float(os.environ.get('PLANNER_WAIT_S', '5')))
+            except Exception:
+                planned, note, speak_note = None, '', False
+            stalled = bool(_FILLER.search(reply_text))
+            event('planner', session.session_id, ms=(monotonic() - planned_at) * 1000)
+            if planned and planned.get('market_category') and not turn.get('market_category'):
+                turn['market_category'] = planned['market_category']
+            if note and (speak_note or stalled):
+                session.history.append(f'planner: {note}')
+                await speech(note, final=not bool(turn.get('market_category')))
         if turn.get('market_category'):
             await emit(state('thinking', 'shopper'))
             await speech('Let me check prices that fit.', agent='shopper')
@@ -471,6 +525,9 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None)
             await queue.put(None)
             await worker
     finally:
+        if planner_task is not None and not planner_task.done():
+            planner_task.cancel()
+            await asyncio.gather(planner_task, return_exceptions=True)
         if delta_task:
             delta_task.cancel()
             await asyncio.gather(delta_task, return_exceptions=True)

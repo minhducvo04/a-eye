@@ -217,7 +217,7 @@ async def websocket(ws: WebSocket):
         await asyncio.gather(*(task for _, task in selected), return_exceptions=True)
 
     class TurnBrain:
-        async def stream(self, *args):
+        async def stream(self, *args, **kwargs):
             try:
                 async with gate.hold(brain=True):
                     options = {}
@@ -225,7 +225,7 @@ async def websocket(ws: WebSocket):
                         async def backup():
                             await current_turn.stage('backup', detail='brain slow, trying backup')
                         options['on_backup'] = backup
-                    async with aclosing(llm.stream(*args, **options)) as stream:
+                    async with aclosing(llm.stream(*args, **options, **kwargs)) as stream:
                         async for delta in stream:
                             yield delta
             finally:
@@ -236,8 +236,11 @@ async def websocket(ws: WebSocket):
         event('turn_start', session.session_id)
         try:
             await lifecycle.stage('thinking', text=text)
+            # Talker + thinker: a Haiku-class talker speaks while the planner (no GPU gate) draws in parallel.
+            duo = (isinstance(llm, LLMClient) and os.environ.get('BRAIN_MODE', 'duo') == 'duo'
+                   and bool(os.environ.get('ANTHROPIC_API_KEY')) and os.environ.get('LOCAL_ONLY') != '1')
             await run_turn(session, text, vision=vision, llm=TurnBrain(),
-                           started_at=lifecycle.started, turn_id=lifecycle.id)
+                           started_at=lifecycle.started, turn_id=lifecycle.id, planner=llm if duo else None)
             await lifecycle.stage('done')
         except asyncio.CancelledError:
             await lifecycle.stage('cancelled')

@@ -32,6 +32,34 @@ def _shared_async_client():
     return client
 
 
+def turn_model():
+    """Realtime talker model. ANTHROPIC_TURN_MODEL overrides; ANTHROPIC_MODEL stays the planner/complete() model."""
+    return os.environ.get('ANTHROPIC_TURN_MODEL', 'claude-haiku-5-5')
+
+
+def fast_options(model):
+    """Lowest-latency settings per model: thinking off where the model allows it, low effort."""
+    if model.startswith('claude-haiku-5'):
+        return dict(thinking={'type': 'disabled'}, output_config={'effort': 'low'})
+    if model.startswith('claude-sonnet-5-5'):
+        return dict(thinking={'type': 'between_tools'}, output_config={'effort': 'low'})
+    if model.startswith('claude-opus-5-5'):
+        return dict(output_config={'effort': 'low'})
+    return {}
+
+
+_ANTHROPIC = {}
+
+
+def _shared_anthropic():
+    """One warm TLS pool per event loop; a fresh client per turn pays the handshake on the voice path."""
+    loop = asyncio.get_running_loop()
+    client = _ANTHROPIC.get(id(loop))
+    if client is None or client.is_closed():
+        client = _ANTHROPIC[id(loop)] = anthropic.AsyncAnthropic()
+    return client
+
+
 @dataclass
 class LLMResult:
     text: str
@@ -106,8 +134,11 @@ class LLMClient:
         text = re.split(r'(?<=[.!?])\s+', user.strip(), maxsplit=1)[0] or 'OK.'
         return result(text, 'canned', 'canned')
 
-    async def stream(self, system: str, user: str, *, max_tokens: int = 512, on_backup=None):
-        """Cancellable text stream; fall back only before committing provider text."""
+    async def stream(self, system: str, user: str, *, max_tokens: int = 512, on_backup=None, model=None):
+        """Cancellable text stream; fall back only before committing provider text.
+
+        Voice turns default to the Haiku-class talker with thinking off (docs/voice-options.md).
+        """
         provider = os.environ.get('LLM_PROVIDER', 'auto')
         use_claude = provider == 'claude' or (
             provider == 'auto' and bool(os.environ.get('ANTHROPIC_API_KEY')))
@@ -116,13 +147,11 @@ class LLMClient:
         if use_claude and os.environ.get('LOCAL_ONLY') != '1':
             try:
                 async with asyncio.timeout(timeout) as deadline, AsyncExitStack() as stack:
-                    client = self._anthropic_client
-                    if client is None:
-                        client = await stack.enter_async_context(anthropic.AsyncAnthropic())
+                    client = self._anthropic_client or _shared_anthropic()
+                    name = model or turn_model()
                     async with client.messages.stream(
-                        model=os.environ.get('ANTHROPIC_MODEL', 'claude-sonnet-5-5'),
-                        max_tokens=max_tokens, system=system,
-                        messages=[{'role': 'user', 'content': user}],
+                        model=name, max_tokens=max_tokens, system=system,
+                        messages=[{'role': 'user', 'content': user}], **fast_options(name),
                     ) as response:
                         async for delta in response.text_stream:
                             if delta:
