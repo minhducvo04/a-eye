@@ -9,6 +9,7 @@ import re
 from contextlib import aclosing, asynccontextmanager
 from datetime import datetime, timezone
 
+from anyio import CancelScope
 from PIL import Image
 from time import monotonic
 
@@ -21,7 +22,7 @@ from server.box_client import BoxClient
 from server.auth import accept_socket
 from server.logs import event
 from server.keyframes import signature
-from server import packs
+from server import packs, pairing
 from server.agent import Session, Turn, message, run_turn, say, state
 from server.llm import LLMClient
 from voice import adapter
@@ -185,6 +186,7 @@ async def websocket(ws: WebSocket):
     if not await accept_socket(ws):
         return
     session = None
+    paired_call = None
     turn_task = None
     current_turn = None
     audio_tasks = {}
@@ -394,6 +396,21 @@ async def websocket(ws: WebSocket):
             await asyncio.gather(yolo_task, return_exceptions=True)
             yolo_task = None
 
+    async def switch_camera(on, reset=False):
+        nonlocal scene_loop_task, yolo_task
+        session.camera = on
+        if reset or not on:
+            await cancel_scene()
+            await cancel_yolo()
+            session.frame = session.scene = None
+            session.keyframe_gate.previous = None
+            session.scene_seq = 0
+        if on:
+            if scene_loop_task is None:
+                scene_loop_task = asyncio.create_task(scene_loop(session, vision, send, gate))
+            if yolo_task is None and os.environ.get('YOLO_REFRESH') == '1':
+                yolo_task = asyncio.create_task(yolo_loop(session, box, send))
+
     try:
         while True:
             try:
@@ -405,6 +422,12 @@ async def websocket(ws: WebSocket):
             received_at = monotonic()
             kind = incoming['type']
             if kind == 'hello':
+                if incoming.get('role') == 'camera':
+                    if session is not None:
+                        await send(message('error', code='bad_message', message='Open a new socket for the camera.'))
+                        continue
+                    await pairing.camera_socket(ws, incoming)
+                    return
                 try:
                     new_session = Session(incoming['session_id'], packs.get(incoming['pack']),
                                           incoming.get('board_id', 'demo-b650'), incoming.get('tts', 'browser'))
@@ -420,8 +443,11 @@ async def websocket(ws: WebSocket):
                 reset_audio()
                 stt_mode = incoming.get('stt', 'browser')
                 stt_failed = False
+                if paired_call:
+                    await paired_call.close()
                 session = new_session
                 session.camera = incoming.get('camera', True)
+                paired_call = pairing.Call(session, send, switch_camera)
                 current_turn = None
                 event('hello', session.session_id, pack=session.pack.id, tts=session.tts, stt=stt_mode)
                 session.emit = emit
@@ -446,6 +472,16 @@ async def websocket(ws: WebSocket):
                 continue
             if session is None or incoming['session_id'] != session.session_id:
                 await send(message('error', code='bad_message', message='Send hello with the matching session first.'))
+                continue
+            if kind == 'pair_request':
+                try:
+                    await send(pairing.registry.issue(paired_call))
+                except ValueError as exc:
+                    await send(message('error', code='internal', message=str(exc)))
+                continue
+            if kind == 'camera':
+                paired_call.local_on = incoming['on']
+            if kind in ('camera', 'frame') and paired_call.camera is not None:
                 continue
             final_input = (kind == 'user_text' or (kind == 'audio_in' and stt_mode == 'server')) and incoming.get('final', False)
             if final_input:
@@ -472,16 +508,7 @@ async def websocket(ws: WebSocket):
                 session.user_speaking = False
                 session.voice_pending = True
             if kind == 'camera':
-                session.camera = incoming['on']
-                if not session.camera:
-                    session.frame = session.scene = None
-                    await cancel_scene()
-                    await cancel_yolo()
-                else:
-                    if scene_loop_task is None:
-                        scene_loop_task = asyncio.create_task(scene_loop(session, vision, send, gate))
-                    if yolo_task is None and os.environ.get('YOLO_REFRESH') == '1':
-                        yolo_task = asyncio.create_task(yolo_loop(session, box, send))
+                await switch_camera(incoming['on'])
             elif kind == 'frame':
                 if not session.camera:
                     continue
@@ -541,6 +568,9 @@ async def websocket(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
+        if paired_call:
+            with CancelScope(shield=True):
+                await paired_call.close()
         await cancel_stt()
         reset_audio()
         await cancel_yolo()

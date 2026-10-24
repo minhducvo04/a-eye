@@ -1,3 +1,4 @@
+import { bootPairCamera, setupPairCall } from './pair.js';
 // Agent call page. Speaks the v2 WebSocket contract on /ws2.
 // Frames exist only as the JPEG about to be sent. Nothing is written to storage.
 
@@ -55,6 +56,7 @@ const BOARD_ID = "demo-b650";
 const TRACK_W = 320;
 
 function boot() {
+  if (bootPairCamera()) return;
   const picker = document.getElementById("picker");
   const stage = document.getElementById("stage");
   const video = document.getElementById("camera");
@@ -419,8 +421,11 @@ function boot() {
     });
   }
 
+  const onPair = setupPairCall(send, sessionId);
+
   function onServer(message) {
     if (!message || typeof message !== "object") return;
+    onPair(message);
     const now = Date.now();
     if (message.type === "turn") {
       if (message.stage === "received") pendingText = null;

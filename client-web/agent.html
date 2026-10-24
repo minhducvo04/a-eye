@@ -147,6 +147,12 @@
     <div class="group">
       <label class="row file-btn">Upload a photo instead of the camera<input id="upload" type="file" accept="image/*"></label>
     </div>
+    <div class="group">
+      <button type="button" id="pair-request" class="row text-btn">Use my phone as camera</button>
+      <p id="pair-status" role="status"></p>
+      <a id="pair-link" style="overflow-wrap:anywhere"></a>
+      <canvas id="pair-qr" hidden style="max-width:100%;height:auto" aria-label="Phone camera pairing QR code"></canvas>
+    </div>
     <p class="group-title">Transcript</p>
     <div class="group">
       <button type="button" id="transcript-toggle" class="row text-btn" aria-expanded="false" aria-controls="transcript-list">Transcript</button>
