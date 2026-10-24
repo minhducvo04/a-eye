@@ -748,25 +748,34 @@ function boot() {
 
   function showMarket(result) {
     marketBody.replaceChildren();
-    const category = String((result && result.category) || "");
+    const category = String((result && (result.product || result.category)) || "");
     marketTitle.textContent = category ? category.charAt(0).toUpperCase() + category.slice(1) : "Options";
     const items = result && Array.isArray(result.items) ? result.items.slice(0, 3) : [];
     if (!items.length) marketBody.append(el("p", "market-empty", "No matching offers."));
     for (const item of items) {
       const status = item.compat && CHIP[item.compat.status] ? item.compat.status : "unverified";
       const card = el("article", "offer glass");
+      if (item.selected) {
+        card.style.border = "2px solid var(--accent, #81d8ad)";
+        card.append(el("p", "offer-why", "Recommended"));
+      }
       const head = el("div", "offer-head");
-      head.append(el("p", "offer-title", item.title || "Offer"), el("span", `status-chip ${status}`, CHIP[status]));
+      head.append(el("p", "offer-title", item.title || result.product || "Offer"), el("span", `status-chip ${status}`, CHIP[status]));
       card.append(head);
-      if (item.retailer) card.append(el("p", "offer-retailer", item.retailer));
-      let price = money(item.price_usd);
+      if (item.retailer || item.store) card.append(el("p", "offer-retailer", item.retailer || item.store));
+      let price = item.currency ? new Intl.NumberFormat(undefined, { style: "currency", currency: item.currency }).format(item.price) : money(item.price_usd);
+      if (item.currency) {
+        const delivery = item.pickup_today ? "Pickup today" : item.delivery_days == null ? "Delivery unconfirmed" : `Delivery in about ${item.delivery_days} ${item.delivery_days === 1 ? "day" : "days"}`;
+        card.append(el("p", "offer-why", delivery));
+        if (item.notes) card.append(el("p", "offer-why", item.notes));
+      }
       if (price && item.shipping_usd != null && money(item.shipping_usd)) price += ` + ${money(item.shipping_usd)} shipping`;
       if (price) card.append(el("p", "offer-price", price));
       const line = fitsLine(item);
       if (line.text && !Object.values(CHIP).includes(line.text)) card.append(el("p", "offer-why", line.text));
       const href = safeLink(item.url);
       if (href) {
-        const a = el("a", "", `View at ${item.retailer || "store"} ↗`);
+        const a = el("a", "", `View at ${item.retailer || item.store || "store"} ↗`);
         a.href = href;
         a.target = "_blank";
         a.rel = "noopener noreferrer";

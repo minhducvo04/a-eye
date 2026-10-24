@@ -2316,7 +2316,14 @@
      "const": "shopper"
     },
     "result": {
-     "$ref": "#/$defs/market_response"
+     "oneOf": [
+      {
+       "$ref": "#/$defs/market_response"
+      },
+      {
+       "$ref": "#/$defs/shopping_response"
+      }
+     ]
     }
    }
   },
@@ -3262,6 +3269,87 @@
     "count_item": {
      "type": "integer",
      "minimum": 0
+    }
+   }
+  },
+  "shopping_offer": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "store",
+    "price",
+    "currency",
+    "delivery_days",
+    "pickup_today",
+    "url",
+    "in_stock",
+    "notes",
+    "selected"
+   ],
+   "properties": {
+    "store": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 120
+    },
+    "price": {
+     "type": "number",
+     "minimum": 0
+    },
+    "currency": {
+     "type": "string",
+     "pattern": "^[A-Z]{3}$"
+    },
+    "delivery_days": {
+     "type": [
+      "integer",
+      "null"
+     ],
+     "minimum": 0
+    },
+    "pickup_today": {
+     "type": "boolean"
+    },
+    "url": {
+     "type": "string",
+     "pattern": "^https?://"
+    },
+    "in_stock": {
+     "type": "boolean"
+    },
+    "notes": {
+     "type": "string",
+     "maxLength": 1000
+    },
+    "selected": {
+     "type": "boolean"
+    }
+   }
+  },
+  "shopping_response": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "v",
+    "product",
+    "items"
+   ],
+   "properties": {
+    "v": {
+     "const": 1
+    },
+    "product": {
+     "type": "string"
+    },
+    "items": {
+     "type": "array",
+     "maxItems": 3,
+     "items": {
+      "$ref": "#/$defs/shopping_offer"
+     }
+    },
+    "note": {
+     "type": "string"
     }
    }
   }
