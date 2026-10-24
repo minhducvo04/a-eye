@@ -19,7 +19,8 @@ class FakeTL:
         self.searches = []
         self.deleted = []
 
-    async def ensure_index(self):
+    async def ensure_index(self, name=None):
+        self.index_names = getattr(self, 'index_names', []) + [name]
         return 'idx-1'
 
     async def upload(self, index_id, path, metadata):

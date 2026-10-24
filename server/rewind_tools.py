@@ -64,3 +64,131 @@ async def run_tool(name, args, session, vision=None, app=None, turn_id=None):
         result = await rewind.recap_call(session, app=app)
         return result, [rewind.recap_message(result, turn_id)]
     raise KeyError(name)
+
+
+# ---- Local memory across calls (server/memory.py). Data stays on this machine. ----
+
+FIND_ITEM_TOOL = {
+    'name': 'find_item',
+    'description': (
+        "Find where the user last put an object, from their local memory across calls and days (kept on this "
+        "machine). Use for 'where are my keys?', 'where did I leave my glasses?', 'have you seen the blue pill "
+        "box?'. Returns found, when (spoken time), place (e.g. 'under the left cup'), home (the tagged home place), "
+        "live (the item or its last place is in view now; an arrow is drawn), count, and say (a ready spoken "
+        "answer). Prefer this over search_past for objects; use search_past for moments in this call."),
+    'input_schema': {'type': 'object', 'properties': {'item': {'type': 'string', 'description':
+                     'The object, short, e.g. "keys" or "blue pill box".'}}, 'required': ['item']},
+}
+
+TAG_ITEM_TOOL = {
+    'name': 'tag_item',
+    'description': (
+        "Remember an object or place by name for this person, e.g. 'these are my keys, they live in the key "
+        "bowl' or 'this is the blue pill box'. Afterwards, sightings of it are kept with a small picture."),
+    'input_schema': {'type': 'object', 'properties': {
+        'name': {'type': 'string', 'description': 'What the user calls it, e.g. "keys" or "key bowl".'},
+        'label': {'type': 'string', 'description': 'What the camera sees, if different, e.g. "keys".'},
+        'home': {'type': 'string', 'description': 'Where it belongs, e.g. "blue bowl".'},
+        'kind': {'type': 'string', 'enum': ['object', 'place']}}, 'required': ['name']},
+}
+
+FORGET_TOOL = {
+    'name': 'forget_memory',
+    'description': (
+        "Really delete memories when the user asks: 'forget that' (the item just discussed), 'forget today', "
+        "'forget everything'. Deletes local notes and pictures and any TwelveLabs videos for this person. Returns "
+        "count (memories left) and say."),
+    'input_schema': {'type': 'object', 'properties': {
+        'scope': {'type': 'string', 'enum': ['item', 'today', 'everything']},
+        'item': {'type': 'string', 'description': 'For scope item: the object, e.g. "keys".'}},
+        'required': ['scope']},
+}
+
+MEMORY_TOOLS = [FIND_ITEM_TOOL, TAG_ITEM_TOOL, FORGET_TOOL]
+FIRST_LINE.update(find_item='Let me think back.', tag_item='Got it.', forget_memory='Okay.')
+
+
+def memory_tools_for(session, app):
+    """The memory tools while this call is attached to a person's local memory."""
+    from server import memory
+    store, _ = memory.memories(app).for_call(getattr(session, 'session_id', ''))
+    return list(MEMORY_TOOLS) if store is not None else []
+
+
+async def run_memory_tool(name, args, session, app, turn_id=None):
+    """(result for tool_result, [client messages]) for find_item, tag_item, forget_memory."""
+    from server import memory
+    from server.agent import message, resolve
+    store, _ = memory.memories(app).for_call(getattr(session, 'session_id', ''))
+    args = args or {}
+    if store is None:
+        return dict(say="Memory is off for this call."), []
+    if name == 'find_item':
+        frame = session.frame if getattr(session, 'camera', False) and getattr(session, 'frame', None) else None
+        memories = memory.memories(app)
+        result = await memory.find(store, str(args.get('item') or '')[:120], embedder=memories.embedder,
+                                   scene=getattr(session, 'scene', None), vision=memories.vision,
+                                   live_frame=frame and frame['jpeg_b64'])
+        cards = [memory_hit_message(result, turn_id)]
+        if result.get('live') and result.get('live_scene'):
+            turn = dict(agent='helper', draw=[dict(kind='arrow', target=result['live']['object_id'], role='target')])
+            cards.append(resolve(turn, result['live_scene'], frame['seq'] if frame else 0)[0])
+        result.pop('crop', None)
+        result.pop('live_scene', None)
+        session.memory_last_item = result.get('item')
+        return result, cards
+    if name == 'tag_item':
+        tag = store.set_tag(args.get('name'), args.get('label'), args.get('home'), args.get('kind', 'object'))
+        line = f"I'll remember your {tag['name']}" + (f", and that they belong in the {tag['home']}." if tag['home'] else '.')
+        return dict(tag=tag, say=line), [memory_state_message(store)]
+    if name == 'forget_memory':
+        scope = args.get('scope')
+        item = args.get('item') or getattr(session, 'memory_last_item', None)
+        if scope == 'item' and item:
+            deleted = store.forget_item(item)
+            line = f"Forgotten. I no longer remember your {item}."
+        elif scope == 'today':
+            from datetime import datetime
+            since = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+            await memory.delete_cloud(store, since=since)
+            deleted = store.forget_since(since)
+            line = "Forgotten. Nothing from today is kept."
+        elif scope == 'everything':
+            await memory.delete_cloud(store)
+            deleted = store.forget_all()
+            line = "Everything is forgotten."
+        else:
+            return dict(say="Tell me what to forget: that, today, or everything."), []
+        state = memory_state_message(store, item if scope == 'item' else None)
+        return dict(deleted=deleted, count=state['count'], count_item=state.get('count_item'), say=line), [state]
+    raise KeyError(name)
+
+
+def memory_hit_message(result, turn_id=None):
+    import base64
+    from server.agent import message
+    fields = dict(item=result.get('item') or '', found=bool(result.get('found')), count=result.get('count', 0),
+                  count_item=result.get('count_item', 0))
+    for key in ('when', 'place', 'home', 'say'):
+        if result.get(key):
+            fields[key] = result[key]
+    if result.get('t'):
+        fields['at_ms'] = int(result['t'] * 1000)
+    if result.get('crop'):
+        fields['crop_b64'] = base64.b64encode(result['crop']).decode()
+    if result.get('box'):
+        fields['box'] = result['box']
+    if result.get('live'):
+        fields['live'] = {k: result['live'][k] for k in ('object_id', 'bbox')}
+    if turn_id:
+        fields['turn_id'] = turn_id
+    return message('memory_hit', **fields)
+
+
+def memory_state_message(store, item=None):
+    from server import memory
+    from server.agent import message
+    status = memory.status(store)
+    extra = dict(item=item, count_item=store.count(item)) if item else {}
+    return message('memory_state', on=True, **{k: status[k] for k in
+                   ('memory_id', 'count', 'crops', 'bytes', 'encrypted', 'retention_days')}, **extra)

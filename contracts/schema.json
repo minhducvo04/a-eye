@@ -2556,6 +2556,12 @@
     },
     {
      "$ref": "#/$defs/v2_rewind_recap"
+    },
+    {
+     "$ref": "#/$defs/v2_memory_hit"
+    },
+    {
+     "$ref": "#/$defs/v2_memory_state"
     }
    ]
   },
@@ -3082,6 +3088,132 @@
      "items": {
       "type": "string"
      }
+    }
+   }
+  },
+  "v2_memory_hit": {
+   "description": "Server to client: where an object was last seen, from the person's local memory across calls. crop_b64 is a small crop of the item (box on it), never a full frame; live points at the item or its last place in the current view.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "v",
+    "type",
+    "item",
+    "found",
+    "count"
+   ],
+   "properties": {
+    "v": {
+     "$ref": "#/$defs/v2"
+    },
+    "type": {
+     "const": "memory_hit"
+    },
+    "turn_id": {
+     "type": "string"
+    },
+    "item": {
+     "type": "string"
+    },
+    "found": {
+     "type": "boolean"
+    },
+    "at_ms": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "when": {
+     "type": "string"
+    },
+    "place": {
+     "type": "string"
+    },
+    "home": {
+     "type": "string"
+    },
+    "say": {
+     "type": "string"
+    },
+    "crop_b64": {
+     "$ref": "#/$defs/jpeg_b64"
+    },
+    "box": {
+     "$ref": "#/$defs/bbox"
+    },
+    "live": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "object_id",
+      "bbox"
+     ],
+     "properties": {
+      "object_id": {
+       "type": "string"
+      },
+      "bbox": {
+       "$ref": "#/$defs/bbox"
+      }
+     }
+    },
+    "count": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "count_item": {
+     "type": "integer",
+     "minimum": 0
+    }
+   }
+  },
+  "v2_memory_state": {
+   "description": "Server to client: local memory status after a tag or forget. count is the number of kept notes; encrypted false means file-system protection only. After \"forget that\", item and count_item give the memories left about that item.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "v",
+    "type",
+    "on",
+    "count"
+   ],
+   "properties": {
+    "v": {
+     "$ref": "#/$defs/v2"
+    },
+    "type": {
+     "const": "memory_state"
+    },
+    "on": {
+     "type": "boolean"
+    },
+    "memory_id": {
+     "type": "string"
+    },
+    "count": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "crops": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "bytes": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "encrypted": {
+     "type": "boolean"
+    },
+    "retention_days": {
+     "type": "number",
+     "minimum": 0
+    },
+    "item": {
+     "type": "string"
+    },
+    "count_item": {
+     "type": "integer",
+     "minimum": 0
     }
    }
   }
