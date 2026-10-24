@@ -5,6 +5,8 @@ is 400,000 encoded bytes across the request; size cannot prove crop provenance.
 No prompts, images, credentials or provider exceptions are logged here.
 """
 import base64
+import json
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
 import os
 import re
@@ -87,6 +89,64 @@ class LLMClient:
 
         text = re.split(r'(?<=[.!?])\s+', user.strip(), maxsplit=1)[0] or 'OK.'
         return result(text, 'canned', 'canned')
+
+    async def stream(self, system: str, user: str, *, max_tokens: int = 512):
+        """Cancellable text stream; fall back only before committing provider text."""
+        provider = os.environ.get('LLM_PROVIDER', 'auto')
+        use_claude = provider == 'claude' or (
+            provider == 'auto' and bool(os.environ.get('ANTHROPIC_API_KEY')))
+        emitted = False
+        if use_claude and os.environ.get('LOCAL_ONLY') != '1':
+            try:
+                async with AsyncExitStack() as stack:
+                    client = self._anthropic_client
+                    if client is None:
+                        client = await stack.enter_async_context(anthropic.AsyncAnthropic())
+                    async with client.messages.stream(
+                        model=os.environ.get('ANTHROPIC_MODEL', 'claude-sonnet-5-5'),
+                        max_tokens=max_tokens, system=system,
+                        messages=[{'role': 'user', 'content': user}],
+                    ) as response:
+                        async for delta in response.text_stream:
+                            if delta:
+                                emitted = True
+                                yield delta
+                if emitted:
+                    return
+            except Exception:
+                if emitted:
+                    return
+        if provider in ('auto', 'claude', 'local'):
+            try:
+                async with AsyncExitStack() as stack:
+                    client = self._httpx_client
+                    if client is None:
+                        client = await stack.enter_async_context(httpx.AsyncClient(timeout=20))
+                    payload = dict(model=os.environ.get('LOCAL_LLM_MODEL', 'gemma4:12b-it-q4_K_M'),
+                                   stream=True, think=False, options={'num_predict': max_tokens},
+                                   messages=[{'role': 'system', 'content': system},
+                                             {'role': 'user', 'content': user}])
+                    url = os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434').rstrip('/') + '/api/chat'
+                    async with client.stream('POST', url, json=payload, timeout=20) as response:
+                        response.raise_for_status()
+                        async for line in response.aiter_lines():
+                            if not line.strip():
+                                continue
+                            chunk = json.loads(line)
+                            if 'error' in chunk:
+                                raise ValueError('Local stream failed')
+                            delta = chunk.get('message', {}).get('content', '')
+                            if isinstance(delta, str) and delta:
+                                emitted = True
+                                yield delta
+                            if chunk.get('done'):
+                                break
+                if emitted:
+                    return
+            except Exception:
+                if emitted:
+                    return
+        yield re.split(r'(?<=[.!?])\s+', user.strip(), maxsplit=1)[0] or 'OK.'
 
     @staticmethod
     def _claude(client, model, system, user, max_tokens, images):

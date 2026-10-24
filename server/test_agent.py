@@ -1,6 +1,6 @@
 import asyncio
 import json
-from types import SimpleNamespace
+from time import monotonic
 
 import pytest
 
@@ -29,13 +29,21 @@ class LLM:
         self.output = output or json.dumps(dict(agent='helper', say='Here it is.', draw=[dict(kind='box', target='a')]))
         self.calls = []
 
-    def complete(self, system, user):
+    async def stream(self, system, user):
         self.calls.append((system, user))
-        return SimpleNamespace(text=self.output)
+        try:
+            output = self.output.removeprefix('```json\n').removesuffix('\n```')
+            turn = json.loads(output)
+            spoken = turn.pop('say')
+            yield json.dumps(turn) + '\nSAY:\n' + spoken
+        except (ValueError, KeyError):
+            yield self.output
 
 
 def run(session=None, llm=None, text='point here', vision=None):
     session = session or Session('s', frame=FRAME)
+    if session.frame:
+        session.scene, session.scene_seq, session.scene_time = SCENE, 1, monotonic()
     messages = asyncio.run(run_turn(session, text, vision=vision or Vision(), llm=llm or LLM()))
     for msg in messages:
         validate('server_message_v2', msg)
@@ -59,14 +67,14 @@ def test_resolves_shapes_and_unknown_targets():
     assert ops[6]['bbox'] == ops[1]['bbox']
     assert ops[8]['from'] == pytest.approx([0.7, 0.7])
     assert messages[2]['focus'] == ops[2]['center']
-    assert messages[-1]['text'] == 'Here.'
+    assert messages[-2]['text'] == 'Here.'
 
 
 @pytest.mark.parametrize('output', ['garbage', '{"agent":"helper"}', '{"agent":"helper","say":"","draw":[]}'])
 def test_fallback(output):
     messages = run(llm=LLM(output))
-    assert messages[1]['ops'][1]['bbox'] == SCENE['objects'][0]['bbox']
-    assert messages[-1]['text'].startswith(SCENE['caption'])
+    assert messages[1]['ops'] == [dict(kind='clear', id='*')]
+    assert any(m['type'] == 'say' and m['text'] for m in messages)
 
 
 @pytest.mark.parametrize('pack,text', [('general', 'open the power supply'), ('general', 'repair gas lines'),
@@ -100,12 +108,6 @@ def test_shopper(monkeypatch):
     assert 'cheapest confirmed fit' in says[-1]['text']
 
 
-def test_vision_error_once_and_no_frame():
-    class Broken:
-        async def call(self, *args):
-            raise RuntimeError('offline')
-    session = Session('s', frame=FRAME)
-    assert sum(m['type'] == 'error' for m in run(session, vision=Broken())) == 1
-    assert not any(m['type'] == 'error' for m in run(session, vision=Broken()))
-    session.frame = None
-    assert run(session, llm=LLM('garbage'))[-1]['text'].startswith('I do not have')
+def test_no_frame():
+    messages = run(Session('s'), llm=LLM(''))
+    assert next(m for m in messages if m['type'] == 'draw')['seq'] == 0

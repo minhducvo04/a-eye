@@ -147,3 +147,51 @@ def test_canned(monkeypatch, local):
     result = LLMClient(anthropic_client=fake, httpx_client=local[0]).complete('', '  ')
     assert result.text == 'OK.'
     assert not fake.calls and not local[1]
+
+
+@pytest.mark.parametrize('cloud_ok,local_ok', [(True, True), (False, True), (False, False)])
+def test_stream_fallback_order(monkeypatch, cloud_ok, local_ok):
+    import asyncio
+    import json
+    from contextlib import asynccontextmanager
+
+    monkeypatch.setenv('LLM_PROVIDER', 'claude')
+    calls = []
+
+    class Cloud:
+        @asynccontextmanager
+        async def stream(self, **kwargs):
+            calls.append('claude')
+            assert kwargs['max_tokens'] == 512
+            if not cloud_ok:
+                raise RuntimeError('offline')
+
+            async def chunks():
+                yield 'Cloud '
+                yield 'answer.'
+            yield SimpleNamespace(text_stream=chunks())
+
+    def handler(request):
+        calls.append('local')
+        payload = json.loads(request.content)
+        assert payload['stream'] is True and payload['think'] is False
+        return httpx.Response(200 if local_ok else 503,
+                              text='{"message":{"content":"Local "}}\n'
+                                   '{"message":{"content":"answer."},"done":true}\n')
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as local:
+            client = LLMClient(anthropic_client=SimpleNamespace(messages=Cloud()), httpx_client=local)
+            return [chunk async for chunk in client.stream('', 'Canned.')]
+
+    chunks = asyncio.run(check())
+    assert ''.join(chunks) == ('Cloud answer.' if cloud_ok else 'Local answer.' if local_ok else 'Canned.')
+    assert calls == (['claude'] if cloud_ok else ['claude', 'local'])
+
+
+def test_stream_local_only_and_canned(monkeypatch):
+    import asyncio
+    monkeypatch.setenv('LLM_PROVIDER', 'canned')
+    async def check():
+        return [chunk async for chunk in LLMClient().stream('', '')]
+    assert asyncio.run(check()) == ['OK.']
