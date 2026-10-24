@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createVoice, isEcho, pcm16ToFloat32, wordCount } from "./voice.js";
+import { createVad, createVoice, downsample, floatToPcm16, isEcho, pcm16ToFloat32, wordCount } from "./voice.js";
 
 function pcm16Base64(samples) {
   const bytes = Buffer.alloc(samples.length * 2);
@@ -246,6 +246,151 @@ test("unlockAudio resumes a suspended context", async () => {
   assert.equal(ok, true);
   assert.equal(ctx.resumes, 1);
   assert.equal(ctx.state, "running");
+});
+
+test("downsample 48 kHz to 16 kHz length and values", () => {
+  const second = new Float32Array(48000);
+  second.fill(0.25);
+  const full = downsample(second, 48000, 16000);
+  assert.equal(full.length, 16000);
+  assert.equal(full[0], 0.25);
+  assert.equal(full[15999], 0.25);
+
+  const ramp = new Float32Array(48);
+  for (let i = 0; i < ramp.length; i++) ramp[i] = i;
+  const out = downsample(ramp, 48000, 16000);
+  assert.equal(out.length, 16);
+  assert.equal(out[0], 1);
+  assert.equal(out[1], 4);
+  assert.equal(out[15], 46);
+});
+
+test("floatToPcm16 clamps to int16", () => {
+  const pcm = floatToPcm16(new Float32Array([-1.5, -1, -0.5, 0, 0.5, 1, 1.5]));
+  assert.equal(pcm[0], -32768);
+  assert.equal(pcm[1], -32768);
+  assert.equal(pcm[2], -16384);
+  assert.equal(pcm[3], 0);
+  assert.equal(pcm[4], 16384);
+  assert.equal(pcm[5], 32767);
+  assert.equal(pcm[6], 32767);
+});
+
+test("VAD start, hang, end, and adaptive floor on a fake clock", () => {
+  const vad = createVad({ threshold: 0.01, hangMs: 400 });
+  assert.equal(vad.push(0.2, 0), "silence");
+  assert.equal(vad.push(0.05, 20), "silence");
+  assert.equal(vad.push(0.5, 40), "start");
+  assert.equal(vad.push(0.5, 80), "speech");
+  assert.equal(vad.push(0, 80 + 399), "speech");
+  assert.equal(vad.push(0, 80 + 400), "end");
+  assert.equal(vad.push(0, 900), "silence");
+
+  const quiet = createVad({ threshold: 0.01, hangMs: 400 });
+  assert.equal(quiet.push(0.001, 0), "silence");
+  assert.equal(quiet.push(0.05, 30), "start");
+});
+
+function serverCapture() {
+  const ctx = fakeContext();
+  ctx.sampleRate = 48000;
+  let proc = null;
+  ctx.createMediaStreamSource = () => ({ connect() {} });
+  ctx.createScriptProcessor = () => {
+    proc = { connect() {} };
+    return proc;
+  };
+  const stops = [];
+  const constraints = [];
+  return {
+    ctx,
+    stops,
+    constraints,
+    proc: () => proc,
+    getUserMedia: async (asked) => {
+      constraints.push(asked);
+      return { getTracks: () => [{ stop() { stops.push(1); } }] };
+    },
+    feed(n, amp, at, clock) {
+      clock.t = at;
+      const data = new Float32Array(n);
+      data.fill(amp);
+      proc.onaudioprocess({
+        inputBuffer: {
+          sampleRate: 48000,
+          numberOfChannels: 1,
+          getChannelData() {
+            return data;
+          },
+        },
+      });
+    },
+  };
+}
+
+test("server mode sends 200 ms chunks then a final chunk", async () => {
+  const cap = serverCapture();
+  const chunks = [];
+  const clock = { t: 0 };
+  const voice = createVoice({
+    sttMode: "server",
+    audioContextFactory: () => cap.ctx,
+    getUserMedia: cap.getUserMedia,
+    now: () => clock.t,
+    onAudioChunk(b64, seq, final) {
+      chunks.push({ b64, seq, final, n: pcm16ToFloat32(b64).length });
+    },
+  });
+  await voice.startListening();
+  assert.deepEqual(cap.constraints, [{ audio: { echoCancellation: true, noiseSuppression: true } }]);
+  cap.feed(48, 0, 0, clock);
+  cap.feed(21000, 0.5, 10, clock);
+  cap.feed(48, 0, 500, clock);
+  assert.equal(chunks.length, 3);
+  assert.deepEqual(
+    chunks.map((chunk) => [chunk.seq, chunk.final, chunk.n]),
+    [
+      [0, false, 3200],
+      [1, false, 3200],
+      [2, true, 600],
+    ],
+  );
+  assert.equal(pcm16ToFloat32(chunks[0].b64)[0], 0.5);
+  voice.stopListening();
+  assert.equal(cap.stops.length, 1);
+  cap.feed(21000, 0.5, 2000, clock);
+  assert.equal(chunks.length, 3);
+});
+
+test("server mode barge-in fires once", async () => {
+  const cap = serverCapture();
+  const synth = fakeSynth();
+  const clock = { t: 1000 };
+  const events = { barges: [] };
+  const voice = createVoice({
+    sttMode: "server",
+    synth,
+    audioContextFactory: () => cap.ctx,
+    getUserMedia: cap.getUserMedia,
+    now: () => clock.t,
+    onBargeIn(id, atMs) {
+      events.barges.push([id, atMs, voice.isSpeaking()]);
+    },
+    onAudioChunk() {},
+  });
+  voice.speak("utt-9", "Turn the screw clockwise now.");
+  voice.playPcm("utt-9", pcm16Base64(new Array(800).fill(0)), false);
+  assert.equal(voice.isSpeaking(), true);
+  const cancels = synth.cancels;
+  await voice.startListening();
+  cap.feed(48, 0, 1250, clock);
+  cap.feed(480, 0.5, 1250, clock);
+  assert.deepEqual(events.barges, [["utt-9", 250, false]]);
+  assert.equal(synth.cancels, cancels + 1);
+  assert.equal(cap.ctx.stops, 1);
+  assert.equal(voice.isSpeaking(), false);
+  cap.feed(480, 0.5, 1300, clock);
+  assert.equal(events.barges.length, 1);
 });
 
 test("missing speech APIs report unsupported and do not throw", () => {
