@@ -62,3 +62,6 @@ possible.
 - Router (now/past/expert): yes, trained on generated questions, scored on a hand-written held-out set.
 - Vision fine-tune of Qwen: parked; the base already gets 15/16 boxes and training would take the box's GPU for 6 to 8 h.
 - Local brain distillation: planned only ([results/local-brain.md](results/local-brain.md), Phase B). Using Claude's answers as training data needs Duc's decision first (Anthropic Commercial Terms D.4); the default plan distils the best local model into a fast 9B talker, 3 to 4 h of exclusive GPU or a cloud GPU.
+
+`BRAIN=openai_compat` uses a hosted OpenAI-compatible API: set `OPENAI_COMPAT_BASE_URL` (including `/v1` where required), `OPENAI_COMPAT_API_KEY`, `OPENAI_COMPAT_TALKER_MODEL` and `OPENAI_COMPAT_EXPERT_MODEL`; the planner shares the talker model.
+This cloud option sends text only, supports streaming with bounded timeouts, follows the Claude switch and Private mode, and does not provide provider web search or tool execution.
