@@ -83,19 +83,13 @@ def local_only():
 
 
 def identity(connection):
-    """Who is calling, for binding Rewind data to its owner. Call only after server.auth.authorized() passed:
-    the Access JWT was verified there, so its email claim is read here without re-verifying. A token gives one
-    shared identity; no auth configured means the single local user."""
+    """Who is calling, for binding Rewind and local memory to their owner. Only the Access email that
+    server.auth.authorized() verified on this request or socket counts (connection.state.access_email); an
+    unverified cookie or header never does. A token caller is the shared "token"; no auth configured is "local"."""
     import hashlib
-    encoded = connection.headers.get('cf-access-jwt-assertion') or connection.cookies.get('CF_Authorization')
-    if encoded:
-        try:
-            import jwt
-            email = jwt.decode(encoded, options={'verify_signature': False}).get('email', '')
-            if isinstance(email, str) and email:
-                return 'access:' + hashlib.sha256(email.lower().encode()).hexdigest()[:16]
-        except Exception:
-            pass
+    email = getattr(getattr(connection, 'state', None), 'access_email', '')
+    if isinstance(email, str) and email:
+        return 'access:' + hashlib.sha256(email.lower().encode()).hexdigest()[:16]
     if os.environ.get('A_EYE_TOKEN'):
         return 'token'
     return 'local'
