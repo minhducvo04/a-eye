@@ -1,98 +1,100 @@
 # A-eye
 
-**An AI video call that knows your build.** Pronounced like "AI", spelled with an eye, because it sees.
+**A video call with an AI that can see, point, draw and talk back.** Pronounced like "AI", spelled with an eye,
+because it sees.
 
-You hold up a cable. A-eye sees what it is, draws an arrow to the exact spot on your motherboard where it goes
-(taken from your board's own manual), says it in one sentence, and checks your work before you move on. It
-remembers your build between calls, and when you ask "is there cheaper RAM?" it finds options that actually fit
-the parts you own.
+Point your phone at whatever you are working on and talk. A-eye looks at the live picture, answers out loud, and
+draws right on the video: a box around the part you need, an arrow to where it goes, a circle where to cut, a label,
+a pin. The drawings stay stuck to things as the camera moves. A small glowing presence shows when it is listening,
+thinking or speaking, and drifts toward what it points at. Ask "is there a cheaper one?" and a second agent, the
+shopper, joins the call with prices that fit what you already own.
 
-Status: Cal Hacks 13.0 build in progress. The skeleton runs with a fake vision model; real models land during the
-weekend.
+Status: Cal Hacks 13.0 build in progress. The talk, see and draw loop runs end to end on our own GPU; real-time
+tuning and the phone app are in progress.
 
-## The problem
+## What it does
 
-Building or fixing a PC means a long manual, tiny silkscreen labels, and headers that look the same. Plug the CPU
-fan into the system fan header and nothing warns you. Video assistants can talk about what they see, but they do not
-know your board's manual, they do not check the step, and they forget your build when the call ends.
-
-## Three core features
-
-1. **Point, place, check.** Hold up the part. A tracked arrow lands on the right header from your board's manual,
-   with the manual diagram beside it. After you plug it in, A-eye checks it and says pass, fail ("that is SYS_FAN1,
-   not CPU_FAN"), or "I can't tell, move closer". It never guesses a green tick.
-2. **My Build memory.** Your project keeps the board, the parts you own, the steps done and what went wrong. The
-   next call starts with "Welcome back. RAM is done; next is the front panel."
-3. **Check the market for my build.** "Cheaper RAM?" returns live prices with a plain reason for each: "fits because
-   DDR5, DIMM, a speed your board supports". Compatibility is decided by rules in code; anything unknown is shown
-   as "unverified", never "fits".
+1. **Talks back, in real time.** Speak, interrupt it any time (it stops talking when you do), and it answers in
+   short spoken sentences while it is still thinking.
+2. **Sees and draws on your world.** Boxes, highlights, circles, arrows, freehand paths, labels and pins, placed on
+   real objects the vision model found, and tracked in the browser between updates so they do not lag the camera.
+3. **Skill packs.** A general helper, plus packs that know a task: PC building (grounded in your motherboard's own
+   manual, with a power-off-first safety gate), cooking and assembling things. A pack sets what the helper knows,
+   what it looks for, and what it refuses.
+4. **More than one agent.** The helper guides; the shopper checks live prices and only suggests parts that a rules
+   engine in code says fit. Each agent has its own name, color and on-screen presence.
 
 ## What makes it different
 
-| | Gemini Live | ChatGPT video | FixLens | A-eye |
-|---|---|---|---|---|
-| Points at the part on the live frame | Yes | No | Yes | Yes |
-| Knows this board's manual (exact header, pin 1, which RAM slots) | No | No | No | Yes, hand-checked tables |
-| Checks the step before the next one | No | No | Yes | Yes, and abstains when unsure |
-| Remembers your build across calls | Chat memory | Chat memory | No | Yes, a saved project |
-| Finds cheaper parts that fit what you own | No | No | No | Yes |
+| | Gemini Live | ChatGPT video | A-eye |
+|---|---|---|---|
+| Talks about what the camera sees | Yes | Yes | Yes |
+| Draws on the live picture (arrows, circles, paths, pins) that follow objects | Highlight boxes | No | Yes |
+| Task packs with their own knowledge and safety rules | No | No | Yes |
+| A second agent that checks prices that fit what you own | No | No | Yes |
+| Video processed on our own GPU by default | No | No | Yes |
 
-The comparison reflects our own review of these products before the event; we claim the combination, not a first.
+The comparison reflects our own review of these products during the event; we claim the combination, not a first.
 
 ## Safety and privacy, in code
 
-- **Power off first.** No step starts until you confirm the PSU is off and unplugged.
-- **Allowed parts only.** Fan cables, front panel, RAM, SATA, M.2, 24-pin and 8-pin EPS. Nothing about opening a
-  PSU or mains power.
-- **Confidence gate.** Low confidence means "move closer", not a guess. Every verdict shows its confidence.
-- **No video stored.** Frames are processed and dropped. A local-only switch keeps frames on our own GPU.
+- **Pack safety gates.** The PC pack will not guide anything until you confirm the power is off and unplugged.
+  Packs refuse dangerous requests (mains wiring, opening power supplies, gas lines) with a fixed line.
+- **No video stored.** Only the newest frame is kept in memory. Nothing is written to disk or logs.
+- **Local by default.** Frames go to the vision model on our own GPU. The reasoning model gets a text description
+  of the scene, not the picture. `LOCAL_ONLY=1` blocks cloud models entirely.
+- **Compatibility is decided by rules.** Unknown specs show as "unverified", never "fits".
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  subgraph Clients
-    W["client-web<br/>Safari call page<br/>camera, overlay, mic"]
-    I["ios<br/>SwiftUI app"]
+  subgraph Browser["Phone or laptop browser"]
+    CAM["camera 1 fps"] --> WS
+    MIC["mic: speech to text"] --> WS
+    TRK["fast loop: template tracker 15+ fps"] --> DRAW["draw layer + presence orbs"]
+    WS["WebSocket /ws2"]
+    SPK["speech out"]
   end
   subgraph Server["server (orchestrator)"]
-    S["WS /ws<br/>step state machine"]
-    G["safety gate<br/>confidence gate"]
-    V["voice<br/>Cartesia TTS, STT"]
+    LOOP["slow loop: scene refresh about 1 per second"]
+    BRAIN["agent turn: packs, helper, shopper"]
+    TTS["Cartesia TTS by sentence"]
   end
-  VI["vision service<br/>/identify /locate /verify<br/>(PC GPU; fake for now)"]
-  M["market<br/>Apify, Bright Data<br/>compat.py"]
-  D[("data/boards<br/>header tables")]
-  C[("Convex<br/>projects, parts, steps")]
-  L["Claude<br/>reasoning, explanations"]
-  W <-- "frames, confirm / overlay, say, step, verdict" --> S
-  I <-- same contract --> S
-  S --- G
-  S --- V
-  S -- HTTP JSON --> VI
-  S --> M
-  S --> D
-  S --> C
-  S --> L
+  VIS["vision on our GPU<br/>Qwen2.5-VL /scene"]
+  LLM["brain<br/>Claude, local fallback"]
+  MKT["market<br/>Apify, Bright Data, compat rules"]
+  WS <--> LOOP
+  WS <--> BRAIN
+  LOOP --> VIS
+  BRAIN --> LLM
+  BRAIN --> MKT
+  BRAIN --> TTS --> SPK
+  BRAIN -- "draw ops anchored to objects" --> DRAW
+  LOOP -- "track refresh" --> TRK
 ```
 
-Every message is defined once in [`contracts/schema.json`](contracts/schema.json). Step machine:
-`SAFETY -> IDENTIFY -> LOCATE -> GUIDE -> AWAIT -> VERIFY -> DONE`, or `RETRY` back to `LOCATE`.
+Every message is defined once in [`contracts/schema.json`](contracts/schema.json): v2 (`/ws2`) is the agent
+call; v1 (`/ws`) is the original PC-build step flow and still works.
+
+Real-time budgets we design for: overlay updates at 15 fps or more, vision refresh within 1 s, first spoken
+sound within 1.5 s of your last word, interruption within 200 ms. A dev overlay (`?dev=1`) shows the measured
+numbers.
 
 ## Repo layout
 
 | Path | What |
 |---|---|
-| `contracts/` | JSON Schemas, TypeScript and Python types, examples |
-| `server/` | Orchestrator, state machine, gates |
-| `vision/` | Vision service API (fake first, real on the GPU) |
-| `voice/` | Cartesia TTS and STT adapter |
-| `client-web/` | Safari call page |
+| `contracts/` | JSON Schemas (v1 and v2), TypeScript and Python types, examples |
+| `server/` | Orchestrator: `/ws2` agent, skill packs, shopper, model router; `/ws` v1 step flow |
+| `vision/` | Vision service: `/scene` and v1 endpoints; Qwen2.5-VL on the GPU, fake fallback |
+| `voice/` | Cartesia TTS adapter |
+| `client-web/` | Browser call page (`/agent.html`), draw layer, presence, voice, tracker |
 | `ios/` | Native iPhone app |
-| `market/` | Price search and compatibility checker |
+| `market/` | Price search and compatibility rules |
 | `data/` | Hand-checked header tables per board |
 | `eval/` | Accuracy harness |
-| `docs/` | Notes and pitch |
+| `docs/` | Notes, package results |
 
 ## Team
 
@@ -100,14 +102,14 @@ Every message is defined once in [`contracts/schema.json`](contracts/schema.json
 |---|---|---|
 | A | Duc | iPhone app, contracts, integration |
 | B | TBD | Vision on the GPU, model router |
-| C | TBD | Market search, Convex store |
-| D | TBD | Orchestrator, voice, eval, pitch |
+| C | TBD | Market search, store |
+| D | TBD | Agent, voice, eval, pitch |
 
 ## Sponsor tech
 
 Planned, confirmed in this list only once it runs in the demo:
-Cartesia (voice), Apify and Bright Data (live prices), Convex (project memory), Claude by Anthropic (reasoning).
-Open models on our own GPU: Qwen2.5-VL (vision), Whisper (speech to text).
+Cartesia (voice), Claude by Anthropic (reasoning), Apify and Bright Data (live prices), Convex (project memory).
+Open models on our own GPU: Qwen2.5-VL (vision), Whisper (speech to text, optional).
 
 ## Run it
 
@@ -116,12 +118,14 @@ Needs Python 3.11+, [uv](https://github.com/astral-sh/uv), and Node 20+ for the 
 ```sh
 make setup             # .venv + Python deps
 cp .env.example .env   # fill keys locally; .env is gitignored
+make keys              # shows which keys are set (length only)
 make test              # all module tests
-make vision            # fake vision service on :8001
-make server            # orchestrator on :8000; open http://localhost:8000
-make smoke             # end to end: photo -> server -> fake vision -> box + step
+make vision            # vision service on :8001 (VISION_BACKEND=fake|ollama|auto)
+make server            # orchestrator on :8000; open http://localhost:8000/agent.html
+make smoke             # v1 end to end with the fake vision model
+make phone             # prints the HTTPS command for testing on an iPhone
 ```
 
-Phone camera access in Safari needs HTTPS; use a tunnel (for example Tailscale Funnel) to reach the laptop.
+Safari needs HTTPS for the camera and mic on a phone; `make phone` prints the Tailscale command to run.
 
 See [AGENTS.md](AGENTS.md) for team rules and [CONTRIBUTING.md](CONTRIBUTING.md) for the PR flow.

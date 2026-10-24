@@ -1,17 +1,18 @@
 # A-eye: rules for every agent and human on the team
 
-A-eye is an AI video call that sees what you are holding, points to exactly where it goes using your board's own
-manual, checks the step, remembers your build, and finds cheaper parts that actually fit. Cal Hacks 13.0 project.
+A-eye is a real-time AI video call that sees the camera, talks back, and draws on the live picture (boxes, arrows,
+circles, paths, labels, pins). Skill packs give it task knowledge (PC building from the board's manual, cooking,
+assembling); a second agent, the shopper, finds parts that fit. Cal Hacks 13.0 project.
 
 ## Module map
 
 | Path | What | Talks to |
 |---|---|---|
 | `contracts/` | `schema.json` (JSON Schema, source of truth), `types.ts`, Python `validate()`, examples | everyone |
-| `server/` | Orchestrator: WS `/ws`, step state machine, safety gate, confidence gate, serves `client-web/` | client, vision, voice, market |
-| `vision/` | Vision service over HTTP (`/identify`, `/locate`, `/verify`, `/health`). Fake first; real one runs on the PC GPU | server |
+| `server/` | Orchestrator: WS `/ws2` agent (packs in `server/packs/`, helper and shopper), model router `llm.py`; WS `/ws` v1 step flow and gates; serves `client-web/` | client, vision, voice, market |
+| `vision/` | Vision service over HTTP (`/scene` for v2; `/identify`, `/locate`, `/verify`, `/health`). Qwen2.5-VL on the PC GPU through Ollama, fake fallback | server |
 | `voice/` | Cartesia TTS and STT adapter (stub first) | server (in process) |
-| `client-web/` | Safari call page: camera, overlay canvas, mic. Committed demo client | server |
+| `client-web/` | Browser call pages: `agent.html` (v2: draw layer, presence, voice, tracker) and `index.html` (v1) | server |
 | `ios/` | Native SwiftUI app (Duc). Same WS contract as `client-web/` | server |
 | `market/` | Price search (Apify, Bright Data) and `compat.py` compatibility checker | server |
 | `data/` | Hand-checked header tables `data/boards/<board_id>.json` | server, vision |
@@ -37,6 +38,9 @@ manual, checks the step, remembers your build, and finds cheaper parts that actu
 
 ## Safety gate (code, not prompt)
 
+Each skill pack has a `refuse()` check that runs before any model call. The PC pack adds:
+
+
 - No step leaves `SAFETY` until `confirm{what:"power_off", value:true}` (button, or a closed-set voice match). The
   first spoken line is "Switch the PSU off and unplug it."
 - Allowed parts only: `contracts.ALLOWED_PARTS` (CPU fan, system fan, front panel, RAM, SATA, M.2, 24-pin, 8-pin EPS).
@@ -50,7 +54,8 @@ manual, checks the step, remembers your build, and finds cheaper parts that actu
 - No raw video, frames or audio are stored: not in git, not in the database, not in logs.
 - Eval clips stay local, outside the repo (for example `~/a-eye-private/clips/`). `.gitignore` blocks `clips/`,
   `frames/`, `*.mp4`, `*.mov`, `*.wav`. Coding agents never get real clips; use synthetic or prop-board frames.
-- `LOCAL_ONLY=1` keeps frames on our own vision host. Cloud models get board crops at most, never full frames.
+- Frames go only to our own vision host. The cloud brain gets the scene as text (caption and object list), not
+  pictures; small crops only through `server/llm.py`'s size check. `LOCAL_ONLY=1` blocks cloud models entirely.
 - Cartesia receives only the AI's own sentences.
 
 ## Secrets
