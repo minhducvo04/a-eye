@@ -160,7 +160,8 @@ function boot() {
   }
 
   let sessionId = randomId();
-  const family = setupFamily({ session: () => sessionId, request: async (path, data) => {
+  const family = setupFamily({ session: () => sessionId,
+    speak: text => voice.speak("family-note", text, { localOnly: true }), request: async (path, data) => {
     const result = await apiFetch(path, data);
     const body = await result.json();
     if (!result.ok) throw new Error(body.detail || 'Family note unavailable.');
@@ -326,6 +327,7 @@ function boot() {
         if (reading.noisy && reading.calibrated && !holdMode) void enableHold();
       },
       onFinal: (text) => {
+        if (voice?.isInputBlocked()) return;
         const clean = String(text || "").trim();
         if (!clean) return;
         ui.dispatch({ type: "final", text: clean, now: Date.now() });
@@ -413,6 +415,7 @@ function boot() {
       },
       sttMode: stt,
       onAudioChunk: (pcm16Base64, audioSeq, final) => {
+        if (voice?.isInputBlocked()) return;
         if (turn.stage === "hearing") turnEvent({ type: "interim", text: "Speech detected" });
         if (final) turnEvent({ type: "sent" });
         send({

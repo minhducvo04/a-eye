@@ -184,3 +184,13 @@ def test_server_stt_confirmation_precedes_brain(monkeypatch, words, expected):
         messages = [ws.receive_json() for _ in range(3)]
         assert [m['stage'] for m in messages] == ['received', 'transcribing', 'done']
         assert s.drafts[d['id']]['status'] == expected
+
+
+@pytest.mark.parametrize("path", ["/", "/agent.html", "/family-reply.html"])
+def test_html_cannot_be_framed(path):
+    from server.app import create_app
+    response = TestClient(create_app()).get(path)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert response.headers.get("content-security-policy") == "frame-ancestors 'none'"
+    assert response.headers.get("x-frame-options") == "DENY"

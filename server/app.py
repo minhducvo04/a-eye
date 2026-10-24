@@ -79,7 +79,11 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
                 if session_id else None)
         token = cloud_meter.CURRENT.set(getattr(call, 'cloud_meter', None))
         try:
-            return await call_next(request)
+            response = await call_next(request)
+            if response.headers.get('content-type', '').split(';')[0] == 'text/html':
+                response.headers['Content-Security-Policy'] = "frame-ancestors 'none'"
+                response.headers['X-Frame-Options'] = 'DENY'
+            return response
         finally:
             cloud_meter.CURRENT.reset(token)
 

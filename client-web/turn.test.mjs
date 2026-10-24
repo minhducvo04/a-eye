@@ -84,9 +84,14 @@ for (const headset of [false, true]) test(headset ? 'headset call never acquires
   const nodes = new Map(), intervals = new Map(), timeouts = new Map();
   let timerId = 0, stops = 0, gets = 0;
   const constraints = [];
-  let proofAvailable = true;
+  let proofAvailable = true, familyReply = null;
+  let recognition;
+  const synth = { getVoices: () => [{ localService: true, lang: "en-US" }], cancel() {}, speak(u) { this.current = u; } };
   const proofRequests = [];
   put('fetch', async path => {
+    if (path.startsWith('/api/family?') && familyReply) return {
+      ok: true, json: async () => ({ contacts: [], tasks: {}, replies: [familyReply] }),
+    };
     if (!path.startsWith('/api/proof?')) throw new Error('Fixture unavailable');
     proofRequests.push(path);
     return { ok: proofAvailable, json: async () => ({ pictures_saved: 0, cloud_ai_calls: 3, bytes_to_cloud: 125 }) };
@@ -120,7 +125,10 @@ for (const headset of [false, true]) test(headset ? 'headset call never acquires
   put('localStorage', null);
   put('location', { search: headset ? '?device=headset' : '', protocol: 'https:', host: 'example.test' });
   put('navigator', { mediaDevices: { enumerateDevices: async () => [], getUserMedia: async c => { constraints.push(c); gets++; return { getTracks: () => [{ stop() { stops++; } }] }; } } });
-  put('SpeechRecognition', class { start() {} stop() {} });
+  put('SpeechRecognition', class { constructor() { recognition = this; } start() {} stop() {} });
+  put('speechSynthesis', synth);
+  put('SpeechSynthesisUtterance', class { constructor(text) { this.text = text; } });
+  put('Option', class {});
   put('WebSocket', Socket);
   const realNow = Date.now;
   let now = 1000;
@@ -218,6 +226,25 @@ for (const headset of [false, true]) test(headset ? 'headset call never acquires
     assert.equal([...timeouts.values()].at(-1).ms, 1000);
     [...timeouts.values()].at(-1).fn();
     Socket.all[3].open();
+    // Actual call-page wiring: parent commands cannot reach the WebSocket during local speech.
+    node('mic').handlers.click();
+    await settle();
+    familyReply = { id: 'command-reply', name: 'Fixture Parent', text: 'stop' };
+    const familyPoll = [...intervals.values()].find(t => t.fn.name === 'refresh');
+    const reading = familyPoll.fn();
+    await settle();
+    assert.equal(synth.current.text, 'Fixture Parent replied. stop');
+    const active = Socket.all[3];
+    const beforeSpeech = active.messages.length;
+    for (const text of ['stop', 'find a replacement part']) {
+      recognition.onresult({ results: [{ 0: { transcript: text }, isFinal: true }] });
+    }
+    assert.equal(active.messages.slice(beforeSpeech).some(m => m.type === 'user_text'), false);
+    synth.current.onend();
+    await reading;
+    recognition.onresult({ results: [{ 0: { transcript: 'find a replacement part' }, isFinal: true }] });
+    assert.equal(active.messages.at(-1).type, 'user_text');
+    assert.equal(active.messages.at(-1).text, 'find a replacement part');
     const lastTimer = timerId;
     node('end-call').handlers.click();
     assert.equal(Socket.all[3].readyState, 3);

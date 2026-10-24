@@ -27,21 +27,7 @@ export function createApproval(post) {
   };
 }
 
-// Only an on-device voice is allowed: never send a parent's words to a cloud TTS service.
-export function readLocally(text, synth = globalThis.speechSynthesis) {
-  return new Promise((resolve, reject) => {
-    const voice = synth?.getVoices().find(v => v.localService && v.lang.startsWith('en'));
-    if (!voice) { reject(new Error('Enable an on-device English voice, then tap Read aloud.')); return; }
-    synth.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.voice = voice;
-    utterance.onend = resolve;
-    utterance.onerror = () => reject(new Error('Read aloud did not finish. Please try again.'));
-    synth.speak(utterance);
-  });
-}
-
-export function setupFamily({ session, request }) {
+export function setupFamily({ session, request, speak }) {
   const root = document.getElementById('family-panel');
   const $ = id => document.getElementById('family-' + id);
   let currentSession = session(), tasks = {}, seen = new Set(), busy = false;
@@ -105,7 +91,7 @@ export function setupFamily({ session, request }) {
         $('replay').hidden = false;
         root.open = false;
         try {
-          await readLocally(`${reply.name} replied. ${reply.text}`);
+          await speak(`${reply.name} replied. ${reply.text}`);
           $('status').textContent = 'Reply read aloud.';
         }
         catch (error) { report(error); }
@@ -140,7 +126,7 @@ export function setupFamily({ session, request }) {
     if (!approval.pending()) return;
     const gen = ++generation;
     $('send').disabled = true;
-    await readLocally(draftText);
+    await speak(draftText);
     if (gen !== generation || !approval.pending()) return;
     await approval.heard();
     $('send').disabled = false;
@@ -155,7 +141,7 @@ export function setupFamily({ session, request }) {
     }
   });
   $('contact').onchange = () => { if (approval.pending()) void $('cancel').onclick(); };
-  $('replay').onclick = safely(() => readLocally($('reply').textContent));
+  $('replay').onclick = safely(() => speak($('reply').textContent));
   const timer = window.setInterval(refresh, 2000);
   window.addEventListener('pagehide', () => { window.clearInterval(timer); approval.clear(); });
   return {

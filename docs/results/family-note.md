@@ -56,6 +56,37 @@ During verification, a real global timer kept the existing fake-browser test ali
 
 ## Limits for integration
 
-Contacts are intentionally call-scoped and process-local, not persisted across server restarts. Outstanding links also stop working after restart; use one server process for this demo. The completion log is user-attested, not a vision verification result. Free-form note editing is not supported: change the selected fact and draft again. The read-aloud acknowledgement records client completion; it cannot prove a human heard the speaker. Missing local speech voices block Send rather than using cloud TTS. No physical phone, real microphone recognition, public deployment or remote-recipient transport was verified. The application-wide Python suite and `make smoke` were not run; the lead integrator retains the merge/smoke gate.
+Contacts are intentionally call-scoped and process-local, not persisted across server restarts. Outstanding links also stop working after restart; use one server process for this demo. The completion log is user-attested, not a vision verification result. Free-form note editing is not supported: change the selected fact and draft again. The read-aloud acknowledgement records client completion; it cannot prove a human heard the speaker. Missing local speech voices block Send rather than using cloud TTS. No physical phone, real microphone recognition, public deployment or remote-recipient transport was verified. At the original handoff, the application-wide Python suite and `make smoke` had not been run. The review-fix verification below supersedes the suite status; the lead integrator retains the merge/smoke gate.
 
-Finished: family-note implementation and local verification. Next: lead review and integration smoke. Suggested: GPT-6.1 / high.
+## Independent review fixes — 2026-10-24
+
+Both findings from `/Users/minhducvo/kyra-grok/aeye-review-note/RESULT.md` are fixed in the uncommitted working tree.
+
+- **High:** note, automatic reply and Replay now use the call's `voice.speak(..., { localOnly: true })`. It records `spokenText`, requires an installed on-device English voice, and returns a completion promise. Browser recognition, VAD barge-in, hold-to-talk and server PCM capture are blocked during playback. Pending interim text and captured preroll are cleared before playback. Completion restores input; speech errors/cancellation reject the read-aloud acknowledgement so they cannot enable Send.
+- **Low:** HTML responses carry `Content-Security-Policy: frame-ancestors 'none'` and `X-Frame-Options: DENY`. HTTP regressions cover `/`, `/agent.html` and `/family-reply.html`.
+
+Tests were added and failed before the runtime fixes: voice regressions **29 passed / 2 failed** (command callback and PCM escaped during speech); HTML regressions **15 passed / 3 failed** (missing headers). Logs: `/private/tmp/family-voice-red.log`, `/private/tmp/family-headers-red.log`.
+
+The call-page regression loads the actual agent module with browser adapters, polls a parent reply containing **stop**, injects both **stop** and **find a replacement part** through recognition, and observes no WebSocket `user_text` during speech. After completion, the same tool request produces `user_text`. The server-capture test observes zero PCM chunks during speech, then normal chunks afterward. Thus the tested local microphone paths cannot feed `start_text` during playback. These are synthetic input tests, not physical microphone/acoustic proof.
+
+Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest server/test_family_note.py -q` - PASS (18 passed in 0.66s).
+Test: `node --test client-web/voice.test.mjs client-web/family-note.test.mjs client-web/turn.test.mjs` - PASS (43 tests; pass 43; fail 0; cancelled 0; skipped 0).
+Test: `node --test client-web/` - PASS (146 tests; pass 146; fail 0; cancelled 0; skipped 0).
+Test: `/Users/minhducvo/.cache/uv/archive-v0/hcY8qU8TLWbqDTHje52_-/bin/python scripts/family_note_smoke.py http://127.0.0.1:8035` - PASS.
+
+Real-run summary:
+```text
+Family two-tab E2E: PASS; reply visible in 1.46s; single-use replay refused; Pictures sent: 0; Cloud AI calls: 0
+Read aloud: native on-device speech completed for note and reply (physical hearing not measured).
+```
+
+The browser used the local mock server (`A_EYE_MOCK=1 LOCAL_ONLY=1`), fixture text, and blocked non-local HTTP. It reused the existing smoke script. Logs: `/private/tmp/family-browser.log`, `/private/tmp/family-touched-python.log`, `/private/tmp/family-touched-node.log`, `/private/tmp/family-full-node.log`.
+
+Changed files for this revision: `client-web/agent.js`, `client-web/family-note.js`, `client-web/voice.js`, `client-web/voice.test.mjs`, `client-web/turn.test.mjs`, `server/app.py`, `server/test_family_note.py`, this handoff and `RESULT.md`. No contracts or dependencies changed. No commit, merge or deployment.
+
+Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q` - PASS (823 passed, 2 warnings in 68.01s). Log: `/private/tmp/family-full-python-unrestricted.log`.
+Test: `git diff --check` - PASS.
+
+The initial sandboxed full Python run reported 818 passed, 1 failed and 4 errors: every failure/error was a denied localhost socket bind. The complete rerun with socket access passed. The two remaining warnings concern existing short JWT keys in identity test fixtures. No tests were skipped or changed to hide these environment failures. The local browser server was stopped after verification.
+
+Finished: both review fixes, full suites and native speech smoke. Next: integrator review and merge/smoke gate. Suggested: GPT-6.1 / high.
