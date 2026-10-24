@@ -88,3 +88,45 @@ export interface Offer {
   url: string; specs?: PartSpecs; source: "apify" | "brightdata" | "cache" | "fixture"; fetched_at: string; compat: Compat; explain?: string;
 }
 export interface MarketResponse { v: V; query_key: string; category: PartCategory; items: Offer[]; note?: string }
+
+// =====================================================================
+// v2: multi-purpose "see, point, draw, talk" agent on WS /ws2. v1 above stays supported on /ws.
+// =====================================================================
+export type V2 = 2;
+export type AgentId = "helper" | "shopper";
+export type PackId = "general" | "pc_build" | "cooking" | "assemble";
+export type PresenceState = "idle" | "listening" | "thinking" | "speaking";
+export type DrawRole = "target" | "info" | "warn" | "ok";
+
+interface OpBase { id: string; role?: DrawRole; label?: string; ttl_ms?: number }
+export type DrawOp =
+  | (OpBase & { kind: "box"; bbox: BBox })
+  | (OpBase & { kind: "highlight"; bbox: BBox })
+  | (OpBase & { kind: "circle"; center: Point; r: Unit })
+  | (OpBase & { kind: "arrow"; from: Point; to: Point })
+  | (OpBase & { kind: "path"; points: Point[] })
+  | (OpBase & { kind: "label"; at: Point; text: string })
+  | (OpBase & { kind: "pin"; at: Point })
+  | (OpBase & { kind: "clear" });
+
+// client -> server
+export interface V2Hello { v: V2; type: "hello"; session_id: string; pack: PackId; board_id?: string; client?: "web" | "ios"; tts?: "server" | "browser" }
+export interface V2Frame { v: V2; type: "frame"; session_id: string; seq: number; ts_ms: number; w: number; h: number; jpeg_b64: string }
+export interface V2UserText { v: V2; type: "user_text"; session_id: string; text: string; final: boolean; source?: "browser_stt" | "whisper" | "typed" }
+export interface V2BargeIn { v: V2; type: "barge_in"; session_id: string; utterance_id: string; at_ms: number }
+export interface V2Confirm { v: V2; type: "confirm"; session_id: string; what: "power_off" | "seated" | "check_again" | "next" | "stop"; value: boolean }
+export type ClientMessageV2 = V2Hello | V2Frame | V2UserText | V2BargeIn | V2Confirm;
+
+// server -> client
+export interface V2Draw { v: V2; type: "draw"; agent: AgentId; seq: number; ops: DrawOp[] }
+export interface V2Say { v: V2; type: "say"; agent: AgentId; utterance_id: string; text: string }
+export interface V2Audio { v: V2; type: "audio"; agent: AgentId; utterance_id: string; sample_rate?: 16000; pcm16_b64: string; final?: boolean }
+export interface V2AgentState { v: V2; type: "agent_state"; agent: AgentId; state: PresenceState; focus?: Point }
+export interface V2MarketResults { v: V2; type: "market_results"; agent: "shopper"; result: MarketResponse }
+export interface V2Error { v: V2; type: "error"; code: "bad_message" | "power_off_required" | "refused" | "vision_unavailable" | "brain_unavailable" | "internal"; message: string }
+export type ServerMessageV2 = V2Draw | V2Say | V2Audio | V2AgentState | V2MarketResults | V2Error;
+
+// server -> vision: POST /scene
+export interface SceneObject { id: string; label: string; bbox: BBox; conf: number }
+export interface SceneRequest { image_b64: string; queries?: string[]; max_objects?: number }
+export interface SceneResponse { caption: string; objects: SceneObject[]; source?: "ollama" | "claude" | "fake"; ms: number }

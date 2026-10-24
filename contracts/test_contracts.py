@@ -16,7 +16,7 @@ def test_examples_validate(name):
 
 
 def test_every_object_contract_has_an_example():
-    missing = sorted(set(MESSAGE_DEFS) - set(EXAMPLES) - {"part_specs", "box"})
+    missing = sorted(set(MESSAGE_DEFS) - set(EXAMPLES) - {"part_specs", "box", "scene_object"})
     assert missing == []
 
 
@@ -52,3 +52,23 @@ def test_board_tables_validate():
     assert boards
     for p in boards:
         validate("header_table", json.loads(p.read_text()))
+
+
+def test_v2_unions_and_v1_isolated():
+    for n in ["v2_hello", "v2_frame", "v2_user_text", "v2_barge_in", "v2_confirm"]:
+        validate("client_message_v2", EXAMPLES[n][0])
+    for n in ["v2_draw", "v2_say", "v2_audio", "v2_agent_state", "v2_market_results", "v2_error"]:
+        validate("server_message_v2", EXAMPLES[n][0])
+    with pytest.raises(ValidationError):
+        validate("client_message", EXAMPLES["v2_hello"][0])
+    with pytest.raises(ValidationError):
+        validate("client_message_v2", EXAMPLES["hello"][0])
+
+
+def test_v2_draw_rejects_bad_ops():
+    bad = dict(EXAMPLES["v2_draw"][0], ops=[{"kind": "circle", "id": "c", "center": [0.5, 0.5]}])
+    with pytest.raises(ValidationError):
+        validate("v2_draw", bad)
+    bad = dict(EXAMPLES["v2_draw"][0], ops=[{"kind": "laser", "id": "x"}])
+    with pytest.raises(ValidationError):
+        validate("v2_draw", bad)
