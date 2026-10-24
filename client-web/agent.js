@@ -175,10 +175,16 @@ function boot() {
       },
       onMicError: (kind) => {
         if (kind === "unsupported") {
+          turnEvent({ type: "cause", detail: "Browser can't do speech recognition: using server" });
           void switchToServerStt();
           return;
         }
+        if (kind === "no_speech") {
+          turnEvent({ type: "cause", detail: "No speech detected" });
+          return;
+        }
         if (kind === "denied") {
+          turnEvent({ type: "cause", detail: "Mic blocked" });
           ui.dispatch({ type: "permission_denied" });
           renderCall();
         }
@@ -1015,12 +1021,15 @@ function boot() {
 
   async function switchToServerStt() {
     if (stt === "server") return;
+    const micWasOn = ui.getState().micOn;
     stt = "server";
     ui.dispatch({ type: "stt_unsupported" });
     voice = await rebuildVoice();
     applyAudioPrefs();
     sendHello();
     renderCall();
+    // The mic was on when browser recognition failed: keep listening through server STT.
+    if (voice && micWasOn && voice.supported && voice.supported.stt) void startMic();
   }
 
   function renderCall() {

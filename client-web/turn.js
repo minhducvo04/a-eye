@@ -11,7 +11,9 @@ export function nextTurnState(state, event, nowMs) {
     return { ...s, stage: 'hearing', since: nowMs, micAt: nowMs, text: '' };
   }
   if (e.type === 'mic_stop') return { ...s, micAt: null, ...(s.stage === 'hearing' ? { stage: 'muted', since: nowMs } : {}) };
-  if (e.type === 'interim' && e.text) return { ...s, stage: 'hearing', since: s.stage === 'hearing' ? s.since : nowMs, text: e.text, micAt: null };
+  // A known mic or recognizer problem replaces the generic "didn't catch that".
+  if (e.type === 'cause') return { ...s, cause: e.detail || '' };
+  if (e.type === 'interim' && e.text) return { ...s, stage: 'hearing', since: s.stage === 'hearing' ? s.since : nowMs, text: e.text, micAt: null, cause: '' };
   if (e.type === 'closed') return { ...s, stage: 'disconnected', since: nowMs, micAt: null };
   if (e.type === 'connected' && s.stage === 'disconnected') return { ...s, stage: s.timestamps.sent != null && s.timestamps.received == null ? 'sent' : 'idle', since: nowMs, ackAt: nowMs };
   if (e.type === 'turn' && STAGES.includes(e.stage)) {
@@ -26,7 +28,7 @@ export function nextTurnState(state, event, nowMs) {
     return { ...s, timestamps: { ...s.timestamps, [e.type]: nowMs } };
   }
   if (e.type === 'tick') {
-    if (s.micAt != null && nowMs - s.micAt >= 8000) return { ...s, stage: 'failed', detail: "Didn't catch that, try again", since: nowMs, micAt: null };
+    if (s.micAt != null && nowMs - s.micAt >= 8000) return { ...s, stage: 'failed', detail: s.cause || "Didn't catch that, try again", since: nowMs, micAt: null };
     if (['sent', 'retrying'].includes(s.stage) && s.timestamps.received == null && nowMs - s.ackAt >= 2000) {
       return { ...s, stage: s.retries ? 'connection_problem' : 'retrying', retries: 1, ackAt: nowMs, since: nowMs };
     }
@@ -38,7 +40,7 @@ export function statusLine(state, nowMs) {
   const s = state || { stage: 'idle' };
   const labels = { idle: 'Ready', muted: 'Mic muted', hearing: 'Hearing', sent: 'Sent', received: 'Received', transcribing: 'Transcribing', thinking: 'Thinking', backup: 'Brain slow, trying backup', speaking: 'Speaking', done: 'Done', cancelled: 'Cancelled', failed: s.detail || "Didn't catch that", retrying: 'Not received, retrying', connection_problem: 'Connection problem', disconnected: 'Connection lost, retrying' };
   const label = labels[s.stage] || 'Ready';
-  if (['idle', 'muted'].includes(s.stage)) return label;
+  if (['idle', 'muted'].includes(s.stage)) return s.cause || label;
   const elapsed = `${(Math.max(0, nowMs - s.since) / 1000).toFixed(1)} s`;
   const typical = s.stage === 'thinking' && s.typicalMs != null ? ` · usually ${(s.typicalMs / 1000).toFixed(1)} s` : '';
   return `${label} ${elapsed}${typical}${s.stage === 'hearing' && s.text ? ` · ${s.text}` : ''}`;

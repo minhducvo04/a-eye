@@ -548,3 +548,30 @@ test("ducked Web Audio playback stays ducked for chunks that arrive mid-duck", (
   h.voice.vadEvent("misfire");
   assert.equal(out.gain.value, 1);
 });
+
+test("Brave-style recognizer: network error or quick empty ends switch to server STT", () => {
+  const errors = [];
+  const h = harness({ options: { neuralVad: false, onMicError: (kind) => errors.push(kind) } });
+  h.voice.startListening();
+  h.rec.onerror({ error: "network" });
+  assert.deepEqual(errors, ["unsupported"]);
+  assert.equal(h.voice.isListening(), false);
+
+  const quick = [];
+  const q = harness({ options: { neuralVad: false, onMicError: (kind) => quick.push(kind) } });
+  q.voice.startListening();
+  for (let i = 0; i < 3; i++) {
+    q.setTime(100 * (i + 1));
+    q.rec.onend();
+  }
+  assert.deepEqual(quick, ["unsupported"]);
+
+  const fine = [];
+  const f = harness({ options: { neuralVad: false, onMicError: (kind) => fine.push(kind) } });
+  f.voice.startListening();
+  f.rec.onresult(result("hello there", false));
+  for (let i = 0; i < 3; i++) f.rec.onend();
+  f.rec.onerror({ error: "no-speech" });
+  assert.deepEqual(fine, ["no_speech"]);
+  assert.equal(f.voice.isListening(), true);
+});

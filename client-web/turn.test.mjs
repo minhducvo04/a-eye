@@ -174,3 +174,13 @@ test('call page toggles camera, keeps voice-only hello, retries text, reconnects
     for (const [key, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; }
   }
 });
+
+test('a known mic cause replaces the generic failure and clears on speech', () => {
+  let s = nextTurnState(undefined, { type: 'mic_start' }, 0);
+  s = nextTurnState(s, { type: 'cause', detail: 'No speech detected' }, 10);
+  assert.match(statusLine(nextTurnState(s, { type: 'tick' }, 8000), 8000), /^No speech detected/);
+  s = nextTurnState(s, { type: 'interim', text: 'hello' }, 20);
+  assert.equal(s.cause, '');
+  const muted = nextTurnState(nextTurnState(undefined, { type: 'cause', detail: 'Mic blocked' }, 0), { type: 'mic_stop' }, 1);
+  assert.equal(statusLine(muted, 2), 'Mic blocked');
+});

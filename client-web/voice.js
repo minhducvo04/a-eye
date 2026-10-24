@@ -22,6 +22,8 @@ export const VAD_WEB_BASE = "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0
 const DUCK_LEVEL = 0.15;
 // After the VAD hears the end of speech, send the latest words once the recognizer is quiet this long.
 export const VAD_FLUSH_MS = 120;
+const QUICK_END_MS = 1500;
+const QUICK_END_LIMIT = 3;
 
 export function wordCount(text) {
   return wordsOf(text).length;
@@ -232,6 +234,9 @@ export function createVoice(options = {}) {
   let lastInterim = null;
   let flushTimer = 0;
   let synthPaused = false;
+  let recStartedAt = 0;
+  let recHeard = false;
+  let quickEnds = 0;
 
   if (rec) {
     rec.onresult = handleResult;
@@ -326,6 +331,7 @@ export function createVoice(options = {}) {
     rec.lang = lang;
     if (!recRunning) {
       try {
+        recStartedAt = now();
         rec.start();
         recRunning = true;
       } catch {
@@ -361,10 +367,31 @@ export function createVoice(options = {}) {
     if (!speaking) setState("idle");
   }
 
+  // Brave and some Chromium builds expose SpeechRecognition but it never works: it errors with
+  // "network" or ends at once, over and over. Three quick ends without any result means unsupported.
+  function recBroken() {
+    listening = false;
+    early.reset();
+    stopBrowserMeter();
+    stopNeural();
+    onMicError("unsupported"); // before "idle", so the page still knows the mic was on
+    if (!speaking) setState("idle");
+  }
+
   function handleRecEnd() {
     recGeneration += 1;
     recRunning = false;
     if (!listening || !rec) return;
+    if (!recHeard && now() - recStartedAt < QUICK_END_MS) {
+      quickEnds += 1;
+      if (quickEnds >= QUICK_END_LIMIT) {
+        recBroken();
+        return;
+      }
+    } else {
+      quickEnds = 0;
+    }
+    recStartedAt = now();
     try {
       rec.start();
       recRunning = true;
@@ -375,6 +402,14 @@ export function createVoice(options = {}) {
 
   function handleRecError(event) {
     const code = event && event.error;
+    if (code === "network" || code === "language-not-supported") {
+      recBroken();
+      return;
+    }
+    if (code === "no-speech") {
+      onMicError("no_speech");
+      return;
+    }
     if (code === "not-allowed" || code === "service-not-allowed" || code === "audio-capture") {
       listening = false;
       early.reset();
@@ -388,6 +423,8 @@ export function createVoice(options = {}) {
   function handleResult(event) {
     const results = event && event.results;
     if (!results || !listening) return;
+    recHeard = true;
+    quickEnds = 0;
     const from = Number.isInteger(event.resultIndex) ? event.resultIndex : 0;
     for (let i = from; i < results.length; i++) {
       const row = results[i];
@@ -1084,10 +1121,16 @@ function defaultRecognitionFactory() {
   return new Ctor();
 }
 
+// One page-wide context: the one the user's tap unlocked keeps working after the voice is rebuilt
+// (for example when browser STT fails and the page switches to server STT without a new tap).
+let sharedAudioContext = null;
+
 function defaultAudioContextFactory() {
+  if (sharedAudioContext && sharedAudioContext.state !== "closed") return sharedAudioContext;
   const Ctor = globalThis.AudioContext || globalThis.webkitAudioContext;
   if (typeof Ctor !== "function") return null;
-  return new Ctor();
+  sharedAudioContext = new Ctor();
+  return sharedAudioContext;
 }
 
 function hasAudioConstructor() {

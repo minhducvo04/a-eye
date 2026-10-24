@@ -143,6 +143,16 @@ def test_transport_token_redacted():
     assert 'private-secret' not in record.getMessage()
 
 
+def test_access_log_keeps_args_for_uvicorn_formatter():
+    from uvicorn.logging import AccessFormatter
+    protect_transport_logs()
+    record = logging.LogRecord('uvicorn.access', 20, '', 0, '%s - "%s %s HTTP/%s" %d',
+                               ('127.0.0.1:5000', 'GET', '/voice.js?token=private-secret', '1.1', 200), None)
+    logging.getLogger('uvicorn.access').filter(record)
+    line = AccessFormatter('%(client_addr)s - "%(request_line)s" %(status_code)s').format(record)
+    assert 'GET /voice.js?token=[redacted]' in line and 'private-secret' not in line
+
+
 def test_status_timeout_is_bounded_and_cached(monkeypatch):
     monkeypatch.setenv('A_EYE_MOCK', '0')
     application = create_app()

@@ -16,10 +16,21 @@ def event(name, session=None, level='info', **fields):
     print(json.dumps(row, separators=(',', ':')), flush=True)
 
 
+_TOKEN = re.compile(r'([?&]token=)[^&\s"\']*')
+
+
+def _redact(value):
+    return _TOKEN.sub(r'\1[redacted]', value) if isinstance(value, str) else value
+
+
 class TokenFilter(logging.Filter):
+    """Redact ?token= in place. Keep args a tuple of the same length: uvicorn's AccessFormatter unpacks them."""
     def filter(self, record):
-        record.msg = re.sub(r'([?&]token=)[^&\s"\']*', r'\1[redacted]', record.getMessage())
-        record.args = ()
+        record.msg = _redact(record.msg)
+        if isinstance(record.args, tuple):
+            record.args = tuple(_redact(arg) for arg in record.args)
+        elif isinstance(record.args, dict):
+            record.args = {key: _redact(arg) for key, arg in record.args.items()}
         return True
 
 
