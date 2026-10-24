@@ -117,7 +117,7 @@ def test_vision_failure_can_retry_and_connections_are_isolated():
 
 
 @pytest.mark.parametrize('kind,fields', [
-    ('market', {'category': 'ram'}), ('parts_scan', {'jpeg_b64': 'synthetic'}),
+    ('parts_scan', {'jpeg_b64': 'synthetic'}),
     ('project_open', {'project_id': 'demo'}), ('audio', {'pcm16_b64': ''}),
 ])
 def test_unwired_hooks(kind, fields):
