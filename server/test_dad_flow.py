@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from contracts import validate
 from server.app import create_app
 from server.agent import Session, run_turn
-from server import packs
+from server import packs, safety
 from server.packs.home import HomeGuide, TASKS
 
 
@@ -17,11 +17,11 @@ def test_sink_selection_and_completion():
     session = Session('sink-test', packs.get('general'))
     messages = asyncio.run(run_turn(session, 'sink', vision=None, llm=None))
     assert session.home_guide is not None
-    assert any("not your dad" in m.get('text', '') for m in messages)
+    assert any('one step at a time' in m.get('text', '') for m in messages)
     guide = HomeGuide(introduced=True, index=len(TASKS['sink']) - 1)
-    assert 'Tell Dad?' not in guide.reply('done')
+    assert guide.reply('done') == safety.WATER_OFF_LINE
     guide.water_off_passed = True
-    assert guide.reply('done').endswith('Tell Dad?')
+    assert guide.reply('done') == ''
     assert guide.completed
 
 

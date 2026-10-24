@@ -1,5 +1,7 @@
 # Home-fix package result
 
+Historical verification below; product copy has been updated. Current guidance, sharing gates, growth measurements and limits are in [grow.md](grow.md).
+
 Implemented and left uncommitted for lead review. Router and contract files are unchanged.
 
 ## Behavior and changed files
@@ -47,7 +49,7 @@ Test: `git diff --check` - PASS.
 An actual in-process `run_turn` replay with `vision=None` and `llm=None` produced:
 
 ```text
-fix a dripping sink => I'm not your dad, but I can help you do this. Show the dripping tap or supply line and the surrounding floor.
+fix a dripping sink => You can take this one step at a time. Show the dripping tap or supply line and the surrounding floor.
 next => Find the sink shutoff without touching any wet electrical items. Show the valve and its handle.
 next => Gently close the sink shutoff; stop if it sticks or leaks. Show the valve and the open tap with no flow.
 next => Stop here until the step checker confirms the water is off. Show the shutoff valve and the tap with no water flowing.

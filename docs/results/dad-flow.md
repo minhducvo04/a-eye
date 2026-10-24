@@ -1,4 +1,6 @@
-# Dad flow integration — lead review
+# Growth flow integration — lead review
+
+Historical verification below; product copy has been updated. Current guidance, sharing gates, growth measurements and limits are in [grow.md](grow.md).
 
 Implemented in the working tree on 2026-10-24; **not committed or merged**. Read
 `AGENTS.md`, `CLAUDE.md`, and the home-fix, step-check, family-note and proof-wall
@@ -18,7 +20,7 @@ five local-service rehearsals passed. Real-photo checker evaluation remains open
   unsure, stale or failed checks cannot advance plumbing. A pass authorizes only
   the current turn. The outlet hook invokes the existing coded stop, discards any
   armed simulated pass, and requires another check before continuing.
-- Finishing the sink guide says `Tell Dad?` and opens the existing note composer.
+- Finishing the sink guide opens “Want to show someone?” only when a contact has been added.
   Completion is not auto-attested: the user still selects what actually happened.
   Read-before-send, consent, text-only delivery links and reply reading remain
   enforced. Closed-set spoken `send` now tolerates terminal STT punctuation;
@@ -55,7 +57,7 @@ home TTS/STT services:
 This starts and stops its own loopback server, runs five fresh Private calls with
 camera and Rewind off, and removes its temporary text-memory directory. It forces
 real home adapters (`A_EYE_MOCK=0`) and disables the router. Audio is held only in
-RAM. No actual family contact is used: delivery and reply use Fixture Dad locally.
+RAM. No actual family contact is used: delivery and reply use Fixture Friend locally.
 
 For the presenter UI, keep the usual `A_EYE_TOKEN` configured and authenticate the
 browser normally (never paste the token into logs or receipts):
@@ -68,7 +70,7 @@ Open the printed loopback URL, select Private, then Sink. Keep the camera off fo
 the fixture demonstration. Say/type `next` for recall and shutoff, demonstrate
 the blocked check, enable TEST MODE, then use `Test pass + next`. The outlet-stop
 button demonstrates the stop and invalidation. Finish with fresh test passes,
-confirm only the fixture activity in Tell Dad, read the note, and say `send`.
+confirm only the fixture activity in Want to show someone?, read the note, and say `send`.
 Open the resulting fixture delivery link locally to reply.
 
 The integrated browser check expects that presenter server and the same token in
@@ -93,8 +95,8 @@ without loading `.env`. The shared server virtualenv is used below.
 | `node --test client-web/` | **150 tests, 150 pass, 0 fail, 0 skipped** | `/private/tmp/dad-full-node-verified.log` |
 | `python scripts/browser_smoke.py <local mock server>` | **BROWSER SMOKE PASS**; frames_sent 2, problems [] | `/private/tmp/dad-browser-smoke-final.log` |
 | `VISION_BACKEND=fake python scripts/smoke.py` | **SMOKE PASS**; SAFETY → IDENTIFY → LOCATE → GUIDE → AWAIT; target_overlays 1 | `/private/tmp/dad-smoke.log` |
-| `python scripts/dad_flow_rehearsal.py` | **DAD FLOW REHEARSAL: 5/5 PASS, 0/5 FAIL; checker TEST MODE; no real-photo claim** | `/private/tmp/dad-rehearsal-final.log` |
-| `python scripts/dad_flow_browser_smoke.py <local presenter server>` | **DAD FLOW BROWSER: PASS; sink through reply; native note/reply speech completed; TEST MODE visible; all three counters 0** | `/private/tmp/dad-integrated-browser-final.log`; `/private/tmp/dad-flow-browser.png` |
+| `python scripts/dad_flow_rehearsal.py` | **GROWTH FLOW REHEARSAL: 5/5 PASS, 0/5 FAIL; checker TEST MODE; no real-photo claim** | `/private/tmp/dad-rehearsal-final.log` |
+| `python scripts/dad_flow_browser_smoke.py <local presenter server>` | **GROWTH FLOW BROWSER: PASS; sink through reply; native note/reply speech completed; TEST MODE visible; all three counters 0** | `/private/tmp/dad-integrated-browser-final.log`; `/private/tmp/dad-flow-browser.png` |
 
 The two Python warnings come from existing short HMAC keys in JWT test fixtures.
 After the full Python run, the presenter proxy check was switched to the shared
@@ -105,7 +107,7 @@ contracts/` — **109 passed in 0.67s**, retained in
 `/private/tmp/dad-final-targeted.log`. The final Node run includes the client fixes.
 
 The screenshot was visually inspected: Private, TEST MODE, simulated valve card,
-Tell Dad and all three zero counters are visible. Browser note/reply speech
+Want to show someone? and all three zero counters are visible. Browser note/reply speech
 completion callbacks passed. The browser sends by button; actual spoken `Send.`
 through home STT is covered separately by all five server rehearsals.
 
@@ -128,7 +130,7 @@ Note/reply read timings are real home TTS synthesis in the scripted rehearsal.
 | Hand-snug step | 382 | 5 | 737 |
 | Tap step | 353 | 4 | 675 |
 | Dry check step | 356 | 4 | 848 |
-| Tell Dad | 375 | 5 | 479 |
+| Want to show someone? | 375 | 5 | 479 |
 | Note read | 476 | — | 1170 |
 | Spoken send via home STT | — | — | 998 |
 | Fixture reply arrived | — | — | 2 |
@@ -163,4 +165,4 @@ with 401s; authenticated reruns passed without weakening authentication.
 - All work is uncommitted. No deployment, push, merge or service configuration
   change was made. Temporary local demo servers were stopped.
 
-Finished: Dad flow integration and demo verification. Next: lead review and real-photo checker evaluation. Suggested: GPT-6.1 / high.
+Finished: Growth flow integration and demo verification. Next: lead review and real-photo checker evaluation. Suggested: GPT-6.1 / high.
