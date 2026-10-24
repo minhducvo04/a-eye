@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 from anyio import CancelScope
 from PIL import Image
-from time import monotonic
+from time import monotonic, time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import httpx
@@ -45,7 +45,7 @@ TAIL_MAX_BYTES = int(16000 * 2 * 0.9)
 _FILLER_WORDS = {'uh', 'um', 'umm', 'hmm', 'mm', 'mhm', 'ah', 'oh', 'er', 'erm', 'huh', 'you', 'the', 'a', 'and',
                  'so', 'okay', 'ok', 'like', 'i'}
 _NOISE_PHRASES = {'thank you', 'thanks for watching', 'thank you for watching', 'bye', 'you', 'thank you very much'}
-_ONE_WORD = {'yes', 'no', 'yeah', 'yep', 'nope', 'help', 'next', 'stop', 'done', 'wait', 'again', 'hello', 'hi'}
+_ONE_WORD = {'yes', 'no', 'yeah', 'yep', 'nope', 'help', 'next', 'stop', 'done', 'wait', 'again', 'hello', 'hi', 'sink'}
 
 
 def meaningful(text):
@@ -362,8 +362,11 @@ async def websocket(ws: WebSocket):
                    and bool(os.environ.get('ANTHROPIC_API_KEY')) and claude_allowed())
             # ROUTER=on: the router decides first (and logs its label); the regex is the fallback only when the
             # router is off or unsure. Past/object questions and spoken forget go to memory and Rewind.
-            label = await route_turn(session, text) if os.environ.get('ROUTER', 'off') == 'on' else None
-            memory_or_rewind = rewind_mod.wants_rewind(session, text)
+            home_turn = session.home_guide is not None or (session.pack.id == 'general' and
+                re.fullmatch(r'(?:fix (?:the |a )?)?sink[.!]?', text.strip(), re.I))
+            label = (await route_turn(session, text)
+                     if not home_turn and os.environ.get('ROUTER', 'off') == 'on' else None)
+            memory_or_rewind = not home_turn and rewind_mod.wants_rewind(session, text)
             if forget_request(text):
                 # With memory attached its forget also clears this call's clips; without it run_turn's spoken
                 # forget deletes the Rewind clips (the plain rehearsal failed 5 of 5 when this went to rewind_turn).
@@ -585,6 +588,7 @@ async def websocket(ws: WebSocket):
                 meter = getattr(old_call, 'cloud_meter', None) or cloud_meter.Meter()
                 cloud_meter.CURRENT.set(meter)
                 private = bool(incoming.get('private', False))
+                new_session.private = private
                 # Home first: this call's cloud switches (hello.cloud; Private mode or LOCAL_ONLY=1 = all off).
                 privacy.set_call(incoming.get('cloud'), private=private, rewind=incoming.get('rewind', False))
                 stt_mode = 'server' if private else incoming.get('stt', 'browser')
@@ -619,10 +623,18 @@ async def websocket(ws: WebSocket):
                 session.rewind = rewind_mod.registry(ws.app).open(
                     session.session_id, on=incoming.get('rewind', False), owner=rewind_mod.identity(ws))
                 session.rewind.cloud_meter = meter
+                session.rewind.session = session
+                if getattr(ws.app.state, 'presenter', False) and private:
+                    seed = getattr(ws.app.state, 'presenter_seed', None)
+                    if seed:
+                        seed(session.session_id, rewind_mod.identity(ws))
                 rewind_task = asyncio.create_task(session.rewind.follow(session))
                 if session.rewind.on:
                     await send(rewind_mod.state_message(session.rewind))
                 await send(state('listening'))
+                if getattr(ws.app.state, 'presenter', False) and private and session.pack.id == 'home':
+                    await send(message('turn', turn_id='presenter', stage='done', detail='Presenter available',
+                                       at_ms=int(time() * 1000)))
                 continue
             if session is None or incoming['session_id'] != session.session_id:
                 await send(message('error', code='bad_message', message='Send hello with the matching session first.'))

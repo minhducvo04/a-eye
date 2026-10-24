@@ -78,7 +78,7 @@ test('early final uses latest interim at 700ms and never sends a late correction
   assert.equal(sent.length, 2);
 });
 
-for (const headset of [false, true]) test(headset ? 'headset call never acquires local video through camera or permission controls' : 'call page toggles camera, keeps voice-only hello, retries text, reconnects, and renders streamed replies', async () => {
+for (const [headset, home] of [[false, false], [true, false], [false, true]]) test(home ? 'sink selection and presenter controls use real client contracts' : headset ? 'headset call never acquires local video through camera or permission controls' : 'call page toggles camera, keeps voice-only hello, retries text, reconnects, and renders streamed replies', async () => {
   const saved = new Map();
   const put = (key, value) => { saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { value, configurable: true, writable: true }); };
   const nodes = new Map(), intervals = new Map(), timeouts = new Map();
@@ -88,7 +88,15 @@ for (const headset of [false, true]) test(headset ? 'headset call never acquires
   let recognition;
   const synth = { getVoices: () => [{ localService: true, lang: "en-US" }], cancel() {}, speak(u) { this.current = u; } };
   const proofRequests = [];
-  put('fetch', async path => {
+  let presenterEnabled = false;
+  const presenterRequests = [];
+  put('fetch', async (path, options) => {
+    if (path.startsWith('/api/dad-demo?')) {
+      presenterRequests.push(options);
+      const body = options?.body ? JSON.parse(options.body) : null;
+      if (body && typeof body.enabled === 'boolean') presenterEnabled = body.enabled;
+      return { ok: true, json: async () => ({ enabled: presenterEnabled }) };
+    }
     if (path.startsWith('/api/family?') && familyReply) return {
       ok: true, json: async () => ({ contacts: [], tasks: {}, replies: [familyReply] }),
     };
@@ -134,13 +142,35 @@ for (const headset of [false, true]) test(headset ? 'headset call never acquires
   let now = 1000;
   Date.now = () => now;
   try {
-    await import(`./agent.js?headset-test=${headset}`);
-    node('picker').handlers.click({ target: { closest: () => ({ getAttribute: () => 'general' }) } });
+    await import(`./agent.js?headset-test=${headset}&home=${home}`);
+    node('picker').handlers.click({ target: { closest: () => ({ getAttribute: name => home ? (name === 'data-pack' ? 'home' : 'plumbing') : 'general' }) } });
     await settle();
     const socket = Socket.all[0];
     assert.ok(socket);
     socket.open();
     assert.equal(socket.messages[0].camera, false);
+    if (home) {
+      assert.equal(socket.messages[0].pack, 'home');
+      socket.message({ type: 'agent_state', agent: 'helper', state: 'listening' });
+      assert.equal(socket.messages[1].text, 'sink');
+      assert.equal(socket.messages[1].source, 'typed');
+      socket.message({ type: 'agent_state', agent: 'helper', state: 'listening' });
+      assert.equal(socket.messages.length, 2);
+      socket.message({ type: 'turn', turn_id: 'presenter', stage: 'done', detail: 'Presenter available' });
+      await settle();
+      assert.equal(presenterRequests[0].method, undefined, 'discovery must be a GET');
+      await node('dad-test').handlers.change({ target: { checked: true } });
+      assert.deepEqual(JSON.parse(presenterRequests.at(-1).body), { enabled: true });
+      assert.equal(node('dad-test-label').classList.contains('hidden'), false);
+      await node('dad-pass').handlers.click();
+      assert.deepEqual(JSON.parse(presenterRequests.at(-1).body), { state: 'closed' });
+      assert.equal(socket.messages.at(-1).text, 'next');
+      assert.equal(socket.messages.at(-1).source, 'typed');
+      socket.message({ type: 'turn', stage: 'speaking', detail: 'Home: complete' });
+      assert.equal(node('family-panel').open, true);
+      assert.equal(node('family-complete').checked, false);
+      return;
+    }
     const proofPoll = [...intervals.values()].find(timer => timer.fn.name === 'refreshProof');
     await proofPoll.fn();
     assert.ok(proofRequests.at(-1).includes(encodeURIComponent(socket.messages[0].session_id)));
@@ -256,6 +286,7 @@ for (const headset of [false, true]) test(headset ? 'headset call never acquires
     assert.ok([...timeouts.keys()].every(id => id <= lastTimer), 'End call does not schedule a reconnect');
     assert.equal(node('call').classList.contains('hidden'), true);
   } finally {
+    if (home) node('end-call').handlers.click();
     Date.now = realNow;
     for (const [key, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; }
   }

@@ -33,7 +33,7 @@ with sync_playwright() as p:
     user.click('#family-send')
     user.locator('#family-link').wait_for(state='visible')
     link = user.locator('#family-link').get_attribute('href')
-    assert user.locator('#family-pictures').inner_text() == 'Pictures sent to family: 0'
+    assert user.locator('#family-pictures').inner_text() == 'Pictures sent: 0'
     assert user.locator('#proof-cloud-calls').inner_text() == 'Cloud AI calls: 0'
     parent = context.new_page()
     parent.set_viewport_size({'width': 390, 'height': 844})

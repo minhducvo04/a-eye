@@ -1,6 +1,6 @@
 // No cloud composer, media fields, cross-call memory, or default recipient.
 export function confirmation(text) {
-  return String(text || '').trim().toLowerCase() === 'send' ? 'send' : 'cancel';
+  return String(text || '').trim().toLowerCase().replace(/[.!?]+$/, '').trim() === 'send' ? 'send' : 'cancel';
 }
 
 export function createApproval(post) {
@@ -145,6 +145,12 @@ export function setupFamily({ session, request, speak }) {
   const timer = window.setInterval(refresh, 2000);
   window.addEventListener('pagehide', () => { window.clearInterval(timer); approval.clear(); });
   return {
+    complete(task) {
+      root.open = true;
+      if (tasks[task]) { $('task').value = task; fillDetails(); }
+      $('complete').checked = false;
+      $('status').textContent = 'Tell Dad? Choose your person and confirm only what you actually did.';
+    },
     consume(text, source) {
       if (!approval.pending()) return false;
       generation++;
