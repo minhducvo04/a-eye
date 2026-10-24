@@ -177,7 +177,12 @@ def main():
               // Main-thread lag: a 250 ms timer that fires late means something blocked the page.
               let last = performance.now();
               setInterval(() => { const now = performance.now(); if (now - last > 1000) log('main thread blocked ' + Math.round(now - last - 250) + ' ms'); last = now; }, 250);
-              try { new PerformanceObserver((list) => { for (const e of list.getEntries()) if (e.duration > 500) log('long task ' + Math.round(e.duration) + ' ms ' + (e.attribution && e.attribution[0] ? e.attribution[0].containerType || e.attribution[0].name : '')); }).observe({ entryTypes: ['longtask'] }); } catch (e) {}
+              // Long tasks (script) and long animation frames (script + style/layout/paint), with the script that ran.
+              window.__aeyeLong = [];
+              try { new PerformanceObserver((list) => { for (const e of list.getEntries()) { window.__aeyeLong.push([Math.round(e.startTime - t0), Math.round(e.duration)]); if (e.duration > 200) log('long task ' + Math.round(e.duration) + ' ms ' + (e.attribution && e.attribution[0] ? e.attribution[0].containerType || e.attribution[0].name : '')); } }).observe({ entryTypes: ['longtask'] }); } catch (e) {}
+              try { new PerformanceObserver((list) => { for (const e of list.getEntries()) if (e.duration > 200) log('long frame ' + Math.round(e.duration) + ' ms, blocking ' + Math.round(e.blockingDuration || 0) + ', style+layout ' + Math.round(e.styleAndLayoutStart ? e.startTime + e.duration - e.styleAndLayoutStart : 0) + ' ms: ' + (e.scripts || []).map((x) => (x.sourceURL || '').split('/').pop() + ' ' + (x.sourceFunctionName || x.invoker || '') + ' ' + Math.round(x.duration)).slice(0, 3).join(' | ')); }).observe({ type: 'long-animation-frame' }); } catch (e) {}
+              // When the find card shows (page time), so long tasks after it can be checked.
+              document.addEventListener('DOMContentLoaded', () => new MutationObserver(() => { if (!window.__aeyeCardAt && document.querySelector('.memory-split')) { window.__aeyeCardAt = Math.round(performance.now() - t0); log('find card shown'); } }).observe(document.body, { childList: true, subtree: true }));
             })()""")
             page.on("pageerror", lambda e: errors.append(str(e)))
             cdn = []   # third-party script loads (the voice activity detector comes from a CDN)
@@ -265,8 +270,11 @@ def main():
                 shot("4-forgotten")
             try:
                 client_log = page.evaluate("() => window.__aeyeLog || []")
+                card_at = page.evaluate("() => window.__aeyeCardAt || null")
+                long_after_card = [d for ms, d in page.evaluate("() => window.__aeyeLong || []") if card_at and ms >= card_at]
             except Exception as exc:
                 client_log = [[int((time.time() - t0) * 1000), f"page unresponsive at the end ({type(exc).__name__})"]]
+                card_at, long_after_card = None, [10 ** 6]
             browser.close()
 
         mark(f"page sent: {sent_types}")
@@ -301,6 +309,9 @@ def main():
             "forget: clip count 0": bool(state),
             "forget: TwelveLabs delete called": len(deleted) > 0,
             "no page errors": not errors,
+            # The card's images, arrow and tracker must never block the page (stage stalls of about 1 s were seen).
+            "no long task over 300 ms after the card": bool(card_at) and max(long_after_card, default=0) <= 300,
+            "longest task after the card": f"{max(long_after_card, default=0)} ms",
         }
         rows = [
             ("question heard (turn received)", t_q),

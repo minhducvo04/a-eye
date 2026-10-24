@@ -7,7 +7,7 @@ Runs a real Chromium (Playwright) with a fake camera and microphone against a ru
 
 Checks: no console errors or page errors from load to the end; the pack picker starts a session; Camera on flips
 its state and frames start; Mic flips its state; Hold to talk can be pressed; a typed question gets a reply
-caption; Settings shows Use my phone first and scrolls with the wheel. Exit 0 on pass. Synthetic media only (Chromium's fake devices).
+caption; Settings shows Use my phone first and scrolls with the wheel; no long task over 300 ms after a find card. Exit 0 on pass. Synthetic media only (Chromium's fake devices).
 """
 import json
 import os
@@ -37,7 +37,16 @@ def main():
     with sync_playwright() as p:
         browser = p.chromium.launch(args=["--use-fake-ui-for-media-stream",
                                           "--use-fake-device-for-media-stream"])
-        page = browser.new_context(permissions=["camera", "microphone"]).new_page()
+        context = browser.new_context(permissions=["camera", "microphone"])
+        # Long tasks, and a handle on the call socket so the smoke can show a find card without the brain.
+        context.add_init_script("""(() => {
+          window.__long = [];
+          try { new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__long.push([e.startTime, e.duration]); })
+            .observe({ entryTypes: ['longtask'] }); } catch (e) {}
+          const WS = window.WebSocket; window.__ws = [];
+          window.WebSocket = class extends WS { constructor(...a) { super(...a); window.__ws.push(this); } };
+        })()""")
+        page = context.new_page()
         page.on("console", lambda m: problems.append(f"console {m.type}: {m.text}")
                 if m.type == "error" and not any(x in m.text for x in IGNORED) else None)
         page.on("pageerror", lambda e: problems.append(f"page error: {e}"))
@@ -111,6 +120,26 @@ def main():
         page.wait_for_timeout(500)
         if page.evaluate("document.getElementById('settings').scrollTop") >= scrolled:
             problems.append("wheel over the backdrop did not scroll Settings")
+        page.click("#settings-done")
+
+        # Find card (split view: kept frame, live pane, arrow): no long task over 300 ms in the 6 s after it shows.
+        card_at = page.evaluate("""() => {
+          const c = document.createElement('canvas'); c.width = 640; c.height = 480;
+          const g = c.getContext('2d'); for (let i = 0; i < 400; i++) { g.fillStyle = `hsl(${i % 360},60%,50%)`; g.fillRect((i * 37) % 640, (i * 53) % 480, 40, 30); }
+          const frame = c.toDataURL('image/jpeg', 0.8).split(',')[1];
+          const msg = { v: 2, type: 'find_item', item: 'keys', t_s: 3, frame_b64: frame, sure: true, found: true,
+            objects: [{ label: 'keys', bbox: [0.4, 0.5, 0.15, 0.15] }], live: { object_id: 'o1', bbox: [0.5, 0.5, 0.1, 0.1] } };
+          const ws = window.__ws[window.__ws.length - 1];
+          ws.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(msg) }));
+          return performance.now();
+        }""")
+        page.wait_for_timeout(6000)
+        if not page.locator(".memory-split").count():
+            problems.append("find card did not show")
+        longest = page.evaluate("(t) => Math.max(0, ...window.__long.filter(([s]) => s >= t).map(([, d]) => d))", card_at)
+        print(f"longest task after the find card: {round(longest)} ms")
+        if longest > 300:
+            problems.append(f"long task of {round(longest)} ms after the find card (limit 300 ms)")
         browser.close()
 
     print(redact(json.dumps({"frames_sent": frames, "problems": problems}, indent=1)))
