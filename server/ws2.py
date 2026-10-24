@@ -770,15 +770,20 @@ async def yolo_loop(session, box, send):
 
 async def warm_brain(app):
     """Warm only the local model, using the same GPU gate as socket turns."""
-    from server.llm import LOCAL_DEFAULT
+    from server.llm import LOCAL_KEEP_ALIVE, local_model, local_options
     try:
-        async with gpu_gate(app).hold(brain=True):
-            async with httpx.AsyncClient(timeout=5) as client:
+        # Same options as real turns (or Ollama reloads); a cold CPU load of the 35B takes tens of seconds.
+        # Seen live: without a warm model a Private call said "The brain is unavailable" after about 11 s.
+        from contextlib import nullcontext
+        from server.llm import VISION_MODELS
+        # A CPU talker does not need the GPU gate; holding it during a long cold load would stall vision scans.
+        hold = gpu_gate(app).hold(brain=True) if local_model() in VISION_MODELS else nullcontext()
+        async with hold:
+            async with httpx.AsyncClient(timeout=float(os.environ.get('LOCAL_WARM_TIMEOUT_S', '180'))) as client:
                 response = await client.post(
                     os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434').rstrip('/') + '/api/chat',
-                    json=dict(model=os.environ.get('LOCAL_LLM_MODEL', LOCAL_DEFAULT), stream=False,
-                              think=False, options=dict(num_predict=1, num_ctx=4096), keep_alive='30m',
-                              messages=[dict(role='user', content='Hi')]))
+                    json=dict(model=local_model(), stream=False, think=False, options=local_options(1),
+                              keep_alive=LOCAL_KEEP_ALIVE, messages=[dict(role='user', content='Hi')]))
                 response.raise_for_status()
     except Exception:
         pass

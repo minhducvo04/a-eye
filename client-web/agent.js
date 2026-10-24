@@ -53,7 +53,8 @@ import {
   videoConstraints,
 } from "./devices.js";
 
-// Same names and order as ios/AEyeCore Modes.all; pack null means "coming soon". PC Build is centred at launch.
+// Same names and order as ios/AEyeCore Modes.all, plus Memory; pack null means "coming soon". Memory (the memory
+// aid, the product focus) is centred at launch on the web; iOS still centres PC Build.
 const MODES = [
   { id: "general", title: "General", pack: "general" },
   { id: "pc_build", title: "PC Build", pack: "pc_build" },
@@ -64,7 +65,7 @@ const MODES = [
   { id: "plumbing", title: "Plumbing", pack: null },
   { id: "engineering", title: "Engineering", pack: null },
 ];
-const DEFAULT_MODE = 1;
+const DEFAULT_MODE = MODES.findIndex((m) => m.id === "memory");
 const RING_SLOT = 84;
 const PACK_LABEL = Object.fromEntries(MODES.filter((m) => m.pack).map((m) => [m.pack, m.title]));
 const PRESENCE_STATES = ["idle", "listening", "thinking", "speaking"];
