@@ -59,6 +59,10 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
     app.state.vision = vision if vision is not None else VisionClient()
     app.state.llm = llm if llm is not None else LLMClient()
     app.state.mock = os.environ.get('A_EYE_MOCK') == '1'
+    if os.environ.get('REWIND_FAKE_TL') == '1':
+        # Rehearsals: Rewind runs end to end with an in-process TwelveLabs stand-in (nothing uploaded).
+        from server.rewind_fake import FakeTwelveLabs
+        app.state.rewind_client = FakeTwelveLabs()
     app.state.status_cache = None
     app.state.status_lock = asyncio.Lock()
     if app.state.mock:

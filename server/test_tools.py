@@ -287,3 +287,27 @@ def test_router_hook_calls_aroute_and_sends_recaps_to_recap_call(monkeypatch):
     assert asyncio.run(routing.route_turn(session, 'x')) == 'unsure' and len(calls) == 1
     assert routing.past_tool('can you recap what I did so far?') == 'recap_call'
     assert routing.past_tool('when did I plug in the fan?') == 'search_past'
+
+
+def test_spoken_forget_deletes_clips_like_the_button():
+    """'Forget that' runs Rewind.forget(local=True): TwelveLabs deletes and the clip count drops to 0."""
+    from server.routing import forget_request
+    from server.rewind import Clip, Rewind
+    from server.rewind_fake import FakeTwelveLabs
+    assert forget_request('Forget that.') and forget_request('please delete the recording')
+    assert not forget_request('I forgot my keys') and not forget_request('where are my keys?')
+    async def check():
+        fake = FakeTwelveLabs()
+        rewind = Rewind('s', client=fake)
+        rewind.index_id = 'fake-index'
+        clip = Clip.__new__(Clip)
+        clip.__dict__.update(start_s=0.0, end_s=4.0, key_s=1.0, frames=[(1.0, 'AAAA')], status='ready',
+                             video_id='video-1', task_id='task-1')
+        rewind.clips = [clip]
+        s = Session('s', camera=False)
+        s.rewind = rewind
+        messages = await run_turn(s, 'Forget that.', vision=Vision(), llm=LLMClient(anthropic_client=Client()))
+        assert fake.deleted == ['video-1'] and rewind.status()['clips'] == 0
+        assert any(m['type'] == 'rewind_state' and m['clips'] == 0 for m in messages)
+        assert [m['text'] for m in messages if m['type'] == 'say'] == ['Done. I deleted 1 clip of this call.']
+    asyncio.run(check())

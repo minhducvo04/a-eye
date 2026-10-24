@@ -63,3 +63,11 @@ def warm_router():
         route('hi')
     except Exception:
         event('dependency_error', dependency='router', level='error')
+
+
+FORGET = re.compile(r"\b(forget (that|this|it|everything|the (clips?|recording))|delete (the )?(clips?|recording))\b", re.I)
+
+
+def forget_request(text):
+    """A spoken request to delete this call's Rewind clips."""
+    return bool(FORGET.search(text or ''))
