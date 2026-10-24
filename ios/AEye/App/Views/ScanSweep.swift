@@ -13,8 +13,8 @@ struct ScanSweep: View {
     private static let bracketLength: CGFloat = 26
     /// The scanned region: inset from the sides, and above the caption and controls at the bottom.
     private static let horizontalInset: CGFloat = 28
-    private static let topFraction: CGFloat = 0.16
-    private static let bottomFraction: CGFloat = 0.58
+    private static let topFraction: CGFloat = 0.08
+    private static let bottomFraction: CGFloat = 0.88
 
     var body: some View {
         GeometryReader { geometry in
