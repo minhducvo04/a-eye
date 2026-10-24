@@ -202,7 +202,13 @@ async def run_turn(session, text, *, vision, llm):
                         continue
                     line, buffer = buffer.split('\n', 1)
                     try:
-                        turn = json.loads(line)
+                        turn = json.loads(line.strip().strip('`'))
+                        if not isinstance(turn, dict):
+                            raise ValueError('header is not an object')
+                        # Small local models often omit fields; fill defaults, keep only known keys.
+                        turn = {k: v for k, v in turn.items() if k in ('agent', 'draw', 'market_category')}
+                        turn.setdefault('agent', 'helper')
+                        turn.setdefault('draw', [])
                         validate('brain_turn', dict(turn, say='stream'))
                     except Exception:
                         turn = dict(agent='helper', draw=[])
@@ -225,6 +231,8 @@ async def run_turn(session, text, *, vision, llm):
                     if not end:
                         break
                     sentence, buffer = buffer[:end].strip(), buffer[end:]
+                    if sentence.startswith('SAY:'):
+                        sentence = sentence[4:].strip()
                     if sentence:
                         if pending:
                             await speech(pending, agent=turn['agent'])

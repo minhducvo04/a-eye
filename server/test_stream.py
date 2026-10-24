@@ -190,3 +190,21 @@ def test_draw_and_first_sentence_arrive_before_brain_finishes():
         release.set()
         await task
     asyncio.run(check())
+
+
+def test_header_without_draw_is_accepted_and_say_marker_stripped():
+    """Seen live with gemma4: header {"agent": "helper"} without draw, then 'SAY: ...'."""
+    class LooseBrain:
+        async def stream(self, system, user, **kwargs):
+            for chunk in ['{"agent": "helper"}\n', 'SAY: Cut it in half. ', 'Keep fingers back.']:
+                yield chunk
+
+    async def check():
+        session = Session('s')
+        session.scene = SCENE
+        session.scene_time = monotonic()
+        messages = await run_turn(session, 'cut', vision=Vision(), llm=LooseBrain())
+        for msg in messages:
+            validate('server_message_v2', msg)
+        assert [m['text'] for m in messages if m['type'] == 'say'] == ['Cut it in half.', 'Keep fingers back.']
+    asyncio.run(check())
