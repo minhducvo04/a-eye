@@ -2,16 +2,14 @@
 import asyncio
 import os
 from pathlib import Path
-import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
+from server.rewind import registry, identity
 from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix='/api/proof')
 DATA_DIR = Path(__file__).resolve().parents[1] / 'data'
 IMAGE_SUFFIXES = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.heic', '.avif', '.tif', '.tiff'}
-_network = None
-_lock = asyncio.Lock()
 
 
 def picture_count(root=None):
@@ -27,29 +25,13 @@ def picture_count(root=None):
     return count
 
 
-async def outbound_check():
-    """A bounded TCP handshake only: no HTTP request, credentials, prompt, image or audio."""
-    global _network
-    async with _lock:
-        if _network and time.monotonic() - _network[0] < 10:
-            return _network[1]
-        try:
-            _, writer = await asyncio.wait_for(asyncio.open_connection('1.1.1.1', 443), 1)
-            writer.close()
-            await writer.wait_closed()
-            online = True
-        except (OSError, TimeoutError):
-            online = False
-        result = dict(online=online, checked_at_ms=int(time.time() * 1000))
-        _network = (time.monotonic(), result)
-        return result
-
-
 @router.get('')
-async def status():
+async def status(request: Request, session_id: str = ''):
+    call = registry(request.app).get(session_id, identity(request))
+    meter = getattr(call, 'cloud_meter', None)
     try:
         count = await asyncio.to_thread(picture_count)
     except OSError:
         count = None  # unreadable is unknown, never a reassuring zero
-    return JSONResponse(dict(pictures_saved=count, **await outbound_check()),
+    return JSONResponse(dict(pictures_saved=count, **(meter.snapshot() if meter else dict(cloud_ai_calls=None, bytes_to_cloud=None))),
                         headers={'Cache-Control': 'no-store'})

@@ -1,92 +1,75 @@
-# Proof wall — lead review receipt
+# Proof wall — cloud boundary follow-up to 67ffd3e
 
-Implemented in the working tree; no commit. Read AGENTS.md and CLAUDE.md. No changes to contracts or server/ws2.py.
+Implemented in the working tree; changes are **uncommitted**. Read AGENTS.md and CLAUDE.md. No contract changes.
 
-The Private expert regression failed first at the expert handoff, then passed after routing Private expert requests through the normal local talker. It says “Private mode: I will answer with the local model.” Subsequent model-requested escalation is also disabled in Private mode. Existing provider guards select the local backend; local failure is shown as unavailable/canned, not a successful model answer.
+## Demo claim and setup
 
-## Judge setup and offline login
+**Keep the internet connected.** The phone reaches the home GPU PC over the private link; the presenter's laptop stays a light client. The claim is “nothing goes to any cloud AI,” not offline operation. The old WAN-unplugged setup and connectivity-probe evidence from 67ffd3e are superseded.
 
-1. Before disconnecting WAN, provision the local model files and LAN services. Set OLLAMA_URL, BOX_URL, VISION_URL and, if used, ROUTER_OLLAMA_URL to the machines' **home LAN addresses**, not a public tunnel or a relay-dependent address. Keep the LAN switch/Wi-Fi on when unplugging internet.
-2. Configure A_EYE_TOKEN privately in the server environment. Do not enable A_EYE_OPEN. Run `LOCAL_ONLY=1 make server` (or the same uvicorn command with the configured environment). Select Private in Settings: local brain, Kokoro, server STT, Rewind off.
-3. LAN page: `http://<server-LAN-IP>:8000/agent.html?token=<A_EYE_TOKEN>`. The browser sends that token as a Bearer header to `/api/proof` and uses the existing token path for `/ws2`. A valid token is checked before Cloudflare certificates, so this works without Access or internet. Do not copy a real token into receipts or logs.
-4. Camera/microphone require a secure browser context: on the server Mac use `http://localhost:8000/agent.html?token=<A_EYE_TOKEN>`; on another LAN device use an already trusted local HTTPS endpoint/certificate. Plain LAN HTTP permits the page and typed demo but is not camera/mic proof. Cloudflare Access/tunnels are not the offline route.
-5. Run `make offline-check` and `python scripts/proof_wall_rehearsal.py` with the same local service environment. If this worktree lacks a venv, `make offline-check PY=/Users/minhducvo/Projects/a-eye/.venv/bin/python` uses the existing interpreter. No model download is performed by these scripts.
+1. Keep the configured home GPU, vision, STT and Kokoro services reachable. `OLLAMA_URL`, `BOX_URL`, `VISION_URL` and `ROUTER_OLLAMA_URL` identify trusted home services. No model download or network setting change is performed by this work.
+2. Run the server with `LOCAL_ONLY=1` and select Private in Settings: local brain, server STT/TTS, Rewind off. Keep existing authentication and the phone's trusted HTTPS/private-link setup. Do not copy real tokens into receipts.
+3. Start a fresh call. Keep **Cloud AI calls: 0** and **Bytes to cloud: 0** visible while trying recall, a normal local answer and the safety refusal. Changing settings within the same call does not erase earlier cloud traffic.
+4. Run `python scripts/proof_wall_rehearsal.py` using the configured home services. Each of its five Private trials checks both counters are exactly zero. Internet stays connected.
 
-Authentication is unchanged. The new GET `/api/proof` is under the existing `/api/` middleware: no credential and wrong credential are 401 remotely; valid token succeeds. There is no new write endpoint or public proof bypass.
+## What changed
 
-## What the strip proves
+- Replaced Online/Offline with **Cloud AI calls: N** and **Bytes to cloud: N**. Removed the TCP probe to `1.1.1.1` entirely.
+- Count at the shared HTTPX/HTTPX2 single-request send boundary and outgoing `websockets` client message boundary. Anthropic SDK retries, hosted OpenAI-compatible requests, Cartesia HTTP/WebSocket messages and TwelveLabs requests/uploads pass through these boundaries. New destinations using these clients are automatically counted; there is no provider-name allowlist to update.
+- A mutable, locked counter belongs to the call context. Turn/expert/voice/Rewind tasks and `asyncio.to_thread` inherit it. Repeated hello/reconnect for the same retained owner/session preserves totals; a new call starts at zero. Rewind HTTP actions and voice samples bind to the authenticated call.
+- `/api/proof?session_id=...` uses existing authentication and owner identity. An absent/unknown/other-owner session returns unknown counters, never an invented zero. The browser sends its owner header and refreshes every two seconds. Counter failures display unknown.
+- **Pictures saved**, actual **Brain** metadata and **Stopped by code** behavior are preserved. Pictures still counts image-named files under this checkout's `data/`, without opening content or following symlinks; unreadable is unknown.
 
-- **Pictures saved**: actual recursive image-file count under this checkout's server `data/` directory, including encrypted `.jpg` crops. Counts filenames with known image extensions without opening content or following symlinks. An unreadable directory returns unknown. This does not inventory other directories, extensionless files, video or audio; externally configured memory directories are outside this count.
-- **Online/Offline**: server TCP handshake to `1.1.1.1:443`, cached for 10 seconds. It sends no HTTP payload, credentials, media or conversation. This intentional connectivity probe is an outbound connection attempt even in Private mode. Offline means this probe failed, not universal proof that every internet host is unreachable. HTTP failure displays unknown, never Offline.
-- **Brain**: actual streaming provider/model captured in turn context and carried in the existing `turn.detail` field. Local, expert/cloud and unavailable/canned are distinct. Expert answers use their result model metadata. Planner tasks cannot overwrite talker metadata. No schema changes. Memory lookup and fixed safety answers do not invoke a brain and retain the last model label.
-- **Stopped by code**: the fixed home-safety refusal or a streamed sentence replaced by the safety guard emits turn metadata. The label clears on the next received turn.
+## Counting semantics and limits
 
-Cloud boundary tests exercise Anthropic, Cartesia, TwelveLabs, hosted OpenAI-compatible fallback and Private expert routing with intercepted transports. They support the guarded paths tested; they are not a formal proof over every possible code path or arbitrary operator-supplied service URL. The requested physical WAN-disconnected demonstration remains for the judge; networking was not changed during this run.
+- Calls count outgoing request attempts, including failed attempts, retries, redirects and WebSocket messages (including cancellation). They do not mean completed model responses.
+- Bytes count outgoing HTTP body / WebSocket message payload bytes, including serialized JSON and multipart upload framing. Buffered bodies count at send; streamed bodies count as consumed. Headers, response bytes, WebSocket framing, TLS and IP overhead are excluded. The strip tooltip states this scope. No payload or credential is retained by the meter.
+- Loopback, RFC1918 LAN, link-local, IPv6 private ranges, `100.64.0.0/10` tailnet addresses, local/tailnet hostnames and explicitly configured home-service hosts are excluded. Unknown/public hosts count; OpenAI-compatible base URLs are not automatically exempted.
+- To avoid silently missing a newly added provider, these shared boundaries conservatively count **other public HTTP/WebSocket requests made within the call too**. Thus nonzero is an outgoing public request indicator, not an AI billing total.
+- This is server call instrumentation, not an OS packet monitor. Browser-native cloud speech and unrelated server/startup traffic are outside its scope; use Private/server STT for this demonstration. A future provider using a different networking library must integrate its send boundary. Operator-configured home endpoints are trusted; this does not validate their downstream behavior.
+- The retained registry bounds session history. An evicted or restarted-server session is unknown. Physical phone/home-GPU proof and local audio readiness remain separate from the synthetic browser smoke.
 
 ## Verification
 
-Interpreter: `/Users/minhducvo/Projects/a-eye/.venv/bin/python` (this worktree has no `.venv`).
+Python: `/Users/minhducvo/Projects/a-eye/.venv/bin/python` (no worktree venv).
 
-- Failing test first: `python -m pytest -q server/test_proof_wall.py` → **1 failed**, `Private turn must not enter the expert desk`.
-- `python -m pytest -q server/test_proof_wall.py server/test_agent.py server/test_llm.py server/test_brain_local.py server/test_brain_openai_compat.py server/test_expert.py server/test_auth_fixes.py voice/test_safety.py voice/test_private.py voice/test_home_first.py` → **167 passed in 5.87s**.
-- After final provider metadata isolation and fixture test: `python -m pytest -q server/test_proof_wall.py server/test_agent.py server/test_llm.py server/test_brain_local.py server/test_brain_openai_compat.py scripts/test_offline_check.py` → **55 passed in 4.97s**. Other previously passing modules were unchanged.
-- `node --test client-web/` → **138 passed, 0 failed**, 861 ms. Includes proof model display and safety reset assertions in the existing real client handler harness. An initial run hung because the new interval used the global timer instead of the client window timer; corrected and rerun.
-- Real Chromium smoke used a temporary authenticated loopback mock server with synthetic camera/mic and temporary memory: `env A_EYE_TOKEN=<fixture> uv run --offline --no-project --with playwright python scripts/browser_smoke.py http://127.0.0.1:18439`. First authenticated run: **BROWSER SMOKE PASS**, 2 frames, problems `[]`, longest find-card task 0 ms. Final run additionally asserts the proof count and server network result (see final summary below). Mock smoke establishes browser wiring, not GPU inference or physical devices.
+Failing test first:
 
-### Local readiness output
+`python -m pytest -q server/test_proof_wall.py -k private_and_cloud_turn_counters`
 
-`python scripts/offline_check.py` (exit 1 because vision is missing):
+**1 failed, 4 deselected**: the counter module did not exist. After implementation, the same regression runs real turn routing against an intercepted HTTP provider: Private calls/bytes stay zero; the cloud turn produces one request and positive bytes.
 
-```text
-WAN must be unplugged by the judge; this command does not change networking.
-PASS | local talker | answered locally
-SKIP | local vision | unavailable (ConnectError)
-PASS | STT | answered locally
-PASS | TTS | answered locally
-PASS | router | answered locally
-PASS | local memory search | answered locally
-PASS | Private cloud boundary tests | 24 passed in 1.84s
-OFFLINE CHECK: 5/6 services; guards=PASS
-```
+Transport checks caught the installed Anthropic SDK's use of **HTTPX2**, which is now instrumented alongside HTTPX. Tests cover SDK retry counts, exact payload sizes, streamed bodies, unknown providers, local exclusions, concurrent calls, actual loopback WebSocket sends, owner isolation and repeated-hello retention. No paid cloud request was made.
 
-STT probe uses synthetic silence and checks a valid transcript response, not recognition accuracy. Vision requires a non-fake health response and synthetic scene inference. Memory checks exact recall and local semantic embedding. Full six-service offline readiness is **not** established: start/configure local vision and rerun with WAN disconnected.
+Test: `python -m pytest -q server/test_cloud_meter.py server/test_proof_wall.py server/test_ws2.py server/test_rewind.py server/test_rewind_activity.py server/test_llm.py server/test_brain_openai_compat.py voice/test_cartesia_ws.py voice/test_voice.py voice/test_home_first.py voice/test_private.py` - PASS (**121 passed in 16.70s**).
 
-### Rehearsal output
+Test: `python -m pytest -q server/test_cloud_meter.py server/test_proof_wall.py server/test_auth_fixes.py` - PASS (**71 passed in 1.20s**) after final middleware scope/transport cleanup.
 
-Real production HTTP/WebSocket server on an ephemeral loopback port; temporary fixture identity/token and text-only memory removed at exit. Every hello has Private=true, camera=false, Rewind=false, server TTS/STT. Router is off to exercise the existing deterministic recall path; router inference is checked separately by offline-check. Five trials each ask yesterday's memory, trigger the smoking power-strip gate, and GET the authenticated picture count. First-audio is receipt of nonempty server PCM; answer is receipt of the final spoken-text message (not playback completion). Typed input does not measure STT latency.
+Test: `node --test client-web/` - PASS (**138 passed, 0 failed**, 859 ms). Includes current session query, both numeric labels, unknown on HTTP failure, and unchanged brain/safety handler checks.
+
+Test: `python scripts/proof_wall_rehearsal.py` - **cloud counters PASS in all five trials; audio SKIP** (exit 1, correctly retained):
 
 ```text
-trial 1 yesterday: PASS; first_audio=456ms; answer=684ms
-trial 1 safety: PASS; first_audio=488ms; answer=4ms
-trial 1 pictures: 0; PASS
-trial 2 yesterday: PASS; first_audio=306ms; answer=546ms
-trial 2 safety: PASS; first_audio=508ms; answer=4ms
-trial 2 pictures: 0; PASS
-trial 3 yesterday: PASS; first_audio=1011ms; answer=1319ms
-trial 3 safety: PASS; first_audio=1044ms; answer=4ms
-trial 3 pictures: 0; PASS
-trial 4 yesterday: PASS; first_audio=291ms; answer=629ms
-trial 4 safety: PASS; first_audio=396ms; answer=4ms
-trial 4 pictures: 0; PASS
-trial 5 yesterday: PASS; first_audio=304ms; answer=709ms
-trial 5 safety: PASS; first_audio=543ms; answer=4ms
-trial 5 pictures: 0; PASS
-REHEARSAL: 5/5 PASS, 0/5 SKIP (missing local audio), 0/5 FAIL; text fixture removed
+trial 1 Cloud AI calls: 0; Bytes to cloud: 0; PASS
+trial 2 Cloud AI calls: 0; Bytes to cloud: 0; PASS
+trial 3 Cloud AI calls: 0; Bytes to cloud: 0; PASS
+trial 4 Cloud AI calls: 0; Bytes to cloud: 0; PASS
+trial 5 Cloud AI calls: 0; Bytes to cloud: 0; PASS
+REHEARSAL: 0/5 PASS, 5/5 SKIP (missing local audio), 0/5 FAIL; text fixture removed
 ```
 
-The first rehearsal used “Where were my keys yesterday?”, which the existing regex does not route to memory, and failed recall 5/5. Corrected the script to “Where did I leave my keys yesterday?” and reran all five. No recall production logic was changed. Missing Kokoro marks an otherwise successful trial SKIP and leaves first-audio unmeasured.
+Recall and safety text checks passed in all five; Pictures saved was zero. Kokoro was unavailable from this environment, so no first-audio timing or full audio success is claimed. The rehearsal uses production HTTP/WS handlers, temporary text-only memory, no camera, and real configured local service selection. These recall/refusal trials do not establish GPU inference quality; the normal local/cloud turn distinction is covered by the provider regression.
 
-Final browser smoke (with the proof endpoint assertions): **BROWSER SMOKE PASS**, `frames_sent: 2`, `problems: []`, longest find-card task **0 ms**. `git diff --check` passed. Temporary smoke server stopped after verification.
+Test: real Chromium browser smoke against an authenticated loopback mock server, synthetic camera/mic, `LOCAL_ONLY=1`, temporary memory - PASS. Command: `env A_EYE_TOKEN=<temporary fixture> uv run --offline --no-project --with playwright python scripts/browser_smoke.py http://127.0.0.1:<temporary port>`. Checks include both zero counters after call creation and the unchanged picture count. Summary: **BROWSER SMOKE PASS**, `frames_sent: 2`, `problems: []`, longest find-card task **0 ms**. Temporary server stopped; fixture removed. This is browser wiring proof, not physical-device/GPU proof.
+
+Test: `git diff --check` - PASS.
 
 ## Changed files
 
-- `Makefile`, `scripts/offline_check.py`, `scripts/test_offline_check.py`: six service probes, fixture helper and local fixture test.
-- `scripts/proof_wall_rehearsal.py`: isolated real five-trial rehearsal.
-- `server/proof_wall.py`, `server/app.py`: authenticated read-only count/connectivity route.
-- `server/agent.py`, `server/llm.py`, `server/brain_local.py`, `server/brain_openai_compat.py`, `server/expert.py`: local expert fallback and actual turn provenance/safety metadata.
-- `server/test_proof_wall.py`: fail-first expert regression, count/auth boundary, live-versus-cached server probe tests, model and safety provenance.
-- `client-web/agent.html`, `client-web/agent.js`, `client-web/agent.css`, `client-web/turn.test.mjs`: quiet wrapping strip and handler checks.
-- `scripts/browser_smoke.py`: real count/connectivity assertions in existing browser smoke.
-- `RESULT.md`, `docs/results/proof-wall.md`: handoff and retained evidence.
+- `server/cloud_meter.py`, `server/test_cloud_meter.py`: shared send-boundary counters and regression checks.
+- `server/ws2.py`, `server/app.py`, `server/rewind_api.py`: call-context binding and authenticated HTTP attribution.
+- `server/proof_wall.py`, `server/test_proof_wall.py`: owner-scoped proof API, removed connectivity probe, Private/cloud turn and retention checks.
+- `client-web/agent.html`, `client-web/agent.js`, `client-web/turn.test.mjs`: two labels, owner-authenticated polling, voice-sample attribution and UI checks.
+- `scripts/proof_wall_rehearsal.py`, `scripts/browser_smoke.py`: zero-counter assertions.
+- `docs/results/proof-wall.md`, `RESULT.md`: current receipt and limits.
 
-Review holds: physical WAN-unplugged run; local vision service; secure-context LAN camera/mic setup. No commit, merge, push, deploy or auth relaxation.
+No commit, merge, push, deploy, auth relaxation, or internet disconnection.

@@ -1,7 +1,7 @@
 """Five real loopback WS/HTTP trials with temporary text-only yesterday memory.
 
 Uses the production server and configured LAN services, never a user's memory. No media is saved.
-Missing Kokoro produces SKIP, not fabricated first-audio timing. Run with the WAN unplugged.
+Missing Kokoro produces SKIP, not fabricated first-audio timing. Internet stays connected; assert zero cloud AI calls and payload bytes.
 """
 import asyncio
 import hashlib
@@ -84,9 +84,15 @@ async def main():
                             print(f'trial {trial} {name}: {"PASS" if valid else "FAIL"}; '
                                   f'first_audio={timing}; answer={answer:.0f}ms' if answer is not None else
                                   f'trial {trial} {name}: FAIL no final answer', flush=True)
-                        response = await http.get('/api/proof')
+                        response = await http.get('/api/proof', params={'session_id': sid})
                         response.raise_for_status()
-                        count = response.json()['pictures_saved']
+                        proof = response.json()
+                        cloud_ok = proof.get('cloud_ai_calls') == 0 and proof.get('bytes_to_cloud') == 0
+                        ok &= cloud_ok
+                        print(f'trial {trial} Cloud AI calls: {proof.get("cloud_ai_calls")}; '
+                              f'Bytes to cloud: {proof.get("bytes_to_cloud")}; '
+                              f'{"PASS" if cloud_ok else "FAIL"}', flush=True)
+                        count = proof['pictures_saved']
                         ok &= isinstance(count, int)
                         print(f'trial {trial} pictures: {count}; '
                               f'{"PASS" if ok and audible else "SKIP audio" if ok else "FAIL"}', flush=True)

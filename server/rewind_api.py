@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from server import cloud_meter
 from server.rewind import NOTICE, identity, registry
 
 _rewind = APIRouter(prefix='/api/rewind')
@@ -23,7 +24,11 @@ async def body(request):
         value = await request.json()
     except ValueError:
         return None
-    return value if isinstance(value, dict) else None
+    if isinstance(value, dict):
+        call = registry(request.app).get(value.get('session_id'), identity(request))
+        cloud_meter.CURRENT.set(getattr(call, 'cloud_meter', None))
+        return value
+    return None
 
 
 @_rewind.post('/search')

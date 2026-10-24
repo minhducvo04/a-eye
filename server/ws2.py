@@ -15,6 +15,7 @@ from time import monotonic
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import httpx
+from server import cloud_meter
 from jsonschema import ValidationError
 
 from contracts import validate
@@ -558,6 +559,10 @@ async def websocket(ws: WebSocket):
                 reset_audio()
                 # Private mode (hello.private): local brain, Kokoro, server STT (browser STT may send audio to
                 # Google), no crops, no Rewind cloud. Every task started from here on inherits it.
+                # Repeated hello changes settings; it must not erase this call's evidence.
+                old_call = rewind_mod.registry(ws.app).get(new_session.session_id, rewind_mod.identity(ws))
+                meter = getattr(old_call, 'cloud_meter', None) or cloud_meter.Meter()
+                cloud_meter.CURRENT.set(meter)
                 private = bool(incoming.get('private', False))
                 # Home first: this call's cloud switches (hello.cloud; Private mode or LOCAL_ONLY=1 = all off).
                 privacy.set_call(incoming.get('cloud'), private=private, rewind=incoming.get('rewind', False))
@@ -592,6 +597,7 @@ async def websocket(ws: WebSocket):
                     yolo_task = asyncio.create_task(yolo_loop(session, box, send))
                 session.rewind = rewind_mod.registry(ws.app).open(
                     session.session_id, on=incoming.get('rewind', False), owner=rewind_mod.identity(ws))
+                session.rewind.cloud_meter = meter
                 rewind_task = asyncio.create_task(session.rewind.follow(session))
                 if session.rewind.on:
                     await send(rewind_mod.state_message(session.rewind))
