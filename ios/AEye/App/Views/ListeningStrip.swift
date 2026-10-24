@@ -3,6 +3,7 @@ import SwiftUI
 
 /// Live mic waveform with what the recogniser has heard so far, so the user can see the app hearing them.
 /// Bars light up in the helper colour while the user talks and sit low and grey on room noise.
+/// Reading font and sentence case, as the web strip ("Listening", "Hearing you…", "Mic off").
 struct ListeningStrip: View {
     let listener: SpeechIn
 
@@ -16,7 +17,7 @@ struct ListeningStrip: View {
                 .frame(width: 96, height: 28)
 
             Text(label(heard: heard, isTalking: isTalking))
-                .font(heard.isEmpty ? .system(.footnote, design: .monospaced).weight(.semibold) : .subheadline)
+                .font(heard.isEmpty ? .subheadline.weight(.semibold) : .subheadline)
                 .foregroundStyle(textColor(heard: heard, isTalking: isTalking))
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -24,21 +25,21 @@ struct ListeningStrip: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .glass(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .callGlass(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(listener.isMuted ? "Microphone off" : (heard.isEmpty ? "Listening" : "Heard: \(heard)"))
     }
 
     private func label(heard: String, isTalking: Bool) -> String {
-        if listener.isMuted { return "MIC OFF" }
+        if listener.isMuted { return "Mic off" }
         if !heard.isEmpty { return heard }
-        return isTalking ? "HEARING YOU…" : "LISTENING"
+        return isTalking ? "Hearing you…" : "Listening"
     }
 
     private func textColor(heard: String, isTalking: Bool) -> Color {
         if listener.isMuted { return Palette.warn }
         if !heard.isEmpty { return .white }
-        return isTalking ? Palette.helper : Color.white.opacity(0.55)
+        return isTalking ? Palette.helper : Palette.text3
     }
 }
 

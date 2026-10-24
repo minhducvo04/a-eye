@@ -43,7 +43,10 @@ struct RootView: View {
         .sheet(isPresented: $showSettings) {
             SettingsSheet(controller: controller)
         }
-        .onAppear { camera.start() }
+        .onAppear {
+            camera.start()
+            autostartIfAsked()
+        }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active: camera.start()
@@ -65,15 +68,49 @@ struct RootView: View {
         controller.socketURL == nil
     }
 
-    // MARK: - Camera screen
+    // MARK: - First screen
 
+    /// The web's `#picker`: a dark backdrop, the wordmark, what A-eye is, the privacy line, and the ring.
+    /// The camera keeps running underneath so the call opens without a black flash.
     private var cameraChrome: some View {
-        VStack(spacing: 0) {
+        ZStack {
+            backdrop
+
+            VStack(spacing: 0) {
+                topRow
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+
+                Spacer(minLength: 16)
+
+                intro
+                    .padding(.horizontal, 24)
+
+                Spacer(minLength: 16)
+
+                ModeRing(index: $ringIndex, onStart: startCall)
+                    .padding(.bottom, 24)
+            }
+        }
+    }
+
+    private var backdrop: some View {
+        ZStack {
+            Palette.sheet.opacity(0.92)
+            RadialGradient(colors: [Color.white.opacity(0.07), .clear],
+                           center: .init(x: 0.5, y: 0.42), startRadius: 0, endRadius: 420)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+
+    private var topRow: some View {
+        ZStack {
             HStack(spacing: 10) {
                 Button {
                     showSettings = true
                 } label: {
-                    Image(systemName: "gearshape.fill")
+                    Image(systemName: "gearshape")
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(.white)
                         .frame(width: 44, height: 44)
@@ -86,7 +123,7 @@ struct RootView: View {
                         showSettings = true
                     } label: {
                         Label("Set server", systemImage: "network")
-                            .font(.system(.footnote, design: .monospaced).weight(.semibold))
+                            .font(.footnote.weight(.semibold))
                             .foregroundStyle(Palette.warn)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 10)
@@ -95,14 +132,53 @@ struct RootView: View {
                 }
                 Spacer()
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
 
-            Spacer()
-
-            ModeRing(index: $ringIndex, onStart: startCall)
-                .padding(.bottom, 24)
+            Text("A-eye")
+                .font(.subheadline.weight(.semibold))
+                .tracking(0.3)
+                .foregroundStyle(Palette.text2)
+                .accessibilityHidden(true)
         }
+        .frame(minHeight: 44)
+    }
+
+    private var intro: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("I look, point,\nand remember.")
+                .font(.system(size: 34, weight: .semibold))
+                .tracking(-1)
+                .lineSpacing(-2)
+                .foregroundStyle(.white)
+                .accessibilityAddTraits(.isHeader)
+
+            Text("Show me what you are working on, or ask where you left something. Choose a helper below to start.")
+                .font(.body)
+                .lineSpacing(4)
+                .foregroundStyle(Palette.text2)
+                .padding(.top, 16)
+
+            Label {
+                Text("Video and pictures are not saved unless you turn on Rewind or the memory aid.")
+            } icon: {
+                Image(systemName: "shield")
+                    .font(.system(size: 16, weight: .semibold))
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Palette.calm)
+            .padding(.top, 20)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Screenshot and rehearsal hook, like the web's `?mode=`: `-aeye-start <mode id>` as a launch argument
+    /// starts that call at once. Off unless the argument is present.
+    private func autostartIfAsked() {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flag = arguments.firstIndex(of: "-aeye-start"), arguments.indices.contains(flag + 1),
+              let index = Modes.all.firstIndex(where: { $0.id == arguments[flag + 1] })
+        else { return }
+        ringIndex = index
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { startCall(Modes.all[index]) }
     }
 
     private func startCall(_ mode: Mode) {

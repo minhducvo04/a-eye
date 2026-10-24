@@ -11,6 +11,18 @@ Screenshots (iOS Simulator, iPhone 17, left; Chromium at 390x844 with a fake cam
 `docs/ui-parity/ring-ios-vs-web.png`, `docs/ui-parity/call-ios-vs-web.png`, and desktop
 `docs/ui-parity/call-web-desktop.png`.
 
+## 2026-10-24: iOS follows the web's UI polish
+
+The web call page was redesigned for the memory aid (`docs/ui-polish/art-direction.md`). The iOS app now follows
+it: first screen with the wordmark, "I look, point, and remember.", one help line and the green privacy line over a
+dark backdrop; Memory (pin) centred and Sink (`home` pack) in the ring; call glass 0.58 and caption 0.66 of
+`rgb(8,10,14)`; Memory mode caption 23 pt in the reading font; problems as white text with an amber dot; the
+listening strip in sentence case ("Listening", "Hearing you…", "Mic off"); the typed bar always shown ("Type a
+message"); the call bar is camera, mic (filled helper blue while hearing), end call, settings; an Expert badge
+(`turn.stage` `expert` / `expert_done`); an Access token field in Settings (Keychain, sent as `?token=`).
+Not ported: Private, Rewind and memory-count badges, Recap, phone pairing, the caregiver page (web-only features).
+Launch argument `-aeye-start <mode id>` starts a call at once, like the web's `?mode=`, for screenshots.
+
 ## Tokens (`Style.swift`, `DrawOp.swift`)
 
 | Token | iOS | Web (`agent.css` `:root`) |

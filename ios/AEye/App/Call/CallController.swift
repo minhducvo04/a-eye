@@ -45,6 +45,9 @@ final class CallController {
         serverURL(from: serverURLString, token: accessToken)
     }
 
+    /// Camera button in the call bar: off stops frames going to the server (the preview stays on screen).
+    private(set) var isCameraOn = true
+
     /// Spoken replies. Exposed so voice input can read `speakingText` / `startedAt` and call `stop()`.
     let speech = SpeechOut()
 
@@ -123,6 +126,7 @@ final class CallController {
         speech.releaseAudioSession()
         state = .initial
         isHomeStartPending = false
+        isCameraOn = true
         mode = nil
         callStartedAt = nil
         lastFrameSize = .zero
@@ -148,6 +152,10 @@ final class CallController {
 
     func dismissMarket() {
         apply(.marketDismissed)
+    }
+
+    func toggleCamera() {
+        isCameraOn.toggle()
     }
 
     /// Mic button: stops or restarts the audio tap. Does nothing in typed mode.
@@ -312,7 +320,7 @@ final class CallController {
     }
 
     private func sendFrameIfReady() {
-        guard isSocketOpen, !isFrameInFlight, let socket, let jpeg = camera.latestJPEG() else { return }
+        guard isSocketOpen, isCameraOn, !isFrameInFlight, let socket, let jpeg = camera.latestJPEG() else { return }
         seq += 1
         let message = ClientMessage.frame(
             sessionId: sessionId,

@@ -76,6 +76,11 @@ Then give the app the Mac's address, either in `ios/AEye/Config/Local.xcconfig`
 and the Mac must be on the same Wi-Fi. Accepted forms: `192.168.1.10:8000` (becomes `ws://.../ws2`),
 `http(s)://host` (becomes `ws(s)://host/ws2`), or a full `ws://` URL.
 
+## Screenshots and rehearsal
+
+`-aeye-start <mode id>` as a launch argument (Xcode scheme, or `xcrun simctl launch <sim> com.rereynrd.aeye
+-aeye-start memory`) starts that call at once, like the web's `?mode=`.
+
 ## Privacy
 
 - Frames and audio live in memory only. Nothing is written to disk, Photos or Files, and nothing is logged.
