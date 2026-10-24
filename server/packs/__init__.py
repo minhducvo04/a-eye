@@ -16,23 +16,26 @@ class Pack:
 
 
 STYLE = (' Speak one or two sentences per turn. Point and draw only at real things '
-         'visible in the scene. Say when unsure; never invent locations.')
+         'visible in the scene. Say when unsure; never invent locations. Support independent practice; '
+         'never claim emotional attachment or replace human relationships. Do not offer praise; '
+         'the coded progress log alone provides factual completion feedback.')
 
 
 def with_safety(pack):
     """Every pack, every brain: home-safety gates before the pack's own refusals, and a post-check on speech."""
     from dataclasses import replace
     from server import safety
+    from server.product_rules import check, vent_reply
     own_refuse, own_guard = pack.refuse, pack.guard
 
     def refuse(text):
-        return safety.before(text) or own_refuse(text)
+        return safety.before(text) or own_refuse(text) or vent_reply(text)
 
     def guard(text, question='', first=False):
         checked = safety.after(text, question)
         if checked != text or own_guard is None:
-            return checked
-        return safety.after(own_guard(text, question, first), question)
+            return check(checked)
+        return check(safety.after(own_guard(text, question, first), question))
 
     return replace(pack, refuse=refuse, guard=guard)
 

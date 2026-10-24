@@ -364,10 +364,14 @@ async def websocket(ws: WebSocket):
             # router is off or unsure. Past/object questions and spoken forget go to memory and Rewind.
             home_turn = session.home_guide is not None or (session.pack.id == 'general' and
                 re.fullmatch(r'(?:fix (?:the |a )?)?sink[.!]?', text.strip(), re.I))
+            fixed_turn = home_turn or bool(session.pack.refuse(text)) or bool(
+                re.fullmatch(r'forget my progress[.!]?', text.strip(), re.I))
             label = (await route_turn(session, text)
-                     if not home_turn and os.environ.get('ROUTER', 'off') == 'on' else None)
-            memory_or_rewind = not home_turn and rewind_mod.wants_rewind(session, text)
-            if forget_request(text):
+                     if not fixed_turn and os.environ.get('ROUTER', 'off') == 'on' else None)
+            memory_or_rewind = not fixed_turn and rewind_mod.wants_rewind(session, text)
+            if fixed_turn:
+                use_rewind_turn = False
+            elif forget_request(text):
                 # With memory attached its forget also clears this call's clips; without it run_turn's spoken
                 # forget deletes the Rewind clips (the plain rehearsal failed 5 of 5 when this went to rewind_turn).
                 use_rewind_turn = bool(rewind_mod.memory_turn_kind(session, text))
@@ -628,6 +632,8 @@ async def websocket(ws: WebSocket):
                     seed = getattr(ws.app.state, 'presenter_seed', None)
                     if seed:
                         seed(session.session_id, rewind_mod.identity(ws))
+                from server.growth import for_owner as growth_for_owner
+                session.growth = growth_for_owner(ws.app, rewind_mod.identity(ws))
                 rewind_task = asyncio.create_task(session.rewind.follow(session))
                 if session.rewind.on:
                     await send(rewind_mod.state_message(session.rewind))

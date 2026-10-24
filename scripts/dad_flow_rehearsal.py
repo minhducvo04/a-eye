@@ -1,4 +1,4 @@
-"""Five Private sink flows over real localhost HTTP/WS and configured home TTS/STT.
+"""Three Private sink runs for one fixture user over real localhost HTTP/WS and configured home TTS/STT.
 
 No photos, recordings, cloud calls or actual family messages. The only checker
 substitute is the explicit, visibly labelled presenter mode. Audio lives in RAM.
@@ -31,8 +31,15 @@ def presenter_app(folder):
     from server.memory import Memories
     app = create_app(presenter=True)
     app.state.memories = Memories(base=folder)
+    app.state.growth_logs = {}
+    from cryptography.fernet import Fernet
+    from server.memory import Cipher, Store, person_id
+    from server.growth import GrowthLog
+    cipher = Cipher(Fernet.generate_key())  # fixture key lives only in this process
 
     def seed(sid, owner):
+        if owner not in app.state.growth_logs:
+            app.state.growth_logs[owner] = GrowthLog(Store(person_id(owner), base=folder, cipher=cipher))
         memories = app.state.memories
         store = memories.for_owner(owner)
         store.set_tag('shutoff valve', home=FIXTURE)
@@ -42,7 +49,7 @@ def presenter_app(folder):
     return app
 
 
-async def collect(ws, text, sid, *, audio=False):
+async def collect(ws, text, sid, *, audio=False, silent=False):
     start, first, answer = monotonic(), None, None
     if not audio:
         await ws.send(json.dumps(dict(v=2, type='user_text', session_id=sid, text=text, final=True)))
@@ -60,7 +67,9 @@ async def collect(ws, text, sid, *, audio=False):
             if m['type'] == 'turn' and m['stage'] in ('done', 'failed', 'cancelled') and m.get('turn_id') != 'presenter':
                 assert m['stage'] == 'done', m['stage']
                 break
-    if not audio:
+    if silent:
+        assert not any(m['type'] in ('say', 'audio') for m in messages), 'Expected quiet guidance'
+    elif not audio:
         final = [m for m in messages if m['type'] == 'say' and m.get('final')]
         assert final, 'No final answer'
         chunks = [m for m in messages if m['type'] == 'audio' and m['utterance_id'] == final[-1]['utterance_id']]
@@ -78,18 +87,18 @@ async def speak(voice, text):
     return first, None, 1000 * (monotonic() - start)
 
 
-async def rehearse(base):
+async def rehearse(base, app):
     from voice.kokoro import KokoroAdapter
     headers = {}
     if os.environ.get('A_EYE_TOKEN'):
         headers['Authorization'] = 'Bearer ' + os.environ['A_EYE_TOKEN']
-    timings, passed = [], 0
+    timings, passed, hint_counts = [], 0, []
     async with httpx.AsyncClient(base_url=base, headers=headers, timeout=15) as http:
-        for trial in range(1, 6):
-            # Fresh owner and call prevent contact/counter state leaking between trials.
-            owner = (await http.post('/api/call-owner')).json()['owner']
-            http.headers['X-Aeye-Owner'] = owner
-            sid = f'dad-flow-{trial}'
+        owner = (await http.post('/api/call-owner')).json()['owner']
+        http.headers['X-Aeye-Owner'] = owner
+        for trial in range(1, 4):
+            # One identity, separate calls: the guide level must come from the encrypted log.
+            sid = f'growth-flow-{trial}'
             query = '?session_id=' + sid
             async def post(path, payload):
                 r = await http.post(path, json=payload)
@@ -109,8 +118,8 @@ async def rehearse(base):
                             pass
                     mode = await http.get('/api/dad-demo' + query)
                     assert mode.json() == {'enabled': False}
-                    async def turn(name, text, expected=None, detail=None):
-                        messages, timing = await collect(ws, text, sid)
+                    async def turn(name, text, expected=None, detail=None, silent=False):
+                        messages, timing = await collect(ws, text, sid, silent=silent)
                         said = ' '.join(m['text'] for m in messages if m['type'] == 'say')
                         if expected:
                             assert expected in said, f'{name}: expected speech missing'
@@ -118,16 +127,17 @@ async def rehearse(base):
                             assert any(m.get('detail') == detail for m in messages), f'{name}: missing event {detail}'
                         record(name, timing)
                         return messages
-                    await turn('1-select-sink', 'sink', "I'm not your dad")
-                    await turn('2-recall', 'next', FIXTURE)
+                    await turn('1-select-sink', 'sink', 'one step at a time' if trial == 1 else None, silent=trial == 3)
+                    await turn('2-recall', 'next', FIXTURE if trial == 1 else None, silent=trial == 3)
                     await turn('3-shutoff', 'next', 'Gently close')
                     await turn('4-normal-locked', 'next', 'Show me the valve again', 'Valve: unsure')
                     await post('/api/dad-demo' + query, {'enabled': True})
                     await post('/api/dad-demo' + query + '&action=verdict', {'state': 'open'})
                     await turn('5-open-locked', 'next', 'Show me the valve again', 'Checker TEST MODE')
-                    async def checked(name, expected):
+                    async def checked(name, expected, completion=False):
                         await post('/api/dad-demo' + query + '&action=verdict', {'state': 'closed'})
-                        await turn(name, 'next', expected, 'Valve: test closed')
+                        await turn(name, 'next', expected if trial == 1 and not completion else None,
+                                   'Valve: test closed', silent=(trial == 3 and not completion) or (completion and trial == 1))
                     await checked('6-checker-pass', 'dry supply connection')
                     # Deliberately arm a pass before a hazard: the stop must discard it.
                     await post('/api/dad-demo' + query + '&action=verdict', {'state': 'closed'})
@@ -136,9 +146,21 @@ async def rehearse(base):
                     await checked('9-hand-snug', 'Only hand-snug')
                     await checked('10-tap', 'dripping tap')
                     await checked('11-dry-check', 'dry towel')
-                    await checked('12-tell-dad', 'Tell Dad?')
+                    await checked('12-complete', None, completion=True)
+                    log = next(iter(app.state.growth_logs.values()))
+                    row = log.rows('sink')[-1]
+                    assert row['completed'] and row['safety_stop']
+                    assert len(log.rows('sink')) == trial
+                    hint_counts.append(row['hints'])
+                    print(f"GROWTH run {trial}: level={trial}; hints={row['hints']}; tries={row['tries']}; safety_stop={row['safety_stop']}", flush=True)
+                    assert log.store.cipher.encrypted
+                    assert b'sink' not in (log.store.dir / 'growth.json').read_bytes()
+                    denied = await http.post('/api/family/draft' + query,
+                                             json=dict(contact='', log=dict(task='sink', detail=2)))
+                    assert denied.status_code == 400
+
                     contact = await post('/api/family/contact' + query,
-                                         dict(name='Fixture Dad', relation='parent', consent=True))
+                                         dict(name='Fixture Friend', relation='friend', consent=True))
                     draft = await post('/api/family/draft' + query,
                                        dict(contact=contact['id'], log=dict(task='sink', detail=2)))
                     assert FIXTURE not in draft['text'] and 'cabinet' not in draft['text']
@@ -182,10 +204,12 @@ async def rehearse(base):
         for index, label in ((1, 'first_audio'), (2, 'answer'), (3, 'complete')):
             samples = [row[index] for row in rows if row[index] is not None]
             value = f'{median(samples):.0f}ms' if samples else 'n/a'
-            fields.append(f'{label}={value} (n={len(samples)}/5)')
+            fields.append(f'{label}={value} (n={len(samples)}/3)')
         print('MEDIAN ' + name + ': ' + '; '.join(fields))
-    print(f'DAD FLOW REHEARSAL: {passed}/5 PASS, {5-passed}/5 FAIL; checker TEST MODE; no real-photo claim')
-    return 0 if passed == 5 else 1
+    decreasing = len(hint_counts) == 3 and hint_counts[0] > hint_counts[1] > hint_counts[2] == 0
+    print(f'GROWTH HINTS: {hint_counts}; levels 1 -> 2 -> 3; decreasing={decreasing}')
+    print(f'GROWTH FLOW REHEARSAL: {passed}/3 PASS, {3-passed}/3 FAIL; checker TEST MODE; no real-photo claim')
+    return 0 if passed == 3 and decreasing else 1
 
 
 async def main():
@@ -193,7 +217,7 @@ async def main():
     parser.add_argument('--serve', action='store_true', help='explicit presenter-only UI; loopback, Private, test mode initially off')
     parser.add_argument('--port', type=int, default=0)
     args = parser.parse_args()
-    with tempfile.TemporaryDirectory(prefix='dad-flow-text-') as folder:
+    with tempfile.TemporaryDirectory(prefix='growth-flow-text-') as folder:
         app = presenter_app(folder)
         sock = socket.socket()
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -209,7 +233,7 @@ async def main():
                 print(f'PRESENTER ONLY: {base}/agent.html; select Private then Sink; checker test mode starts OFF', flush=True)
                 await task
                 return 0
-            return await rehearse(base)
+            return await rehearse(base, app)
         finally:
             server.should_exit = True
             await task

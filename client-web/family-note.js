@@ -31,7 +31,7 @@ export function setupFamily({ session, request, speak }) {
   const root = document.getElementById('family-panel');
   const $ = id => document.getElementById('family-' + id);
   let currentSession = session(), tasks = {}, seen = new Set(), busy = false;
-  let draftText = '', generation = 0;
+  let draftText = '', generation = 0, hasContacts = false;
   const post = async (action, data) => {
     const result = await request('/api/family/' + action + '?session_id=' + encodeURIComponent(session()), data);
     if (result.delivery_link) showLink(result.delivery_link);
@@ -54,6 +54,16 @@ export function setupFamily({ session, request, speak }) {
     });
   }
   function contacts(rows) {
+    hasContacts = rows.length > 0;
+    $('sharing').hidden = !hasContacts;
+    $('draft').disabled = !hasContacts;
+    $('heading').textContent = hasContacts ? 'Want to show someone?' : 'People';
+    if (!hasContacts) {
+      approval.clear(); generation++;
+      $('read').disabled = true; $('send').disabled = true;
+      $('preview').textContent = ''; $('status').textContent = '';
+      $('link').hidden = true;
+    }
     const chosen = $('contact').value;
     $('contact').replaceChildren(new Option('Choose a person', ''));
     rows.forEach(c => $('contact').add(new Option(`${c.name} (${c.relation})`, c.id)));
@@ -67,6 +77,7 @@ export function setupFamily({ session, request, speak }) {
       currentSession = sid; generation++; approval.clear(); seen = new Set();
       $('preview').textContent = ''; $('reply').textContent = ''; $('link').hidden = true;
       $('send').disabled = true; $('read').disabled = true; root.open = false;
+      contacts([]);
     }
     try {
       const data = await request('/api/family?session_id=' + encodeURIComponent(sid));
@@ -146,10 +157,11 @@ export function setupFamily({ session, request, speak }) {
   window.addEventListener('pagehide', () => { window.clearInterval(timer); approval.clear(); });
   return {
     complete(task) {
+      if (!hasContacts || session() !== currentSession) return;
       root.open = true;
       if (tasks[task]) { $('task').value = task; fillDetails(); }
       $('complete').checked = false;
-      $('status').textContent = 'Tell Dad? Choose your person and confirm only what you actually did.';
+      $('status').textContent = 'Want to show someone? Choose your person and confirm only what you actually did.';
     },
     consume(text, source) {
       if (!approval.pending()) return false;

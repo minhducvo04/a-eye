@@ -68,7 +68,7 @@ def test_full_replay_each_task():
                 guide.water_off_passed = True
             assert guide.reply('next') == TASKS[task][index]
         final = guide.reply('next')
-        assert final.endswith('Tell Dad?') if task == 'sink' else final == TASKS[task][-1]
+        assert final == '' and guide.completed
 
 
 def test_hazard_revokes_water_check():

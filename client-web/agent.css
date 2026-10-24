@@ -356,8 +356,8 @@ svg .fill {
 }
 
 #proof-strip { white-space: normal; }
-#dad-presenter { pointer-events: auto; white-space: normal; }
-#dad-test-label { display: block; color: var(--warn); }
+#guide-presenter { pointer-events: auto; white-space: normal; }
+#guide-test-label { display: block; color: var(--warn); }
 #proof-safety { color: var(--accent); }
 
 /* PresenceDot.swift: 16 px box, 8 px dot; speaking pulses with a halo, thinking spins a 70% ring,

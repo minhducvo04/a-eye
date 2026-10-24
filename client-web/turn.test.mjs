@@ -159,16 +159,15 @@ for (const [headset, home] of [[false, false], [true, false], [false, true]]) te
       socket.message({ type: 'turn', turn_id: 'presenter', stage: 'done', detail: 'Presenter available' });
       await settle();
       assert.equal(presenterRequests[0].method, undefined, 'discovery must be a GET');
-      await node('dad-test').handlers.change({ target: { checked: true } });
+      await node('guide-test').handlers.change({ target: { checked: true } });
       assert.deepEqual(JSON.parse(presenterRequests.at(-1).body), { enabled: true });
-      assert.equal(node('dad-test-label').classList.contains('hidden'), false);
-      await node('dad-pass').handlers.click();
+      assert.equal(node('guide-test-label').classList.contains('hidden'), false);
+      await node('guide-pass').handlers.click();
       assert.deepEqual(JSON.parse(presenterRequests.at(-1).body), { state: 'closed' });
       assert.equal(socket.messages.at(-1).text, 'next');
       assert.equal(socket.messages.at(-1).source, 'typed');
       socket.message({ type: 'turn', stage: 'speaking', detail: 'Home: complete' });
-      assert.equal(node('family-panel').open, true);
-      assert.equal(node('family-complete').checked, false);
+      assert.equal(Boolean(node('family-panel').open), false, 'no contact means no sharing suggestion');
       return;
     }
     const proofPoll = [...intervals.values()].find(timer => timer.fn.name === 'refreshProof');
@@ -261,14 +260,14 @@ for (const [headset, home] of [[false, false], [true, false], [false, true]]) te
     assert.equal([...timeouts.values()].at(-1).ms, 1000);
     [...timeouts.values()].at(-1).fn();
     Socket.all[3].open();
-    // Actual call-page wiring: parent commands cannot reach the WebSocket during local speech.
+    // Actual call-page wiring: contact commands cannot reach the WebSocket during local speech.
     node('mic').handlers.click();
     await settle();
-    familyReply = { id: 'command-reply', name: 'Fixture Parent', text: 'stop' };
+    familyReply = { id: 'command-reply', name: 'Fixture Friend', text: 'stop' };
     const familyPoll = [...intervals.values()].find(t => t.fn.name === 'refresh');
     const reading = familyPoll.fn();
     await settle();
-    assert.equal(synth.current.text, 'Fixture Parent replied. stop');
+    assert.equal(synth.current.text, 'Fixture Friend replied. stop');
     const active = Socket.all[3];
     const beforeSpeech = active.messages.length;
     for (const text of ['stop', 'find a replacement part']) {

@@ -1,4 +1,4 @@
-const $ = id => document.getElementById('parent-' + id);
+const $ = id => document.getElementById('recipient-' + id);
 let linkToken = location.hash.slice(1), replyToken = '';
 history.replaceState(null, '', location.pathname);
 async function post(action, data) {
