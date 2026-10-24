@@ -10,10 +10,12 @@
   <style>
     html, body { overflow: auto; height: auto; min-height: 100%; background: var(--sheet-bg); }
     main { max-width: 620px; margin: 0 auto; padding: max(20px, env(safe-area-inset-top)) var(--gutter) 40px; }
-    h1 { margin: 0 0 6px; font-size: 28px; font-weight: 700; }
-    .lead { color: var(--text-2); font-size: var(--fs-subhead); line-height: 1.4; }
-    .banner { margin: 14px 0 0; padding: 10px 14px; border-radius: 14px; background: rgba(255, 138, 61, 0.14); color: var(--warn); font-size: var(--fs-footnote); }
-    .group .row input[type="checkbox"] { width: 22px; height: 22px; flex: 0 0 auto; accent-color: var(--helper); }
+    h1 { margin: 0 0 10px; font-size: clamp(30px, 5vw, 40px); font-weight: 650; letter-spacing: -0.02em; line-height: 1.1; }
+    .lead { color: var(--text-2); font-size: var(--fs-body); line-height: 1.45; max-width: 46ch; }
+    .group .row { min-height: 52px; }
+    .banner { margin: 16px 0 0; padding: 12px 16px; border-radius: 14px; background: rgba(142, 182, 255, 0.12); box-shadow: inset 0 0 0 1px rgba(142, 182, 255, 0.3); color: var(--text); font-size: var(--fs-subhead); line-height: 1.4; }
+    .back { display: inline-block; margin-bottom: 18px; color: var(--helper); font-size: var(--fs-body); text-decoration: none; }
+    .group .row input[type="checkbox"]:not([role="switch"]) { width: 24px; height: 24px; flex: 0 0 auto; accent-color: var(--helper); }
     .group .row.consent { align-items: flex-start; gap: 12px; justify-content: flex-start; line-height: 1.35; }
     .item-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .item-row b { font-weight: 600; }
@@ -23,7 +25,7 @@
     .add button, .save { padding: 10px 16px; border-radius: 12px; background: var(--helper); color: #000; font-weight: 600; }
     .refused { color: var(--text-3); }
     .refused small { display: block; color: var(--warn); font-size: var(--fs-caption2); }
-    .save { width: 100%; margin-top: 22px; padding: 14px; font-size: var(--fs-body); }
+    .save { width: 100%; min-height: 52px; margin-top: 26px; padding: 14px; font-size: var(--fs-body); }
     .save:disabled { opacity: 0.5; }
     #saved { margin-top: 10px; text-align: center; color: var(--text-2); font-size: var(--fs-footnote); min-height: 1.2em; }
     .switch-row b { font-size: var(--fs-body); }
@@ -31,6 +33,7 @@
 </head>
 <body>
   <main>
+    <a id="back-link" class="back" href="agent.html?mode=memory">‹ A-eye</a>
     <h1>Memory aid</h1>
     <p class="lead">A-eye can remember where things were put down, so it can answer “where did I leave my keys?”. Set it up together: both of you agree first.</p>
     <p id="preview" class="banner hidden" role="status">Preview: this server has no memory settings yet, so nothing here is saved.</p>
@@ -67,7 +70,7 @@
       <label class="row">Keep for <select id="kept-days" class="voice-pick" aria-label="Days kept">
         <option value="1">1 day</option><option value="3">3 days</option><option value="7">7 days</option><option value="14">14 days</option><option value="30">30 days</option>
       </select></label>
-      <p id="retention" class="row mono dim">Kept 7 days, about 0 MB</p>
+      <p id="retention" class="row dim">Kept 7 days, about 0 MB</p>
     </div>
 
     <button type="button" id="save" class="save">Save</button>

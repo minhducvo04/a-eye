@@ -141,6 +141,7 @@ function boot() {
   const grayCanvas = document.createElement("canvas");
   const devOn = new URLSearchParams(location.search).get("dev") === "1";
   const devEl = devOn ? document.createElement("p") : null;
+  if (devOn && document.body && document.body.classList) document.body.classList.add("dev");
   if (devEl) {
     devEl.className = "dev-hud";
     devEl.setAttribute("aria-hidden", "true");
@@ -230,7 +231,12 @@ function boot() {
   const memoryCountEl = document.getElementById("memory-count");
   const memoryActions = document.getElementById("memory-actions");
   let powerConfirmed = false;
-  let ringIndex = DEFAULT_MODE;
+  // ?mode=memory centres a mode at launch (demo and caregiver links); otherwise PC Build, as iOS.
+  // Page links keep the access token (hosted demo).
+  const caregiverLink = document.getElementById("caregiver-link");
+  if (caregiverLink && params.get("token")) caregiverLink.href = `caregiver.html?token=${encodeURIComponent(params.get("token"))}`;
+  const askedMode = MODES.findIndex((m) => m.id === params.get("mode"));
+  let ringIndex = askedMode >= 0 ? askedMode : DEFAULT_MODE;
   let voice = null;
   let listening = false;
   let raf = 0;
@@ -435,7 +441,11 @@ function boot() {
       ui.dispatch({ type: "turn_times", timestamps: turn.timestamps });
       renderTranscript(ui.getState());
     }
-    document.getElementById("pipeline").textContent = statusLine(turn, Date.now());
+    const pipelineEl = document.getElementById("pipeline");
+    pipelineEl.textContent = statusLine(turn, Date.now());
+    // Styling hooks only: the line shows for problems (or ?dev=1); Expert shows as a badge.
+    if (pipelineEl.dataset) pipelineEl.dataset.stage = turn.stage || "idle";
+    document.getElementById("expert-badge")?.classList?.toggle("hidden", turn.expertAt == null);
   }
 
   const pipelineTimer = window.setInterval(() => {
@@ -1470,6 +1480,7 @@ function boot() {
     memoryTimer = window.setInterval(() => void refreshMemory(), 10000);
     void memoryApi.settings().then((s) => { memoryItems = s.items; }, () => {});
     packLabel.textContent = PACK_LABEL[next];
+    if (document.body && document.body.dataset) document.body.dataset.mode = next; // calm Memory look in CSS
     link = "connecting";
     renderPresence();
     renderCamera();
@@ -1524,6 +1535,7 @@ function boot() {
     socket = null;
     if (ws) ws.close();
     pack = "";
+    if (document.body && document.body.dataset) delete document.body.dataset.mode;
     callStartedAt = 0;
     drawState = applyDraw(null, null, 0);
     agents = { helper: "idle", shopper: "idle" };

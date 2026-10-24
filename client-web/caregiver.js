@@ -5,6 +5,8 @@ import { cleanSettings, createMemoryApi, parseTag, retentionLine, ROOMS, roomAll
 const api = createMemoryApi();
 const $ = (id) => document.getElementById(id);
 let settings = cleanSettings();
+const token = new URLSearchParams(location.search).get("token");
+if (token && $("back-link")) $("back-link").href = `agent.html?mode=memory&token=${encodeURIComponent(token)}`;
 let bytes = 0;
 
 function render() {

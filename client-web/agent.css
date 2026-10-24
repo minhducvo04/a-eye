@@ -1329,3 +1329,439 @@ svg .fill {
   font-size: var(--fs-body);
   font-weight: 600;
 }
+
+/* ==========================================================================
+   UI polish (2026-10-24): first run, one badge style, quiet status lines, calm Memory mode,
+   Simple/Advanced settings, switches, projector scale. Same iOS tokens; no new colours except
+   --calm (Private, switches) and --amber (Rewind on), both used for state only.
+   ========================================================================== */
+
+:root {
+  --calm: #3DDC97;   /* = --role-target: Private and "on" switches */
+  --amber: #FFC25C;  /* Rewind on: something is being kept, said calmly */
+  --surface: rgba(255, 255, 255, 0.07);
+  --ease-calm: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ---------- First run: wordmark and what A-eye is ---------- */
+
+.ring-top {
+  position: relative;
+  align-items: center;
+  min-height: 44px;
+}
+
+.wordmark {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: var(--fs-subhead);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-2);
+}
+
+.intro {
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 clamp(24px, 6vw, 96px);
+  text-wrap: balance;
+}
+
+.intro-title {
+  margin: 0;
+  max-width: 14ch;
+  font-size: clamp(34px, 5.2vw, 72px);
+  font-weight: 650;
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+}
+
+.intro-text {
+  margin-top: 16px;
+  max-width: 40ch;
+  font-size: clamp(17px, 1.6vw, 22px);
+  line-height: 1.45;
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+.intro-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  font-size: var(--fs-subhead);
+  font-weight: 600;
+  color: var(--calm);
+}
+
+.intro-note svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2;
+}
+
+@media (max-height: 560px) {
+  .intro { display: none; }
+}
+
+/* ---------- One badge style: Private, Rewind on, Expert (+ Recap action) ---------- */
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.badges:not(:has(> :not(.hidden))) {
+  display: none;
+}
+
+.rewind-badge {
+  gap: 6px;
+}
+
+.badge {
+  --c: rgba(255, 255, 255, 0.7);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-family: var(--font);
+  font-size: var(--fs-footnote);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.45);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent);
+  white-space: nowrap;
+}
+
+.badge::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c);
+}
+
+.badge.hidden { display: none; }
+.badge.private { --c: var(--calm); }
+.badge.rewind { --c: var(--amber); }
+.badge.expert { --c: var(--helper); }
+
+.badge.action {
+  --c: rgba(255, 255, 255, 0.35);
+  color: var(--helper);
+}
+
+.badge.action::before { display: none; }
+
+/* ---------- Quiet status: timings and mic names only with ?dev=1; problems still show ---------- */
+
+#pipeline,
+.mic-line {
+  display: none;
+}
+
+body.dev #pipeline,
+body.dev .mic-line {
+  display: block;
+}
+
+#pipeline:is([data-stage="failed"], [data-stage="backup"], [data-stage="retrying"], [data-stage="connection_problem"], [data-stage="disconnected"]) {
+  display: block;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-family: var(--font);
+  font-size: var(--fs-footnote);
+  font-weight: 500;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.45);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  text-shadow: none;
+}
+
+#memory-count {
+  min-height: 34px;
+  font-family: var(--font);
+  font-size: var(--fs-subhead);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.memory-actions .chip {
+  min-height: 40px;
+  padding: 8px 16px;
+  font-family: var(--font);
+  font-size: var(--fs-subhead);
+}
+
+/* Bottom bar: the end call stands apart a little. */
+.bottom #end-call {
+  margin: 0 6px;
+}
+
+.round:focus-visible,
+.badge.action:focus-visible,
+.chip:focus-visible {
+  outline: 2px solid var(--helper);
+  outline-offset: 3px;
+}
+
+/* ---------- Calm Memory mode: larger words, fewer buttons, slower motion ---------- */
+
+body[data-mode="memory"] .lower {
+  max-width: 640px;
+}
+
+body[data-mode="memory"] .caption {
+  padding: 18px 20px;
+}
+
+body[data-mode="memory"] .caption-text {
+  font-size: 23px;
+  line-height: 1.38;
+  font-weight: 500;
+}
+
+body[data-mode="memory"] .caption-error {
+  font-size: var(--fs-body);
+}
+
+body[data-mode="memory"] #memory-count {
+  min-height: 40px;
+  padding: 8px 18px;
+  font-size: var(--fs-body);
+}
+
+body[data-mode="memory"] #hold,
+body[data-mode="memory"] .scan-band {
+  display: none;
+}
+
+body[data-mode="memory"] .presence-dot::before,
+body[data-mode="memory"] .presence-dot::after {
+  animation-duration: 2.4s;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  body[data-mode="memory"] .caption {
+    animation: calm-in 0.5s var(--ease-calm);
+  }
+}
+
+@keyframes calm-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The sheet keeps its centring transform while it animates in. */
+@keyframes sheet-in {
+  from { opacity: 0; transform: translate(-50%, 16px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sheet {
+    animation: sheet-in 0.45s var(--ease-calm);
+  }
+}
+
+/* ---------- Find answer (split): bigger answer line, clearer tags ---------- */
+
+.memory-line {
+  font-size: var(--fs-title3);
+  line-height: 1.3;
+}
+
+.memory-tag {
+  font-family: var(--font);
+  font-size: var(--fs-subhead);
+  padding: 5px 12px;
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.memory-hint {
+  font-size: var(--fs-subhead);
+}
+
+.memory-pane {
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.rewind-box {
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.45);
+}
+
+/* ---------- Settings: switches, Simple then Advanced ---------- */
+
+input[type="checkbox"][role="switch"] {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  flex: 0 0 auto;
+  width: 51px;
+  height: 31px;
+  margin: 0;
+  border-radius: 999px;
+  background: rgba(120, 120, 128, 0.36);
+  cursor: pointer;
+  transition: background 0.2s ease-out;
+}
+
+input[type="checkbox"][role="switch"]::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s var(--ease-calm);
+}
+
+input[type="checkbox"][role="switch"]:checked {
+  background: var(--calm);
+}
+
+input[type="checkbox"][role="switch"]:checked::after {
+  transform: translateX(20px);
+}
+
+input[type="checkbox"][role="switch"]:focus-visible {
+  outline: 2px solid var(--helper);
+  outline-offset: 2px;
+}
+
+.link-row {
+  text-decoration: none;
+}
+
+.link-row span {
+  color: var(--text-3);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.pair-out {
+  padding: 0 16px;
+}
+
+.pair-out > p:empty,
+.pair-out > a:empty {
+  display: none;
+}
+
+.pair-out > p,
+.pair-out > a {
+  display: block;
+  padding: 8px 0;
+  font-size: var(--fs-subhead);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.pair-qr {
+  display: block;
+  max-width: min(100%, 240px);
+  height: auto;
+  margin: 8px auto 14px;
+  border-radius: 12px;
+}
+
+.pair-qr[hidden] {
+  display: none;
+}
+
+.advanced {
+  margin-top: 26px;
+}
+
+.advanced-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: var(--fs-body);
+  color: var(--text-2);
+  cursor: pointer;
+  list-style: none;
+}
+
+.advanced-summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-summary::after {
+  content: "›";
+  font-size: 22px;
+  color: var(--text-3);
+  transition: transform 0.2s ease-out;
+}
+
+.advanced[open] .advanced-summary::after {
+  transform: rotate(90deg);
+}
+
+.sheet-foot {
+  margin-top: 18px;
+}
+
+.sheet .group .row {
+  min-height: 48px;
+}
+
+/* ---------- Projector and large screens: same layout, scaled up for the back of the room ---------- */
+
+@media (min-width: 1200px) and (min-height: 760px) {
+  .call,
+  .ring-screen,
+  .permission,
+  .start-overlay,
+  .sheet {
+    zoom: 1.12;
+  }
+}
+
+@media (min-width: 1700px) and (min-height: 950px) {
+  .call,
+  .ring-screen,
+  .permission,
+  .start-overlay,
+  .sheet {
+    zoom: 1.4;
+  }
+}
+
+input[type="checkbox"][role="switch"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Readable over any room: on the call screen glass is darker than iOS's 0.32 tint, because a bright lamp or
+   window behind a pill dropped white text to 1.5:1 (measured). Blur and edge stay the same. */
+.call .glass,
+.call .badge,
+#pipeline:is([data-stage]) {
+  background-color: rgba(8, 10, 14, 0.58);
+}
+
+.call .caption {
+  background-color: rgba(8, 10, 14, 0.66);
+}

@@ -27,6 +27,8 @@
     <symbol id="i-phone-down" viewBox="0 0 24 24"><path class="fill" d="M2.6 13.6c5.2-4.6 13.6-4.6 18.8 0 .5.4.5 1.2 0 1.6l-2 2c-.4.4-1 .4-1.4.1l-2.3-1.7c-.4-.3-.6-.8-.4-1.3l.5-1.6c-2.4-.8-5.2-.8-7.6 0l.5 1.6c.2.5 0 1-.4 1.3l-2.3 1.7c-.4.3-1 .3-1.4-.1l-2-2c-.5-.4-.5-1.2 0-1.6z"/></symbol>
     <symbol id="i-send" viewBox="0 0 24 24"><circle class="fill" cx="12" cy="12" r="10"/><path class="cut" d="M12 17V7.5M7.5 11.5L12 7l4.5 4.5"/></symbol>
     <symbol id="i-rewind" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4 4.5v3.7h3.7"/><path d="M12 8v4.2l2.8 1.8"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5.5c0 4.4-3 8-7 9.5-4-1.5-7-5.1-7-9.5V6z"/></symbol>
     <symbol id="i-bolt-off" viewBox="0 0 24 24"><path d="M13 3L6 13h5l-1 8 7-10h-5z"/><path d="M3.5 3.5l17 17"/></symbol>
   </svg>
 
@@ -41,6 +43,13 @@
     <section id="picker" class="ring-screen" aria-label="Choose a mode">
       <div class="ring-top">
         <button type="button" class="glass round r44 open-settings" aria-label="Settings"><svg><use href="#i-gear"/></svg></button>
+        <p class="wordmark" aria-hidden="true">A-eye</p>
+      </div>
+      <!-- First run: what A-eye is and the privacy promise, before anything starts. -->
+      <div class="intro">
+        <h1 class="intro-title">I look, point, and remember.</h1>
+        <p class="intro-text">Show me what you are working on, or ask where you left something. Choose a helper below to start.</p>
+        <p class="intro-note"><svg aria-hidden="true"><use href="#i-shield"/></svg>No video or sound is kept unless you turn it on.</p>
       </div>
       <div class="ring-bottom">
         <div class="ring-label" aria-live="polite">
@@ -52,6 +61,7 @@
           <button type="button" data-mode="pc_build" data-pack="pc_build" aria-label="PC Build"><span class="disc"><svg><use href="#i-desktop"/></svg></span></button>
           <button type="button" data-mode="cooking" data-pack="cooking" aria-label="Cooking"><span class="disc"><svg><use href="#i-pan"/></svg></span></button>
           <button type="button" data-mode="assemble" data-pack="assemble" aria-label="Assembly"><span class="disc"><svg><use href="#i-hammer"/></svg></span></button>
+          <button type="button" data-mode="memory" data-pack="memory" aria-label="Memory"><span class="disc"><svg><use href="#i-pin"/></svg></span></button>
           <button type="button" data-mode="mechanic" aria-label="Mechanic, coming soon"><span class="disc"><svg><use href="#i-car"/></svg></span></button>
           <button type="button" data-mode="plumbing" aria-label="Plumbing, coming soon"><span class="disc"><svg><use href="#i-drop"/></svg></span></button>
           <button type="button" data-mode="engineering" aria-label="Engineering, coming soon"><span class="disc"><svg><use href="#i-gears"/></svg></span></button>
@@ -64,12 +74,16 @@
       <div class="top">
         <div class="pill glass">
           <span id="presence-dot" class="presence-dot" role="img" aria-label=""></span>
-          <b>A-eye</b><span id="private-badge" class="private-badge hidden">Private</span><span class="sep" aria-hidden="true">·</span><span id="pack-label">General</span><span class="sep" aria-hidden="true">·</span><span id="elapsed" class="digits">0:00</span>
+          <b>A-eye</b><span class="sep" aria-hidden="true">·</span><span id="pack-label">General</span><span class="sep" aria-hidden="true">·</span><span id="elapsed" class="digits">0:00</span>
         </div>
-        <!-- Rewind on: under the pill, so it never covers it on a phone. -->
-        <div id="rewind-badge" class="rewind-badge hidden">
-          <p class="rewind-chip glass" title="Clips of this call are uploaded to TwelveLabs">Rewind on</p>
-          <button type="button" id="rewind-recap" class="rewind-chip glass" aria-label="Recap this call">Recap</button>
+        <!-- Status badges under the pill (one style): Private, Rewind on (+ Recap), Expert. -->
+        <div class="badges">
+          <span id="private-badge" class="badge private hidden" title="Nothing leaves our own machines">Private</span>
+          <span id="rewind-badge" class="rewind-badge hidden">
+            <span class="badge rewind" title="Clips of this call are uploaded to TwelveLabs">Rewind on</span>
+            <button type="button" id="rewind-recap" class="badge action" aria-label="Recap this call">Recap</button>
+          </span>
+          <span id="expert-badge" class="badge expert hidden" title="A stronger model is checking this answer">Expert</span>
         </div>
         <p id="link" class="chip glass warn" role="status">Connecting…</p>
         <p id="notice" class="chip glass soft hidden" role="status"></p>
@@ -161,44 +175,20 @@
     <div id="market-body" class="market-body"></div>
   </section>
 
-  <!-- SettingsSheet.swift, plus the web-only voice and mic controls. -->
+  <!-- SettingsSheet.swift, plus the web-only voice and mic controls. Simple first; the rest under Advanced. -->
   <section id="settings" class="sheet hidden" aria-labelledby="settings-title">
     <div class="grabber" aria-hidden="true"></div>
     <div class="sheet-head">
       <p id="settings-title" class="sheet-title">Settings</p>
       <button type="button" id="settings-done" class="text-btn strong">Done</button>
     </div>
-    <p class="group-title">Server</p>
-    <div class="group"><p id="server-host" class="row mono"></p></div>
-    <p class="group-foot">The web page always talks to the server that served it.</p>
-    <p class="group-title">Connection</p>
-    <div class="group"><p id="conn-status" class="row">Not in a call</p></div>
-    <p class="group-title">Devices</p>
-    <div class="group">
-      <button type="button" id="devices-allow" class="row text-btn hidden">Allow access to see devices</button>
-      <label class="row">Microphone <select id="mic-pick" class="voice-pick" aria-label="Microphone"></select></label>
-      <div class="row"><span>Level</span><span class="level" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="mic-level"></span></span></div>
-      <label class="row">Camera <select id="camera-pick" class="voice-pick" aria-label="Camera"></select></label>
-      <label id="speaker-row" class="row hidden">Speaker <select id="speaker-pick" class="voice-pick" aria-label="Speaker"></select></label>
-    </div>
-    <p id="devices-foot" class="group-foot">Speak and watch the level bar to see which mic hears you.</p>
-    <p class="group-title">Voice</p>
-    <div class="group">
-      <label class="row">Voice <select id="voice-pick" class="voice-pick" aria-label="Voice"></select></label>
-      <div class="row"><button type="button" id="test-voice" class="text-btn">Test voice</button><button type="button" id="mute" class="text-btn" aria-pressed="false">Mute</button></div>
-      <label class="row">Volume <input id="volume" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume"></label>
-    </div>
-    <p class="group-title">Microphone</p>
-    <div class="group">
-      <label class="row">Sensitivity <input id="sensitivity" type="range" min="1" max="10" step="1" value="5" aria-label="Speech sensitivity"></label>
-      <p class="row"><span>Recognition</span><span id="stt-mode" class="mono dim">Browser</span></p>
-      <p class="row"><span>Room noise</span><span id="ambient" class="mono dim" aria-live="off">Noise --</span></p>
-    </div>
+
     <p class="group-title">Privacy</p>
     <div class="group">
       <label class="row">Private mode <input id="private-toggle" type="checkbox" role="switch" aria-describedby="private-notice"></label>
     </div>
     <p id="private-notice" class="group-foot">Nothing leaves our own machines: the local brain answers, Kokoro speaks, speech is recognized on our GPU box, and Rewind stays off.</p>
+
     <p class="group-title">Rewind</p>
     <div class="group">
       <label class="row">Rewind <input id="rewind-toggle" type="checkbox" role="switch" aria-describedby="rewind-notice"></label>
@@ -206,22 +196,61 @@
       <button type="button" id="rewind-forget" class="row text-btn">Forget this call's clips</button>
     </div>
     <p id="rewind-notice" class="group-foot">When on, short video clips of this call are uploaded to TwelveLabs so you can ask about them later. They are deleted from TwelveLabs when the call ends unless you keep them.</p>
-    <p class="group-title">Photo</p>
+
+    <p class="group-title">Voice</p>
     <div class="group">
-      <label class="row file-btn">Upload a photo instead of the camera<input id="upload" type="file" accept="image/*"></label>
+      <label class="row">Voice <select id="voice-pick" class="voice-pick" aria-label="Voice"></select></label>
+      <div class="row"><button type="button" id="test-voice" class="text-btn">Test voice</button><button type="button" id="mute" class="text-btn" aria-pressed="false">Mute</button></div>
+      <label class="row">Volume <input id="volume" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume"></label>
     </div>
+
+    <p class="group-title">Camera</p>
     <div class="group">
       <button type="button" id="pair-request" class="row text-btn">Use my phone (camera + mic)</button>
-      <p id="pair-status" role="status"></p>
-      <a id="pair-link" style="overflow-wrap:anywhere"></a>
-      <canvas id="pair-qr" hidden style="max-width:100%;height:auto" aria-label="Phone camera pairing QR code"></canvas>
+      <div class="pair-out">
+        <p id="pair-status" role="status"></p>
+        <a id="pair-link" class="pair-link"></a>
+        <canvas id="pair-qr" class="pair-qr" hidden aria-label="Phone camera pairing QR code"></canvas>
+      </div>
+      <label class="row file-btn">Upload a photo instead of the camera<input id="upload" type="file" accept="image/*"></label>
     </div>
-    <p class="group-title">Transcript</p>
+
+    <p class="group-title">Memory aid</p>
     <div class="group">
-      <button type="button" id="transcript-toggle" class="row text-btn" aria-expanded="false" aria-controls="transcript-list">Transcript</button>
-      <ol id="transcript-list" class="transcript-list hidden"></ol>
+      <a id="caregiver-link" class="row text-btn link-row" href="caregiver.html" target="_blank" rel="noopener">Caregiver settings<span aria-hidden="true">›</span></a>
     </div>
-    <p class="group-foot">Camera frames go only to this server and are not saved, unless Rewind is on.</p>
+    <p class="group-foot">Things and their homes, rooms, and how long to keep. Set it up together.</p>
+
+    <details id="settings-advanced" class="advanced">
+      <summary class="advanced-summary">Advanced</summary>
+      <p class="group-title">Devices</p>
+      <div class="group">
+        <button type="button" id="devices-allow" class="row text-btn hidden">Allow access to see devices</button>
+        <label class="row">Microphone <select id="mic-pick" class="voice-pick" aria-label="Microphone"></select></label>
+        <div class="row"><span>Level</span><span class="level" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="mic-level"></span></span></div>
+        <label class="row">Camera <select id="camera-pick" class="voice-pick" aria-label="Camera"></select></label>
+        <label id="speaker-row" class="row hidden">Speaker <select id="speaker-pick" class="voice-pick" aria-label="Speaker"></select></label>
+      </div>
+      <p id="devices-foot" class="group-foot">Speak and watch the level bar to see which mic hears you.</p>
+      <p class="group-title">Microphone</p>
+      <div class="group">
+        <label class="row">Sensitivity <input id="sensitivity" type="range" min="1" max="10" step="1" value="5" aria-label="Speech sensitivity"></label>
+        <p class="row"><span>Recognition</span><span id="stt-mode" class="mono dim">Browser</span></p>
+        <p class="row"><span>Room noise</span><span id="ambient" class="mono dim" aria-live="off">Noise --</span></p>
+      </div>
+      <p class="group-title">Connection</p>
+      <div class="group">
+        <p id="conn-status" class="row">Not in a call</p>
+        <p id="server-host" class="row mono"></p>
+      </div>
+      <p class="group-foot">The web page always talks to the server that served it.</p>
+      <p class="group-title">Transcript</p>
+      <div class="group">
+        <button type="button" id="transcript-toggle" class="row text-btn" aria-expanded="false" aria-controls="transcript-list">Transcript</button>
+        <ol id="transcript-list" class="transcript-list hidden"></ol>
+      </div>
+    </details>
+    <p class="group-foot sheet-foot">Camera frames go only to this server and are not saved, unless Rewind is on.</p>
   </section>
 
   <script type="module" src="agent.js"></script>
