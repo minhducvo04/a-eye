@@ -47,8 +47,14 @@ def select_backend(ollama=None):
     if mode == "gemini":
         from vision.gemini import GeminiBackend
         return GeminiBackend()
+    if mode == "openai":
+        from vision.openai import OpenAIBackend
+        return OpenAIBackend()
+    if mode == "openrouter":
+        from vision.openai import OpenRouterBackend
+        return OpenRouterBackend()
     if mode not in {"ollama", "auto", "cloud_fallback"}:
-        raise ValueError("VISION_BACKEND must be fake, ollama, auto, gemini, or cloud_fallback")
+        raise ValueError("VISION_BACKEND must be fake, ollama, auto, gemini, openai, openrouter, or cloud_fallback")
     from vision.ollama import AutoBackend, OllamaBackend
     real = ollama if ollama is not None else OllamaBackend()
     if mode == "cloud_fallback":
