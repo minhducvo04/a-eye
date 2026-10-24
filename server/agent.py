@@ -13,7 +13,7 @@ from uuid import uuid4
 from server.expert import RULES as EXPERT_RULES, should_escalate, mark_failed
 from server.llm import TURN_USAGE
 from server import rewind_tools
-from server.routing import forget_request, past_tool, rewind_callback, route_turn
+from server.routing import past_tool, rewind_callback, route_turn
 
 from server.crops import crop_b64, pick_target
 from server.privacy import local_only
@@ -487,19 +487,6 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
             delta_at = monotonic()
 
     try:
-        if forget_request(text) and getattr(session, 'rewind', None) is not None:
-            # Spoken "forget that": the same deletion as the Forget button (TwelveLabs copies and local frames).
-            from server.rewind import state_message
-            result = await session.rewind.forget(local=True)
-            await emit(state_message(session.rewind))
-            n = result['deleted']
-            await speech(f"Done. I deleted {n} clip{'' if n == 1 else 's'} of this call." if not result['failed']
-                         else "I couldn't delete every clip. Try the Forget button.", final=True)
-            if worker:
-                await queue.put(None)
-                await worker
-            remember()
-            return messages
         if route == 'past' or (route == 'expert' and session.expert_start):
             if route == 'past':
                 tool = past_tool(text)
