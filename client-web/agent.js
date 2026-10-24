@@ -205,7 +205,7 @@ function boot() {
 
   function wsUrl() {
     const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-    return `${scheme}//${location.host}/ws2`;
+    return `${scheme}//${location.host}/ws2?token=${encodeURIComponent(new URLSearchParams(location.search).get("token") || "")}`;
   }
 
   function reducedMotion() {

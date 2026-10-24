@@ -16,6 +16,8 @@ from jsonschema import ValidationError
 
 from contracts import validate
 from server.box_client import BoxClient
+from server.auth import accept_socket
+from server.logs import event
 from server import packs
 from server.agent import Session, message, run_turn, say, state
 from server.llm import LLMClient
@@ -105,6 +107,7 @@ async def scene_loop(session, vision, send, gate=None):
                 await send(message('track', seq=frame['seq'], objects=scene['objects']))
                 await send(message('metrics', seq=frame['seq'], vlm_ms=(monotonic() - started) * 1000))
             except Exception:
+                event('dependency_error', session.session_id, dependency='vision', level='error')
                 if not session.vision_error_sent:
                     await send(message('error', code='vision_unavailable', message='Vision is unavailable.'))
                     session.vision_error_sent = True
@@ -130,7 +133,8 @@ async def scene_loop(session, vision, send, gate=None):
 
 @router.websocket('/ws2')
 async def websocket(ws: WebSocket):
-    await ws.accept()
+    if not await accept_socket(ws):
+        return
     session = None
     turn_task = None
     audio_tasks = {}
@@ -150,6 +154,8 @@ async def websocket(ws: WebSocket):
 
     async def send(msg):
         validate('server_message_v2', msg)
+        if msg['type'] == 'metrics' and 'turn_id' in msg:
+            event('turn_end', session.session_id if session else None, **{k: v for k, v in msg.items() if k.endswith('_ms')})
         async with send_lock:
             await ws.send_json(msg)
 
@@ -215,9 +221,11 @@ async def websocket(ws: WebSocket):
                     session.voice_pending = False
 
     async def turn(text, started_at=None):
+        event('turn_start', session.session_id)
         try:
             await run_turn(session, text, vision=vision, llm=TurnBrain(), started_at=started_at)
         except Exception:
+            event('dependency_error', session.session_id, dependency='turn', level='error')
             await send(message('error', code='internal', message='The turn could not finish.'))
         finally:
             if not asyncio.current_task().cancelling():
@@ -248,6 +256,7 @@ async def websocket(ws: WebSocket):
         except Exception:
             session.voice_pending = False
             stt_mode = 'browser'
+            event('fallback_used', session.session_id, dependency='stt', to='browser')
             if not stt_failed:
                 stt_failed = True
                 await send(message('error', code='internal',
@@ -291,6 +300,7 @@ async def websocket(ws: WebSocket):
                 stt_mode = incoming.get('stt', 'browser')
                 stt_failed = False
                 session = new_session
+                event('hello', session.session_id, pack=session.pack.id, tts=session.tts, stt=stt_mode)
                 session.emit = emit
                 voice = None
                 if session.tts == 'server':
@@ -298,6 +308,8 @@ async def websocket(ws: WebSocket):
                     candidate = await asyncio.to_thread(factory)
                     if not isinstance(candidate, FakeAdapter):
                         voice = candidate
+                    else:
+                        event('fallback_used', session.session_id, dependency='tts', to='browser')
                 session.speak = speech_audio if voice else None
                 scene_loop_task = asyncio.create_task(scene_loop(session, vision, send, gate))
                 if os.environ.get('YOLO_REFRESH') == '1':
