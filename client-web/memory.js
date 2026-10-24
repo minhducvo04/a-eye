@@ -45,6 +45,18 @@ export function matchLive(hitObjects, liveObjects) {
   return hits.length ? hits[0] : null;
 }
 
+// The Now panel's target. The server's find_item.live (grounded, guarded against false boxes) wins; a fresh
+// tracker box with the same object id moves it. Without live, fall back to a label match on the tracker boxes.
+export function liveTarget(hit, liveObjects) {
+  const live = hit && hit.live;
+  if (live && Array.isArray(live.bbox) && live.bbox.length === 4) {
+    const label = String(hit.item || ((hit.objects || [])[0] || {}).label || "it");
+    const tracked = (liveObjects || []).find((o) => o.id && o.id === live.object_id);
+    return { id: live.object_id, label, bbox: tracked ? tracked.bbox : live.bbox, conf: tracked ? tracked.conf : 1 };
+  }
+  return matchLive(hit && hit.objects, liveObjects);
+}
+
 // Where the caregiver said a thing lives, for a question or the boxed labels ("keys" -> "blue bowl").
 export function placeFor(text, items) {
   const said = new Set(words(text));
@@ -226,7 +238,7 @@ export function renderSplit(doc, body, { hit, line, stream }) {
   text.textContent = line;
   body.append(text, split); // the answer first: on a phone the panes stack below it
   function update(liveObjects) {
-    const live = matchLive(hit.objects, liveObjects);
+    const live = liveTarget(hit, liveObjects);
     if (!live) {
       path.setAttribute("d", "");
       hint.textContent = stream ? "Not in view now. Look around slowly." : "";
