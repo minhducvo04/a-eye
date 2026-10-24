@@ -137,7 +137,7 @@ class PersonFilter:
     """Drops frames that show a person, on the device, before anything is sent.
 
     Uses OpenCV's built-in HOG people detector when OpenCV is installed (no model download). Without OpenCV it
-    reports available=False and passes every frame; the device prints that once at start.
+    reports available=False and refuses every frame; errors also refuse transmission.
     """
 
     def __init__(self):
@@ -153,14 +153,26 @@ class PersonFilter:
 
     def has_person(self, image):
         if not self.available:
-            return False
-        import numpy as np
-        img = image.convert('L')
-        img.thumbnail((400, 400))
-        if img.width < 64 or img.height < 128:
             return True
-        rects, weights = self.hog.detectMultiScale(np.asarray(img), winStride=(8, 8), padding=(8, 8), scale=1.05)
-        return any(float(w) > 0.5 for w in (weights.ravel() if len(rects) else []))
+        try:
+            import numpy as np
+            with image.convert('L') as img:
+                img.thumbnail((400, 400))
+                if img.width < 64 or img.height < 128:
+                    return True
+                rects, weights = self.hog.detectMultiScale(np.asarray(img), winStride=(8, 8),
+                                                          padding=(8, 8), scale=1.05)
+            return any(float(w) > 0.5 for w in (weights.ravel() if len(rects) else []))
+        except Exception:
+            return True
+
+
+def blocks_frame(person, image):
+    """Only an available detector's explicit negative result permits transmission."""
+    try:
+        return person is None or not person.available or person.has_person(image) is not False
+    except Exception:
+        return True
 
 
 # ---- microphone -------------------------------------------------------------------------------------------------
@@ -371,12 +383,14 @@ class GpioLed(TerminalIndicator):
     def set(self, on, detail=''):
         super().set(on, detail)
         self.led.source = None
-        self.led.off()
-        if self.state == 'Armed':
+        if self.state == 'Off':
+            self.led.off()
+        elif self.state == 'Armed':
             import itertools
             import math
+            self.led.value = 0.03
             self.led.source_delay = 0.1
-            self.led.source = itertools.cycle([0.15 * (1 - math.cos(i * math.pi / 20)) / 2
+            self.led.source = itertools.cycle([0.03 + 0.12 * (1 - math.cos(i * math.pi / 20)) / 2
                                                for i in range(40)])
         elif self.state == 'Event':
             self.led.value = 0.6

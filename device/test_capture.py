@@ -178,7 +178,7 @@ def test_gpio_state_patterns(monkeypatch):
     indicator = GpioLed(27)
     indicator.set('Armed')
     values = list(itertools.islice(indicator.led.source, 40))
-    assert min(values) == 0 and max(values) == .15
+    assert min(values) == .03 and max(values) == .15
     indicator.set('Event')
     assert indicator.led.source is None and indicator.led.value == .6
     indicator.set('Session')

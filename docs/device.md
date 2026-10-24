@@ -90,18 +90,24 @@ config file, and are never logged.
 - Armed: requests 64×48 camera output at 1 fps, compares grey pixels in `trigger.zone` (normalized rectangle).
   It retains a five-second grey RAM pre-roll and one comparison thumbnail, no microphone or network connection.
   USB camera drivers may ignore resolution/fps requests; actual sensor duty must be measured.
-- `trigger.armed_cap_s` defaults to 43200 (12 h), including Event time; no automatic re-arm at expiry.
+- `trigger.armed_cap_s` defaults to 43200 (12 h), including Event capture and upload; expiry cancels the Event,
+  clears its buffers and closes the camera. No automatic re-arm at expiry.
 - Event: five further seconds at up to 640 px; inspect every candidate with the device person detector and send
   at most three safe JPEG stills. Unknown/unavailable detector or a detector error fails closed. Tiny pre-roll
   is discarded before transmission because HOG cannot reliably inspect 64×48 frames. No cloud fallback.
 - Memory must already have both consents and Remembering enabled for this device's authenticated owner.
-  `/api/memory/event` asks the configured home `OLLAMA_URL` model “Worth noting?” once, then writes zero or one
+  `/api/memory/event` first checks every still with the server's local person detector. A person, unknown result
+  or detector failure refuses the whole Event before inference. It then asks the configured home `OLLAMA_URL`
+  model “Worth noting?” once, then writes zero or one
   note (12 words, max 200 characters). Notes are searchable by the existing Find path. No crops are saved.
 - Event buffers clear on success, refusal, cancellation and error; return to Armed after success, Off on stop.
   An application disconnect cannot recall a request already received by the server; the server clears its own
   frames after the bounded inference finishes. Python reference release is not a secure RAM overwrite.
 - Session keeps the 90 s idle / 15 min cap and existing audio behaviour. Remember during Session closes that
   session before opening Event. No always-listening wake phrase: use the Remember button or terminal command.
+- Event and Session both require a successful on-device person check before sending images. Setting
+  `drop_person_frames = false` disables the detector and therefore **blocks all frames in both states**;
+  it never permits unfiltered images or a server-only fallback. Session audio remains available.
 - HOG detects some full people, not every face/person. Synthetic person-drop tests prove transport gating,
   not reliable recognition of all people. No real-world “people can never leave” claim is justified yet.
 - On turn-on it takes a burst of 3 frames and sends the sharpest (edge variance), against motion blur.
@@ -138,7 +144,7 @@ use them). `--mock` uses `A_EYE_MOCK=1` instead (no box at all).
 | State | GPIO27 PWM LED | Terminal strip |
 |---|---|---|
 | Off | dark | `[Off]` |
-| Armed | slow four-second pulse, maximum 15% duty | `[Armed]` |
+| Armed | slow four-second pulse, 3–15% duty (never dark) | `[Armed]` |
 | Event | solid 60% duty | `[Event]` |
 | Session | solid full brightness | `[Session]` |
 

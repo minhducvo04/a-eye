@@ -8,6 +8,8 @@ from uuid import uuid4
 import httpx
 from PIL import Image
 
+from server.memory import PersonCheck
+
 
 async def worth_noting(frames):
     # Explicit home-box endpoint. No router or cloud fallback.
@@ -37,6 +39,14 @@ async def capture(store, frames, judge=worth_noting):
                 if image.format != 'JPEG' or max(image.size) > 640:
                     raise ValueError('invalid image')
                 image.verify()
+        check = PersonCheck()
+        for value in frames:
+            try:
+                person = await check(value)
+            except Exception:
+                return {'noted': False, 'reason': 'person_check_unavailable'}
+            if person is not False:
+                return {'noted': False, 'reason': 'person_or_unknown'}
         answer = await judge(frames)
         note = answer.get('note')
         if answer.get('worth') is not True or not isinstance(note, str):

@@ -357,7 +357,11 @@ class PersonCheck:
         finally:
             if self.box is None:
                 await box.aclose()
-        return any(d.get('label') == 'person' for d in detections)
+        if (not isinstance(detections, list) or
+                any(not isinstance(d, dict) or not isinstance(d.get('label'), str) or not d['label'].strip()
+                    for d in detections)):
+            raise ValueError('invalid person detector response')
+        return any(d['label'].strip().casefold() == 'person' for d in detections)
 
 
 class Writer:

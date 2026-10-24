@@ -50,8 +50,8 @@ class Device:
     async def run(self, presses=None):
         """Wait for triggers, run one call per on-period. `presses` is an optional coroutine feeding self.events."""
         self.indicator.set(False)
-        if self.person is not None and not self.person.available:
-            self.log('person_filter', available=False, note='OpenCV missing; Events refuse all frames')
+        if self.person is None or not self.person.available:
+            self.log('person_filter', available=False, note='Detector disabled/unavailable; Event and Session refuse frames')
         feeders = [asyncio.create_task(presses)] if presses else []
         try:
             while not self.stop.is_set():
@@ -163,8 +163,8 @@ class Device:
         period = 1.0 / max(0.1, float(c['fps']))
         change = Motion(min_share=self.cfg['trigger']['motion_share'])
         seq = 0
-        self.camera.open()
         try:
+            self.camera.open()
             first = True
             while True:
                 started = time.monotonic()
@@ -178,7 +178,7 @@ class Device:
                     img = max(shots, key=sharpness) if len(shots) > 1 else shots[0]
                     if change.changed(img):
                         self.power.change()
-                    if self.person is not None and await asyncio.to_thread(self.person.has_person, img):
+                    if await asyncio.to_thread(hw.blocks_frame, self.person, img):
                         self.stats['frames_dropped_person'] += 1
                     else:
                         jpeg, w, h = await asyncio.to_thread(hw.encode_jpeg, img, c['long_side'], c['quality'])
