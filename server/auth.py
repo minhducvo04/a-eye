@@ -13,6 +13,17 @@ import jwt
 from server.logs import event
 
 
+PROXY_HEADERS = (
+    'cf-connecting-ip', 'x-forwarded-for', 'forwarded', 'x-real-ip',
+    'tailscale-user-login', 'tailscale-user-name', 'cf-ray',
+)
+
+
+def proxied(connection):
+    # Presence alone removes local trust, even for empty or loopback-valued headers.
+    return any(header in connection.headers for header in PROXY_HEADERS)
+
+
 def fetch_certs(url):
     response = httpx.get(url, timeout=3)
     response.raise_for_status()
@@ -86,7 +97,7 @@ def warn_unconfigured():
         opened = os.environ.get('A_EYE_OPEN') == '1'
         event('auth_explicitly_open' if opened else 'auth_loopback_only', level='warning',
               reason='No credentials: all clients allowed by A_EYE_OPEN=1' if opened
-              else 'No credentials: non-loopback clients refused; configure authentication or A_EYE_OPEN=1')
+              else 'No credentials: remote and proxied clients refused; configure authentication or A_EYE_OPEN=1')
 
 
 def rejected(reason):
@@ -100,7 +111,8 @@ def authorized(connection):
     audience = os.environ.get('CF_ACCESS_AUD', '')
     if not (expected or team or audience):
         peer = connection.client.host if connection.client else ''
-        return (os.environ.get('A_EYE_OPEN') == '1' or peer in ('127.0.0.1', '::1')
+        return (os.environ.get('A_EYE_OPEN') == '1'
+                or (peer in ('127.0.0.1', '::1') and not proxied(connection))
                 or rejected('unconfigured_remote'))
     header = connection.headers.get('authorization', '')
     bearer = header[7:] if header.lower().startswith('bearer ') else ''

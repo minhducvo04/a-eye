@@ -29,7 +29,17 @@ The socket stays down until something listens on `/ws`. The red status dot means
 
 Safari on an iPhone only exposes the camera on a secure page. `http://` to a LAN address is not enough. `http://localhost` works on the computer that is serving the page, not on the phone.
 
-From the machine that is already serving port 8000, Tailscale can put HTTPS in front of it:
+First set `A_EYE_TOKEN` to a long random secret in the server environment and restart
+`make server`. Do not start a tunnel without credentials. Alternatively, configure both
+`CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` with a working Cloudflare Access sign-in.
+`make phone` refuses to print tunnel commands until one of these is configured.
+
+Without credentials, only direct localhost callers work: proxy headers remove localhost
+trust. This applies to private Tailscale Serve as well as public Funnel and Cloudflare
+tunnels. Custom Uvicorn launches must use `--no-proxy-headers`, as `make server` does,
+so the app can distinguish the TCP peer from forwarded addresses for pairing rate limits.
+
+Once credentials are set on the machine serving port 8000, Tailscale can put HTTPS in front of it:
 
 ```sh
 tailscale serve 8000
@@ -47,7 +57,11 @@ A Cloudflare quick tunnel is the other easy option:
 cloudflared tunnel --url http://localhost:8000
 ```
 
-Open the `https://` URL in Safari on the phone, tap **Start camera**, and allow the camera. **Pause** stops frames; leaving the tab does too. If you deny the camera, use **Upload photo**.
+Open the `https://` URL with `/agent.html?token=<your-token>` in Safari on the phone
+(or sign in through Cloudflare Access). To use the phone as another call's camera,
+scan that call's QR: its single-use join secret replaces the token for that camera join only.
+Tap **Start camera** and allow the camera. **Pause** stops frames; leaving the tab does too.
+If you deny the camera, use **Upload photo**.
 
 ## Test
 

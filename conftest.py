@@ -18,7 +18,7 @@ def _hermetic_env(monkeypatch):
     for name in RUNTIME_ENV:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("BOX_URL", UNREACHABLE_BOX)
-    # TestClient is an in-process local caller. Tests of remote access pass an explicit client address.
+    # Default to a direct in-process caller; security tests supply proxy headers or an explicit remote client.
     from fastapi.testclient import TestClient
     original = TestClient.__init__
     def local_client(self, *args, **kwargs):

@@ -11,7 +11,18 @@ from fastapi import WebSocketDisconnect
 from jsonschema import ValidationError
 from contracts import validate
 from server.agent import message
+from server.auth import proxied
 from server.logs import event
+
+
+def pairing_address(ws):
+    """Proxy visitor addresses partition rate limits only; they never authorize a join.
+    Run Uvicorn with --no-proxy-headers so client.host remains the TCP peer."""
+    peer = ws.client.host if ws.client else ''
+    if peer in ('127.0.0.1', '::1') and proxied(ws):
+        return (ws.headers.get('cf-connecting-ip', '').strip()
+                or ws.headers.get('x-forwarded-for', '').split(',', 1)[0].strip() or peer)
+    return peer
 
 
 class Registry:
@@ -160,7 +171,7 @@ async def join_socket(ws):
         return
     code = ws.query_params.get('pair', '')
     expiry = registry.codes.get(code, (None, 0))[1]
-    call, _ = registry.take(code, address=ws.client.host if ws.client else '',
+    call, _ = registry.take(code, address=pairing_address(ws),
                             secret=ws.query_params.get('join', ''))
     if call is None:
         await ws.close(code=4401)
@@ -186,7 +197,7 @@ async def camera_socket(ws, hello, claimed=None):
     if claimed is not None:
         call, state, detail, retry = claimed, 'joined', '', None
     elif 'pair_code' in hello:
-        call, state = registry.take(hello['pair_code'], address=ws.client.host if ws.client else '')
+        call, state = registry.take(hello['pair_code'], address=pairing_address(ws))
         detail, retry = ('Code expired.' if state == 'expired' else 'Code unavailable. Request a new code.'), None
     else:
         call, state, detail, retry = registry.take_remembered(ws)

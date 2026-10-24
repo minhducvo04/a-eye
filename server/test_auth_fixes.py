@@ -2,6 +2,8 @@
 import asyncio
 import logging
 import re
+import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
@@ -27,7 +29,7 @@ def clean(monkeypatch):
 def test_unconfigured_remote_denied_loopback_and_explicit_open_work(monkeypatch, capsys):
     for host, allowed in [('192.0.2.10', False), ('127.0.0.1', True), ('::1', True)]:
         with TestClient(app(), client=(host, 1234)) as client:
-            assert client.get('/api/status', headers={'x-forwarded-for': '127.0.0.1'}).status_code == (200 if allowed else 401)
+            assert client.get('/api/status').status_code == (200 if allowed else 401)
             for path in ('/ws', '/ws2'):
                 if allowed:
                     with client.websocket_connect(path):
@@ -41,6 +43,142 @@ def test_unconfigured_remote_denied_loopback_and_explicit_open_work(monkeypatch,
     with TestClient(app(), client=('192.0.2.10', 1234)) as client:
         assert client.get('/api/status').status_code == 200
     assert 'auth_explicitly_open' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('header', [
+    'CF-Connecting-IP', 'X-Forwarded-For', 'Forwarded', 'X-Real-IP',
+    'Tailscale-User-Login', 'Tailscale-User-Name', 'CF-Ray',
+])
+@pytest.mark.parametrize('host', ['127.0.0.1', '::1'])
+@pytest.mark.parametrize('value', ['', '127.0.0.1'])
+def test_unconfigured_proxy_headers_never_grant_access(header, host, value, monkeypatch):
+    headers = {header: value}
+    with TestClient(app(), client=(host, 1234)) as client:
+        assert client.get('/api/status', headers=headers).status_code == 401
+        for path in ('/ws', '/ws2'):
+            with pytest.raises(WebSocketDisconnect) as closed:
+                with client.websocket_connect(path, headers=headers):
+                    pass
+            assert closed.value.code == 4401
+        monkeypatch.setenv('A_EYE_OPEN', '1')
+        assert client.get('/api/status', headers=headers).status_code == 200
+        monkeypatch.setenv('A_EYE_TOKEN', 'synthetic-master')
+        assert client.get('/api/status', headers=headers).status_code == 401
+        assert client.get('/api/status', headers=dict(headers, authorization='Bearer synthetic-master')).status_code == 200
+
+
+def test_remote_forwarding_headers_cannot_grant_access():
+    with TestClient(app(), client=('192.0.2.10', 1234)) as client:
+        assert client.get('/api/status', headers={'X-Forwarded-For': '127.0.0.1'}).status_code == 401
+
+
+def test_unconfigured_tunnel_cannot_join_with_code_or_secret():
+    with TestClient(app()) as client, client.websocket_connect('/ws2') as call:
+        send(call, 'hello', pack='general')
+        receive(call)
+        send(call, 'pair_request')
+        msg = receive(call)
+        headers = {'CF-Connecting-IP': '192.0.2.10'}
+        for path in ('/ws2', '/ws2?' + urlsplit(msg['path']).query):
+            with pytest.raises(WebSocketDisconnect) as closed:
+                with client.websocket_connect(path, headers=headers) as camera:
+                    camera.send_json(dict(v=2, type='hello', session_id='phone', pack='general',
+                                          role='camera', pair_code=msg['code']))
+                    receive(camera)
+            assert closed.value.code == 4401
+        # Refused tunnel requests must not consume the local call's pairing capability.
+        with client.websocket_connect('/ws2?' + urlsplit(msg['path']).query) as camera:
+            camera.send_json(dict(v=2, type='hello', session_id='phone', pack='general',
+                                  role='camera', pair_code=msg['code']))
+            assert receive(camera)['state'] == 'joined'
+            assert receive(call)['state'] == 'joined'
+
+
+@pytest.mark.parametrize('mode', ['secret', 'code'])
+@pytest.mark.parametrize('header', ['CF-Connecting-IP', 'X-Forwarded-For'])
+def test_proxy_pairing_limits_separate_visitors(mode, header, monkeypatch):
+    monkeypatch.setenv('A_EYE_TOKEN', 'synthetic-master')
+    with TestClient(app()) as client, client.websocket_connect('/ws2?token=synthetic-master') as call:
+        send(call, 'hello', pack='general')
+        receive(call)
+        send(call, 'pair_request')
+        msg = receive(call)
+        query = urlsplit(msg['path']).query
+
+        def join(code, address):
+            # CF takes precedence over XFF; XFF uses its first hop, not the common proxy.
+            headers = ({header: address, 'X-Forwarded-For': '198.51.100.1'}
+                       if header == 'CF-Connecting-IP' else {header: f' {address}, 198.51.100.1'})
+            path = '/ws2?' + (query if code == msg['code'] else 'pair=ZZZZZZZZ&join=wrong')
+            if mode == 'code':
+                path = '/ws2?token=synthetic-master'
+            return client.websocket_connect(path, headers=headers)
+
+        for _ in range(5):
+            if mode == 'secret':
+                with pytest.raises(WebSocketDisconnect):
+                    with join('ZZZZZZZZ', '192.0.2.10'):
+                        pass
+            else:
+                with join('ZZZZZZZZ', '192.0.2.10') as bad:
+                    bad.send_json(dict(v=2, type='hello', session_id='phone', pack='general',
+                                       role='camera', pair_code='ZZZZZZZZ'))
+                    assert receive(bad)['state'] == 'rejected'
+        if mode == 'secret':
+            with pytest.raises(WebSocketDisconnect):
+                with join(msg['code'], '192.0.2.10'):
+                    pass
+        else:
+            with join(msg['code'], '192.0.2.10') as bad:
+                bad.send_json(dict(v=2, type='hello', session_id='phone', pack='general',
+                                   role='camera', pair_code=msg['code']))
+                assert receive(bad)['state'] == 'rejected'
+        with join(msg['code'], '192.0.2.11') as camera:
+            camera.send_json(dict(v=2, type='hello', session_id='phone', pack='general',
+                                  role='camera', pair_code=msg['code']))
+            assert receive(camera)['state'] == 'joined'
+            assert receive(call)['state'] == 'joined'
+
+
+def test_non_loopback_pairing_limits_ignore_spoofed_headers(monkeypatch):
+    monkeypatch.setenv('A_EYE_TOKEN', 'synthetic-master')
+    with TestClient(app(), client=('192.0.2.10', 1234)) as client:
+        for n in range(5):
+            with pytest.raises(WebSocketDisconnect):
+                with client.websocket_connect('/ws2?pair=ZZZZZZZZ&join=wrong',
+                                              headers={'CF-Connecting-IP': f'198.51.100.{n}',
+                                                       'X-Forwarded-For': f'198.51.100.{n}'}):
+                    pass
+        assert pairing.registry.address_misses['192.0.2.10'][0] == 5
+        assert len(pairing.registry.address_misses) == 1
+
+
+@pytest.mark.parametrize('settings,allowed', [
+    ({}, False), ({'A_EYE_OPEN': '1'}, False),
+    ({'CF_ACCESS_TEAM_DOMAIN': 'example.cloudflareaccess.com'}, False),
+    ({'A_EYE_TOKEN': 'synthetic-master'}, True),
+    ({'CF_ACCESS_TEAM_DOMAIN': 'example.cloudflareaccess.com', 'CF_ACCESS_AUD': 'synthetic-aud'}, True),
+])
+def test_phone_requires_credentials_before_suggesting_tunnels(settings, allowed, tmp_path):
+    settings = dict.fromkeys(('A_EYE_TOKEN', 'A_EYE_OPEN', 'CF_ACCESS_TEAM_DOMAIN', 'CF_ACCESS_AUD'), '') | settings
+    result = subprocess.run(['make', '-f', str(Path(__file__).resolve().parents[1] / 'Makefile'),
+                             'phone', 'SERVER_PORT=8123', *[f'{k}={v}' for k, v in settings.items()]],
+                            cwd=tmp_path, capture_output=True, text=True)
+    assert (result.returncode == 0) == allowed
+    assert 'A_EYE_TOKEN' in result.stdout
+    assert 'synthetic-master' not in result.stdout + result.stderr
+    assert ('cloudflared tunnel' in result.stdout) == allowed
+    assert ('tailscale serve' in result.stdout) == allowed
+    if allowed:
+        assert result.stdout.index('A_EYE_TOKEN') < result.stdout.index('cloudflared tunnel')
+        assert 'http://localhost:8123' in result.stdout
+
+
+@pytest.mark.parametrize('target', ['server', 'mock'])
+def test_server_launch_preserves_tcp_peer(target, tmp_path):
+    result = subprocess.run(['make', '-n', '-f', str(Path(__file__).resolve().parents[1] / 'Makefile'),
+                             target], cwd=tmp_path, capture_output=True, text=True, check=True)
+    assert '--no-proxy-headers' in result.stdout
 
 
 def issued(registry):
@@ -73,7 +211,7 @@ def test_code_entropy_limits_and_retirement():
 
 def test_join_secret_is_single_use_camera_only_and_not_api_auth(monkeypatch):
     monkeypatch.setenv('A_EYE_TOKEN', 'synthetic-master')
-    with TestClient(app()) as client, client.websocket_connect('/ws2?token=synthetic-master') as call:
+    with TestClient(app(), client=('192.0.2.10', 1234)) as client, client.websocket_connect('/ws2?token=synthetic-master') as call:
         send(call, 'hello', pack='general')
         receive(call)
         send(call, 'pair_request')
