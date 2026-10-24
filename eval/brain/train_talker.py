@@ -50,7 +50,7 @@ def main():
                     learning_rate=a.lr, lr_scheduler_type='cosine', warmup_ratio=0.05, logging_steps=5,
                     bf16=True, optim='adamw_8bit', weight_decay=0.01, max_length=2048, save_strategy='no',
                     report_to='none', seed=7)
-    trainer = SFTTrainer(model=model, tokenizer=text_tok, train_dataset=ds, args=cfg)
+    trainer = SFTTrainer(model=model, processing_class=text_tok, train_dataset=ds, args=cfg)
     trainer = train_on_responses_only(trainer, instruction_part='<|im_start|>user\n',
                                       response_part='<|im_start|>assistant\n')
     stats = trainer.train()

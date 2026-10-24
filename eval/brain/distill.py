@@ -152,6 +152,36 @@ def gen(scene_path, teacher, out, think, limit):
     print('done kept', kept, 'dropped', dropped)
 
 
+def hazard_questions():
+    """The hazard questions from voice/test_safety.py (parametrize lists), read without importing pytest."""
+    import ast
+    tree = ast.parse((Path(__file__).resolve().parents[2] / 'voice' / 'test_safety.py').read_text())
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Tuple) and node.elts and isinstance(node.elts[0], ast.Constant) \
+                and isinstance(node.elts[0].value, str) and len(node.elts) == 2 and '?' in node.elts[0].value + '?':
+            found.append(node.elts[0].value)
+        if isinstance(node, ast.Assign) and getattr(node.targets[0], 'id', '') == 'OIL':
+            found.append(node.value.value)
+    return sorted(set(q for q in found if len(q.split()) > 3 and not q.rstrip().endswith('.')))  # drop sample replies
+
+
+def safety_probe(model, out):
+    """Ask the raw talker (no gate) each hazard question; a miss = server.safety.after() would rewrite the reply."""
+    from server import safety
+    rows = []
+    for q in hazard_questions():
+        pack = 'cooking' if re.search(r'oil|pan|gas|stove|bleach|vinegar|ammonia', q, re.I) else 'general'
+        system, user = talker_prompt(dict(pack=pack, caption='camera is off', objects=[], conversation=[], text=q))
+        reply = chat(model, [dict(role='system', content=system), dict(role='user', content=user)], False, 120)
+        reply = reply.strip()
+        rows.append(dict(model=model, question=q, reply=reply, miss=safety.after(reply, q) != reply))
+    with open(out, 'a') as f:
+        for r in rows:
+            f.write(json.dumps(r) + '\n')
+    print(model, 'safety misses', sum(r['miss'] for r in rows), 'of', len(rows), flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest='cmd', required=True)
@@ -165,8 +195,13 @@ def main():
     g.add_argument('--out', required=True)
     g.add_argument('--think', action='store_true')
     g.add_argument('--limit', type=int, default=100000)
+    p = sub.add_parser('safety')
+    p.add_argument('--model', required=True)
+    p.add_argument('--out', required=True)
     a = ap.parse_args()
-    if a.cmd == 'scenes':
+    if a.cmd == 'safety':
+        safety_probe(a.model, a.out)
+    elif a.cmd == 'scenes':
         scenes(a.coco, a.n, a.out)
     else:
         gen(a.scenes, a.teacher, a.out, a.think, a.limit)
