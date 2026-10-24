@@ -631,3 +631,36 @@ test("createVad minMs: a short noise burst never starts speech; sustained speech
   assert.equal(vad.push(0.2, 300), "silence");
   assert.equal(vad.push(0.2, 610), "start");
 });
+
+test("chosen mic: exact deviceId, live switch restarts capture, missing device reports missing", async () => {
+  const cap = serverCapture();
+  const errors = [];
+  const voice = createVoice({
+    sttMode: "server",
+    micDeviceId: "pods",
+    audioContextFactory: () => cap.ctx,
+    getUserMedia: cap.getUserMedia,
+    now: () => 0,
+    onMicError: (kind) => errors.push(kind),
+  });
+  await voice.startListening();
+  assert.deepEqual(cap.constraints[0].audio.deviceId, { exact: "pods" });
+  assert.equal(cap.constraints[0].audio.noiseSuppression, true);
+  voice.setMicDevice("mac");
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(cap.stops.length, 1, "old track stopped");
+  assert.deepEqual(cap.constraints[1].audio.deviceId, { exact: "mac" });
+  voice.stopListening();
+  assert.equal(cap.stops.length, 2);
+
+  const gone = createVoice({
+    sttMode: "server",
+    micDeviceId: "pods",
+    audioContextFactory: () => cap.ctx,
+    getUserMedia: async () => { throw Object.assign(new Error("x"), { name: "OverconstrainedError" }); },
+    now: () => 0,
+    onMicError: (kind) => errors.push(kind),
+  });
+  await gone.startListening();
+  assert.deepEqual(errors, ["missing"]);
+});
