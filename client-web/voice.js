@@ -30,6 +30,7 @@ const CALIBRATE_MS = 1000;
 // An utterance needs this much voiced audio above the calibrated floor before anything is sent
 // (hall noise bursts opened utterances that Whisper returned empty, 2026-10-24 live log).
 export const MIN_UTTERANCE_MS = 400;
+const PENDING_GAP_MS = 150;
 // In a loud room a barge-in needs sustained speech, so crowd noise cannot cut the reply.
 export const NOISY_BARGE_MS = 700;
 const PREROLL_SAMPLES = PCM_RATE / 2; // 500 ms kept so a delayed start keeps the first syllable
@@ -127,6 +128,7 @@ export function createVad(options = {}) {
   // minMs: speech must stay above the gate this long before it counts (noise bursts in a loud hall).
   const minMs = Number.isFinite(options.minMs) ? options.minMs : 0;
   let pendingSince = null;
+  let lastAbove = 0;
   // seed: a rebuilt VAD keeps the old floor; otherwise its first frame (possibly speech) would become it.
   let noise = Number.isFinite(options.seed) ? options.seed : 0;
   let seeded = Number.isFinite(options.seed);
@@ -162,12 +164,16 @@ export function createVad(options = {}) {
       if (!active) {
         if (above) {
           if (pendingSince == null) pendingSince = now;
+          lastAbove = now;
           if (now - pendingSince < minMs) return "silence";
           pendingSince = null;
           active = true;
           lastVoice = now;
           return "start";
         }
+        // Speech energy dips between syllables, and AudioWorklet frames are only 2.7 ms: a short dip inside
+        // the pending window is part of the word, not the end of it (and is not room noise to learn).
+        if (pendingSince != null && now - lastAbove < PENDING_GAP_MS) return "silence";
         pendingSince = null;
         adapt(energy);
         return "silence";

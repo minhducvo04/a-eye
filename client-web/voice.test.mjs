@@ -719,3 +719,23 @@ test("speech in 2.7 ms worklet-sized frames still opens an utterance (ambient mo
   assert.equal(chunks.at(-1), true);
   voice.stopListening();
 });
+
+test("speech with syllable dips in 2.7 ms frames still reaches the 400 ms floor", () => {
+  // Real replay (2026-10-24): every dip under the gate restarted the 400 ms wait, so a spoken question
+  // never opened an utterance in server STT mode.
+  const vad = createVad({ threshold: 0.02, hangMs: 400, minMs: 400 });
+  vad.push(0.001, 0);
+  let verdict = "silence";
+  let t = 10;
+  for (; t < 600 && verdict !== "start"; t += 2.7) {
+    const inDip = Math.floor(t / 60) % 2 === 1 && (t % 60) < 20; // 20 ms dips every 120 ms
+    verdict = vad.push(inDip ? 0.005 : 0.2, t);
+  }
+  assert.equal(verdict, "start");
+  assert.ok(t >= 400 && t < 470, `started at ${t}`);
+  // A burst followed by a long gap is still noise.
+  const burst = createVad({ threshold: 0.02, hangMs: 400, minMs: 400 });
+  burst.push(0.001, 0);
+  for (let u = 10; u < 260; u += 2.7) burst.push(0.2, u);
+  for (let u = 260; u < 700; u += 2.7) assert.equal(burst.push(0.001, u), "silence");
+});
