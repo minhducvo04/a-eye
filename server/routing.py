@@ -1,5 +1,5 @@
 """Optional intent routing and session-bound Rewind callbacks. No query logging."""
-import inspect
+import re
 import os
 from time import monotonic
 
@@ -36,11 +36,30 @@ async def route_turn(session, text):
     if os.environ.get('ROUTER', 'off') != 'on':
         return 'unsure'
     try:
-        from router import route
-        result = route(text, session.history[-10:])
-        if inspect.isawaitable(result):
-            result = await result
-        return result['label'] if result['label'] in ('past', 'expert', 'now', 'unsure') else 'unsure'
+        # router/route.py: aroute(text, recent_turns) -> {label, confidence, ...}; never raises by contract.
+        from router.route import aroute
+        result = await aroute(text, session.history[-10:])
+        event('route', session.session_id, reason={'label': result.get('label')}, ms=result.get('ms'))
+        return result['label'] if result.get('label') in ('past', 'expert', 'now', 'unsure') else 'unsure'
     except Exception:
         event('dependency_error', session.session_id, dependency='router', level='error')
         return 'unsure'
+
+
+RECAP = re.compile(r"\b(recap|summar\w*|what have i done|what did i do|did i (skip|miss)|so far)\b", re.I)
+
+
+def past_tool(text):
+    """A past-labelled turn asks for a recap of the call, or for one moment."""
+    return 'recap_call' if RECAP.search(text or '') else 'search_past'
+
+
+def warm_router():
+    """First router call loads the embedder (about 1 s); do it at startup when ROUTER=on."""
+    if os.environ.get('ROUTER', 'off') != 'on':
+        return
+    try:
+        from router.route import route
+        route('hi')
+    except Exception:
+        event('dependency_error', dependency='router', level='error')

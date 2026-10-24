@@ -13,7 +13,7 @@ from uuid import uuid4
 from server.expert import RULES as EXPERT_RULES, should_escalate, mark_failed
 from server.llm import TURN_USAGE
 from server import rewind_tools
-from server.routing import rewind_callback, route_turn
+from server.routing import past_tool, rewind_callback, route_turn
 
 from server.crops import crop_b64, pick_target
 
@@ -486,7 +486,8 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
     try:
         if route == 'past' or (route == 'expert' and session.expert_start):
             if route == 'past':
-                result = await on_tool('search_past', {'query': text})
+                tool = past_tool(text)
+                result = await on_tool(tool, {'query': text} if tool == 'search_past' else {})
                 await speech(result['say'], final=True)
             else:
                 await tool_first_line('Let me get the expert on this, one moment.')
