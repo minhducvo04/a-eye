@@ -224,3 +224,24 @@ def test_old_scene_of_the_newest_frame_is_still_used():
         assert drawing['seq'] == 7 and len(drawing['ops']) > 1
         assert not vision.calls
     asyncio.run(check())
+
+
+def test_header_with_bent_roles_keeps_draws_and_never_speaks_json():
+    """Seen live with gemma4: roles "highlight" and "label" are not in the contract."""
+    class BentBrain:
+        async def stream(self, system, user, **kwargs):
+            yield json.dumps(dict(agent='helper', draw=[dict(kind='circle', target='a', role='highlight'),
+                                                        dict(kind='label', target='a', text='here', role='label')])) + '\n'
+            yield 'SAY: Cut here.'
+
+    async def check():
+        session = Session('s')
+        session.scene = SCENE
+        session.scene_time = monotonic()
+        messages = await run_turn(session, 'cut', vision=Vision(), llm=BentBrain())
+        for msg in messages:
+            validate('server_message_v2', msg)
+        drawing = next(m for m in messages if m['type'] == 'draw')
+        assert [op['kind'] for op in drawing['ops']] == ['clear', 'circle', 'label']
+        assert [m['text'] for m in messages if m['type'] == 'say'] == ['Cut here.']
+    asyncio.run(check())

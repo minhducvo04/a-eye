@@ -95,6 +95,29 @@ def resolve(turn, scene, seq):
     return result, focus
 
 
+_DRAW_KINDS = {'box', 'highlight', 'circle', 'arrow', 'label', 'pin', 'path', 'clear'}
+_ROLES = {'target', 'info', 'warn', 'ok'}
+_CATEGORIES = {'cpu', 'board', 'ram', 'ssd', 'gpu', 'psu', 'cooler', 'case', 'fan'}
+
+
+def sanitize_header(turn):
+    """Small models bend the format (seen live: role "highlight" or "label", missing draw).
+    Keep what is usable instead of throwing the whole turn away."""
+    draws = []
+    for item in turn.get('draw') or []:
+        if not isinstance(item, dict) or item.get('kind') not in _DRAW_KINDS:
+            continue
+        clean = {k: item[k] for k in ('kind', 'target', 'from_target', 'text') if isinstance(item.get(k), str)}
+        clean['kind'] = item['kind']
+        if item.get('role') in _ROLES:
+            clean['role'] = item['role']
+        draws.append(clean)
+    out = {'agent': turn.get('agent') if turn.get('agent') in ('helper', 'shopper') else 'helper', 'draw': draws}
+    if turn.get('market_category') in _CATEGORIES:
+        out['market_category'] = turn['market_category']
+    return out
+
+
 def parse_turn(text):
     start = text.find('{')
     if start < 0:
@@ -209,9 +232,7 @@ async def run_turn(session, text, *, vision, llm):
                         if not isinstance(turn, dict):
                             raise ValueError('header is not an object')
                         # Small local models often omit fields; fill defaults, keep only known keys.
-                        turn = {k: v for k, v in turn.items() if k in ('agent', 'draw', 'market_category')}
-                        turn.setdefault('agent', 'helper')
-                        turn.setdefault('draw', [])
+                        turn = sanitize_header(turn)
                         validate('brain_turn', dict(turn, say='stream'))
                     except Exception:
                         turn = dict(agent='helper', draw=[])
@@ -236,6 +257,9 @@ async def run_turn(session, text, *, vision, llm):
                     sentence, buffer = buffer[:end].strip(), buffer[end:]
                     if sentence.startswith('SAY:'):
                         sentence = sentence[4:].strip()
+                    if sentence.startswith(('{', '[', '"')) or '"kind"' in sentence:
+                        continue  # never speak JSON
+
                     if sentence:
                         if pending:
                             await speech(pending, agent=turn['agent'])
