@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import re
+from urllib.parse import unquote_plus
 
 _FIELDS = {'turn_id', 'model', 'first_token_ms', 'total_ms', 'input_tokens', 'output_tokens',
            'cache_read_tokens', 'cache_creation_tokens', 'web_searches', 'web_search_errors',
@@ -18,15 +19,19 @@ def event(name, session=None, level='info', **fields):
     print(json.dumps(row, separators=(',', ':')), flush=True)
 
 
-_TOKEN = re.compile(r'([?&]token=)[^&\s"\']*')
+_TOKEN = re.compile(r'([?&])([^=&\s]+)=([^&\s"\']*)')
 
 
 def _redact(value):
-    return _TOKEN.sub(r'\1[redacted]', value) if isinstance(value, str) else value
+    def replace(match):
+        if unquote_plus(match[2]).lower() in {'token', 'pair', 'join', 'owner'}:
+            return match[1] + match[2] + '=[redacted]'
+        return match[0]
+    return _TOKEN.sub(replace, value) if isinstance(value, str) else value
 
 
 class TokenFilter(logging.Filter):
-    """Redact ?token= in place. Keep args a tuple of the same length: uvicorn's AccessFormatter unpacks them."""
+    """Redact URL credentials in place; uvicorn's AccessFormatter needs the original args tuple shape."""
     def filter(self, record):
         record.msg = _redact(record.msg)
         if isinstance(record.args, tuple):

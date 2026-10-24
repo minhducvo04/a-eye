@@ -24,9 +24,9 @@ def request(ws, tts='browser'):
     assert receive(ws)['state'] == 'listening'
     send(ws, 'pair_request')
     msg = receive(ws)
-    assert re.fullmatch(r'\d{4}', msg['code'])
+    assert re.fullmatch(r'[A-HJ-NP-Z2-9]{8}', msg['code'])
     assert msg['expires_in_s'] == 300
-    assert msg['path'] == '/agent.html?pair=' + msg['code']
+    assert msg['path'].startswith('/agent.html?pair=' + msg['code'] + '&join=')
     return msg['code']
 
 
@@ -98,7 +98,7 @@ def test_expired_unknown_replacement_and_call_close(registry):
                 camera.receive_json()
             assert exc.value.code == 4404
         with client.websocket_connect('/ws2') as camera:
-            assert join(camera, '99999')['state'] == 'rejected'
+            assert join(camera, '99999999')['state'] == 'rejected'
             with pytest.raises(WebSocketDisconnect):
                 camera.receive_json()
         send(call, 'pair_request'); old = receive(call)['code']

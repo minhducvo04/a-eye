@@ -6,7 +6,6 @@ const api = createMemoryApi();
 const $ = (id) => document.getElementById(id);
 let settings = cleanSettings();
 const token = new URLSearchParams(location.search).get("token");
-if (token && $("back-link")) $("back-link").href = `agent.html?mode=memory&token=${encodeURIComponent(token)}`;
 let bytes = 0;
 
 function render() {
@@ -74,6 +73,7 @@ function render() {
 }
 
 async function save(note) {
+  if (token) return;
   $("save").disabled = true;
   try {
     const result = await api.save(settings);
@@ -126,6 +126,12 @@ $("kept-days").addEventListener("change", (e) => {
 $("save").addEventListener("click", () => void save("Saved."));
 
 (async () => {
+  if (token) {
+    render();
+    document.querySelectorAll('input, button, select').forEach(control => { control.disabled = true; });
+    $("saved").textContent = 'Caregiver settings require personal sign-in. Shared-token calls keep separate, temporary memories.';
+    return;
+  }
   try {
     const loaded = await api.settings();
     settings = cleanSettings(loaded);

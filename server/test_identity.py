@@ -49,7 +49,7 @@ def test_token_with_a_forged_cookie_is_still_token(tmp_path, monkeypatch):
         gone = client.post('/api/memory/forget', json={'scope': 'everything'}, headers=headers).json()
         assert gone['deleted'] == 0
     assert app.state.memories.for_owner(person('victim@example.test')).count() == 1
-    assert (tmp_path / mem.person_id('token')).exists()
+    assert not (tmp_path / mem.person_id('token')).exists()
 
 
 def test_valid_access_jwt_gets_its_own_memory(tmp_path, access, key):  # noqa: F811

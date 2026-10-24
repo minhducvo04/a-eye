@@ -1,6 +1,7 @@
 """Process-local, single-use camera pairing. No media or credentials are logged."""
 import asyncio
 import hashlib
+import hmac
 import json
 import secrets
 from time import monotonic
@@ -10,7 +11,18 @@ from fastapi import WebSocketDisconnect
 from jsonschema import ValidationError
 from contracts import validate
 from server.agent import message
+from server.auth import proxied
 from server.logs import event
+
+
+def pairing_address(ws):
+    """Proxy visitor addresses partition rate limits only; they never authorize a join.
+    Run Uvicorn with --no-proxy-headers so client.host remains the TCP peer."""
+    peer = ws.client.host if ws.client else ''
+    if peer in ('127.0.0.1', '::1') and proxied(ws):
+        return (ws.headers.get('cf-connecting-ip', '').strip()
+                or ws.headers.get('x-forwarded-for', '').split(',', 1)[0].strip() or peer)
+    return peer
 
 
 class Registry:
@@ -18,6 +30,8 @@ class Registry:
         self.clock = clock
         self.codes = {}
         self.retired = {}
+        self.misses = {}
+        self.address_misses = {}
         # "Remember this phone": the latest live call per verified Access identity (latest wins).
         self.owners = {}
 
@@ -29,31 +43,46 @@ class Registry:
             if entry[0] is call:
                 self.retired[code] = entry[1]
                 del self.codes[code]
+                self.misses.pop(code, None)
 
     def issue(self, call):
         self.drop(call)
         # Expired entries remain until the next issue, allowing an explicit expired response.
         self.codes = {c: e for c, e in self.codes.items() if e[1] > self.clock()}
         self.retired = {c: expiry for c, expiry in self.retired.items() if expiry > self.clock()}
-        available = [f'{n:04d}' for n in range(10000)
-                     if f'{n:04d}' not in self.codes and f'{n:04d}' not in self.retired]
-        if not available:
-            raise ValueError('Pairing is busy. Try again shortly.')
-        code = secrets.choice(available)
-        self.codes[code] = (call, self.clock() + 300)
+        self.misses = {c: n for c, n in self.misses.items() if c in self.codes}
+        alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+        while True:
+            code = ''.join(secrets.choice(alphabet) for _ in range(8))
+            if code not in self.codes and code not in self.retired:
+                break
+        secret = secrets.token_urlsafe(16)
+        self.codes[code] = (call, self.clock() + 300, secret)
         event('pair_request', call.session.session_id)
-        return message('pair', code=code, expires_in_s=300, path=f'/agent.html?pair={code}')
+        return message('pair', code=code, expires_in_s=300, path=f'/agent.html?pair={code}&join={secret}')
 
-    def take(self, code):
-        entry = self.codes.pop(code, None)
-        if entry is None:
+    def take(self, code, address='', secret=None):
+        """Five failed joins per peer per minute; five misses retire a live code across all peers.
+        A secret is required on the unauthenticated join path; authenticated callers may enter the code."""
+        now = self.clock()
+        self.address_misses = {a: e for a, e in self.address_misses.items() if e[1] > now}
+        count, until = self.address_misses.get(address, (0, now + 60))
+        if count >= 5 or (address not in self.address_misses and len(self.address_misses) >= 4096):
             return None, 'rejected'
-        call, expiry = entry
+        entry = self.codes.get(code)
+        if (entry is None or entry[1] <= now or entry[0].closed or entry[0].camera is not None
+                or (secret is not None and not hmac.compare_digest(secret.encode(), entry[2].encode()))):
+            self.address_misses[address] = (count + 1, until)
+            if entry:
+                self.misses[code] = self.misses.get(code, 0) + 1
+                if self.misses[code] >= 5 or entry[1] <= now:
+                    self.retired[code] = entry[1]
+                    del self.codes[code]
+                    self.misses.pop(code, None)
+            return None, 'expired' if entry and entry[1] <= now else 'rejected'
+        call, expiry, _ = self.codes.pop(code)
         self.retired[code] = expiry
-        if expiry <= self.clock():
-            return None, 'expired'
-        if call.closed or call.camera is not None:
-            return None, 'rejected'
+        self.misses.pop(code, None)
         return call, 'joined'
 
 
@@ -134,9 +163,41 @@ class Call:
                 pass
 
 
-async def camera_socket(ws, hello):
-    if 'pair_code' in hello:
-        call, state = registry.take(hello['pair_code'])
+async def join_socket(ws):
+    """A QR capability can enter only this one camera handler, never the call loop or HTTP API."""
+    from server.auth import authorized, configured
+    if not configured() and not authorized(ws):
+        await ws.close(code=4401)
+        return
+    code = ws.query_params.get('pair', '')
+    expiry = registry.codes.get(code, (None, 0))[1]
+    call, _ = registry.take(code, address=pairing_address(ws),
+                            secret=ws.query_params.get('join', ''))
+    if call is None:
+        await ws.close(code=4401)
+        return
+    call.camera = ws
+    # Consume atomically before accepting/awaiting: duplicate sockets cannot claim this call.
+    await ws.accept()
+    try:
+        hello = await asyncio.wait_for(ws.receive_json(), 10)
+        validate('client_message_v2', hello)
+        if (hello['type'] != 'hello' or hello.get('role') != 'camera' or hello.get('pair_code') != code
+                or registry.clock() >= expiry or call.closed):
+            raise ValueError()
+    except (ValueError, ValidationError, KeyError, TimeoutError, WebSocketDisconnect):
+        if call.camera is ws:
+            call.camera = None
+        await ws.close(code=4401)
+        return
+    await camera_socket(ws, hello, claimed=call)
+
+
+async def camera_socket(ws, hello, claimed=None):
+    if claimed is not None:
+        call, state, detail, retry = claimed, 'joined', '', None
+    elif 'pair_code' in hello:
+        call, state = registry.take(hello['pair_code'], address=pairing_address(ws))
         detail, retry = ('Code expired.' if state == 'expired' else 'Code unavailable. Request a new code.'), None
     else:
         call, state, detail, retry = registry.take_remembered(ws)

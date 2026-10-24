@@ -26,21 +26,23 @@ vision:           ## vision service on :8001 (VISION_BACKEND=fake|ollama|auto)
 	VISION_BACKEND=$(VISION_BACKEND) $(PY) -m uvicorn vision.app:app --host 0.0.0.0 --port $(VISION_PORT)
 
 server:           ## orchestrator on :8000, serves client-web at / (v1) and /agent.html (v2)
-	VISION_URL=http://127.0.0.1:$(VISION_PORT) $(PY) -m uvicorn server.app:app --host 0.0.0.0 --port $(SERVER_PORT)
+	VISION_URL=http://127.0.0.1:$(VISION_PORT) $(PY) -m uvicorn server.app:app --host 0.0.0.0 --port $(SERVER_PORT) --no-proxy-headers
 
 dev:              ## vision + server together; open http://localhost:8000/agent.html
 	$(MAKE) vision & $(MAKE) server; kill %1
 
 mock:             ## offline phone backend, no GPU service
-	A_EYE_MOCK=1 $(PY) -m uvicorn server.app:app --host 0.0.0.0 --port 8000
+	A_EYE_MOCK=1 $(PY) -m uvicorn server.app:app --host 0.0.0.0 --port 8000 --no-proxy-headers
 
 phone:            ## print the HTTPS command for iPhone testing (Safari needs HTTPS for camera and mic)
+	@echo "First set A_EYE_TOKEN to a long random secret and restart the server (or configure both CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD)."
+	@test -n "$$A_EYE_TOKEN" || { test -n "$$CF_ACCESS_TEAM_DOMAIN" && test -n "$$CF_ACCESS_AUD"; } || { echo "No credentials configured; refusing to suggest tunnel commands."; exit 1; }
 	@echo "Run this yourself (it changes Tailscale settings on this Mac):"
 	@echo "  tailscale serve --bg $(SERVER_PORT)"
 	@echo "Then open https://<this-mac>.<tailnet>.ts.net/agent.html on the phone (same tailnet)."
 	@echo "Stop it with: tailscale serve reset"
-	@echo "Quick tunnel: cloudflared tunnel --url http://localhost:8000"
-	@echo "Before public exposure, set A_EYE_TOKEN and open /agent.html?token=..."
+	@echo "Quick tunnel: cloudflared tunnel --url http://localhost:$(SERVER_PORT)"
+	@echo "Open /agent.html?token=... with your configured token, or sign in through configured Cloudflare Access."
 
 smoke:            ## end to end: photo -> server -> fake vision -> box + step
 	VISION_BACKEND=fake $(PY) scripts/smoke.py

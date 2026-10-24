@@ -1,4 +1,4 @@
-// Local QR byte-mode encoder, versions 1–5, ECC L, fixed mask 0.
+// Local QR byte-mode encoder, versions 1–6, ECC L, fixed mask 0.
 // Copyright (c) 2026 A-eye contributors. MIT License:
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software to deal in the Software without restriction, including use,
@@ -6,7 +6,7 @@
 // is included. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 export function qrMatrix(text) {
   const bytes = new TextEncoder().encode(text);
-  const dataCounts = [19, 34, 55, 80, 108], eccCounts = [7, 10, 15, 20, 26];
+  const dataCounts = [19, 34, 55, 80, 108, 136], eccCounts = [7, 10, 15, 20, 26, 18];
   const v = dataCounts.findIndex(n => bytes.length + 2 <= n) + 1;
   if (!v) throw new RangeError('Link too long for QR. Copy the link instead.');
   const bits = [];
@@ -30,12 +30,19 @@ export function qrMatrix(text) {
     gen.forEach((x, j) => { next[j] ^= x; next[j + 1] ^= mul(x, root); });
     gen = next; root = mul(root, 2);
   }
-  const ecc = Array(count).fill(0);
-  for (const b of data) {
-    const factor = b ^ ecc.shift(); ecc.push(0);
-    for (let i = 0; i < count; i++) ecc[i] ^= mul(gen[i + 1], factor);
-  }
-  const stream = data.concat(ecc).flatMap(b => Array.from({ length: 8 }, (_, i) => (b >>> (7 - i)) & 1));
+  // Version 6-L has two equal blocks of 68 data + 18 correction codewords, interleaved by column.
+  const blocks = v === 6 ? [data.slice(0, 68), data.slice(68)] : [data];
+  const corrections = blocks.map(block => {
+    const ecc = Array(count).fill(0);
+    for (const b of block) {
+      const factor = b ^ ecc.shift(); ecc.push(0);
+      for (let i = 0; i < count; i++) ecc[i] ^= mul(gen[i + 1], factor);
+    }
+    return ecc;
+  });
+  const interleave = blocks => blocks[0].flatMap((_, i) => blocks.map(block => block[i]));
+  const stream = interleave(blocks).concat(interleave(corrections))
+    .flatMap(b => Array.from({ length: 8 }, (_, i) => (b >>> (7 - i)) & 1));
   const size = 17 + 4 * v;
   const m = Array.from({ length: size }, () => Array(size).fill(null));
   const set = (x, y, b) => { if (x >= 0 && y >= 0 && x < size && y < size) m[y][x] = Boolean(b); };
