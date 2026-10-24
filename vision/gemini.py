@@ -12,7 +12,7 @@ from PIL import Image
 from server import cloud_meter, privacy  # installs outgoing HTTP accounting
 from vision.ollama import headers_for, match_header, normalized
 
-DEFAULT_MODEL = 'gemini-3.8-flash'
+DEFAULT_MODEL = 'gemini-flash-latest'
 
 
 def unsure(operation):
@@ -39,14 +39,17 @@ class GeminiBackend:
     def __init__(self, transport=None):
         self.transport = transport
         self.model = os.environ.get('GEMINI_VISION_MODEL') or DEFAULT_MODEL
+        self.last_error = None
 
     def health(self):
         return {'ok': bool(os.environ.get('GEMINI_API_KEY')), 'models': [self.model],
                 'gpu': 'cloud', 'fake': False}
 
     def request(self, body, prompt):
+        self.last_error = None
         # Check at the actual send boundary, including standalone/service use.
         if not privacy.google_allowed() or not os.environ.get('GEMINI_API_KEY'):
+            self.last_error = 'blocked_or_unconfigured'
             return None
         try:
             with Image.open(BytesIO(base64.b64decode(body['image_b64'], validate=True))) as original:
@@ -67,12 +70,25 @@ class GeminiBackend:
                 response.raise_for_status()
                 candidate = response.json()['candidates'][0]
                 if candidate.get('finishReason') != 'STOP':
+                    self.last_error = 'incomplete_response'
                     return None
                 text = ''.join(p['text'] for p in candidate['content']['parts']
                                if 'text' in p and not p.get('thought'))
                 return json.loads(text)
-        except (httpx.HTTPError, ValueError, OSError, KeyError, IndexError, TypeError):
+        except httpx.HTTPStatusError as exc:
+            # Only expose locally generated codes, never provider text or request URLs.
+            status = exc.response.status_code
+            self.last_error = 'http_402_payment_required' if status == 402 else f'http_{status}'
+            return None
+        except httpx.TimeoutException:
+            self.last_error = 'timeout'
+            return None
+        except httpx.HTTPError:
+            self.last_error = 'network_error'
+            return None
+        except (ValueError, OSError, KeyError, IndexError, TypeError):
             # Never log exceptions: provider errors can contain credentials or image content.
+            self.last_error = 'invalid_image_or_response'
             return None
 
     def scene(self, body, scenario='ok'):

@@ -1,6 +1,7 @@
 import base64
 import json
 from io import BytesIO
+from pathlib import Path
 
 import httpx
 import pytest
@@ -71,9 +72,29 @@ def test_failure_draws_nothing(context, failure):
         if failure == 'timeout':
             raise httpx.ReadTimeout('timeout')
         return httpx.Response(503 if failure == 'http' else 200, json={})
-    result = GeminiBackend(transport=httpx.MockTransport(fail)).scene(frame(), 'ok')
+    backend = GeminiBackend(transport=httpx.MockTransport(fail))
+    result = backend.scene(frame(), 'ok')
     assert result['caption'] == 'unsure'
     assert result['objects'] == []
+    assert backend.last_error == {'timeout': 'timeout', 'http': 'http_503',
+                                  'malformed': 'invalid_image_or_response'}[failure]
+
+
+def test_recorded_payment_failure_is_reported_and_cleared(context, capsys):
+    # Recorded from generateContent on 2026-10-24; no request or image retained.
+    sample = json.loads((Path(__file__).parent / 'fixtures/gemini_payment_required.json').read_text())
+    replies = [httpx.Response(402, json=sample), None]
+
+    def handler(request):
+        return replies.pop(0) or response(request)
+
+    backend = GeminiBackend(transport=httpx.MockTransport(handler))
+    assert backend.scene(frame()) == {'caption': 'unsure', 'objects': []}
+    assert backend.last_error == 'http_402_payment_required'
+    assert backend.scene(frame())['objects'][0]['bbox'] == pytest.approx([.2, .1, .4, .4])
+    assert backend.last_error is None
+    captured = capsys.readouterr()
+    assert captured.out == captured.err == ''
 
 
 def test_service_requires_explicit_consent(context, monkeypatch):

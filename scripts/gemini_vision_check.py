@@ -40,7 +40,8 @@ def main():
         overlap = iou([box[0], box[1], box[0] + box[2], box[1] + box[3]], case['box']) if box else 0
         hits += overlap >= .3
         failures += answer is None
-        print(f"{case['id']}: hit={overlap >= .3} iou={overlap:.3f} latency={elapsed:.3f}s")
+        error = f' error={backend.last_error}' if backend.last_error else ''
+        print(f"{case['id']}: hit={overlap >= .3} iou={overlap:.3f} latency={elapsed:.3f}s{error}")
     print(f'hits={hits}/16 failures={failures} median={pct(timings, .5):.3f}s p95={pct(timings, .95):.3f}s')
     return 0 if not failures else 1
 
