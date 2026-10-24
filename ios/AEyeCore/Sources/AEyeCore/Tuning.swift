@@ -7,6 +7,10 @@ public enum Tuning {
     public static let jpegQuality = 0.7
     public static let reconnectDelay: TimeInterval = 2.0
     public static let demoBoardId = "demo-b650"
+    /// Expected wait for an answer before the server has measured any turns (`typical_ms`).
+    public static let defaultTypicalWaitMs: Double = 3000
+    /// A wait card older than this is hidden, in case the server never sends the turn's end.
+    public static let maxWaitMs: Double = 30000
 }
 
 /// Scales (width, height) so the long side is at most `maxSide`, keeping aspect. Never upscales.

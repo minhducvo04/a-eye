@@ -7,6 +7,7 @@ public enum ServerMessage: Equatable {
     case draw(agent: Agent, seq: Int, ops: [DrawOp])
     case say(agent: Agent, utteranceId: String, text: String)
     case agentState(agent: Agent, state: PresenceState)
+    case turn(id: String, stage: TurnStage, typicalMs: Int?, detail: String?)
     case marketResults(MarketResponse)
     case error(code: String, message: String)
     case ignored(type: String)
@@ -29,6 +30,9 @@ public enum ServerMessage: Equatable {
         case "agent_state":
             guard let p = try? decoder.decode(AgentStatePayload.self, from: data) else { return ignored }
             return .agentState(agent: p.agent, state: p.state)
+        case "turn":
+            guard let p = try? decoder.decode(TurnPayload.self, from: data) else { return ignored }
+            return .turn(id: p.turnId, stage: p.stage, typicalMs: p.typicalMs, detail: p.detail)
         case "market_results":
             guard let p = try? decoder.decode(MarketResultsPayload.self, from: data) else { return ignored }
             return .marketResults(p.result)
@@ -60,6 +64,13 @@ private struct SayPayload: Decodable {
 private struct AgentStatePayload: Decodable {
     let agent: Agent
     let state: PresenceState
+}
+
+private struct TurnPayload: Decodable {
+    let turnId: String
+    let stage: TurnStage
+    let typicalMs: Int?
+    let detail: String?
 }
 
 private struct MarketResultsPayload: Decodable {
