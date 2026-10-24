@@ -886,5 +886,41 @@
    "pcm16_b64": "AAAA",
    "final": true
   }
+ ],
+ "v2_turn": [
+  {
+   "v": 2,
+   "type": "turn",
+   "turn_id": "t9",
+   "stage": "received",
+   "at_ms": 1761275000123,
+   "text": "where does this go"
+  },
+  {
+   "v": 2,
+   "type": "turn",
+   "turn_id": "t9",
+   "stage": "backup",
+   "at_ms": 1761275004200,
+   "detail": "brain slow, trying backup",
+   "typical_ms": 1100
+  }
+ ],
+ "v2_reply_delta": [
+  {
+   "v": 2,
+   "type": "reply_delta",
+   "agent": "helper",
+   "turn_id": "t9",
+   "text": "That goes on the"
+  }
+ ],
+ "v2_camera": [
+  {
+   "v": 2,
+   "type": "camera",
+   "session_id": "s2",
+   "on": false
+  }
  ]
 }

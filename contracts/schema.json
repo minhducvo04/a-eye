@@ -1962,6 +1962,10 @@
       "server"
      ],
      "description": "browser: Web Speech API sends user_text. server: client streams v2_audio_in and the server transcribes (Whisper on the GPU box)."
+    },
+    "camera": {
+     "type": "boolean",
+     "description": "false: voice only; the server makes no scene calls and attaches no frame."
     }
    }
   },
@@ -2464,6 +2468,9 @@
     },
     {
      "$ref": "#/$defs/v2_audio_in"
+    },
+    {
+     "$ref": "#/$defs/v2_camera"
     }
    ]
   },
@@ -2492,6 +2499,12 @@
     },
     {
      "$ref": "#/$defs/v2_track"
+    },
+    {
+     "$ref": "#/$defs/v2_turn"
+    },
+    {
+     "$ref": "#/$defs/v2_reply_delta"
     }
    ]
   },
@@ -2617,6 +2630,112 @@
      "type": "string"
     },
     "final": {
+     "type": "boolean"
+    }
+   }
+  },
+  "v2_turn": {
+   "description": "Server to client: where a user turn is, sent at once on arrival (stage received, the ack) and at every stage change, so the client never waits silently. at_ms is server time in epoch ms.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "v",
+    "type",
+    "turn_id",
+    "stage",
+    "at_ms"
+   ],
+   "properties": {
+    "v": {
+     "$ref": "#/$defs/v2"
+    },
+    "type": {
+     "const": "turn"
+    },
+    "turn_id": {
+     "type": "string"
+    },
+    "stage": {
+     "enum": [
+      "received",
+      "transcribing",
+      "thinking",
+      "backup",
+      "speaking",
+      "done",
+      "failed",
+      "cancelled"
+     ]
+    },
+    "at_ms": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "text": {
+     "type": "string",
+     "description": "What the server heard (received or after transcribing)."
+    },
+    "detail": {
+     "type": "string",
+     "description": "Short human reason, for example 'brain slow, trying backup' or 'nothing heard'."
+    },
+    "typical_ms": {
+     "type": "integer",
+     "minimum": 0,
+     "description": "Median of the last 5 turns, end of speech to first spoken text."
+    }
+   }
+  },
+  "v2_reply_delta": {
+   "description": "Server to client: reply text as it is generated, before sentences are complete. Display only; v2_say stays the unit for speech.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "v",
+    "type",
+    "agent",
+    "turn_id",
+    "text"
+   ],
+   "properties": {
+    "v": {
+     "$ref": "#/$defs/v2"
+    },
+    "type": {
+     "const": "reply_delta"
+    },
+    "agent": {
+     "$ref": "#/$defs/agent_id"
+    },
+    "turn_id": {
+     "type": "string"
+    },
+    "text": {
+     "type": "string"
+    }
+   }
+  },
+  "v2_camera": {
+   "description": "Client to server: camera turned on or off during a session. Off drops the stored frame and stops scene calls.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "v",
+    "type",
+    "session_id",
+    "on"
+   ],
+   "properties": {
+    "v": {
+     "$ref": "#/$defs/v2"
+    },
+    "type": {
+     "const": "camera"
+    },
+    "session_id": {
+     "type": "string"
+    },
+    "on": {
      "type": "boolean"
     }
    }
