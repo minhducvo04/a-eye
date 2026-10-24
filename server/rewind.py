@@ -724,7 +724,7 @@ async def rewind_turn(session, text, rewind, *, vision, turn_id):
         msg = say(line)
         msg.update(turn_id=turn_id, part=part, final=final)
         part += 1
-        await emit(message('reply_delta', agent='helper', turn_id=turn_id, text=line + ' '))
+        await emit(message('reply_delta', agent='helper', turn_id=turn_id, text=msg['text'] + ' '))
         await emit(msg)
         if session.speak:
             async for audio in session.speak(msg):
