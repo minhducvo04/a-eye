@@ -26,6 +26,8 @@ const QUICK_END_MS = 1500;
 const QUICK_END_LIMIT = 3;
 // Calibration: the first second of mic level after start is the room's noise.
 const CALIBRATE_MS = 1000;
+export const NOISY_MIN_SPEECH_MS = 300;
+const PREROLL_SAMPLES = PCM_RATE / 2; // 500 ms kept so a delayed start keeps the first syllable
 // Browser speech cleanup on, one channel, 16 kHz when the browser honours it (Chrome, Brave, Safari).
 export const MIC_CONSTRAINTS = Object.freeze({
   echoCancellation: true,
@@ -117,6 +119,9 @@ export function floatToPcm16(float32) {
 export function createVad(options = {}) {
   const threshold = Number.isFinite(options.threshold) ? options.threshold : SPEECH_RMS;
   const hangMs = Number.isFinite(options.hangMs) ? options.hangMs : HANG_MS;
+  // minMs: speech must stay above the gate this long before it counts (noise bursts in a loud hall).
+  const minMs = Number.isFinite(options.minMs) ? options.minMs : 0;
+  let pendingSince = null;
   let noise = 0;
   let seeded = false;
   let active = false;
@@ -143,10 +148,14 @@ export function createVad(options = {}) {
       const above = energy > gate();
       if (!active) {
         if (above) {
+          if (pendingSince == null) pendingSince = now;
+          if (now - pendingSince < minMs) return "silence";
+          pendingSince = null;
           active = true;
           lastVoice = now;
           return "start";
         }
+        pendingSince = null;
         adapt(energy);
         return "silence";
       }
@@ -229,8 +238,10 @@ export function createVoice(options = {}) {
   let mediaStream = null;
   const captureNodes = [];
   let workletUrl = "";
-  let vad = createVad({ threshold: vadSettings(sensitivity, ambient).energyThreshold, hangMs: HANG_MS });
+  let vad = createVad(energyVadOptions());
   let pieces = [];
+  let preroll = [];
+  let prerollSamples = 0;
   let queued = 0;
   let sentInUtt = 0;
   let utteranceOpen = false;
@@ -627,6 +638,12 @@ export function createVoice(options = {}) {
     return Boolean(md && typeof md.getUserMedia === "function");
   }
 
+  // In a loud room, a barge-in or a new utterance needs NOISY_MIN_SPEECH_MS of speech above the floor.
+  function energyVadOptions() {
+    const noisy = ambient != null && ambient > NOISY_AMBIENT;
+    return { threshold: vadSettings(sensitivity, ambient).energyThreshold, hangMs: HANG_MS, minMs: noisy ? NOISY_MIN_SPEECH_MS : 0 };
+  }
+
   function noteSettings(stream) {
     try {
       const track = stream && typeof stream.getAudioTracks === "function" ? stream.getAudioTracks()[0] : null;
@@ -658,7 +675,7 @@ export function createVoice(options = {}) {
     serverHold = false;
     dropQueue();
     releaseCapture();
-    vad = createVad({ threshold: vadSettings(sensitivity, ambient).energyThreshold, hangMs: HANG_MS });
+    vad = createVad(energyVadOptions());
     calibration = { until: now() + CALIBRATE_MS, samples: [] };
     try {
       const stream = noteSettings(await requestMic());
@@ -745,12 +762,20 @@ export function createVoice(options = {}) {
       if (verdict === "end" || verdict === "silence") serverHold = false;
       return;
     }
-    if (verdict === "silence") return;
+    if (verdict === "silence") {
+      preroll.push(down);
+      prerollSamples += down.length;
+      while (preroll.length > 1 && prerollSamples - preroll[0].length >= PREROLL_SAMPLES) prerollSamples -= preroll.shift().length;
+      return;
+    }
     if (verdict === "start") {
       dropQueue();
       sentInUtt = 0;
       utteranceOpen = true;
       considerServerBarge();
+      if (energyVadOptions().minMs > 0) for (const frame of preroll) appendSamples(frame);
+      preroll = [];
+      prerollSamples = 0;
     } else if (verdict === "end") {
       if (utteranceOpen) drain(true);
       utteranceOpen = false;
@@ -892,7 +917,7 @@ export function createVoice(options = {}) {
 
   function setAmbient(value, calibrated) {
     ambient = value;
-    vad = createVad({ threshold: vadSettings(sensitivity, ambient).energyThreshold, hangMs: HANG_MS });
+    vad = createVad(energyVadOptions());
     try {
       onAmbient({ rms: ambient, noisy: ambient > NOISY_AMBIENT, calibrated });
     } catch {
@@ -1066,7 +1091,7 @@ export function createVoice(options = {}) {
         ...BARGE_VAD,
         positiveSpeechThreshold: tuned.positiveSpeechThreshold,
         negativeSpeechThreshold: tuned.negativeSpeechThreshold,
-        minSpeechMs: tuned.minSpeechMs,
+        minSpeechMs: tuned.minSpeechMs + (ambient != null && ambient > NOISY_AMBIENT ? 150 : 0),
         baseAssetPath: VAD_WEB_BASE,
         onnxWASMBasePath: VAD_ORT_BASE,
         ...(ctx ? { audioContext: ctx } : {}),
@@ -1151,7 +1176,7 @@ export function createVoice(options = {}) {
     neuralVadActive() { return Boolean(neural); },
     setSensitivity(next) {
       sensitivity = vadSettings(next, ambient).sensitivity;
-      vad = createVad({ threshold: vadSettings(sensitivity, ambient).energyThreshold, hangMs: HANG_MS });
+      vad = createVad(energyVadOptions());
       if (neural) {
         stopNeural();
         void startNeural();

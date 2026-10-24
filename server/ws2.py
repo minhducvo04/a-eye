@@ -26,6 +26,25 @@ from voice.fake import FakeAdapter
 
 router = APIRouter()
 
+PARTIAL_EVERY_BYTES = int(16000 * 2 * 0.3)  # a partial transcript per 300 ms of new speech
+PARTIAL_MIN_BYTES = int(16000 * 2 * 0.5)
+PARTIAL_WAIT_S = 0.6          # at the final, wait this long for an in-flight partial
+TAIL_MAX_BYTES = int(16000 * 2 * 0.9)
+
+
+def quiet_tail(pcm, upto, ratio=0.3):
+    """True when the audio after the last partial is short and much quieter than the speech before it."""
+    if upto <= 0 or len(pcm) - upto > TAIL_MAX_BYTES:
+        return False
+    from array import array
+    def rms(data):
+        samples = array('h', data[:len(data) - len(data) % 2])
+        return (sum(x * x for x in samples) / len(samples)) ** 0.5 if samples else 0.0
+    tail = pcm[upto:]
+    if not tail:
+        return True
+    return rms(tail) <= max(200.0, rms(pcm[:upto]) * ratio)
+
 
 class GPUGate:
     """Brains bypass an existing scene; new scenes wait for all reserved turns."""
@@ -147,6 +166,9 @@ async def websocket(ws: WebSocket):
     stt_failed = False
     audio_buffer = bytearray()
     stt_task = None
+    # Incremental STT: partial transcripts of the growing utterance while the user talks, so the final
+    # can reuse the last partial when everything after it is quiet (the VAD hang or a release pause).
+    partial = dict(gen=0, task=None, upto=0, text='')
     yolo_task = None
     box = getattr(ws.app.state, 'box_v2', None) or BoxClient()
     gate = gpu_gate(ws.app)
@@ -270,11 +292,49 @@ async def websocket(ws: WebSocket):
         session.voice_pending = True
         turn_task = asyncio.create_task(turn(text, lifecycle))
 
-    async def transcribe(pcm, lifecycle):
+    def reset_audio():
+        audio_buffer.clear()
+        partial['gen'] += 1
+        task = partial['task']
+        if task is not None and not task.done():
+            task.cancel()
+        partial.update(task=None, upto=0, text='')
+
+    async def run_partial(snapshot, gen):
+        try:
+            text = await box.stt(snapshot)
+        except Exception:
+            return
+        if gen == partial['gen'] and len(snapshot) > partial['upto']:
+            partial.update(upto=len(snapshot), text=text)
+
+    def maybe_partial():
+        if partial['task'] is not None and not partial['task'].done():
+            return
+        if len(audio_buffer) < PARTIAL_MIN_BYTES or len(audio_buffer) - partial['upto'] < PARTIAL_EVERY_BYTES:
+            return
+        partial['task'] = asyncio.create_task(run_partial(bytes(audio_buffer), partial['gen']))
+
+    async def transcribe(pcm, lifecycle, guess=None):
         nonlocal stt_failed, stt_mode
         try:
             await lifecycle.stage('transcribing')
-            text = await box.stt(pcm)
+            text = None
+            if guess is not None:
+                task, gen = guess
+                if task is not None and not task.done():
+                    try:
+                        await asyncio.wait_for(asyncio.shield(task), PARTIAL_WAIT_S)
+                    except Exception:
+                        pass
+                if gen == partial['gen'] and partial['text'].strip() and quiet_tail(pcm, partial['upto']):
+                    text = partial['text']
+                    event('stt_partial_used', session.session_id, ms=(len(pcm) - partial['upto']) / 32)
+                # The next utterance starts its own partials.
+                partial['gen'] += 1
+                partial.update(task=None, upto=0, text='')
+            if text is None:
+                text = await box.stt(pcm)
             if text.strip():
                 await start_text(text, lifecycle)
             else:
@@ -327,7 +387,7 @@ async def websocket(ws: WebSocket):
                 await cancel_scene()
                 await cancel_yolo()
                 await close_voice()
-                audio_buffer.clear()
+                reset_audio()
                 stt_mode = incoming.get('stt', 'browser')
                 stt_failed = False
                 session = new_session
@@ -407,7 +467,7 @@ async def websocket(ws: WebSocket):
                         raise ValueError('Invalid audio size')
                     audio_buffer.extend(chunk)
                 except ValueError:
-                    audio_buffer.clear()
+                    reset_audio()
                     session.voice_pending = False
                     session.user_speaking = False
                     if final_input:
@@ -416,16 +476,19 @@ async def websocket(ws: WebSocket):
                     continue
                 if incoming.get('final', False):
                     pcm = bytes(audio_buffer)
-                    audio_buffer.clear()
+                    guess = (partial['task'], partial['gen'])
+                    audio_buffer.clear()  # the partial state stays until transcribe has read it
                     session.voice_pending = True
-                    stt_task = asyncio.create_task(transcribe(pcm, current_turn))
+                    stt_task = asyncio.create_task(transcribe(pcm, current_turn, guess))
+                else:
+                    maybe_partial()
             elif kind == 'user_text' and incoming['final']:
                 await cancel_stt()
-                audio_buffer.clear()
+                reset_audio()
                 await start_text(incoming['text'], current_turn)
             elif kind == 'confirm' and incoming['what'] == 'power_off':
                 await cancel_stt()
-                audio_buffer.clear()
+                reset_audio()
                 await cancel_turn()
                 await cancel_audio()
                 session.voice_pending = False
@@ -435,7 +498,7 @@ async def websocket(ws: WebSocket):
                     await emit(say('Thanks. What are we working on?'))
             elif kind == 'barge_in':
                 await cancel_stt()
-                audio_buffer.clear()
+                reset_audio()
                 await cancel_turn()
                 await cancel_audio()
                 session.voice_pending = False
@@ -445,7 +508,7 @@ async def websocket(ws: WebSocket):
         pass
     finally:
         await cancel_stt()
-        audio_buffer.clear()
+        reset_audio()
         await cancel_yolo()
         await cancel_turn()
         await cancel_audio()

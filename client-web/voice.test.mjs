@@ -621,3 +621,13 @@ test("ambient calibration: first second sets the noise floor and flags a loud ro
   assert.equal(voice.setSensitivity(42), 10);
   voice.stopListening();
 });
+
+test("createVad minMs: a short noise burst never starts speech; sustained speech does", () => {
+  const vad = createVad({ threshold: 0.02, hangMs: 400, minMs: 300 });
+  vad.push(0, 0);
+  assert.equal(vad.push(0.2, 10), "silence");
+  assert.equal(vad.push(0.2, 200), "silence");
+  assert.equal(vad.push(0, 250), "silence"); // burst over: reset
+  assert.equal(vad.push(0.2, 300), "silence");
+  assert.equal(vad.push(0.2, 610), "start");
+});
