@@ -1754,6 +1754,13 @@ input[type="checkbox"][role="switch"]:focus-visible {
   margin-top: 26px;
 }
 
+/* <details> content sits in a shadow slot, so box-sizing does not inherit there: set it again. */
+.advanced *,
+.advanced *::before,
+.advanced *::after {
+  box-sizing: border-box;
+}
+
 .advanced-summary {
   display: flex;
   align-items: center;
@@ -1801,6 +1808,8 @@ input[type="checkbox"][role="switch"]:focus-visible {
   .sheet {
     zoom: 1.12;
   }
+
+  .sheet { max-height: calc(86dvh / 1.12); } /* vh units are zoomed too */
 }
 
 @media (min-width: 1700px) and (min-height: 950px) {
@@ -1811,6 +1820,8 @@ input[type="checkbox"][role="switch"]:focus-visible {
   .sheet {
     zoom: 1.4;
   }
+
+  .sheet { max-height: calc(86dvh / 1.4); }
 }
 
 input[type="checkbox"][role="switch"]:disabled {
