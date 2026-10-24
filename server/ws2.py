@@ -24,6 +24,7 @@ from server.logs import event
 from server.keyframes import signature
 from server import packs, pairing
 from server import rewind as rewind_mod
+from server.routing import forget_request, route_turn
 from server.agent import Session, Turn, message, run_turn, say, state
 from server.llm import LLMClient, TURN_USAGE
 from server import privacy
@@ -342,13 +343,25 @@ async def websocket(ws: WebSocket):
             # Talker + thinker: a Haiku-class talker speaks while the planner (no GPU gate) draws in parallel.
             duo = (isinstance(llm, LLMClient) and os.environ.get('BRAIN_MODE', 'duo') == 'duo'
                    and bool(os.environ.get('ANTHROPIC_API_KEY')) and claude_allowed())
-            if rewind_mod.wants_rewind(session, text):
+            # ROUTER=on: the router decides first (and logs its label); the regex is the fallback only when the
+            # router is off or unsure. Past/object questions and spoken forget go to memory and Rewind.
+            label = await route_turn(session, text) if os.environ.get('ROUTER', 'off') == 'on' else None
+            memory_or_rewind = rewind_mod.wants_rewind(session, text)
+            if forget_request(text):
+                # With memory attached its forget also clears this call's clips; without it run_turn's spoken
+                # forget deletes the Rewind clips (the plain rehearsal failed 5 of 5 when this went to rewind_turn).
+                use_rewind_turn = bool(rewind_mod.memory_turn_kind(session, text))
+            elif label == 'past':
+                use_rewind_turn = memory_or_rewind or getattr(session, 'rewind', None) is not None
+            else:
+                use_rewind_turn = label in (None, 'unsure') and memory_or_rewind
+            if use_rewind_turn:
                 await rewind_mod.rewind_turn(session, text, session.rewind, vision=vision, turn_id=lifecycle.id)
             else:
                 messages = await run_turn(session, text, vision=vision, llm=TurnBrain(),
                                           started_at=lifecycle.started, turn_id=lifecycle.id,
                                           planner=llm if duo else None, stt_ms=getattr(lifecycle, 'stt_ms', None),
-                                          app=ws.app)
+                                          app=ws.app, route=label)
                 slow = slow_part(next((m for m in reversed(messages or []) if m['type'] == 'metrics'), {}))
                 if slow:
                     await lifecycle.stage('done', detail=slow)

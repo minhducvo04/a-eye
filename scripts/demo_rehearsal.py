@@ -165,7 +165,26 @@ def main():
             page = browser.new_context(permissions=["camera", "microphone"], viewport={"width": 430, "height": 900}).new_page()
             errors, received = [], []
             t0 = time.time()
+            # Log every mic/camera open and socket open/close: the fake mic file restarts on each audio open.
+            page.add_init_script("""(() => {
+              window.__aeyeLog = [];
+              const t0 = performance.now(), log = (what) => window.__aeyeLog.push([Math.round(performance.now() - t0), what]);
+              const gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+              navigator.mediaDevices.getUserMedia = (c) => { log('getUserMedia ' + (c && c.audio ? 'audio' : '') + (c && c.video ? ' video' : '')); return gum(c); };
+              const WS = window.WebSocket;
+              window.WebSocket = function (...a) { const ws = new WS(...a); log('ws open'); ws.addEventListener('close', (e) => log('ws close ' + e.code)); return ws; };
+              window.WebSocket.prototype = WS.prototype; Object.assign(window.WebSocket, WS);
+              // Main-thread lag: a 250 ms timer that fires late means something blocked the page.
+              let last = performance.now();
+              setInterval(() => { const now = performance.now(); if (now - last > 1000) log('main thread blocked ' + Math.round(now - last - 250) + ' ms'); last = now; }, 250);
+              try { new PerformanceObserver((list) => { for (const e of list.getEntries()) if (e.duration > 500) log('long task ' + Math.round(e.duration) + ' ms ' + (e.attribution && e.attribution[0] ? e.attribution[0].containerType || e.attribution[0].name : '')); }).observe({ entryTypes: ['longtask'] }); } catch (e) {}
+            })()""")
             page.on("pageerror", lambda e: errors.append(str(e)))
+            cdn = []   # third-party script loads (the voice activity detector comes from a CDN)
+            page.on("requestfinished", lambda r: cdn.append((round(time.time() - t0, 2), "ok", r.url.rsplit("/", 1)[-1]))
+                    if "jsdelivr" in r.url else None)
+            page.on("requestfailed", lambda r: cdn.append((round(time.time() - t0, 2), "FAILED " + (r.failure or ""),
+                                                           r.url.rsplit("/", 1)[-1])) if "jsdelivr" in r.url else None)
             page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
 
             sent_types = {}
@@ -192,8 +211,11 @@ def main():
                 timeline.append((round(time.time() - t0, 2), what))
 
             def shot(name):
-                page.screenshot(path=str(OUT_DIR / f"{name}.png"))
-                mark(f"screenshot {name}.png")
+                try:
+                    page.screenshot(path=str(OUT_DIR / f"{name}.png"), timeout=10000)
+                    mark(f"screenshot {name}.png")
+                except Exception as exc:
+                    mark(f"screenshot {name}.png FAILED ({type(exc).__name__}): page frozen")
 
             page.goto(f"http://127.0.0.1:{port}/agent.html?stt=server")  # Whisper hears the fake mic
             page.wait_for_timeout(1200)
@@ -241,9 +263,18 @@ def main():
             if state:
                 page.wait_for_timeout(1000)
                 shot("4-forgotten")
+            try:
+                client_log = page.evaluate("() => window.__aeyeLog || []")
+            except Exception as exc:
+                client_log = [[int((time.time() - t0) * 1000), f"page unresponsive at the end ({type(exc).__name__})"]]
             browser.close()
 
         mark(f"page sent: {sent_types}")
+        for t, status, name in cdn:
+            timeline.append((t, f"cdn {status}: {name}"))
+        for ms, what in client_log:
+            timeline.append((round(ms / 1000, 2), f"client: {what}"))
+        timeline.sort()
         events = server_events(tmp / "server.log")
         routes = [e.get("reason", {}).get("label") for e in events if e.get("event") == "route"]
         deleted = [e for e in events if e.get("event") == "rewind_deleted"]

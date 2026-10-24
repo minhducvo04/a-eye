@@ -328,7 +328,7 @@ async def plan_scene(session, planner, base_system, user, scene, seq, text, emit
     return clean, safe_speech(note)[:160], head.get('speak') is True
 
 async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None, planner=None, stt_ms=None,
-                   app=None):
+                   app=None, route=None):
     """One voice turn. With planner set (talker + thinker mode), llm only talks and planner draws in parallel."""
     usage = []
     TURN_USAGE.set(usage)
@@ -402,7 +402,7 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         conversation=session.history[-10:], text=text))
     planner_task = None
 
-    route = await route_turn(session, text)
+    route = route if route is not None else await route_turn(session, text)   # ws2 may have routed already
     if duo and route not in ('past', 'expert'):
         planner_task = asyncio.create_task(plan_scene(session, planner, base_system, user, scene, seq, text, emit))
     queue = asyncio.Queue()

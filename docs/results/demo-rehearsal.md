@@ -78,3 +78,25 @@ back."), but find_item did not find the keys, so it fell back to Rewind, whose h
 box). Vision got 11 scene calls but the server logged no scene_scan events in this mode, so memory's scan path is
 separate from the keyframe loop the Rewind fix uses. "Forget that" went to memory ("Forgotten. I no longer remember
 your keys.") rather than deleting Rewind clips. Needs the local-memory builder; the plain Rewind path above passes.
+
+## Router first, and ten more runs (2026-10-24 about 02:10 to 02:40 PDT)
+
+With ROUTER=on, ws2 now asks the router first and logs its label; past questions go to memory (find_item) and
+Rewind, spoken forget goes to memory when it is attached and otherwise to the Rewind clip delete; the regex
+route is only the fallback when the router is off or unsure.
+
+| Path | Runs | All checks | Sure with a box | Found at (keys at 10 s) | First audio | Card |
+|---|---|---|---|---|---|---|
+| Rewind (plain) | 5 | 5 of 5 | 5 of 5 | 10.5 to 10.6 s | 0.34 to 0.52 s | 1.02 to 1.70 s |
+| Local memory (`--memory`) | 5 | 4 of 5 | 5 of 5 | 12.3 to 14.3 s | 0.48 to 2.26 s | 1.23 to 3.28 s |
+
+The one memory miss was timing only: found at 14.3 s, past the 4 s window (memory stamps when the keys settled).
+A first memory batch failed because the Mac lost its network (no route to PyPI or the box); not counted.
+
+Connection-drop investigation (the earlier run 3): the harness now logs every mic and camera open, socket
+open and close, a main-thread lag probe and CDN loads, and records a frozen page instead of crashing. In 25
+runs since: no reconnect, one mic open per run, no CDN loads (server speech does not use the browser VAD), and
+four page stalls of about 1 s (main thread blocked 968 to 1231 ms, 37 to 54 s into a run, after the find card).
+Not reproduced: the full freeze (frames stopped, a second hello, a 30 s screenshot timeout) seen twice earlier
+while the Mac was heavily loaded. Likely headless Chromium starved under load; the page's ~1 s stalls are worth
+a look by the UI lead (they happen after the card renders).
