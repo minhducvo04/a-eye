@@ -25,7 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PY = str(ROOT / ".venv" / "bin" / "python")
 OUT_DIR = ROOT / "docs" / "results" / "demo-rehearsal"
-REPORT = ROOT / "docs" / "results" / "demo-rehearsal.md"
+REPORT = ROOT / "docs" / "results" / "demo-rehearsal-latest.md"   # each run overwrites this one
 W, H, FPS, SECONDS, KEYS_AT = 480, 360, 5, 75, 10.0
 ASK_AT, FORGET_GAP = 24.0, 18.0
 
@@ -124,6 +124,8 @@ def server_events(log):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--local-only", action="store_true", help="LOCAL_ONLY=1 (needs the local find_item path)")
+    ap.add_argument("--memory", action="store_true",
+                    help="local memory path: both consents on in a temporary memory folder; find_item answers first")
     ap.add_argument("--keep", action="store_true", help="keep the temp folder (media and server logs) for debugging")
     args = ap.parse_args()
     from playwright.sync_api import sync_playwright
@@ -136,6 +138,8 @@ def main():
         env.pop(name, None)                       # a private rehearsal server on a free port
     if args.local_only:
         env["LOCAL_ONLY"] = "1"
+    if args.memory:
+        env["A_EYE_MEMORY_DIR"] = str(tmp / "memory")      # never the person's real memory
     procs = []
     timeline, checks, sent_at = [], {}, {}
     try:
@@ -146,6 +150,13 @@ def main():
         procs.append(start([PY, "-m", "uvicorn", "server.app:app", "--port", str(port)], env, tmp / "server.log"))
         wait_http(f"http://127.0.0.1:{vport}/health")
         wait_http(f"http://127.0.0.1:{port}/health")
+        if args.memory:
+            import urllib.request
+            body = json.dumps({"consent": {"person": True, "caregiver": True}, "remembering": True,
+                               "items": [{"item": "keys", "home": "blue bowl"}], "kept_days": 1}).encode()
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/api/memory/settings", data=body, method="PUT",
+                                         headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=10).read()
         with sync_playwright() as p:
             browser = p.chromium.launch(args=[
                 "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream",
@@ -214,7 +225,8 @@ def main():
                     page.wait_for_timeout(200)
                 return None, None
 
-            t_hit, hit = wait_for(lambda m: m.get("type") == "rewind_hit", ASK_AT + 25)
+            t_hit, hit = wait_for(lambda m: m.get("type") in ("rewind_hit", "find_item") and
+                                  (m.get("type") == "rewind_hit" or m.get("found")), ASK_AT + 25)
             if hit:
                 page.wait_for_timeout(1500)
                 shot("3-rewind-hit")
@@ -248,9 +260,11 @@ def main():
         checks = {
             "heard the question (server STT)": bool(heard[1]),
             "router labelled it past": "past" in routes,
-            "rewind_hit arrived": bool(hit),
+            "find card arrived (rewind_hit or find_item)": bool(hit),
+            "card type": hit.get("type") if hit else None,
             "search_past sure": bool(hit and hit.get("sure")),
-            "hit time within 4 s of the keys going down": bool(hit and abs(float(hit["t_s"]) - expect_t) <= 4.0),
+            "hit time within 4 s of the keys going down": bool(hit and hit.get("t_s") is not None
+                                                                and abs(float(hit["t_s"]) - expect_t) <= 4.0),
             "box on the hit frame": bool(hit and hit.get("objects")),
             "first audio after the question": bool(after_q("audio")),
             "forget: clip count 0": bool(state),
@@ -271,20 +285,20 @@ def main():
                  "page opened; the camera clip started at "
                  f"{cam_t0:.1f} s and the keys go down {KEYS_AT:.0f} s into it.", "",
                  "| Check | Result |", "|---|---|"]
-        lines += [f"| {k} | {'PASS' if v else 'FAIL'} |" for k, v in checks.items()]
+        lines += [f"| {k} | {v if isinstance(v, str) else ('PASS' if v else 'FAIL')} |" for k, v in checks.items()]
         lines += ["", "| Moment | t (s) | after the question (s) |", "|---|---|---|"]
         for name, t in rows:
             lines.append(f"| {name} | {t:.2f} | {t - t_q:.2f} |" if t and t_q else f"| {name} | {t if t else 'missing'} | |")
         lines += ["", f"Whisper heard: {heard[1].get('text') if heard[1] else 'nothing'}.", f"Router labels seen: {routes}. Draw and box messages after the question: {len(draws)} "
                   f"({boxes} ops or boxes). TwelveLabs deletes: {len(deleted)}.",
-                  f"Hit: {json.dumps({k: hit.get(k) for k in ('t_s', 'sure', 'alternatives', 'query')}) if hit else 'none'}.",
+                  f"Hit: {json.dumps({k: hit.get(k) for k in ('type', 't_s', 'sure', 'found', 'place', 'home', 'alternatives', 'query')}) if hit else 'none'}.",
                   f"First spoken lines: {hit_says}.", "", "Timeline:", ""]
         lines += [f"- {t:.2f} s: {what}" for t, what in timeline]
         if errors:
             lines += ["", "Page errors:", ""] + [f"- {e[:200]}" for e in errors[:5]]
         REPORT.write_text("\n".join(lines) + "\n")
         print("\n".join(lines))
-        sys.exit(0 if all(checks.values()) else 1)
+        sys.exit(0 if all(v for k, v in checks.items() if k != "card type") else 1)
     finally:
         for proc in procs:
             proc.terminate()

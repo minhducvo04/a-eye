@@ -19,7 +19,11 @@ def rewind_callback(session, emit, *, vision=None, app=None, turn_id=None, speak
                 raise ValueError('Unknown tool')
             if speak:
                 await speak(rewind_tools.FIRST_LINE[name])
-            result, cards = await rewind_tools.run_tool(name, args, session, vision=vision, app=app, turn_id=turn_id)
+            if name in {t['name'] for t in rewind_tools.MEMORY_TOOLS}:
+                result, cards = await rewind_tools.run_memory_tool(name, args, session, app, turn_id=turn_id)
+            else:
+                result, cards = await rewind_tools.run_tool(name, args, session, vision=vision, app=app,
+                                                            turn_id=turn_id)
             for card in cards:
                 await emit(card)
             ok = not result.get('is_error', False)

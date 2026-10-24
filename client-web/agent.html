@@ -86,6 +86,11 @@
           </span>
           <span id="expert-badge" class="badge expert hidden" title="A stronger model is checking this answer">Expert</span>
         </div>
+        <!-- A paired phone (code or remembered): shown so the person knows, with a way to drop it. -->
+        <div id="phone-chip" class="rewind-badge hidden" role="status">
+          <p class="chip glass">Phone joined</p>
+          <button type="button" id="phone-kick" class="chip glass warn-text">Disconnect</button>
+        </div>
         <p id="link" class="chip glass warn" role="status">Connecting…</p>
         <p id="notice" class="chip glass soft hidden" role="status"></p>
         <p id="pipeline" class="pipeline" role="status">Ready</p>
@@ -140,7 +145,7 @@
       </div>
     </section>
 
-    <button type="button" id="start-overlay" class="start-overlay glass hidden">Tap to start</button>
+    <button type="button" id="start-overlay" class="start-overlay glass hidden">Tap to start, then just talk</button>
 
     <!-- PermissionNotice.swift -->
     <div id="permission" class="permission hidden" role="alertdialog" aria-labelledby="permission-title">

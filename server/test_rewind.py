@@ -483,6 +483,11 @@ def test_recap_route_and_typed_recap_over_ws2():
             ws.send_json(FRAME)
             until(ws, 'track')
             rewind = app.state.rewind.get('s')
+            import time
+            for _ in range(100):                            # the sampler adds the frame within ~125 ms
+                if rewind.clips and rewind.clips[0].frames:
+                    break
+                time.sleep(0.02)
             rewind.clips[0].status = 'pending'
             ws.send_json(dict(v=2, type='user_text', session_id='s', text='Recap please, did I skip anything?',
                               final=True))

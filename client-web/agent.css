@@ -1419,6 +1419,13 @@ svg .fill {
   outline: none;
 }
 
+/* Mic on is unmistakable: filled helper blue, like other "on" buttons. Off stays the struck mic in warn. */
+#mic[aria-pressed="true"] {
+  background: var(--helper);
+  color: #000;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--helper) 30%, transparent);
+}
+
 /* ==========================================================================
    UI polish (2026-10-24): first run, one badge style, quiet status lines, calm Memory mode,
    Simple/Advanced settings, switches, projector scale. Same iOS tokens; no new colours except

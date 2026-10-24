@@ -346,7 +346,8 @@ async def websocket(ws: WebSocket):
             else:
                 messages = await run_turn(session, text, vision=vision, llm=TurnBrain(),
                                           started_at=lifecycle.started, turn_id=lifecycle.id,
-                                          planner=llm if duo else None, stt_ms=getattr(lifecycle, 'stt_ms', None))
+                                          planner=llm if duo else None, stt_ms=getattr(lifecycle, 'stt_ms', None),
+                                          app=ws.app)
                 slow = slow_part(next((m for m in reversed(messages or []) if m['type'] == 'metrics'), {}))
                 if slow:
                     await lifecycle.stage('done', detail=slow)
@@ -550,7 +551,7 @@ async def websocket(ws: WebSocket):
                     await paired_call.close()
                 session = new_session
                 session.camera = incoming.get('camera', True)
-                paired_call = pairing.Call(session, send, switch_camera)
+                paired_call = pairing.Call(session, send, switch_camera, ident=pairing.verified_identity(ws))
                 current_turn = None
                 event('hello', session.session_id, pack=session.pack.id, tts=session.tts, stt=stt_mode)
                 session.emit = emit
@@ -583,6 +584,9 @@ async def websocket(ws: WebSocket):
                 continue
             if kind == 'pair_request':
                 try:
+                    if incoming.get('kick'):
+                        await paired_call.kick()
+                        continue
                     await send(pairing.registry.issue(paired_call))
                 except ValueError as exc:
                     await send(message('error', code='internal', message=str(exc)))

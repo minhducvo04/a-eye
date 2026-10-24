@@ -1,5 +1,6 @@
 """Process-local, single-use camera pairing. No media or credentials are logged."""
 import asyncio
+import hashlib
 import json
 import secrets
 from time import monotonic
@@ -17,8 +18,13 @@ class Registry:
         self.clock = clock
         self.codes = {}
         self.retired = {}
+        # "Remember this phone": the latest live call per verified Access identity (latest wins).
+        self.owners = {}
 
     def drop(self, call):
+        for ident, owned in list(self.owners.items()):
+            if owned is call:
+                del self.owners[ident]
         for code, entry in list(self.codes.items()):
             if entry[0] is call:
                 self.retired[code] = entry[1]
@@ -51,15 +57,47 @@ class Registry:
         return call, 'joined'
 
 
+    def claim(self, call, ident):
+        if ident:
+            self.owners[ident] = call
+
+    def take_remembered(self, ws):
+        """A camera join without a code: only into the latest live call of the same verified Access identity.
+        Returns (call, state, detail, retry_s); retry_s tells a remembered phone to wait and try again."""
+        ident = verified_identity(ws)
+        if not ident:
+            event('pair_rejected', reason='no_access')
+            return None, 'rejected', 'Sign in with your own account to use this phone without a code, or use a code.', None
+        call = self.owners.get(ident)
+        if call is None or call.closed:
+            return None, 'rejected', 'Waiting for your next call.', 3
+        if call.kicked:
+            return None, 'rejected', 'Your call disconnected this phone. It joins your next call.', 3
+        if call.camera is not None:
+            return None, 'rejected', 'Your call already has a phone.', 3
+        return call, 'joined', '', None
+
+
+def verified_identity(ws):
+    """'access:<hash>' for an Access email that server.auth verified on this socket, else ''. A shared token, an
+    open server or an unverified cookie never counts."""
+    email = getattr(getattr(ws, 'state', None), 'access_email', '')
+    if not isinstance(email, str) or not email:
+        return ''
+    return 'access:' + hashlib.sha256(email.lower().encode()).hexdigest()[:16]
+
+
 registry = Registry()
 
 
 class Call:
-    def __init__(self, session, send, switch):
+    def __init__(self, session, send, switch, ident=''):
         self.session, self.send, self.switch = session, send, switch
         self.local_on = session.camera
         self.camera = None
         self.closed = False
+        self.kicked = False  # the call disconnected its phone: no remembered rejoin into this call
+        registry.claim(self, ident)
         # Phone mic: audio_in and barge_in from the camera socket, read by the call's own message loop.
         self.inbox = asyncio.Queue()
 
@@ -70,6 +108,19 @@ class Call:
         if self.camera:
             await self.camera.send_json(message('pair_status', role='camera', **fields))
 
+    async def kick(self):
+        """The call disconnects its phone. A remembered phone waits for the next call instead of rejoining."""
+        self.kicked = True
+        camera = self.camera
+        if camera:
+            event('pair_kicked', self.session.session_id)
+            try:
+                await camera.send_json(message('pair_status', state='left', role='camera',
+                                               detail='Your call disconnected this phone.', retry_s=3))
+                await camera.close()
+            except (RuntimeError, WebSocketDisconnect):
+                pass
+
     async def close(self):
         self.closed = True
         registry.drop(self)
@@ -77,18 +128,22 @@ class Call:
         if camera:
             event('pair_left', self.session.session_id)
             try:
-                await camera.send_json(message('pair_status', state='left', role='camera', detail='Call ended.'))
+                await camera.send_json(message('pair_status', state='left', role='camera', detail='Call ended.', retry_s=3))
                 await camera.close()
             except (RuntimeError, WebSocketDisconnect):
                 pass
 
 
 async def camera_socket(ws, hello):
-    call, state = registry.take(hello.get('pair_code'))
+    if 'pair_code' in hello:
+        call, state = registry.take(hello['pair_code'])
+        detail, retry = ('Code expired.' if state == 'expired' else 'Code unavailable. Request a new code.'), None
+    else:
+        call, state, detail, retry = registry.take_remembered(ws)
     if call is None:
         event('pair_rejected')
-        await ws.send_json(message('pair_status', state=state, role='camera',
-                                   detail='Code expired.' if state == 'expired' else 'Code unavailable. Request a new code.'))
+        await ws.send_json(message('pair_status', state=state, role='camera', detail=detail,
+                                   **({'retry_s': retry} if retry else {})))
         await ws.close(code=4404)
         return
     call.camera = ws  # Reserve before the first await: only one camera can join.

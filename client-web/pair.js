@@ -4,7 +4,28 @@ import { createVoice } from './voice.js';
 
 export function pairMode(search) {
   const query = new URLSearchParams(search);
-  return { camera: query.has('pair'), code: query.get('pair') || '', token: query.get('token') || '' };
+  const mine = query.get('phone') === 'mine';
+  return { camera: query.has('pair') || mine, code: query.get('pair') || '', token: query.get('token') || '', mine };
+}
+
+export const REMEMBER_KEY = 'aeye.phone.remember';
+export function loadRemember(storage) {
+  try { return storage?.getItem(REMEMBER_KEY) === '1'; } catch { return false; }
+}
+export function saveRemember(storage, on) {
+  try { storage?.setItem(REMEMBER_KEY, on ? '1' : '0'); } catch { /* private window: this page only */ }
+}
+
+// Remember this phone: what the phone does after a pair_status. live = send camera + mic; wait = idle, then try
+// again without a code; stop = the old one-shot behaviour.
+export function rememberStep(msg, remember) {
+  if (msg.state === 'joined') return { action: 'live', text: 'Camera + mic connected' };
+  if (msg.state === 'camera') return { action: 'same' };
+  if (remember && msg.retry_s) {
+    const text = msg.detail === 'Call ended.' ? 'Call ended. Waiting for your next call.' : msg.detail || 'Waiting for your next call.';
+    return { action: 'wait', delayMs: msg.retry_s * 1000, text };
+  }
+  return { action: 'stop', text: pairStatus(msg, true) };
 }
 export function pairUrl(origin, path, search) {
   const url = new URL(path, origin);
@@ -82,9 +103,12 @@ export function setupPairCall(send, sessionId) {
 
 // An isolated entry point: never initializes call UI or pack selection. One tap starts the camera and the mic;
 // the mic runs voice.js's VAD and sends utterances for server speech recognition. The phone never plays audio.
-export function bootPairCamera({ makeVoice = createVoice } = {}) {
+// "Always use this phone as my camera": after the first tap the page stays open; whenever the same signed-in
+// person starts a call, it joins without a code (server: pairing.take_remembered).
+export function bootPairCamera({ makeVoice = createVoice, storage = globalThis.localStorage } = {}) {
   const mode = pairMode(location.search);
   if (!mode.camera) return false;
+  let remember = mode.mine || loadRemember(storage);
   document.body.replaceChildren();
   document.body.style.cssText = 'margin:0;background:#000;color:#fff;font:17px -apple-system,system-ui,sans-serif;text-align:center';
   const video = document.createElement('video');
@@ -102,10 +126,22 @@ export function bootPairCamera({ makeVoice = createVoice } = {}) {
   meter.append(fill);
   const status = document.createElement('p'); status.setAttribute('role', 'status'); status.id = 'phone-status';
   status.style.cssText = 'margin:12px 16px;font-size:20px';
-  status.textContent = 'Tap Start to use this phone as the camera and mic.';
-  document.body.append(video, button, meter, status);
-  const sessionId = globalThis.crypto.randomUUID(), grab = document.createElement('canvas');
-  let socket, stream, timer, voice, seq = 0, paired = false, terminal = false, signIn = false;
+  status.textContent = remember ? 'Tap Start once. This phone then joins your calls by itself.' : 'Tap Start to use this phone as the camera and mic.';
+  const label = document.createElement('label');
+  label.style.cssText = 'display:flex;gap:12px;align-items:center;justify-content:center;margin:12px 16px;font-size:17px';
+  const toggle = document.createElement('input');
+  toggle.type = 'checkbox'; toggle.id = 'phone-remember'; toggle.setAttribute('role', 'switch'); toggle.checked = remember;
+  toggle.style.cssText = 'width:24px;height:24px';
+  const words = document.createElement('span');
+  words.textContent = 'Always use this phone as my camera';
+  label.append(toggle, words);
+  const note = document.createElement('p');
+  note.style.cssText = 'margin:0 16px;font-size:13px;color:rgba(255,255,255,0.6)';
+  note.textContent = 'Works when this phone and your call are signed in with the same account. Keep this page open.';
+  document.body.append(video, button, meter, status, label, note);
+  const grab = document.createElement('canvas');
+  let sessionId = globalThis.crypto.randomUUID();
+  let socket, stream, timer, retry, voice, seq = 0, paired = false, terminal = false, signIn = false, usedCode = false;
   const send = msg => { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ v: 2, session_id: sessionId, ...msg })); };
   const audio = createPhoneAudio(msg => { if (paired) send(msg); });
   function showLevel(level) {
@@ -114,10 +150,15 @@ export function bootPairCamera({ makeVoice = createVoice } = {}) {
     meter.setAttribute('aria-valuenow', String(pct));
   }
   function stop() {
-    clearInterval(timer);
+    clearInterval(timer); clearTimeout(retry);
     stream?.getTracks().forEach(track => track.stop()); stream = null; video.srcObject = null;
     voice?.stopListening(); showLevel(0);
     button.textContent = 'Start';
+  }
+  // Waiting for the next call: the camera track is paused and the mic is off; nothing is sent.
+  function idle(on) {
+    stream?.getTracks().forEach(track => { track.enabled = !on; });
+    if (on) { voice?.stopListening(); showLevel(0); }
   }
   function ensureVoice() {
     voice = voice || makeVoice({
@@ -131,10 +172,66 @@ export function bootPairCamera({ makeVoice = createVoice } = {}) {
     return voice;
   }
   async function startMic() {
-    if (ensureVoice().supported.stt) await voice.startListening();
+    if (ensureVoice().supported.stt && !(voice.isListening && voice.isListening())) await voice.startListening();
   }
+  function connect() {
+    clearTimeout(retry);
+    const url = new URL('/ws2', location.href); url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    if (mode.token) url.searchParams.set('token', mode.token);
+    const ws = new WebSocket(url);
+    socket = ws;
+    sessionId = globalThis.crypto.randomUUID();
+    // The code is single use: after it, a remembered phone joins by its sign-in.
+    const code = mode.code && !usedCode ? mode.code : '';
+    ws.addEventListener('open', () => send({ type: 'hello', pack: 'general', role: 'camera', camera: true, ...(code ? { pair_code: code } : {}) }));
+    ws.addEventListener('message', event => {
+      if (socket !== ws) return;
+      const msg = JSON.parse(event.data);
+      if (msg.type === 'error') { status.textContent = msg.message; return; }
+      if (msg.type !== 'pair_status') return;
+      if (code) usedCode = true;
+      const step = rememberStep(msg, remember);
+      if (step.action === 'same') return;
+      status.textContent = step.text;
+      if (step.action === 'live') {
+        paired = true; idle(false); button.textContent = 'Stop'; void startMic();
+      } else if (step.action === 'wait') {
+        paired = false; idle(true); button.textContent = 'Join my call'; button.disabled = false;
+        retry = setTimeout(() => { if (remember && stream) connect(); }, step.delayMs);
+      } else {
+        paired = false; terminal = true; stop(); button.disabled = true;
+      }
+    });
+    ws.addEventListener('close', event => {
+      if (socket !== ws) return;
+      if (event?.code === 4401) {
+        terminal = true; paired = false; stop();
+        signIn = true; status.textContent = 'Please sign in again';
+        button.textContent = 'Reload to sign in'; button.disabled = false;
+        return;
+      }
+      if (paired && remember && stream) {
+        // Dropped mid-call: try again shortly.
+        paired = false; idle(true); status.textContent = 'Reconnecting…';
+        retry = setTimeout(connect, 2000);
+        return;
+      }
+      if (!terminal && !remember) {
+        status.textContent = 'Disconnected. Request a new code to reconnect.';
+        terminal = true; paired = false; stop(); button.disabled = true;
+      }
+    });
+  }
+  toggle.addEventListener('change', () => {
+    remember = toggle.checked;
+    saveRemember(storage, remember);
+    note.textContent = remember
+      ? 'This phone joins your calls by itself while this page is open and you are signed in.'
+      : 'Works when this phone and your call are signed in with the same account. Keep this page open.';
+  });
   button.addEventListener('click', async () => {
     if (signIn) { location.reload(); return; }
+    if (stream && button.textContent === 'Join my call') { connect(); return; }
     if (stream) { send({ type: 'camera', on: false }); stop(); return; }
     // Inside the tap, before any await: iOS Safari only starts audio capture from a user gesture.
     void ensureVoice().unlockAudio?.();
@@ -142,29 +239,9 @@ export function bootPairCamera({ makeVoice = createVoice } = {}) {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
       video.srcObject = stream; await video.play(); button.textContent = 'Stop';
-      if (!socket) {
-        const url = new URL('/ws2', location.href); url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        if (mode.token) url.searchParams.set('token', mode.token);
-        socket = new WebSocket(url);
-        socket.addEventListener('open', () => send({ type: 'hello', pack: 'general', role: 'camera', pair_code: mode.code, camera: true }));
-        socket.addEventListener('message', event => {
-          const msg = JSON.parse(event.data);
-          if (msg.type === 'pair_status') {
-            status.textContent = pairStatus(msg, true);
-            paired = msg.state === 'joined' || (paired && msg.state === 'camera');
-            if (['left', 'rejected', 'expired'].includes(msg.state)) { terminal = true; stop(); button.disabled = true; }
-          } else if (msg.type === 'error') status.textContent = msg.message;
-        });
-        socket.addEventListener('close', event => {
-          if (!terminal) status.textContent = 'Disconnected. Request a new code to reconnect.';
-          terminal = true; paired = false; stop(); button.disabled = true;
-          if (event?.code === 4401) {
-            signIn = true; status.textContent = 'Please sign in again';
-            button.textContent = 'Reload to sign in'; button.disabled = false;
-          }
-        });
-      } else send({ type: 'camera', on: true });
-      await startMic();
+      terminal = false;
+      if (!socket || socket.readyState > 1) connect();
+      else send({ type: 'camera', on: true });
       timer = setInterval(() => {
         if (!paired || !stream || document.hidden || socket.bufferedAmount || !video.videoWidth) return;
         const shot = writeFrame(grab, video, video.videoWidth, video.videoHeight);

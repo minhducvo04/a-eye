@@ -103,6 +103,10 @@ def authorized(connection):
     except (jwt.InvalidTokenError, ValueError, TypeError, OverflowError):
         return rejected('bad_jwt')
     event('auth_access', user=hashlib.sha256(email.encode()).hexdigest()[:12])
+    try:  # The verified Access email, for "remember this phone" (pairing.verified_identity). Never logged in clear.
+        connection.state.access_email = email
+    except AttributeError:
+        pass
     return True
 
 

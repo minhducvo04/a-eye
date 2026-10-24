@@ -1983,7 +1983,7 @@
     "pair_code": {
      "type": "string",
      "pattern": "^[0-9]{4,8}$",
-     "description": "Required with role camera: the single-use code the call device got in v2_pair."
+     "description": "With role camera: the single-use code the call device got in v2_pair. Without it, the camera joins the latest live call of the same signed-in Cloudflare Access identity (remember this phone); a shared token or an open server never qualifies."
     },
     "rewind": {
      "type": "boolean",
@@ -2828,6 +2828,10 @@
     },
     "session_id": {
      "type": "string"
+    },
+    "kick": {
+     "type": "boolean",
+     "description": "true: disconnect the phone paired to this call instead of asking for a code. A remembered phone then waits for the next call."
     }
    }
   },
@@ -2906,6 +2910,11 @@
     },
     "detail": {
      "type": "string"
+    },
+    "retry_s": {
+     "type": "integer",
+     "minimum": 1,
+     "description": "Sent to a camera socket that may try again: no call yet for this signed-in identity, the call already has a phone, or the call ended or disconnected it. A phone with 'remember this phone' on reconnects after this many seconds."
     }
    }
   },
