@@ -342,7 +342,7 @@ test("server mode sends 200 ms chunks then a final chunk", async () => {
     },
   });
   await voice.startListening();
-  assert.deepEqual(cap.constraints, [{ audio: { echoCancellation: true, noiseSuppression: true } }]);
+  assert.deepEqual(cap.constraints, [{ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1, sampleRate: { ideal: 16000 } } }]);
   cap.feed(48, 0, 0, clock);
   cap.feed(21000, 0.5, 10, clock);
   cap.feed(48, 0, 500, clock);
@@ -574,4 +574,50 @@ test("Brave-style recognizer: network error or quick empty ends switch to server
   f.rec.onerror({ error: "no-speech" });
   assert.deepEqual(fine, ["no_speech"]);
   assert.equal(f.voice.isListening(), true);
+});
+
+test("hold to talk: VAD ignored, press opens, release sends one final utterance", async () => {
+  const cap = serverCapture();
+  const chunks = [];
+  const clock = { t: 0 };
+  const voice = createVoice({
+    sttMode: "server",
+    holdToTalk: true,
+    audioContextFactory: () => cap.ctx,
+    getUserMedia: cap.getUserMedia,
+    now: () => clock.t,
+    onAudioChunk(b64, seq, final) {
+      chunks.push({ final, n: pcm16ToFloat32(b64).length });
+    },
+  });
+  await voice.startListening();
+  cap.feed(9600, 0.5, 10, clock); // loud talk without the button: nothing is sent
+  assert.equal(chunks.length, 0);
+  assert.equal(voice.holdStart(), true);
+  cap.feed(9600, 0.01, 100, clock); // soft, far speech still goes out while held
+  assert.equal(voice.holdEnd(), true);
+  assert.deepEqual(chunks.map((c) => c.final), [false, true]);
+  assert.equal(chunks.reduce((n, c) => n + c.n, 0), 3200);
+  voice.stopListening();
+});
+
+test("ambient calibration: first second sets the noise floor and flags a loud room", async () => {
+  const cap = serverCapture();
+  const seen = [];
+  const clock = { t: 0 };
+  const voice = createVoice({
+    sttMode: "server",
+    audioContextFactory: () => cap.ctx,
+    getUserMedia: cap.getUserMedia,
+    now: () => clock.t,
+    onAmbient: (a) => seen.push(a),
+  });
+  await voice.startListening();
+  for (let t = 0; t <= 1100; t += 100) cap.feed(480, 0.05, t, clock);
+  assert.equal(seen.length >= 1, true);
+  assert.equal(seen[0].calibrated, true);
+  assert.equal(seen[0].noisy, true);
+  assert.ok(Math.abs(voice.ambient() - 0.05) < 0.005);
+  assert.equal(voice.setSensitivity(42), 10);
+  voice.stopListening();
 });

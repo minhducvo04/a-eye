@@ -15,6 +15,7 @@ import {
 } from "./ui.js";
 import {
   bargeSpeech,
+  dbfs,
   devHudPosition,
   emptySpeech,
   formatHud,
@@ -64,6 +65,12 @@ function boot() {
   const callStateEl = document.getElementById("call-state");
   const typedEl = document.getElementById("typed");
   const micBtn = document.getElementById("mic");
+  const holdBtn = document.getElementById("hold");
+  const sensEl = document.getElementById("sensitivity");
+  const ambientEl = document.getElementById("ambient");
+  // Hold to talk is the reliable mode in a loud hall; ?hold=1 forces it, a noisy calibration turns it on.
+  let holdMode = new URLSearchParams(location.search).get("hold") === "1";
+  let holdPressed = false;
   const startBtn = document.getElementById("start-camera");
   const powerBtn = document.getElementById("power-off");
   const overlayEl = document.getElementById("start-overlay");
@@ -124,6 +131,12 @@ function boot() {
 
   function voiceOptions() {
     return {
+      holdToTalk: holdMode,
+      sensitivity: Number(sensEl && sensEl.value) || 5,
+      onAmbient: (reading) => {
+        if (ambientEl) ambientEl.textContent = `Noise ${dbfs(reading.rms)} dB${reading.noisy ? " (loud)" : ""}`;
+        if (reading.noisy && reading.calibrated && !holdMode) void enableHold();
+      },
       onFinal: (text) => {
         const clean = String(text || "").trim();
         if (!clean) return;
@@ -1019,6 +1032,41 @@ function boot() {
     paint(Date.now());
   }
 
+  async function enableHold() {
+    holdMode = true;
+    renderHold();
+    if (stt !== "server") await switchToServerStt();
+    if (voice && typeof voice.setHoldMode === "function") voice.setHoldMode(true);
+    if (voice && !voice.isListening() && voice.supported && voice.supported.stt) await startMic();
+    renderHold();
+  }
+
+  function renderHold() {
+    if (!holdBtn) return;
+    holdBtn.classList.toggle("hold-default", holdMode);
+    holdBtn.setAttribute("aria-pressed", holdPressed ? "true" : "false");
+    holdBtn.textContent = holdPressed ? "Listening… release to send" : (holdMode ? "Hold to talk (Space)" : "Hold to talk");
+  }
+
+  async function onHoldDown() {
+    if (holdPressed) return;
+    holdPressed = true;
+    renderHold();
+    if (voice) void voice.unlockAudio();
+    if (!holdMode || stt !== "server" || !voice || !voice.isListening()) await enableHold();
+    if (holdPressed && voice && typeof voice.holdStart === "function") {
+      voice.holdStart();
+      turnEvent({ type: "interim", text: "Holding to talk" });
+    }
+  }
+
+  function onHoldUp() {
+    if (!holdPressed) return;
+    holdPressed = false;
+    if (voice && typeof voice.holdEnd === "function") voice.holdEnd();
+    renderHold();
+  }
+
   async function switchToServerStt() {
     if (stt === "server") return;
     const micWasOn = ui.getState().micOn;
@@ -1160,6 +1208,31 @@ function boot() {
   micBtn.addEventListener("click", () => {
     onMic();
   });
+  if (holdBtn) {
+    holdBtn.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      if (typeof holdBtn.setPointerCapture === "function") holdBtn.setPointerCapture(event.pointerId);
+      void onHoldDown();
+    });
+    for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) holdBtn.addEventListener(name, onHoldUp);
+    holdBtn.addEventListener("contextmenu", (event) => event.preventDefault());
+  }
+  const typingTarget = (el) => el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+  window.addEventListener("keydown", (event) => {
+    if (event.code !== "Space" || event.repeat || typingTarget(document.activeElement)) return;
+    event.preventDefault();
+    void onHoldDown();
+  });
+  window.addEventListener("keyup", (event) => {
+    if (event.code !== "Space" || typingTarget(document.activeElement)) return;
+    event.preventDefault();
+    onHoldUp();
+  });
+  if (sensEl) {
+    sensEl.addEventListener("input", () => {
+      if (voice && typeof voice.setSensitivity === "function") voice.setSensitivity(Number(sensEl.value));
+    });
+  }
   overlayEl.addEventListener("click", () => {
     onStartTap();
   });

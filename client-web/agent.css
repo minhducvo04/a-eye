@@ -474,6 +474,40 @@ button:disabled {
   box-shadow: 0 0 0 4px rgba(142, 182, 255, 0.35);
 }
 
+.hold {
+  width: min(320px, 100%);
+  min-height: 56px;
+  border-radius: 16px;
+  font-size: 18px;
+  font-weight: 650;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.hold.hold-default {
+  min-height: 72px;
+  background: #1e3a66;
+}
+
+.hold[aria-pressed="true"] {
+  background: #2f5a9e;
+  box-shadow: 0 0 0 4px rgba(142, 182, 255, 0.45);
+}
+
+.mic-tune {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #c5d0e0;
+  font-size: 14px;
+}
+
+.mic-tune input[type="range"] {
+  width: 110px;
+}
+
 .start-overlay {
   position: absolute;
   inset: 0;

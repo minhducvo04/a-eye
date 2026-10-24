@@ -492,3 +492,31 @@ export function nextBarge(state, event, speaking) {
   }
   return { state: prev, action: null };
 }
+
+// Noisy halls: one sensitivity knob (1 = only loud close speech, 10 = catch soft far speech) drives both VADs.
+// The energy gate never sits below the measured ambient noise times AMBIENT_MARGIN.
+export const DEFAULT_SENSITIVITY = 5;
+export const AMBIENT_MARGIN = 2.5;
+// Ambient RMS above this (about -34 dBFS after browser noise suppression) counts as a loud room.
+export const NOISY_AMBIENT = 0.02;
+
+export function vadSettings(sensitivity, ambient) {
+  const s = Math.min(10, Math.max(1, Number.isFinite(Number(sensitivity)) ? Number(sensitivity) : DEFAULT_SENSITIVITY));
+  const shift = DEFAULT_SENSITIVITY - s; // positive = stricter
+  const base = 0.02 * Math.pow(2, shift / 2.5);
+  const floor = Number.isFinite(ambient) && ambient > 0 ? ambient * AMBIENT_MARGIN : 0;
+  const positive = Math.min(0.85, Math.max(0.2, BARGE_VAD.positiveSpeechThreshold + shift * 0.06));
+  return {
+    sensitivity: s,
+    energyThreshold: Math.max(base, floor),
+    positiveSpeechThreshold: positive,
+    negativeSpeechThreshold: Math.max(0.1, positive - 0.15),
+    minSpeechMs: Math.min(250, Math.max(60, BARGE_VAD.minSpeechMs + shift * 20)),
+  };
+}
+
+export function dbfs(rms) {
+  const n = Number(rms);
+  if (!Number.isFinite(n) || n <= 0) return -100;
+  return Math.max(-100, Math.round(20 * Math.log10(n)));
+}

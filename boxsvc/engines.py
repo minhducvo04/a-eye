@@ -35,10 +35,21 @@ class SttEngine:
     def transcribe(self, pcm, language):
         audio = self.np.frombuffer(pcm, dtype="<i2").astype(self.np.float32) / 32768
         with self.lock:
-            segments, _ = self.model.transcribe(
-                audio, language=language, beam_size=1, vad_filter=False,
-            )
+            segments, _ = self.model.transcribe(audio, language=language, **NOISY_HALL)
             return "".join(segment.text for segment in segments).strip()
+
+
+# Loud hackathon hall, soft speaker far from the mic (docs/voice-options.md, voice/noise_bench.py):
+# Silero VAD inside Whisper drops crowd-only stretches; a low VAD threshold keeps soft speech; a higher
+# no_speech threshold keeps murmur that the default 0.6 drops; the prompt biases toward PC-part words.
+NOISY_HALL = dict(
+    beam_size=3,
+    vad_filter=True,
+    vad_parameters=dict(threshold=0.3, min_speech_duration_ms=120, min_silence_duration_ms=500, speech_pad_ms=300),
+    no_speech_threshold=0.8,
+    condition_on_previous_text=False,
+    initial_prompt='PC build help: motherboard, CPU_FAN header, SYS_FAN, RAM, DIMM slot, M.2, SATA, 24-pin, 8-pin EPS, front panel.',
+)
 
 
 class TtsEngine:

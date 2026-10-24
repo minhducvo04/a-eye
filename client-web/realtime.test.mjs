@@ -270,3 +270,14 @@ test("barge gate: duck on start, stop on real start, unduck on misfire, flush on
   assert.equal(nextBarge(r.state, "end", false).action, "flush");
   assert.ok(BARGE_VAD.minSpeechMs <= 150);
 });
+
+test("vadSettings: sensitivity loosens both VADs; the energy gate stays above ambient", async () => {
+  const { vadSettings, dbfs } = await import("./realtime.js");
+  const soft = vadSettings(9, 0);
+  const strict = vadSettings(2, 0);
+  assert.ok(soft.energyThreshold < strict.energyThreshold);
+  assert.ok(soft.positiveSpeechThreshold < strict.positiveSpeechThreshold);
+  assert.ok(soft.minSpeechMs < strict.minSpeechMs);
+  assert.ok(vadSettings(10, 0.05).energyThreshold >= 0.125);
+  assert.equal(dbfs(0.1), -20);
+});

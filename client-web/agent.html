@@ -63,6 +63,13 @@
       <div class="mic-wrap">
         <canvas id="wave" class="wave" width="168" height="36" aria-hidden="true"></canvas>
         <button type="button" id="mic" aria-pressed="false" aria-label="Start microphone">Mic</button>
+        <button type="button" id="hold" class="hold" aria-pressed="false">Hold to talk</button>
+        <div class="mic-tune">
+          <label class="sens">Sensitivity
+            <input id="sensitivity" type="range" min="1" max="10" step="1" value="5" aria-label="Speech sensitivity">
+          </label>
+          <span id="ambient" class="ambient" aria-live="off">Noise --</span>
+        </div>
       </div>
       <div class="controls">
         <button type="button" id="start-camera" aria-pressed="false">Camera on</button>

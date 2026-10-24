@@ -1,5 +1,5 @@
 import { createEarlyFinal } from "./turn.js";
-import { BARGE_VAD, initialBarge, nextBarge } from "./realtime.js";
+import { BARGE_VAD, DEFAULT_SENSITIVITY, NOISY_AMBIENT, initialBarge, nextBarge, vadSettings } from "./realtime.js";
 
 // Browser mic, speech-to-text, and talk-back for the call page.
 // No recording, no storage, and no logging. Status leaves only through onState.
@@ -24,6 +24,16 @@ const DUCK_LEVEL = 0.15;
 export const VAD_FLUSH_MS = 120;
 const QUICK_END_MS = 1500;
 const QUICK_END_LIMIT = 3;
+// Calibration: the first second of mic level after start is the room's noise.
+const CALIBRATE_MS = 1000;
+// Browser speech cleanup on, one channel, 16 kHz when the browser honours it (Chrome, Brave, Safari).
+export const MIC_CONSTRAINTS = Object.freeze({
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+  channelCount: 1,
+  sampleRate: { ideal: 16000 },
+});
 
 export function wordCount(text) {
   return wordsOf(text).length;
@@ -176,6 +186,13 @@ export function createVoice(options = {}) {
   const onVad = options.onVad || noop;
   const neuralWanted = options.neuralVad !== undefined ? Boolean(options.neuralVad) : defaultNeuralWanted();
   const vadLoader = options.vadLoader || loadVadWeb;
+  const onAmbient = options.onAmbient || noop;
+  let sensitivity = Number.isFinite(options.sensitivity) ? options.sensitivity : DEFAULT_SENSITIVITY;
+  let ambient = null;
+  let calibration = null;
+  let holdMode = Boolean(options.holdToTalk);
+  let holding = false;
+  let micSettings = null;
 
   const early = createEarlyFinal(onFinal, clock);
   let recGeneration = 0;
@@ -212,7 +229,7 @@ export function createVoice(options = {}) {
   let mediaStream = null;
   const captureNodes = [];
   let workletUrl = "";
-  let vad = createVad({ threshold: SPEECH_RMS, hangMs: HANG_MS });
+  let vad = createVad({ threshold: vadSettings(sensitivity, ambient).energyThreshold, hangMs: HANG_MS });
   let pieces = [];
   let queued = 0;
   let sentInUtt = 0;
@@ -610,8 +627,24 @@ export function createVoice(options = {}) {
     return Boolean(md && typeof md.getUserMedia === "function");
   }
 
+  function noteSettings(stream) {
+    try {
+      const track = stream && typeof stream.getAudioTracks === "function" ? stream.getAudioTracks()[0] : null;
+      const got = track && typeof track.getSettings === "function" ? track.getSettings() : null;
+      if (got) {
+        micSettings = {};
+        for (const key of ["echoCancellation", "noiseSuppression", "autoGainControl", "channelCount", "sampleRate"]) {
+          if (key in got) micSettings[key] = got[key];
+        }
+      }
+    } catch {
+      // settings are informational
+    }
+    return stream;
+  }
+
   function requestMic() {
-    const constraints = { audio: { echoCancellation: true, noiseSuppression: true } };
+    const constraints = { audio: { ...MIC_CONSTRAINTS } };
     if (typeof options.getUserMedia === "function") return Promise.resolve(options.getUserMedia(constraints));
     const md = globalThis.navigator && globalThis.navigator.mediaDevices;
     if (!md || typeof md.getUserMedia !== "function") return Promise.reject(new Error("no mic"));
@@ -625,9 +658,10 @@ export function createVoice(options = {}) {
     serverHold = false;
     dropQueue();
     releaseCapture();
-    vad = createVad({ threshold: SPEECH_RMS, hangMs: HANG_MS });
+    vad = createVad({ threshold: vadSettings(sensitivity, ambient).energyThreshold, hangMs: HANG_MS });
+    calibration = { until: now() + CALIBRATE_MS, samples: [] };
     try {
-      const stream = await requestMic();
+      const stream = noteSettings(await requestMic());
       if (token !== captureGen || !listening) {
         stopTracks(stream);
         return;
@@ -698,6 +732,14 @@ export function createVoice(options = {}) {
     if (down.length === 0) return;
     const energy = rms(down);
     emitLevel(energy);
+    if (holdMode) {
+      // Hold to talk: the button decides the utterance; the VAD is not asked.
+      if (holding) {
+        appendSamples(down);
+        drain(false);
+      }
+      return;
+    }
     const verdict = vad.push(energy, now());
     if (serverHold) {
       if (verdict === "end" || verdict === "silence") serverHold = false;
@@ -831,8 +873,36 @@ export function createVoice(options = {}) {
     return outputGain;
   }
 
+  // Ambient noise: the median of the first second after start, then a slow floor tracker.
+  function trackAmbient(e) {
+    const t = now();
+    if (calibration) {
+      calibration.samples.push(e);
+      if (t < calibration.until) return;
+      const sorted = calibration.samples.slice().sort((a, b) => a - b);
+      calibration = null;
+      setAmbient(sorted[Math.floor(sorted.length / 2)] || 0, true);
+      return;
+    }
+    if (ambient == null) return;
+    const next = e < ambient ? ambient * 0.9 + e * 0.1 : ambient * 0.998 + e * 0.002;
+    if (Math.abs(next - ambient) > ambient * 0.25) setAmbient(next, false);
+    else ambient = next;
+  }
+
+  function setAmbient(value, calibrated) {
+    ambient = value;
+    vad = createVad({ threshold: vadSettings(sensitivity, ambient).energyThreshold, hangMs: HANG_MS });
+    try {
+      onAmbient({ rms: ambient, noisy: ambient > NOISY_AMBIENT, calibrated });
+    } catch {
+      // the page owns the readout
+    }
+  }
+
   function emitLevel(energy) {
     const e = Number.isFinite(energy) ? Math.max(0, energy) : 0;
+    trackAmbient(e);
     meterSmooth = meterSmooth * 0.72 + e * 0.28;
     const level = Math.min(1, meterSmooth / 0.12);
     try {
@@ -843,7 +913,7 @@ export function createVoice(options = {}) {
   }
 
   function requestLevelMic() {
-    const constraints = { audio: true };
+    const constraints = { audio: { ...MIC_CONSTRAINTS } };
     if (typeof options.getUserMedia === "function") return Promise.resolve(options.getUserMedia(constraints));
     const md = globalThis.navigator && globalThis.navigator.mediaDevices;
     if (!md || typeof md.getUserMedia !== "function") return Promise.reject(new Error("no mic"));
@@ -866,7 +936,8 @@ export function createVoice(options = {}) {
           stopTracks(stream);
           return;
         }
-        meterStream = stream;
+        meterStream = noteSettings(stream);
+        calibration = { until: now() + CALIBRATE_MS, samples: [] };
         const ctx = ensureAudio();
         if (!ctx || typeof ctx.createAnalyser !== "function" || typeof ctx.createMediaStreamSource !== "function") {
           stopBrowserMeter();
@@ -990,12 +1061,16 @@ export function createVoice(options = {}) {
       const lib = await vadLoader();
       if (token !== neuralGen || !listening || !lib || !lib.MicVAD) return;
       const ctx = ensureAudio();
+      const tuned = vadSettings(sensitivity, ambient);
       const instance = await lib.MicVAD.new({
         ...BARGE_VAD,
+        positiveSpeechThreshold: tuned.positiveSpeechThreshold,
+        negativeSpeechThreshold: tuned.negativeSpeechThreshold,
+        minSpeechMs: tuned.minSpeechMs,
         baseAssetPath: VAD_WEB_BASE,
         onnxWASMBasePath: VAD_ORT_BASE,
         ...(ctx ? { audioContext: ctx } : {}),
-        getStream: options.vadGetStream || (() => requestMic()),
+        getStream: options.vadGetStream || (async () => noteSettings(await requestMic())),
         onSpeechStart: () => vadEvent("start"),
         onSpeechRealStart: () => vadEvent("real_start"),
         onVADMisfire: () => vadEvent("misfire"),
@@ -1074,6 +1149,41 @@ export function createVoice(options = {}) {
     isSpeaking,
     isListening() { return listening; },
     neuralVadActive() { return Boolean(neural); },
+    setSensitivity(next) {
+      sensitivity = vadSettings(next, ambient).sensitivity;
+      vad = createVad({ threshold: vadSettings(sensitivity, ambient).energyThreshold, hangMs: HANG_MS });
+      if (neural) {
+        stopNeural();
+        void startNeural();
+      }
+      return sensitivity;
+    },
+    getSensitivity() { return sensitivity; },
+    ambient() { return ambient; },
+    micSettings() { return micSettings; },
+    setHoldMode(on) {
+      holdMode = Boolean(on);
+      if (!holdMode && holding) this.holdEnd();
+      return holdMode;
+    },
+    holdMode() { return holdMode; },
+    // Press: stop the AI and open an utterance. Release: send it to server Whisper.
+    holdStart() {
+      if (!serverMode || !listening) return false;
+      holding = true;
+      dropQueue();
+      sentInUtt = 0;
+      utteranceOpen = true;
+      considerServerBarge();
+      return true;
+    },
+    holdEnd() {
+      if (!holding) return false;
+      holding = false;
+      if (utteranceOpen) drain(true);
+      utteranceOpen = false;
+      return true;
+    },
     vadEvent,
     unlockAudio,
     setVolume,
