@@ -36,3 +36,5 @@ eval/out/
 # Local agent briefs and MCP config
 brief*.md
 .mcp.json
+# Agent worktree copies (never tracked)
+.claude/worktrees/
