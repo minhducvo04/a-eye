@@ -68,6 +68,11 @@ function boot() {
   const sessionId = randomId();
   const params = new URLSearchParams(location.search);
   const tts = params.get("tts") === "server" ? "server" : "browser";
+  const stt = params.get("stt") === "server" ? "server" : "browser";
+  const sttLabel = document.createElement("span");
+  sttLabel.className = "stt-mode";
+  sttLabel.textContent = stt === "server" ? "Whisper" : "Browser";
+  micBtn.insertAdjacentElement("afterend", sttLabel);
   const reducedQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 
   let pack = "";
@@ -120,6 +125,18 @@ function boot() {
         session_id: sessionId,
         utterance_id: id,
         at_ms: Math.max(0, Math.round(Number(ms) || 0)),
+      });
+    },
+    sttMode: stt,
+    onAudioChunk: (pcm16Base64, seq, final) => {
+      send({
+        v: 2,
+        type: "audio_in",
+        session_id: sessionId,
+        seq,
+        sample_rate: 16000,
+        pcm16_b64: pcm16Base64,
+        final: Boolean(final),
       });
     },
   });
@@ -198,6 +215,7 @@ function boot() {
         pack,
         client: "web",
         tts,
+        stt,
       };
       if (pack === "pc_build") hello.board_id = BOARD_ID;
       send(hello);
