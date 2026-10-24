@@ -9,6 +9,7 @@ import asyncio
 import base64
 import io
 import json
+import os
 import statistics
 import sys
 import time
@@ -45,7 +46,7 @@ async def main(url, turns):
         async def send(kind, **fields):
             await ws.send(json.dumps(dict(v=2, type=kind, session_id=sid, **fields)))
 
-        await send('hello', pack='pc_build', tts='browser', stt='browser', camera=True)
+        await send('hello', pack='pc_build', tts=os.environ.get('BENCH_TTS', 'browser'), stt='browser', camera=True)
         seq = 0
 
         async def frames():
@@ -75,7 +76,7 @@ async def main(url, turns):
             asked = time.monotonic()
             age = (asked - last_track) * 1000 if last_track else None
             await send('user_text', text=QUESTIONS[i % len(QUESTIONS)], final=True, source='typed')
-            first_say = first_draw = None
+            first_say = first_draw = first_audio = None
             says = []
             while True:
                 try:
@@ -85,18 +86,23 @@ async def main(url, turns):
                 if msg['type'] == 'say':
                     says.append(msg['text'])
                     first_say = first_say or (at - asked) * 1000
+                if msg['type'] == 'audio' and msg.get('pcm16_b64'):
+                    first_audio = first_audio or (at - asked) * 1000
                 if msg['type'] == 'draw' and len(msg['ops']) > 1:
                     first_draw = first_draw or (at - asked) * 1000
                 if msg['type'] == 'turn' and msg['stage'] in ('done', 'failed', 'cancelled'):
                     break
-            rows.append((first_say, first_draw, age, says))
-            print(f'turn {i}: first say {first_say and round(first_say)} ms, draw {first_draw and round(first_draw)} ms, '
+            rows.append((first_say, first_draw, age, says, first_audio))
+            print(f'turn {i}: first say {first_say and round(first_say)} ms, first audio {first_audio and round(first_audio)} ms, draw {first_draw and round(first_draw)} ms, '
                   f'scene age {age and round(age)} ms, parts {len(says)}: {" | ".join(says)[:160]}')
             await asyncio.sleep(1.5)
         feeder.cancel()
         listen.cancel()
     firsts = [r[0] for r in rows if r[0]]
     draws = [r[1] for r in rows if r[1]]
+    audio = [r[4] for r in rows if r[4]]
+    if audio:
+        print(f'median first server audio {statistics.median(audio):.0f} ms [{min(audio):.0f}-{max(audio):.0f}] n={len(audio)}')
     stale = sum(1 for r in rows if r[2] is None or r[2] > 1500)
     print(f'median first say {statistics.median(firsts):.0f} ms [{min(firsts):.0f}-{max(firsts):.0f}], '
           f'median first draw {statistics.median(draws):.0f} ms' if draws else 'no draws', f'n={len(rows)}, '
