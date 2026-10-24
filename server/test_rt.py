@@ -114,7 +114,9 @@ def test_audio_stt_turn_and_fallback(down):
         assert calls == [dict(pcm16_b64='AAABAA==', language='en')]
 
 
-def test_nonfinal_audio_cancels_speech():
+def test_noise_audio_does_not_cancel_speech_but_barge_in_does():
+    # Loud hall (Duc, 2026-10-24): hall noise opened utterances that cut the reply. Server audio alone
+    # no longer cancels a speaking turn; the client's barge_in (sustained speech) or real words do.
     voice = StreamVoice()
     with TestClient(app(voice=voice)) as client, client.websocket_connect('/ws2') as ws:
         send(ws, 'hello', pack='general', stt='server', tts='server')
@@ -122,8 +124,11 @@ def test_nonfinal_audio_cancels_speech():
         send(ws, 'user_text', text='point', final=True)
         assert [receive(ws)['type'] for _ in range(5)][-1] == 'audio'
         send(ws, 'audio_in', seq=1, pcm16_b64='AAA=', final=False)
-        assert receive(ws)['state'] == 'listening'
+        assert not voice.cancelled.wait(0.3)
+        send(ws, 'barge_in', utterance_id='u', at_ms=100)
         assert voice.cancelled.wait(1)
+        while receive(ws).get('state') != 'listening':
+            pass
         ws.send_json({})
         assert receive(ws)['code'] == 'bad_message'
 
@@ -186,3 +191,28 @@ def test_startup_does_not_wait_for_warmup(monkeypatch):
             assert not stopped.is_set()
         assert stopped.is_set()
     asyncio.run(check())
+
+
+def test_empty_transcript_leaves_the_speaking_reply_alone():
+    class Box:
+        async def stt(self, pcm, language='en'):
+            return ''
+        async def aclose(self):
+            pass
+    voice = StreamVoice()
+    application = app(voice=voice)
+    application.state.box_v2 = Box()
+    with TestClient(application) as client, client.websocket_connect('/ws2') as ws:
+        send(ws, 'hello', pack='general', stt='server', tts='server')
+        assert receive(ws)['state'] == 'listening'
+        send(ws, 'user_text', text='point', final=True)
+        assert [receive(ws)['type'] for _ in range(5)][-1] == 'audio'
+        send(ws, 'audio_in', seq=1, pcm16_b64='AAA=', final=False)
+        send(ws, 'audio_in', seq=2, pcm16_b64='AAA=', final=True)
+        stages = []
+        while 'done' not in stages:
+            msg = ws.receive_json()
+            if msg['type'] == 'turn':
+                stages.append(msg['stage'])
+        assert 'failed' not in stages and 'cancelled' not in stages
+        assert not voice.cancelled.wait(0.3)

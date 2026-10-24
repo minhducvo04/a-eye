@@ -196,3 +196,8 @@ test('a known mic cause replaces the generic failure and clears on speech', () =
   const muted = nextTurnState(nextTurnState(undefined, { type: 'cause', detail: 'Mic blocked' }, 0), { type: 'mic_stop' }, 1);
   assert.equal(statusLine(muted, 2), 'Mic blocked');
 });
+
+test('a finished turn shows the slow part the server named', () => {
+  const s = nextTurnState(undefined, { type: 'turn', stage: 'done', turn_id: 't', detail: 'Slow: brain 1.3 s' }, 0);
+  assert.match(statusLine(s, 500), /^Done 0\.5 s · Slow: brain 1\.3 s$/);
+});

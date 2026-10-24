@@ -282,7 +282,7 @@ def planner_crop(session, scene, seq, text):
         crop = None
     return {'images': [crop]} if crop else {}
 
-async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None, planner=None):
+async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None, planner=None, stt_ms=None):
     """One voice turn. With planner set (talker + thinker mode), llm only talks and planner draws in parallel."""
     messages = []
     owner = asyncio.current_task()
@@ -373,6 +373,8 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         planner_task = asyncio.create_task(plan())
     queue = asyncio.Queue()
     first_audio = None
+    first_say_at = None
+    tts_ms = None
 
     async def audio_worker():
         nonlocal first_audio
@@ -385,6 +387,7 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                     await emit(audio)
                     if first_audio is None:
                         first_audio = (monotonic() - started) * 1000
+                        tts_ms = (monotonic() - first_say_at) * 1000 if first_say_at else None
             finally:
                 queue.task_done()
 
@@ -392,12 +395,14 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
     part = 0
 
     async def speech(value, final=False, agent='helper'):
-        nonlocal part
+        nonlocal part, first_say_at
         value = safe_speech(value)
         if not value:
             return
         msg = say(value, agent)
         msg.update(turn_id=turn_id, part=part, final=final)
+        if first_say_at is None:
+            first_say_at = monotonic()
         part += 1
         await emit(msg)
         if worker:
@@ -567,5 +572,9 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                    brain_first_token_ms=first_token or 0, turn_ms=(monotonic() - started) * 1000)
     if first_audio is not None:
         timings['first_audio_ms'] = first_audio
+    if tts_ms is not None:
+        timings['tts_ms'] = tts_ms
+    if stt_ms is not None:
+        timings['stt_ms'] = stt_ms
     await emit(message('metrics', **timings))
     return messages

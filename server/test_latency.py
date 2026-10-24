@@ -158,7 +158,8 @@ def test_final_audio_metrics_include_stt(monkeypatch):
             validate('server_message_v2', msg)
             if msg['type'] == 'metrics' and 'turn_id' in msg:
                 assert msg['turn_ms'] >= msg['first_audio_ms'] >= 80
-                assert 'stt_ms' not in msg and 'track_ms' not in msg
+                # Timeline split for the status strip (2026-10-24): STT wait is its own metric now.
+                assert msg['first_audio_ms'] >= msg['stt_ms'] >= 80 and 'track_ms' not in msg
                 break
 
 

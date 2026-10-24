@@ -43,7 +43,9 @@ export function statusLine(state, nowMs) {
   if (['idle', 'muted'].includes(s.stage)) return s.cause || label;
   const elapsed = `${(Math.max(0, nowMs - s.since) / 1000).toFixed(1)} s`;
   const typical = s.stage === 'thinking' && s.typicalMs != null ? ` · usually ${(s.typicalMs / 1000).toFixed(1)} s` : '';
-  return `${label} ${elapsed}${typical}${s.stage === 'hearing' && s.text ? ` · ${s.text}` : ''}`;
+  // The server names the part of a finished turn that went over budget ("Slow: brain 1.3 s").
+  const slow = s.stage === 'done' && s.detail ? ` · ${s.detail}` : '';
+  return `${label} ${elapsed}${typical}${slow}${s.stage === 'hearing' && s.text ? ` · ${s.text}` : ''}`;
 }
 
 // Recognition result ids distinguish a late final from a genuinely new utterance.

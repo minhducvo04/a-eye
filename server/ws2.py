@@ -6,7 +6,7 @@ import hashlib
 import os
 import io
 import re
-from contextlib import aclosing, asynccontextmanager
+from contextlib import aclosing, asynccontextmanager, nullcontext
 from datetime import datetime, timezone
 
 from anyio import CancelScope
@@ -35,6 +35,42 @@ PARTIAL_EVERY_BYTES = int(16000 * 2 * 0.3)  # a partial transcript per 300 ms of
 PARTIAL_MIN_BYTES = int(16000 * 2 * 0.5)
 PARTIAL_WAIT_S = 0.6          # at the final, wait this long for an in-flight partial
 TAIL_MAX_BYTES = int(16000 * 2 * 0.9)
+
+
+_FILLER_WORDS = {'uh', 'um', 'umm', 'hmm', 'mm', 'mhm', 'ah', 'oh', 'er', 'erm', 'huh', 'you', 'the', 'a', 'and',
+                 'so', 'okay', 'ok', 'like', 'i'}
+_NOISE_PHRASES = {'thank you', 'thanks for watching', 'thank you for watching', 'bye', 'you', 'thank you very much'}
+_ONE_WORD = {'yes', 'no', 'yeah', 'yep', 'nope', 'help', 'next', 'stop', 'done', 'wait', 'again', 'hello', 'hi'}
+
+
+def meaningful(text):
+    """Real words worth a turn: two or more non-filler words, or one known command word."""
+    words = re.findall(r"[a-z0-9']+", (text or '').lower())
+    if not words or ' '.join(words) in _NOISE_PHRASES:
+        return False
+    if len(words) == 1:
+        return words[0] in _ONE_WORD
+    return not all(word in _FILLER_WORDS for word in words)
+
+
+# Budget per part of a voice turn; the status strip names the part that went over.
+SLOW_BUDGET_MS = (('stt_ms', 'speech recognition', 500), ('brain_first_token_ms', 'brain', 900),
+                  ('tts_ms', 'voice', 500))
+
+
+def slow_part(metrics):
+    """'Slow: brain 1.3 s' for the part furthest over its budget, or '' when every part is in budget."""
+    worst, over = '', 0
+    for key, name, budget in SLOW_BUDGET_MS:
+        value = metrics.get(key)
+        if isinstance(value, (int, float)) and value - budget > over:
+            worst, over = f'Slow: {name} {value / 1000:.1f} s', value - budget
+    return worst
+
+
+def cloud_brain():
+    return (bool(os.environ.get('ANTHROPIC_API_KEY')) and os.environ.get('LOCAL_ONLY') != '1'
+            and os.environ.get('LLM_PROVIDER', 'auto') in ('auto', 'claude'))
 
 
 def quiet_tail(pcm, upto, ratio=0.3):
@@ -192,6 +228,7 @@ async def websocket(ws: WebSocket):
     paired_call = None
     turn_task = None
     current_turn = None
+    pending_turn = None
     audio_tasks = {}
     scene_loop_task = None
     voice = None
@@ -277,7 +314,9 @@ async def websocket(ws: WebSocket):
     class TurnBrain:
         async def stream(self, *args, **kwargs):
             try:
-                async with gate.hold(brain=True):
+                # Only a local brain needs the GPU; a Claude turn must not hold the scene feed back.
+                hold = gate.hold(brain=True) if not cloud_brain() else nullcontext()
+                async with hold:
                     options = {}
                     if isinstance(llm, LLMClient):
                         async def backup():
@@ -300,8 +339,13 @@ async def websocket(ws: WebSocket):
             if rewind_mod.wants_rewind(session, text):
                 await rewind_mod.rewind_turn(session, text, session.rewind, vision=vision, turn_id=lifecycle.id)
             else:
-                await run_turn(session, text, vision=vision, llm=TurnBrain(),
-                               started_at=lifecycle.started, turn_id=lifecycle.id, planner=llm if duo else None)
+                messages = await run_turn(session, text, vision=vision, llm=TurnBrain(),
+                                          started_at=lifecycle.started, turn_id=lifecycle.id,
+                                          planner=llm if duo else None, stt_ms=getattr(lifecycle, 'stt_ms', None))
+                slow = slow_part(next((m for m in reversed(messages or []) if m['type'] == 'metrics'), {}))
+                if slow:
+                    await lifecycle.stage('done', detail=slow)
+                    return
             await lifecycle.stage('done')
         except asyncio.CancelledError:
             await lifecycle.stage('cancelled')
@@ -355,7 +399,7 @@ async def websocket(ws: WebSocket):
         partial['task'] = asyncio.create_task(run_partial(bytes(audio_buffer), partial['gen']))
 
     async def transcribe(pcm, lifecycle, guess=None):
-        nonlocal stt_failed, stt_mode
+        nonlocal stt_failed, stt_mode, current_turn
         try:
             await lifecycle.stage('transcribing')
             text = None
@@ -374,11 +418,17 @@ async def websocket(ws: WebSocket):
                 partial.update(task=None, upto=0, text='')
             if text is None:
                 text = await box.stt(pcm)
-            if text.strip():
-                await start_text(text, lifecycle)
-            else:
+            if not meaningful(text):
+                # Silent: no "Didn't catch that", and the reply that is speaking is left alone.
+                event('stt_noise', session.session_id, ms=len(pcm) / 32)
                 session.voice_pending = False
-                await lifecycle.stage('failed', detail="Didn't catch that")
+                await lifecycle.stage('done')
+                return
+            await cancel_turn()
+            await cancel_audio()
+            current_turn = lifecycle
+            lifecycle.stt_ms = (monotonic() - lifecycle.started) * 1000
+            await start_text(text, lifecycle)
         except asyncio.CancelledError:
             await lifecycle.stage('cancelled')
             raise
@@ -504,24 +554,32 @@ async def websocket(ws: WebSocket):
                 paired_call.local_on = incoming['on']
             if kind in ('camera', 'frame') and paired_call.camera is not None:
                 continue
-            final_input = (kind == 'user_text' or (kind == 'audio_in' and stt_mode == 'server')) and incoming.get('final', False)
+            server_audio = kind == 'audio_in' and stt_mode == 'server'
+            final_input = (kind == 'user_text' or server_audio) and incoming.get('final', False)
             if final_input:
                 lifecycle = Turn(session, send, received_at)
                 await lifecycle.stage('received', **({'text': incoming['text']} if kind == 'user_text' else {}))
                 await cancel_stt()
-                await cancel_turn()
-                await cancel_audio()
-                current_turn = lifecycle
+                if server_audio:
+                    # Hall noise opens utterances that Whisper returns empty: the turn that is speaking
+                    # keeps going until this transcript turns out to be real words (see transcribe).
+                    pending_turn = lifecycle
+                else:
+                    await cancel_turn()
+                    await cancel_audio()
+                    current_turn = lifecycle
             speech_start = ((kind == 'audio_in' and not incoming.get('final', False)) or
                             (kind == 'user_text' and not incoming['final']))
             if speech_start and not session.user_speaking:
-                was_speaking = bool(active_audio)
-                await cancel_stt()
-                await cancel_turn()
-                await cancel_audio()
-                if was_speaking:
-                    await send(state('listening'))
-                session.voice_pending = False
+                if not server_audio:
+                    # Server audio barges only through the client's barge_in (sustained speech) or real words.
+                    was_speaking = bool(active_audio)
+                    await cancel_stt()
+                    await cancel_turn()
+                    await cancel_audio()
+                    if was_speaking:
+                        await send(state('listening'))
+                    session.voice_pending = False
                 session.user_speaking = True
                 if monotonic() - session.scene_time > .5 and session.scene_task is None:
                     session.refresh_requested.set()
@@ -538,11 +596,6 @@ async def websocket(ws: WebSocket):
                     session.frame_time = monotonic()
                     await asyncio.sleep(0)
             elif kind == 'audio_in' and stt_mode == 'server':
-                if not incoming.get('final', False) and active_audio:
-                    await cancel_stt()
-                    await cancel_turn()
-                    await cancel_audio()
-                    await send(state('listening'))
                 try:
                     chunk = base64.b64decode(incoming['pcm16_b64'], validate=True)
                     if len(chunk) % 2 or len(audio_buffer) + len(chunk) > 16000 * 2 * 60:
@@ -553,7 +606,7 @@ async def websocket(ws: WebSocket):
                     session.voice_pending = False
                     session.user_speaking = False
                     if final_input:
-                        await current_turn.stage('failed', detail="Didn't catch that")
+                        await pending_turn.stage('failed', detail="Didn't catch that")
                     await send(message('error', code='bad_message', message='Invalid audio.'))
                     continue
                 if incoming.get('final', False):
@@ -561,7 +614,7 @@ async def websocket(ws: WebSocket):
                     guess = (partial['task'], partial['gen'])
                     audio_buffer.clear()  # the partial state stays until transcribe has read it
                     session.voice_pending = True
-                    stt_task = asyncio.create_task(transcribe(pcm, current_turn, guess))
+                    stt_task = asyncio.create_task(transcribe(pcm, pending_turn, guess))
                 else:
                     maybe_partial()
             elif kind == 'user_text' and incoming['final']:

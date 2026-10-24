@@ -344,18 +344,19 @@ test("server mode sends 200 ms chunks then a final chunk", async () => {
   await voice.startListening();
   assert.deepEqual(cap.constraints, [{ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1, sampleRate: { ideal: 16000 } } }]);
   cap.feed(48, 0, 0, clock);
-  cap.feed(21000, 0.5, 10, clock);
-  cap.feed(48, 0, 500, clock);
+  // 21000 samples at 48 kHz in ten frames; the first 400 ms wait in the preroll, then all of it is sent.
+  for (let i = 0; i < 10; i++) cap.feed(2100, 0.5, 10 + i * 50, clock);
+  cap.feed(48, 0, 900, clock);
   assert.equal(chunks.length, 3);
   assert.deepEqual(
     chunks.map((chunk) => [chunk.seq, chunk.final, chunk.n]),
     [
       [0, false, 3200],
       [1, false, 3200],
-      [2, true, 600],
+      [2, true, 616], // includes the 16 preroll samples from before speech
     ],
   );
-  assert.equal(pcm16ToFloat32(chunks[0].b64)[0], 0.5);
+  assert.equal(pcm16ToFloat32(chunks[0].b64)[16], 0.5);
   voice.stopListening();
   assert.equal(cap.stops.length, 1);
   cap.feed(21000, 0.5, 2000, clock);
@@ -385,11 +386,13 @@ test("server mode barge-in fires once", async () => {
   await voice.startListening();
   cap.feed(48, 0, 1250, clock);
   cap.feed(480, 0.5, 1250, clock);
-  assert.deepEqual(events.barges, [["utt-9", 250, false]]);
+  assert.deepEqual(events.barges, []); // under MIN_UTTERANCE_MS: noise until proven speech
+  cap.feed(480, 0.5, 1650, clock);
+  assert.deepEqual(events.barges, [["utt-9", 650, false]]);
   assert.equal(synth.cancels, cancels + 1);
   assert.equal(cap.ctx.stops, 1);
   assert.equal(voice.isSpeaking(), false);
-  cap.feed(480, 0.5, 1300, clock);
+  cap.feed(480, 0.5, 1700, clock);
   assert.equal(events.barges.length, 1);
 });
 
@@ -663,4 +666,34 @@ test("chosen mic: exact deviceId, live switch restarts capture, missing device r
   });
   await gone.startListening();
   assert.deepEqual(errors, ["missing"]);
+});
+
+test("loud room: a short noise burst sends nothing; barge-in needs 700 ms of sustained speech", async () => {
+  const cap = serverCapture();
+  const chunks = [];
+  const barges = [];
+  const clock = { t: 0 };
+  const voice = createVoice({
+    sttMode: "server",
+    synth: fakeSynth(),
+    audioContextFactory: () => cap.ctx,
+    getUserMedia: cap.getUserMedia,
+    now: () => clock.t,
+    onBargeIn: (id) => barges.push(id),
+    onAudioChunk: (b64, seq, final) => chunks.push(final),
+  });
+  await voice.startListening();
+  for (let t = 0; t <= 1100; t += 100) cap.feed(480, 0.03, t, clock); // calibrates a loud floor
+  voice.playPcm("u1", pcm16Base64(new Array(800).fill(0)), false);
+  cap.feed(480, 0.5, 1200, clock);
+  cap.feed(480, 0.5, 1450, clock);   // 250 ms burst
+  cap.feed(480, 0.03, 1500, clock);
+  cap.feed(480, 0.03, 2000, clock);
+  assert.deepEqual(chunks, []);
+  assert.deepEqual(barges, []);
+  for (let t = 2100; t <= 2600; t += 100) cap.feed(480, 0.5, t, clock); // 500 ms: an utterance, no barge yet
+  assert.deepEqual(barges, []);
+  cap.feed(480, 0.5, 2800, clock);   // 700 ms sustained
+  assert.deepEqual(barges, ["u1"]);
+  voice.stopListening();
 });

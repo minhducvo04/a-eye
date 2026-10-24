@@ -2609,6 +2609,16 @@
     "track_ms": {
      "type": "number",
      "minimum": 0
+    },
+    "stt_ms": {
+     "type": "number",
+     "minimum": 0,
+     "description": "Server STT: final audio received to transcript ready."
+    },
+    "tts_ms": {
+     "type": "number",
+     "minimum": 0,
+     "description": "First spoken clause sent to its first audio chunk."
     }
    }
   },

@@ -135,7 +135,7 @@ export interface SceneResponse { caption: string; objects: SceneObject[]; source
 export interface DrawAnchor { object_id: string; bbox: BBox }
 // Every DrawOp may carry: anchor?: DrawAnchor  (the client moves the op with its tracked region)
 export interface V2SayStreamFields { turn_id?: string; part?: number; final?: boolean }
-export interface V2Metrics { v: V2; type: "metrics"; turn_id?: string; seq?: number; vlm_ms?: number; brain_first_token_ms?: number; first_audio_ms?: number; turn_ms?: number; track_ms?: number }
+export interface V2Metrics { v: V2; type: "metrics"; turn_id?: string; seq?: number; vlm_ms?: number; brain_first_token_ms?: number; first_audio_ms?: number; turn_ms?: number; track_ms?: number; stt_ms?: number; tts_ms?: number }
 export interface V2Track { v: V2; type: "track"; seq: number; objects: SceneObject[] }
 
 // v2.2 (additive): server speech to text. V2Hello may carry stt?: "browser" | "server".

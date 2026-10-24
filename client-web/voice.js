@@ -27,7 +27,11 @@ const QUICK_END_MS = 1500;
 const QUICK_END_LIMIT = 3;
 // Calibration: the first second of mic level after start is the room's noise.
 const CALIBRATE_MS = 1000;
-export const NOISY_MIN_SPEECH_MS = 300;
+// An utterance needs this much voiced audio above the calibrated floor before anything is sent
+// (hall noise bursts opened utterances that Whisper returned empty, 2026-10-24 live log).
+export const MIN_UTTERANCE_MS = 400;
+// In a loud room a barge-in needs sustained speech, so crowd noise cannot cut the reply.
+export const NOISY_BARGE_MS = 700;
 const PREROLL_SAMPLES = PCM_RATE / 2; // 500 ms kept so a delayed start keeps the first syllable
 // Browser speech cleanup on, one channel, 16 kHz when the browser honours it (Chrome, Brave, Safari).
 export const MIC_CONSTRAINTS = Object.freeze({
@@ -243,6 +247,7 @@ export function createVoice(options = {}) {
   let vad = createVad(energyVadOptions());
   let pieces = [];
   let preroll = [];
+  let bargeArmedAt = null;
   let prerollSamples = 0;
   let queued = 0;
   let sentInUtt = 0;
@@ -682,10 +687,12 @@ export function createVoice(options = {}) {
     return Boolean(md && typeof md.getUserMedia === "function");
   }
 
-  // In a loud room, a barge-in or a new utterance needs NOISY_MIN_SPEECH_MS of speech above the floor.
+  function loudRoom() {
+    return ambient != null && ambient > NOISY_AMBIENT;
+  }
+
   function energyVadOptions() {
-    const noisy = ambient != null && ambient > NOISY_AMBIENT;
-    return { threshold: vadSettings(sensitivity, ambient).energyThreshold, hangMs: HANG_MS, minMs: noisy ? NOISY_MIN_SPEECH_MS : 0 };
+    return { threshold: vadSettings(sensitivity, ambient).energyThreshold, hangMs: HANG_MS, minMs: MIN_UTTERANCE_MS };
   }
 
   function noteSettings(stream) {
@@ -816,16 +823,25 @@ export function createVoice(options = {}) {
       dropQueue();
       sentInUtt = 0;
       utteranceOpen = true;
-      considerServerBarge();
-      if (energyVadOptions().minMs > 0) for (const frame of preroll) appendSamples(frame);
+      // Speech began MIN_UTTERANCE_MS ago. In a loud room the barge waits for NOISY_BARGE_MS of it.
+      bargeArmedAt = now() - MIN_UTTERANCE_MS;
+      if (!loudRoom()) {
+        bargeArmedAt = null;
+        considerServerBarge();
+      }
+      for (const frame of preroll) appendSamples(frame);
       preroll = [];
       prerollSamples = 0;
     } else if (verdict === "end") {
+      bargeArmedAt = null;
       if (utteranceOpen) drain(true);
       utteranceOpen = false;
       return;
     } else if (!utteranceOpen) {
       return;
+    } else if (bargeArmedAt != null && now() - bargeArmedAt >= NOISY_BARGE_MS) {
+      bargeArmedAt = null;
+      considerServerBarge();
     }
     appendSamples(down);
     drain(false);
@@ -1135,7 +1151,7 @@ export function createVoice(options = {}) {
         ...BARGE_VAD,
         positiveSpeechThreshold: tuned.positiveSpeechThreshold,
         negativeSpeechThreshold: tuned.negativeSpeechThreshold,
-        minSpeechMs: tuned.minSpeechMs + (ambient != null && ambient > NOISY_AMBIENT ? 150 : 0),
+        minSpeechMs: ambient != null && ambient > NOISY_AMBIENT ? Math.max(tuned.minSpeechMs, NOISY_BARGE_MS) : tuned.minSpeechMs,
         baseAssetPath: VAD_WEB_BASE,
         onnxWASMBasePath: VAD_ORT_BASE,
         ...(ctx ? { audioContext: ctx } : {}),

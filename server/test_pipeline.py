@@ -72,7 +72,7 @@ def finish(ws):
     return messages
 
 
-@pytest.mark.parametrize('text', ['', 'hello'])
+@pytest.mark.parametrize('text', ['', 'Thank you.', 'uh um', 'hello'])
 def test_server_stt(text):
     class Box:
         async def stt(self, pcm):
@@ -87,10 +87,11 @@ def test_server_stt(text):
         send(ws, 'audio_in', seq=1, pcm16_b64='AAA=', final=True)
         messages = finish(ws)
         stages = [m['stage'] for m in messages if m['type'] == 'turn']
-        assert stages == (['received', 'transcribing', 'thinking', 'speaking', 'done'] if text else
-                          ['received', 'transcribing', 'failed'])
-        if not text:
-            assert messages[-1]['detail'] == "Didn't catch that"
+        # Empty, hallucinated or filler-only transcripts end silently (no "Didn't catch that").
+        real = text == 'hello'
+        assert stages == (['received', 'transcribing', 'thinking', 'speaking', 'done'] if real else
+                          ['received', 'transcribing', 'done'])
+        assert not any(m.get('detail') == "Didn't catch that" for m in messages)
 
 
 def test_timeout_backup_same_turn(monkeypatch):
