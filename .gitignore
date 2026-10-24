@@ -23,3 +23,16 @@ build/
 coverage/
 # Agent run logs
 *.log
+# A-eye privacy: video, frames and audio never enter git
+clips/
+frames/
+recordings/
+*.mp4
+*.mov
+*.m4a
+*.wav
+data/private/
+eval/out/
+# Local agent briefs and MCP config
+brief*.md
+.mcp.json

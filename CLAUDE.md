@@ -1,11 +1,3 @@
-# Hackathon working rules
-- Project implementation starts at the event. This repository begins with tooling/templates only.
-- Speed first: build the smallest working demo; avoid speculative abstractions.
-- Test only changed behavior and affected boundaries. Run the real demo before claiming done.
-- No Kyra private data, source code, credentials, or copied application code.
-- One owner per file. Use one branch and git worktree per package; coordinate overlap first.
-- Commit often, with small useful messages. Do not publish or change repository visibility.
-- Keep secrets out of files, logs, commits and agent prompts. Use ignored .env files locally.
-- Stay inside your assigned worktree. Do not edit global agent settings or trust stores.
-- Finish each package with RESULT.md: changes, exact test command, result, and limitations.
-- Devpost deadline: Sunday 9:00 AM PT. Leave time for the demo, README and submission.
+# Claude Code
+
+Read and follow `AGENTS.md`. It is the one rulebook for every agent and human on this repo.

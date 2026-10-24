@@ -1,0 +1,90 @@
+// A-eye contracts v1, hand-written mirror of contracts/schema.json.
+// schema.json is the source of truth. Change both in the same PR.
+// Coordinates are normalized 0..1 of the sent frame. BBox is [x, y, w, h] from top-left.
+
+export type V = 1;
+export type Unit = number;
+export type BBox = [Unit, Unit, Unit, Unit];
+export type Point = [Unit, Unit];
+
+export type Item =
+  | "cpu_fan_cable" | "sys_fan_cable" | "f_panel_bundle" | "ram_stick"
+  | "sata_cable" | "m2_ssd" | "atx_24pin" | "eps_8pin";
+export const ALLOWED_PARTS: Item[] = [
+  "cpu_fan_cable", "sys_fan_cable", "f_panel_bundle", "ram_stick",
+  "sata_cable", "m2_ssd", "atx_24pin", "eps_8pin",
+];
+export type StepState = "SAFETY" | "IDENTIFY" | "LOCATE" | "GUIDE" | "AWAIT" | "VERIFY" | "DONE" | "RETRY";
+export type PartCategory = "cpu" | "board" | "ram" | "ssd" | "gpu" | "psu" | "cooler" | "case" | "fan";
+
+// ---- client -> server (WS /ws) ----
+export interface Hello { v: V; type: "hello"; session_id: string; board_id?: string; mode: "live" | "photo"; client?: "web" | "ios" }
+export interface ProjectOpen { v: V; type: "project_open"; session_id: string; project_id: string }
+export interface Frame {
+  v: V; type: "frame"; session_id: string; seq: number; ts_ms: number; w: number; h: number;
+  orientation?: "portrait" | "landscape_left" | "landscape_right" | "portrait_upside_down"; jpeg_b64: string;
+}
+export interface Photo { v: V; type: "photo"; session_id: string; seq: number; w: number; h: number; jpeg_b64: string }
+export interface Confirm { v: V; type: "confirm"; session_id: string; what: "power_off" | "seated" | "check_again" | "next" | "stop"; value: boolean }
+export interface UserText { v: V; type: "user_text"; session_id: string; text: string }
+export interface PartsScan { v: V; type: "parts_scan"; session_id: string; jpeg_b64: string }
+export interface MarketAsk { v: V; type: "market"; session_id: string; category: PartCategory; budget_usd?: number }
+export interface Audio { v: V; type: "audio"; session_id: string; utterance_id?: string; sample_rate?: 16000; pcm16_b64: string }
+export type ClientMessage = Hello | ProjectOpen | Frame | Photo | Confirm | UserText | PartsScan | MarketAsk | Audio;
+
+// ---- server -> client ----
+export interface Pin { n: number; x: Unit; y: Unit; role: "target" | "other" }
+export interface Box { id: string; header?: string; label?: string; bbox: BBox; role: "target" | "other" | "wrong" | "ok"; conf: number; pins?: Pin[] }
+export interface Overlay {
+  v: V; type: "overlay"; seq: number; level: "header" | "pin"; boxes: Box[];
+  arrow?: { from: Point; to: Point };
+  diagram?: { header: string; img: string; page?: number; rotation_deg?: number; highlight_pins?: number[] };
+}
+export interface Say { v: V; type: "say"; utterance_id: string; step_id?: string; text: string }
+export interface Step { v: V; type: "step"; step_id: string; state: StepState; item?: Item; target_header?: string; index?: number; total?: number }
+export interface Verdict { v: V; type: "verdict"; step_id: string; pass: boolean; abstain?: boolean; conf: number; reason: string; offset_pins?: number }
+export interface Parts { v: V; type: "parts"; items: Part[] }
+export interface MarketResults { v: V; type: "market_results"; result: MarketResponse }
+export interface Summary { v: V; type: "summary"; text: string; done?: string[]; failed?: string[]; to_buy?: string[] }
+export interface Annotated { v: V; type: "annotated"; seq: number; png_b64: string }
+export interface ErrorMsg {
+  v: V; type: "error";
+  code: "bad_message" | "power_off_required" | "refused_part" | "vision_unavailable" | "stale_frame" | "internal";
+  message: string;
+}
+export type ServerMessage = Overlay | Say | Step | Verdict | Parts | MarketResults | Summary | Annotated | ErrorMsg | Audio;
+
+// ---- server -> vision (HTTP JSON) ----
+export interface IdentifyRequest { image_b64: string; candidates: Item[] }
+export interface IdentifyResponse { item: Item | "unknown"; conf: number; bbox?: BBox; ms: number }
+export interface LocateRequest { image_b64: string; board_id: string; header: string; want_pins?: number[] }
+export interface LocateResponse {
+  found: boolean; bbox?: BBox; source?: "ocr" | "landmarks" | "yolo" | "fake"; conf: number; blur?: boolean; glare?: boolean;
+  others?: { header: string; bbox: BBox; conf: number }[];
+  pins?: { grid: Point[]; pin1: Point; residual: number; keyed_gap: boolean; pin_ok: boolean };
+  ms: number;
+}
+export interface VerifyRequest { image_b64: string; board_id: string; header: string; expect: { item: Item; pins?: number[] } }
+export interface VerifyResponse { pass: boolean; abstain?: boolean; conf: number; offset_pins?: number; seen_header?: string; reason: string; ms: number }
+export interface HealthResponse { ok: boolean; models: string[]; gpu?: string; fake?: boolean }
+
+// ---- voice adapter <-> orchestrator ----
+export interface VoiceSay { type: "say"; utterance_id: string; text: string }
+export interface VoiceTranscript { type: "transcript"; text: string; final: boolean; ts_ms: number }
+export interface VoiceBargeIn { type: "barge_in"; utterance_id: string; at_ms: number }
+export interface VoiceSpoken { type: "spoken"; utterance_id: string }
+
+// ---- market ----
+export interface PartSpecs {
+  socket?: string; ddr_gen?: "DDR4" | "DDR5"; dimm_format?: "DIMM" | "SODIMM"; ecc?: boolean; buffered?: boolean;
+  speed_mts?: number; max_speed_mts?: number; capacity_gb?: number; max_capacity_gb?: number; dimm_slots?: number; modules?: number;
+  form_factor?: string; tdp_w?: number; wattage_w?: number; height_mm?: number; cooler_clearance_mm?: number; pcie_gen?: number; m2_key?: string;
+}
+export interface Part { id?: string; category: PartCategory; brand?: string; model: string; specs: PartSpecs; source?: "scan" | "typed" | "fixture"; confirmed: boolean }
+export interface MarketQuery { v: V; category: PartCategory; owned_parts: Part[]; budget_usd?: number; max_results?: number }
+export interface Compat { status: "fits" | "no" | "unverified"; reasons: string[]; unknown: string[] }
+export interface Offer {
+  title: string; retailer: string; price_usd: number; shipping_usd?: number; condition?: "new" | "used" | "refurbished";
+  url: string; specs?: PartSpecs; source: "apify" | "brightdata" | "cache" | "fixture"; fetched_at: string; compat: Compat; explain?: string;
+}
+export interface MarketResponse { v: V; query_key: string; category: PartCategory; items: Offer[]; note?: string }
