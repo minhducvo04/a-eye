@@ -25,7 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PY = str(ROOT / ".venv" / "bin" / "python")
 OUT_DIR = ROOT / "docs" / "results" / "demo-rehearsal"
-REPORT = ROOT / "docs" / "results" / "demo-rehearsal.md"
+REPORT = ROOT / "docs" / "results" / "demo-rehearsal-latest.md"   # each run overwrites this one
 W, H, FPS, SECONDS, KEYS_AT = 480, 360, 5, 75, 10.0
 ASK_AT, FORGET_GAP = 24.0, 18.0
 
