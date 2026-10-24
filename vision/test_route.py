@@ -139,3 +139,21 @@ def test_bench_model_and_iou(monkeypatch, capsys):
     assert output.count("IoU=1.0000") == 3
     assert "IoU median=1.0000 min=1.0000 max=1.0000" in output
     assert "wall median_ms=" in output and "min_ms=" in output and "max_ms=" in output
+
+
+def test_long_caption_gets_enough_tokens(monkeypatch):
+    """Reported live: num_predict 40 cut a long qwen2.5vl caption mid-string, so every frame read
+    "Could not describe the frame." The caption call now asks for 15 words and allows 80 tokens."""
+    monkeypatch.setenv("VISION_CAPTION_MODEL", "qwen2.5vl:7b")
+    long_caption = ("A person holds a black four-pin fan cable above a motherboard next to a silver heatsink "
+                    "on a wooden desk under a lamp")
+    seen = {}
+    def handle(request):
+        body = json.loads(request.content)
+        seen["num_predict"] = body["options"]["num_predict"]
+        seen["prompt"] = body["messages"][0]["content"]
+        return httpx.Response(200, json={"message": {"content": json.dumps({"caption": long_caption})}})
+    real = OllamaBackend(transport=httpx.MockTransport(handle))
+    assert real.scene({"image_b64": synthetic_scene()}, "ok")["caption"] == long_caption
+    assert seen["num_predict"] >= 80 and "15 words" in seen["prompt"]
+    real.client.close()
