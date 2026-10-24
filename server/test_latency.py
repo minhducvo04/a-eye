@@ -71,7 +71,7 @@ def test_speech_refresh_and_final_reservation(monkeypatch, input_kind):
     async def warm(app):
         pass
     monkeypatch.setattr(ws2, 'warm_brain', warm)
-    monkeypatch.setenv('SCENE_INTERVAL_MS', '1')
+    monkeypatch.setenv('KEYFRAME_HEARTBEAT_S', '.5')
     refresh = threading.Event()
     brain_started = threading.Event()
     brain_release = threading.Event()
@@ -108,7 +108,7 @@ def test_speech_refresh_and_final_reservation(monkeypatch, input_kind):
         time.sleep(.51)
         fields = dict(seq=1, pcm16_b64='AAA=') if input_kind == 'audio_in' else dict(text='help')
         send(ws, input_kind, **fields, final=False)
-        # Speech cannot re-scan the unchanged frame; a new frame enables refresh.
+        # Speech refreshes a cached view older than the configured heartbeat.
         ws.send_json(dict(FRAME, seq=2))
         assert refresh.wait(.2)
         start = monotonic()

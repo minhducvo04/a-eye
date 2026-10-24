@@ -46,12 +46,13 @@ def offline_warmup(monkeypatch):
 
 
 def test_existing_scene_does_not_block_turn(monkeypatch):
-    monkeypatch.setenv('SCENE_INTERVAL_MS', '1')
+    from server.keyframes import KeyframeGate
+    monkeypatch.setenv('KEYFRAME_HEARTBEAT_S', '.001')
     async def check():
         gate = GPUGate()
         started, release, brain_started, brain_release = [asyncio.Event() for _ in range(4)]
         calls = []
-        session = Session('s', frame=FRAME, scene=SCENE)
+        session = Session('s', frame=FRAME, scene=SCENE, keyframe_gate=KeyframeGate(min_gap_s=.001))
         class Vision:
             async def call(self, operation, payload):
                 assert len(payload['queries']) <= 2

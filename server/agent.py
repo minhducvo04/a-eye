@@ -14,6 +14,7 @@ from contracts import schema, validate
 from market.search import search
 from server import packs
 from server.logs import event
+from server.keyframes import KeyframeGate, SceneMemory
 from server.boards import load_board
 from server.packs.pc_build import board_prompt
 
@@ -34,6 +35,10 @@ class Session:
     vision_error_sent: bool = False
     emit: object = field(default=None, repr=False)
     scene: dict | None = field(default=None, repr=False)
+    scene_memory: SceneMemory = field(default_factory=SceneMemory, repr=False)
+    keyframe_gate: KeyframeGate = field(default_factory=KeyframeGate, repr=False)
+    scene_scans: int = 0
+    scene_skips: int = 0
     scene_seq: int = 0
     scene_time: float = 0
     scene_task: object = field(default=None, repr=False)
@@ -308,7 +313,8 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
     # Cached grounding avoids putting a slow refresh on the voice critical path.
     if fresh and session.scene is not None:
         scene, seq = session.scene, session.scene_seq
-    system = session.pack.system_prompt
+    system = session.pack.system_prompt + (
+        " memory lists earlier views, oldest last; only the entry marked now is what the camera shows.")
     duo = planner is not None
     if not session.camera:
         system += ' The camera is off. Answer by voice only; do not draw.'
@@ -324,6 +330,7 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                + ' agent: helper or shopper; market_category: cpu, board, ram, ssd, gpu, psu, cooler, case, fan.')
     user = json.dumps(dict(caption=scene['caption'], objects=[
         {k: obj[k] for k in ('id', 'label', 'bbox')} for obj in scene['objects']],
+        memory=session.scene_memory.snapshot(monotonic(), current=bool(fresh and session.scene is not None)),
         conversation=session.history[-10:], text=text))
     planner_task = None
 

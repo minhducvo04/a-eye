@@ -2,10 +2,12 @@
 import asyncio
 import base64
 import json
+import hashlib
 import os
 import io
 import re
 from contextlib import aclosing, asynccontextmanager
+from datetime import datetime, timezone
 
 from PIL import Image
 from time import monotonic
@@ -18,6 +20,7 @@ from contracts import validate
 from server.box_client import BoxClient
 from server.auth import accept_socket
 from server.logs import event
+from server.keyframes import signature
 from server import packs
 from server.agent import Session, Turn, message, run_turn, say, state
 from server.llm import LLMClient
@@ -103,52 +106,78 @@ class SceneClient:
 
 
 async def scene_loop(session, vision, send, gate=None):
-    """Serial refreshes use only the newest frame; requests never overlap."""
+    """Select changed frames and heartbeats; serialize scans behind reserved turns."""
     gate = gate or GPUGate()
-    interval = max(0.001, float(os.environ.get('SCENE_INTERVAL_MS', '1000')) / 1000)
+    keyframes = session.keyframe_gate
     previous_seq = None
     while True:
         frame = session.frame
-        if not session.camera or session.voice_pending or frame is None or frame['seq'] == previous_seq:
+        requested = session.refresh_requested.is_set()
+        if (not session.camera or session.voice_pending or frame is None
+                or (frame['seq'] == previous_seq and not requested)):
             await asyncio.sleep(0.01)
             continue
-        started = monotonic()
-
-        async def refresh():
-            try:
-                scene = await vision.call('scene', dict(image_b64=frame['jpeg_b64'],
-                                                       queries=list(session.pack.default_queries)[:2]))
-                validate('scene_response', scene)
-                if not session.camera:
-                    return
-                session.scene = scene
-                session.scene_seq = frame['seq']
-                session.scene_time = monotonic()
-                await send(message('track', seq=frame['seq'], objects=scene['objects']))
-                await send(message('metrics', seq=frame['seq'], vlm_ms=(monotonic() - started) * 1000))
-            except Exception:
-                event('dependency_error', session.session_id, dependency='vision', level='error')
-                if not session.vision_error_sent:
-                    await send(message('error', code='vision_unavailable', message='Vision is unavailable.'))
-                    session.vision_error_sent = True
-
         async with gate.hold():
             if not session.camera or session.voice_pending or session.frame is None:
                 continue
-            session.refresh_requested.clear()
             frame = session.frame
+            observed_at = session.frame_time
+            requested = session.refresh_requested.is_set()
+            session.refresh_requested.clear()
+            if frame['seq'] == previous_seq and not (
+                    requested and monotonic() - session.scene_time >= keyframes.heartbeat_s):
+                continue
             previous_seq = frame['seq']
+            try:
+                # Decode/resize off the event loop, including larger camera frames.
+                sig = await asyncio.to_thread(signature, frame['jpeg_b64'])
+            except (ValueError, OSError):
+                session.scene_skips += 1
+                continue
+            # A turn or camera change can arrive during the Pillow worker.
+            if not session.camera or session.voice_pending or gate.brains:
+                previous_seq = None
+                continue
+            scan, reason = keyframes.should_scan(sig, monotonic())
+            if not scan:
+                session.scene_skips += 1
+                continue
+            started = monotonic()
+            session.scene_scans += 1
+
+            async def refresh():
+                try:
+                    scene = await vision.call('scene', dict(image_b64=frame['jpeg_b64'],
+                                                           queries=list(session.pack.default_queries)[:2]))
+                    validate('scene_response', scene)
+                    if not session.camera:
+                        return
+                    session.scene = scene
+                    session.scene_seq = frame['seq']
+                    session.scene_time = monotonic()
+                    session.scene_memory.add(scene, observed_at)
+                    await send(message('track', seq=frame['seq'], objects=scene['objects']))
+                except Exception:
+                    event('dependency_error', session.session_id, dependency='vision', level='error')
+                    if not session.vision_error_sent:
+                        await send(message('error', code='vision_unavailable', message='Vision is unavailable.'))
+                        session.vision_error_sent = True
+                finally:
+                    elapsed = (monotonic() - started) * 1000
+                    # Fixed metadata only: the shared logger does not allow these scene fields.
+                    print(json.dumps(dict(ts=datetime.now(timezone.utc).isoformat(),
+                        level='info', event='scene_scan',
+                        session=hashlib.sha256(session.session_id.encode()).hexdigest()[:12],
+                        seq=frame['seq'], reason=reason, scans=session.scene_scans,
+                        skips=session.scene_skips, vlm_ms=elapsed)), flush=True)
+                await send(message('metrics', seq=frame['seq'], vlm_ms=elapsed))
+
             session.scene_task = asyncio.create_task(refresh())
             try:
                 await session.scene_task
             finally:
                 session.scene_task = None
         frame = None
-        try:
-            await asyncio.wait_for(session.refresh_requested.wait(),
-                                   max(0.001, interval - (monotonic() - started)))
-        except TimeoutError:
-            pass
 
 
 @router.websocket('/ws2')
