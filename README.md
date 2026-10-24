@@ -151,6 +151,13 @@ One Cartesia clause takes 118 ms warm and 284 ms cold. More detail is in
   takes over only when Cartesia fails before any audio.
 - In a loud room, hold to talk (button or Space) is more reliable than hands-free.
 
+## Rewind: TwelveLabs
+
+Rewind is optional and off by default. A-eye keeps short clips around scene changes and indexes them with
+TwelveLabs Marengo, so you can ask "when did I plug in the CPU fan?" and get the moment with the part boxed.
+Our own vision model double-checks each hit, and clips are uploaded only while the Rewind switch is on
+(Settings, Rewind). Results: [docs/results/rewind.md](docs/results/rewind.md).
+
 ## Run it
 
 Needs Python 3.11+, [uv](https://github.com/astral-sh/uv), and Node 20+ for the web tests.
