@@ -1,9 +1,0 @@
-fastapi
-uvicorn[standard]
-httpx
-jsonschema
-python-multipart
-pytest
-websockets
-pillow
-anthropic

@@ -4,7 +4,6 @@
 import { paintDraw, applyDraw, pruneDraw, viewTransform, visibleOps } from "./draw.js";
 import { writeFrame } from "./live.js";
 import { sharpCanvasSize } from "./overlay.js";
-import { ORB_SIZE, layoutOrbs, nextPresence, paintPresence } from "./presence.js";
 import {
   AUDIO_FALLBACK_MS,
   ERROR_HTTPS,
@@ -36,12 +35,20 @@ import { applyAnchors, createTracker, toGray } from "./track.js";
 
 import { nextTurnState, statusLine } from "./turn.js";
 
-const PACK_LABEL = {
-  general: "General",
-  pc_build: "PC build",
-  cooking: "Cooking",
-  assemble: "Assemble",
-};
+// Same names and order as ios/AEyeCore Modes.all; pack null means "coming soon". PC Build is centred at launch.
+const MODES = [
+  { id: "general", title: "General", pack: "general" },
+  { id: "pc_build", title: "PC Build", pack: "pc_build" },
+  { id: "cooking", title: "Cooking", pack: "cooking" },
+  { id: "assemble", title: "Assembly", pack: "assemble" },
+  { id: "mechanic", title: "Mechanic", pack: null },
+  { id: "plumbing", title: "Plumbing", pack: null },
+  { id: "engineering", title: "Engineering", pack: null },
+];
+const DEFAULT_MODE = 1;
+const RING_SLOT = 84;
+const PACK_LABEL = Object.fromEntries(MODES.filter((m) => m.pack).map((m) => [m.pack, m.title]));
+const PRESENCE_STATES = ["idle", "listening", "thinking", "speaking"];
 
 const FRAME_MS = 1000;
 const BOARD_ID = "demo-b650";
@@ -53,16 +60,34 @@ function boot() {
   const video = document.getElementById("camera");
   const still = document.getElementById("still");
   const drawCanvas = document.getElementById("draw");
-  const presenceCanvas = document.getElementById("presence");
+  const callEl = document.getElementById("call");
+  const ringEl = document.getElementById("ring");
+  const ringTitle = document.getElementById("ring-title");
+  const ringHint = document.getElementById("ring-hint");
+  const dotEl = document.getElementById("presence-dot");
+  const elapsedEl = document.getElementById("elapsed");
+  const linkEl = document.getElementById("link");
+  const captionEl = document.getElementById("caption");
+  const captionEyebrow = document.getElementById("caption-eyebrow");
+  const captionSpeaker = document.getElementById("caption-speaker");
+  const powerGate = document.getElementById("power-gate");
+  const cameraIcon = document.getElementById("camera-icon");
+  const micIcon = document.getElementById("mic-icon");
+  const backdropEl = document.getElementById("backdrop");
+  const settingsEl = document.getElementById("settings");
+  const marketTitle = document.getElementById("market-title");
+  const permissionEl = document.getElementById("permission");
+  const permissionTitle = document.getElementById("permission-title");
+  const permissionText = document.getElementById("permission-text");
+  const connStatusEl = document.getElementById("conn-status");
+  const serverHostEl = document.getElementById("server-host");
   const packLabel = document.getElementById("pack-label");
-  const statusDot = document.getElementById("status");
   const errorEl = document.getElementById("error");
   const noticeEl = document.getElementById("notice");
   const marketEl = document.getElementById("market");
   const marketBody = document.getElementById("market-body");
   const repliesEl = document.getElementById("replies");
   const interimEl = document.getElementById("interim");
-  const callStateEl = document.getElementById("call-state");
   const typedEl = document.getElementById("typed");
   const micBtn = document.getElementById("mic");
   const holdBtn = document.getElementById("hold");
@@ -90,17 +115,19 @@ function boot() {
     if (hudRoot) hudRoot.append(devEl);
   }
 
-  const sessionId = randomId();
+  let sessionId = randomId();
   const params = new URLSearchParams(location.search);
-  // Server voice (Kokoro on the box, or Cartesia when keyed) by default; the browser voice is the last resort.
+  // Server voice (Cartesia when keyed, else Kokoro on the box) by default; the browser voice is the last resort.
+  // ?tts=cartesia means server TTS with a Cartesia voice from /api/voices.
   const storedVoice = (() => { try { return safeStorage()?.getItem("aeye.voice") || ""; } catch { return ""; } })();
-  let tts = params.get("tts") === "browser" || storedVoice === "browser" ? "browser" : "server";
+  const wantCartesia = params.get("tts") === "cartesia";
+  let tts = !wantCartesia && (params.get("tts") === "browser" || storedVoice === "browser") ? "browser" : "server";
   let ttsVoice = storedVoice && storedVoice !== "browser" ? storedVoice : "";
   const voicePick = document.getElementById("voice-pick");
   let stt = params.get("stt") === "server" ? "server" : "browser";
   const sttLabel = document.getElementById("stt-mode");
   const reducedQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-  const ui = createCallUi({ storage: safeStorage() });
+  let ui = createCallUi({ storage: safeStorage() });
 
   let pack = "";
   let socket = null;
@@ -114,8 +141,13 @@ function boot() {
   let frameTimer = 0;
   let photoUrl = "";
   let drawState = applyDraw(null, null, 0);
-  let presence = nextPresence(null, null, 0);
-  let motion = { helper: null, shopper: null };
+  // Presence as CallState.reduce does it: thinking or speaking by one agent makes the other idle.
+  let agents = { helper: "idle", shopper: "idle" };
+  let link = "connecting";
+  let ended = false;
+  let callStartedAt = 0;
+  let powerConfirmed = false;
+  let ringIndex = DEFAULT_MODE;
   let voice = null;
   let listening = false;
   let raf = 0;
@@ -162,7 +194,6 @@ function boot() {
           listening = false;
           ui.dispatch({ type: "mic_stop" });
           turnEvent({ type: "mic_stop" });
-          presence = nextPresence(presence, { type: "level", level: null }, Date.now());
         }
         renderMic();
         renderCall();
@@ -185,7 +216,6 @@ function boot() {
       onLevel: (level) => {
         const n = Number(level);
         const value = Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0;
-        presence = nextPresence(presence, { type: "level", level: value }, Date.now());
         waveLevels.push(value);
         while (waveLevels.length > 28) waveLevels.shift();
         drawWave();
@@ -260,10 +290,33 @@ function boot() {
     return seq;
   }
 
-  function setStatus(on) {
-    statusDot.classList.toggle("on", on);
-    statusDot.classList.toggle("off", !on);
-    statusDot.setAttribute("aria-label", on ? "socket connected" : "socket disconnected");
+  function setLink(next) {
+    link = next;
+    renderLink();
+  }
+
+  function renderLink() {
+    linkEl.textContent = link === "reconnecting" ? "Reconnecting…" : "Connecting…";
+    linkEl.classList.toggle("hidden", link === "live" || !pack);
+    const labels = { connecting: "Connecting…", live: "Connected", reconnecting: "Reconnecting…" };
+    if (connStatusEl) connStatusEl.textContent = pack ? labels[link] : "Not in a call";
+  }
+
+  function applyAgentState(agent, state) {
+    if (agent !== "helper" && agent !== "shopper") return;
+    if (!PRESENCE_STATES.includes(state)) return;
+    agents = { ...agents, [agent]: state };
+    if (state === "thinking" || state === "speaking") agents[agent === "helper" ? "shopper" : "helper"] = "idle";
+    renderPresence();
+  }
+
+  function renderPresence() {
+    const active = agents.shopper !== "idle" ? "shopper" : agents.helper !== "idle" ? "helper" : "";
+    const state = active ? agents[active] : "idle";
+    dotEl.setAttribute("data-agent", active);
+    dotEl.setAttribute("data-state", state);
+    const who = active === "shopper" ? "Shopper" : "Helper";
+    dotEl.setAttribute("aria-label", active ? `${who} is ${state}` : "");
   }
 
   function showProblem(text) {
@@ -328,15 +381,24 @@ function boot() {
   function connect() {
     if (!pack) return;
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
-    socket = new WebSocket(wsUrl());
-    socket.addEventListener("open", () => {
-      setStatus(true);
+    const ws = new WebSocket(wsUrl());
+    socket = ws;
+    ws.addEventListener("open", () => {
+      if (socket !== ws) return;
       reconnectDelay = 500;
+      // A fresh socket is a fresh server session: the power-off gate, drawing and presence start over.
+      powerConfirmed = false;
+      drawState = applyDraw(null, null, 0);
+      agents = { helper: "idle", shopper: "idle" };
+      ui.dispatch({ type: "error", message: "" });
+      setLink("live");
+      renderPresence();
       sendHello();
       turnEvent({ type: "connected" });
+      renderCall();
     });
-    socket.addEventListener("message", (event) => {
-      if (typeof event.data !== "string") return;
+    ws.addEventListener("message", (event) => {
+      if (socket !== ws || typeof event.data !== "string") return;
       let message;
       try {
         message = JSON.parse(event.data);
@@ -345,16 +407,15 @@ function boot() {
       }
       onServer(message);
     });
-    socket.addEventListener("close", () => {
-      setStatus(false);
+    ws.addEventListener("close", () => {
+      if (socket !== ws) return;
       socket = null;
       window.clearTimeout(retryTimer);
+      setLink("reconnecting");
       turnEvent({ type: "closed" });
+      if (ended) return;
       retryTimer = window.setTimeout(connect, reconnectDelay);
       reconnectDelay = Math.min(10000, reconnectDelay * 2);
-    });
-    socket.addEventListener("error", () => {
-      setStatus(false);
     });
   }
 
@@ -396,7 +457,7 @@ function boot() {
       return;
     }
     if (message.type === "agent_state") {
-      presence = nextPresence(presence, message, now);
+      applyAgentState(message.agent, message.state);
       ui.dispatch({ type: "agent_state", agent: message.agent, state: message.state });
       renderCall();
       return;
@@ -481,34 +542,74 @@ function boot() {
     return `$${n.toFixed(2)}`;
   }
 
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
+  // Only web links open; anything else the server sends is dropped (as MarketSheet.safeURL).
+  function safeLink(url) {
+    try {
+      const parsed = new URL(String(url || ""));
+      return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : "";
+    } catch {
+      return "";
+    }
+  }
+
+  const CHIP = { fits: "Fits", no: "Does not fit", unverified: "Unverified" };
+
   function showMarket(result) {
     marketBody.replaceChildren();
+    const category = String((result && result.category) || "");
+    marketTitle.textContent = category ? category.charAt(0).toUpperCase() + category.slice(1) : "Options";
     const items = result && Array.isArray(result.items) ? result.items.slice(0, 3) : [];
-    if (!items.length) {
-      const empty = document.createElement("p");
-      empty.className = "why";
-      empty.textContent = "No offers.";
-      marketBody.append(empty);
-    } else {
-      for (const item of items) {
-        const card = document.createElement("article");
-        card.className = "offer";
-        const title = document.createElement("h2");
-        title.textContent = item.title || "Offer";
-        const meta = document.createElement("p");
-        meta.className = "meta";
-        const price = money(item.price_usd);
-        const retailer = item.retailer || "";
-        meta.textContent = [price, retailer].filter(Boolean).join(" · ");
-        const why = document.createElement("p");
-        const line = fitsLine(item);
-        why.className = line.kind ? `why ${line.kind}` : "why";
-        why.textContent = line.text;
-        card.append(title, meta, why);
-        marketBody.append(card);
+    if (!items.length) marketBody.append(el("p", "market-empty", "No matching offers."));
+    for (const item of items) {
+      const status = item.compat && CHIP[item.compat.status] ? item.compat.status : "unverified";
+      const card = el("article", "offer glass");
+      const head = el("div", "offer-head");
+      head.append(el("p", "offer-title", item.title || "Offer"), el("span", `status-chip ${status}`, CHIP[status]));
+      card.append(head);
+      if (item.retailer) card.append(el("p", "offer-retailer", item.retailer));
+      let price = money(item.price_usd);
+      if (price && item.shipping_usd != null && money(item.shipping_usd)) price += ` + ${money(item.shipping_usd)} shipping`;
+      if (price) card.append(el("p", "offer-price", price));
+      const line = fitsLine(item);
+      if (line.text && !Object.values(CHIP).includes(line.text)) card.append(el("p", "offer-why", line.text));
+      const href = safeLink(item.url);
+      if (href) {
+        const a = el("a", "", `View at ${item.retailer || "store"} ↗`);
+        a.href = href;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        card.append(a);
       }
+      marketBody.append(card);
     }
-    marketEl.classList.remove("hidden");
+    if (result && result.note) marketBody.append(el("p", "market-note", String(result.note)));
+    openSheet(marketEl);
+  }
+
+  function openSheet(sheet) {
+    for (const other of [marketEl, settingsEl]) if (other && other !== sheet) other.classList.add("hidden");
+    sheet.classList.remove("hidden");
+    if (backdropEl) backdropEl.classList.remove("hidden");
+  }
+
+  function closeSheets() {
+    marketEl.classList.add("hidden");
+    marketBody.replaceChildren();
+    if (settingsEl) settingsEl.classList.add("hidden");
+    if (backdropEl) backdropEl.classList.add("hidden");
+  }
+
+  function showPermission(title, text) {
+    permissionTitle.textContent = title;
+    permissionText.textContent = text;
+    permissionEl.classList.remove("hidden");
   }
 
   function currentOps() {
@@ -721,7 +822,7 @@ function boot() {
 
   function placeDevHud(view, poses) {
     if (!devEl) return;
-    const box = devHudPosition(view, poses);
+    const box = devHudPosition(view, poses || {});
     devEl.style.left = `${box.x}px`;
     devEl.style.top = `${box.y}px`;
     devEl.style.width = `${box.w}px`;
@@ -766,29 +867,18 @@ function boot() {
     const reduced = reducedMotion();
     drawState = pruneDraw(drawState, now);
     dropUnanchored();
-    const laid = layoutOrbs(presence, motion, view, now, reduced);
-    motion = laid.motion;
     hud = notePaint(hud, now);
     const drawCtx = fitCanvas(drawCanvas, view.w, view.h);
-    const presenceCtx = fitCanvas(presenceCanvas, view.w, view.h);
     const frameState = cameraOn ? anchoredState(drawState, tracks, now) : drawState;
     paintDraw(drawCtx, frameState, view, now, reduced);
-    paintPresence(presenceCtx, presence, laid.poses, view, now, reduced, ui.getState().micOn);
-    placeCallState(laid.poses);
-    placeDevHud(view, laid.poses);
+    placeDevHud(view, null);
   }
 
-  function placeCallState(poses) {
-    const pose = poses && poses.helper;
-    if (!callStateEl || !pose) return;
-    const width = stage.clientWidth || 0;
-    const beside = pose.x + ORB_SIZE + 10;
-    const maxLeft = Math.max(8, width - 200);
-    const home = pose.y < 70 && pose.x < 80;
-    const left = Math.min(maxLeft, Math.max(8, beside));
-    const top = home ? Math.max(56, pose.y + 8) : pose.y + 8;
-    callStateEl.style.left = `${left}px`;
-    callStateEl.style.top = `${Math.max(8, top)}px`;
+  function renderElapsed(now) {
+    if (!callStartedAt) return;
+    const seconds = Math.max(0, Math.floor((now - callStartedAt) / 1000));
+    const text = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+    if (elapsedEl.textContent !== text) elapsedEl.textContent = text;
   }
 
   function loop() {
@@ -799,6 +889,7 @@ function boot() {
       const before = ui.getState().caption;
       ui.dispatch({ type: "tick", now });
       if (ui.getState().caption !== before) renderUserCaption(ui.getState());
+      renderElapsed(now);
     }
     paint(now);
     raf = window.requestAnimationFrame(loop);
@@ -840,8 +931,7 @@ function boot() {
     cameraOn = false;
     window.clearInterval(frameTimer);
     frameTimer = 0;
-    startBtn.textContent = "Camera on";
-    startBtn.setAttribute("aria-pressed", "false");
+    renderCamera();
     send({ v: 2, type: "camera", session_id: sessionId, on: false });
     commitTracker("stop");
   }
@@ -860,6 +950,7 @@ function boot() {
     if (!window.isSecureContext) {
       ui.dispatch({ type: "https" });
       renderCall();
+      showPermission("Camera needs HTTPS", ERROR_HTTPS);
       return;
     }
     if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
@@ -872,6 +963,11 @@ function boot() {
         video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,
       });
+      if (!pack) {
+        // The call ended while the camera prompt was open: do not leave a live camera on the ring screen.
+        for (const track of stream.getTracks()) track.stop();
+        return;
+      }
       hideStill();
       video.srcObject = stream;
       video.playsInline = true;
@@ -880,8 +976,7 @@ function boot() {
       cameraOn = true;
       await video.play().catch(() => {});
       if (video.srcObject !== stream) return;
-      startBtn.textContent = "Camera off";
-      startBtn.setAttribute("aria-pressed", "true");
+      renderCamera();
       send({ v: 2, type: "camera", session_id: sessionId, on: true });
       commitTracker("draw");
       sendLiveFrame();
@@ -890,7 +985,8 @@ function boot() {
       stopCamera();
       const name = err && err.name;
       if (name === "NotAllowedError" || name === "PermissionDeniedError" || name === "SecurityError") {
-        showProblem("Camera blocked. Allow camera access, or use Upload photo.");
+        showPermission("Camera access is off",
+          "A-eye looks through the camera to point at parts while you work. Allow the camera for this site in your browser settings, or upload a photo from Settings.");
       } else {
         showProblem("Camera unavailable. Use Upload photo.");
       }
@@ -949,12 +1045,20 @@ function boot() {
     }
   }
 
+  function renderCamera() {
+    startBtn.setAttribute("aria-pressed", cameraOn ? "true" : "false");
+    startBtn.setAttribute("aria-label", cameraOn ? "Camera off" : "Camera on");
+    cameraIcon.setAttribute("href", cameraOn ? "#i-camera" : "#i-camera-off");
+  }
+
+  // CallScreen.micButton: mic when listening, struck-through mic in the warn colour when muted.
   function renderMic() {
     const ready = Boolean(voice && voice.supported && voice.supported.stt);
     micBtn.disabled = !ready;
     const on = ui.getState().micOn;
     micBtn.setAttribute("aria-pressed", on ? "true" : "false");
-    micBtn.textContent = on ? "Mute mic" : "Unmute mic";
+    micBtn.setAttribute("data-muted", ready && !on ? "true" : "false");
+    micIcon.setAttribute("href", on ? "#i-mic" : "#i-mic-off");
     micBtn.setAttribute("aria-label", on ? "Stop microphone" : "Start microphone");
   }
 
@@ -1052,6 +1156,14 @@ function boot() {
     browserOption.textContent = "Browser voice (robotic)";
     voicePick.append(browserOption);
     const fallback = (listed.find((item) => item.default) || listed[0] || { id: "browser" }).id;
+    if (wantCartesia && !String(ttsVoice).startsWith("cartesia:")) {
+      const cartesia = listed.find((item) => item.engine === "cartesia" && item.default)
+        || listed.find((item) => item.engine === "cartesia");
+      if (cartesia) {
+        ttsVoice = cartesia.id;
+        sendHello();
+      }
+    }
     voicePick.value = tts === "browser" ? "browser" : (ttsVoice || fallback);
   }
 
@@ -1069,13 +1181,24 @@ function boot() {
   }
 
   async function choosePack(next) {
-    if (!PACK_LABEL[next]) return;
+    if (!PACK_LABEL[next] || pack) return;
     pack = next;
+    ended = false;
+    sessionId = randomId();
+    ui = createCallUi({ storage: safeStorage() });
+    turn = nextTurnState(null, {}, Date.now());
+    speech = emptySpeech();
+    powerConfirmed = false;
+    agents = { helper: "idle", shopper: "idle" };
+    callStartedAt = Date.now();
+    elapsedEl.textContent = "0:00";
     packLabel.textContent = PACK_LABEL[next];
-    if (next === "pc_build") powerBtn.classList.remove("hidden");
+    link = "connecting";
+    renderPresence();
+    renderCamera();
     ui.dispatch({ type: "pack", pack: next });
     picker.classList.add("hidden");
-    stage.classList.remove("hidden");
+    callEl.classList.remove("hidden");
     voice = await rebuildVoice();
     if (voice && !voice.supported.stt && stt !== "server") {
       stt = "server";
@@ -1101,7 +1224,73 @@ function boot() {
     if (!holdBtn) return;
     holdBtn.classList.toggle("hold-default", holdMode);
     holdBtn.setAttribute("aria-pressed", holdPressed ? "true" : "false");
-    holdBtn.textContent = holdPressed ? "Listening… release to send" : (holdMode ? "Hold to talk (Space)" : "Hold to talk");
+    holdBtn.setAttribute("aria-label", holdPressed ? "Listening, release to send" : "Hold to talk");
+  }
+
+  // CallController.end: back to the mode ring with the same mode selected.
+  function endCall() {
+    if (!pack) return;
+    ended = true;
+    if (cameraOn || video.srcObject) stopCamera();
+    holdPressed = false;
+    if (voice) {
+      voice.stopListening();
+      if (typeof voice.cancel === "function") voice.cancel();
+    }
+    talkQueue.length = 0;
+    talkBusy = false;
+    clearAllFallbacks();
+    window.clearTimeout(retryTimer);
+    const ws = socket;
+    socket = null;
+    if (ws) ws.close();
+    pack = "";
+    callStartedAt = 0;
+    drawState = applyDraw(null, null, 0);
+    agents = { helper: "idle", shopper: "idle" };
+    hideStill();
+    closeSheets();
+    permissionEl.classList.add("hidden");
+    overlayEl.classList.add("hidden");
+    callEl.classList.add("hidden");
+    picker.classList.remove("hidden");
+    renderLink();
+    paint(Date.now());
+  }
+
+  function ringButtons() {
+    return ringEl && typeof ringEl.querySelectorAll === "function" ? [...ringEl.querySelectorAll("button[data-mode]")] : [];
+  }
+
+  // ModeRing.swift: centred item 78 px with a white ring, neighbours 52 / 42 / 34 and fading.
+  function renderRing() {
+    ringButtons().forEach((button, i) => {
+      const dist = Math.min(Math.abs(i - ringIndex), 3);
+      button.setAttribute("data-dist", String(dist));
+      button.setAttribute("aria-current", dist === 0 ? "true" : "false");
+    });
+    const mode = MODES[ringIndex];
+    ringTitle.textContent = mode.title;
+    ringHint.textContent = mode.pack ? "tap to start" : "coming soon";
+  }
+
+  function scrollRingTo(i, smooth) {
+    if (!ringEl || typeof ringEl.scrollTo !== "function") return;
+    ringEl.scrollTo({ left: i * RING_SLOT, behavior: smooth && !reducedMotion() ? "smooth" : "auto" });
+  }
+
+  function onRingScroll() {
+    const i = Math.max(0, Math.min(MODES.length - 1, Math.round(ringEl.scrollLeft / RING_SLOT)));
+    if (i === ringIndex) return;
+    ringIndex = i;
+    renderRing();
+  }
+
+  function shake(button) {
+    if (reducedMotion()) return;
+    button.classList.remove("shake");
+    void button.offsetWidth;
+    button.classList.add("shake");
   }
 
   async function onHoldDown() {
@@ -1138,9 +1327,10 @@ function boot() {
 
   function renderCall() {
     const st = ui.getState();
-    if (callStateEl) callStateEl.textContent = st.label;
     errorEl.textContent = st.error || "";
     errorEl.classList.toggle("hidden", !st.error);
+    powerGate.classList.toggle("hidden", pack !== "pc_build" || powerConfirmed);
+    renderLink();
     const notes = [st.sttNotice, st.voiceNotice].filter(Boolean);
     noticeEl.textContent = notes.join(" ");
     noticeEl.classList.toggle("hidden", notes.length === 0);
@@ -1155,21 +1345,21 @@ function boot() {
     renderMic();
   }
 
+  // CaptionCard.swift: eyebrow A-EYE or SHOPPER, then the reply. The web streams a turn sentence by sentence,
+  // so the card holds the whole current turn (clamped to 8 lines) instead of only the last sentence.
   function renderReplies(st) {
     repliesEl.replaceChildren();
-    for (const line of replyLines(st)) {
-      const row = document.createElement("p");
-      row.className = "reply";
-      const who = document.createElement("span");
-      who.className = "who";
-      who.textContent = line.speaker || "Helper";
-      who.style.color = line.color || "#8eb6ff";
-      const body = document.createElement("span");
-      body.className = line.active ? "line active" : "line";
-      body.textContent = line.text;
-      row.append(who, document.createTextNode(" "), body);
-      repliesEl.append(row);
-    }
+    const lines = replyLines(st);
+    lines.forEach((line, i) => {
+      if (i) repliesEl.append(document.createTextNode(" "));
+      repliesEl.append(el("span", line.active ? "line active" : "line", line.text));
+    });
+    const last = lines[lines.length - 1];
+    const shopper = Boolean(last && last.speaker === "Shopper");
+    captionEl.setAttribute("data-agent", shopper ? "shopper" : "helper");
+    captionEyebrow.textContent = shopper ? "SHOPPER" : "A-EYE";
+    captionSpeaker.textContent = shopper ? "Shopper" : "Helper";
+    captionEl.classList.toggle("hidden", !lines.length && !st.error);
   }
 
   function renderUserCaption(st) {
@@ -1229,10 +1419,55 @@ function boot() {
     }
   }
 
+  // Tap the centred mode to start; a coming-soon mode shakes. With a mouse there is no swipe, so tapping a side
+  // mode that works starts it directly (iOS only scrolls it to the centre).
   picker.addEventListener("click", (event) => {
-    const button = event.target.closest("button[data-pack]");
+    const button = event.target.closest("button[data-mode]");
     if (!button) return;
-    choosePack(button.getAttribute("data-pack"));
+    const i = MODES.findIndex((m) => m.id === button.getAttribute("data-mode"));
+    const next = button.getAttribute("data-pack");
+    if (i >= 0 && i !== ringIndex) {
+      ringIndex = i;
+      renderRing();
+      scrollRingTo(i, true);
+    }
+    if (!next) {
+      shake(button);
+      return;
+    }
+    choosePack(next);
+  });
+  if (ringEl) {
+    ringEl.addEventListener("scroll", onRingScroll, { passive: true });
+    ringEl.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      const i = Math.max(0, Math.min(MODES.length - 1, ringIndex + (event.key === "ArrowRight" ? 1 : -1)));
+      ringIndex = i;
+      renderRing();
+      scrollRingTo(i, true);
+      const target = ringButtons()[i];
+      if (target) target.focus();
+    });
+    ringEl.addEventListener("animationend", (event) => {
+      const button = event.target.closest && event.target.closest("button");
+      if (button) button.classList.remove("shake");
+    });
+  }
+  document.getElementById("end-call").addEventListener("click", endCall);
+  const openers = typeof document.querySelectorAll === "function" ? document.querySelectorAll(".open-settings") : [];
+  for (const opener of openers) opener.addEventListener("click", () => openSheet(settingsEl));
+  document.getElementById("settings-done").addEventListener("click", closeSheets);
+  if (backdropEl) backdropEl.addEventListener("click", closeSheets);
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeSheets();
+  });
+  document.getElementById("permission-retry").addEventListener("click", () => {
+    permissionEl.classList.add("hidden");
+    void startCamera();
+  });
+  document.getElementById("permission-close").addEventListener("click", () => {
+    permissionEl.classList.add("hidden");
   });
   startBtn.addEventListener("click", () => {
     if (cameraOn || video.srcObject) stopCamera();
@@ -1246,7 +1481,12 @@ function boot() {
       what: "power_off",
       value: true,
     });
-    if (!ok) showProblem("Not connected.");
+    if (!ok) {
+      showProblem("Not connected.");
+      return;
+    }
+    powerConfirmed = true;
+    renderCall();
   });
   document.getElementById("upload").addEventListener("change", (event) => {
     onUpload(event);
@@ -1316,10 +1556,7 @@ function boot() {
     transcriptBtn.textContent = next ? "Hide transcript" : "Transcript";
     if (next) transcriptList.scrollTop = transcriptList.scrollHeight;
   });
-  document.getElementById("market-dismiss").addEventListener("click", () => {
-    marketEl.classList.add("hidden");
-    marketBody.replaceChildren();
-  });
+  document.getElementById("market-dismiss").addEventListener("click", closeSheets);
   window.addEventListener("resize", () => paint(Date.now()));
   video.addEventListener("loadedmetadata", () => paint(Date.now()));
   if (reducedQuery && typeof reducedQuery.addEventListener === "function") {
@@ -1327,6 +1564,11 @@ function boot() {
   }
 
   volumeEl.value = String(ui.getState().volume);
+  if (serverHostEl) serverHostEl.textContent = location.host;
+  renderRing();
+  scrollRingTo(ringIndex, false);
+  renderPresence();
+  renderCamera();
   drawWave();
   renderCall();
   raf = window.requestAnimationFrame(loop);

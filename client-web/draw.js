@@ -304,8 +304,12 @@ function paintOne(ctx, px, item, viewW, viewH) {
     ctx.stroke();
     ctx.setLineDash([]);
     if (px.label && progress > 0.4) {
-      ctx.font = "15px -apple-system, BlinkMacSystemFont, sans-serif";
+      // Same as the iOS overlay: medium monospaced label with a soft dark edge for bright scenes.
+      ctx.font = "500 15px ui-monospace, SFMono-Regular, Menlo, monospace";
       ctx.textBaseline = "bottom";
+      ctx.shadowColor = "rgba(0, 0, 0, 0.7)";
+      ctx.shadowBlur = 2;
+      ctx.shadowOffsetY = 1;
       ctx.fillText(px.label, rect.x, Math.max(16, rect.y - 4));
     }
   } else if (px.kind === "highlight" && px.rect.w > 0 && px.rect.h > 0) {
@@ -324,7 +328,7 @@ function paintOne(ctx, px, item, viewW, viewH) {
   } else if (px.kind === "path") {
     strokeSmooth(ctx, cutPolyline(px.points, progress));
   } else if (px.kind === "label" && px.text) {
-    ctx.font = "15px -apple-system, BlinkMacSystemFont, sans-serif";
+    ctx.font = "500 15px -apple-system, BlinkMacSystemFont, sans-serif";
     const padX = 10;
     const width = Math.min(viewW - 16, ctx.measureText(px.text).width + padX * 2);
     const height = 28;
