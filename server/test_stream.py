@@ -245,3 +245,27 @@ def test_header_with_bent_roles_keeps_draws_and_never_speaks_json():
         assert [op['kind'] for op in drawing['ops']] == ['clear', 'circle', 'label']
         assert [m['text'] for m in messages if m['type'] == 'say'] == ['Cut here.']
     asyncio.run(check())
+
+
+def test_shopping_question_brings_in_shopper_even_if_model_forgets():
+    """Seen live: the local brain answered a price question without market_category."""
+    from server.agent import shopping_category
+    assert shopping_category('Is there cheaper RAM that fits my board?') == 'ram'
+    assert shopping_category('how much does a good GPU cost') == 'gpu'
+    assert shopping_category('where does this cable go') is None
+
+    class ForgetfulBrain:
+        async def stream(self, system, user, **kwargs):
+            yield json.dumps(dict(agent='helper', draw=[])) + '\n'
+            yield 'SAY: I can look.'
+
+    async def check():
+        session = Session('s')
+        session.scene = SCENE
+        session.scene_time = monotonic()
+        messages = await run_turn(session, 'Is there cheaper RAM?', vision=Vision(), llm=ForgetfulBrain())
+        for msg in messages:
+            validate('server_message_v2', msg)
+        assert any(m['type'] == 'market_results' for m in messages)
+        assert any(m['type'] == 'say' and m['agent'] == 'shopper' for m in messages)
+    asyncio.run(check())

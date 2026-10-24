@@ -100,6 +100,23 @@ _ROLES = {'target', 'info', 'warn', 'ok'}
 _CATEGORIES = {'cpu', 'board', 'ram', 'ssd', 'gpu', 'psu', 'cooler', 'case', 'fan'}
 
 
+_SHOPPING = re.compile(r"\b(cheap\w*|price\w*|cost\w*|buy\w*|deal\w*|afford\w*|budget)\b", re.I)
+_CATEGORY_WORDS = [('ram', r'\b(ram|memory|dimm|ddr\d?)\b'), ('ssd', r'\b(ssd|nvme|m\.2|drive|storage)\b'),
+                   ('gpu', r'\b(gpu|graphics|video card)\b'), ('cpu', r'\b(cpu|processor)\b'),
+                   ('psu', r'\b(psu|power supply)\b'), ('cooler', r'\bcooler\b'), ('case', r'\bcase\b'),
+                   ('fan', r'\bfans?\b'), ('board', r'\b(motherboard|mainboard|board)\b')]
+
+
+def shopping_category(text):
+    """Return the part category when the user asks about buying or prices, else None."""
+    if not _SHOPPING.search(text or ''):
+        return None
+    for category, pattern in _CATEGORY_WORDS:
+        if re.search(pattern, text, re.I):
+            return category
+    return None
+
+
 def sanitize_header(turn):
     """Small models bend the format (seen live: role "highlight" or "label", missing draw).
     Keep what is usable instead of throwing the whole turn away."""
@@ -277,6 +294,11 @@ async def run_turn(session, text, *, vision, llm):
             if pending:
                 await speech(pending, agent=turn['agent'])
             pending = tail
+        # Hard rule in code: a shopping question always brings in the shopper, even if the model forgot.
+        if not turn.get('market_category'):
+            category = shopping_category(text)
+            if category:
+                turn['market_category'] = category
         await speech(pending or scene['caption'] or 'Please tell me what you need.',
                      final=not bool(turn.get('market_category')), agent=turn['agent'])
         if turn.get('market_category'):
