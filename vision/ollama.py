@@ -142,6 +142,8 @@ class OllamaBackend:
         self.client = client if client is not None else httpx.Client(transport=transport, timeout=8,
             limits=httpx.Limits(keepalive_expiry=1800))
         self.last_timings = {}
+        self.timeout = 8
+        self.ground_fallback = True
 
     def _chat(self, body, prompt, num_predict=40, model=None):
         model = model or self.model
@@ -162,7 +164,7 @@ class OllamaBackend:
         }
         if model.startswith(("qwen3.5", "gemma4")):
             payload["think"] = False
-        response = self.client.post(self.url + "/api/chat", timeout=8, json=payload)
+        response = self.client.post(self.url + "/api/chat", timeout=self.timeout, json=payload)
         response.raise_for_status()
         self.last_timings = {}
         try:
@@ -185,13 +187,14 @@ class OllamaBackend:
 
     def _ground(self, body, label, match, printed=False):
         """Try one native-format box, then exactly one fallback attempt."""
-        for attempt, model in enumerate((self.model, self.fallback_model)):
+        models = (self.model, self.fallback_model) if self.ground_fallback else (self.model,)
+        for attempt, model in enumerate(models):
             self.last_ground_model = model
             try:
                 answer, (width, height) = self._chat(
                     body, box_prompt(label, printed=printed, model=model), 60, model=model)
             except httpx.HTTPError:
-                if attempt == 1:
+                if attempt == len(models) - 1:
                     raise
                 continue
             for row in box_rows(answer):

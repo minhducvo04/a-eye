@@ -8,6 +8,8 @@ import os
 from time import perf_counter
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
+from server import privacy, cloud_meter
 from jsonschema import ValidationError
 
 from contracts import validate
@@ -42,10 +44,18 @@ def select_backend(ollama=None):
     mode = os.environ.get("VISION_BACKEND", "fake")
     if mode == "fake":
         return FakeBackend()
-    if mode not in {"ollama", "auto"}:
-        raise ValueError("VISION_BACKEND must be fake, ollama, or auto")
+    if mode == "gemini":
+        from vision.gemini import GeminiBackend
+        return GeminiBackend()
+    if mode not in {"ollama", "auto", "cloud_fallback"}:
+        raise ValueError("VISION_BACKEND must be fake, ollama, auto, gemini, or cloud_fallback")
     from vision.ollama import AutoBackend, OllamaBackend
     real = ollama if ollama is not None else OllamaBackend()
+    if mode == "cloud_fallback":
+        from vision.gemini import CloudFallbackBackend
+        real.timeout = 4
+        real.ground_fallback = False
+        return CloudFallbackBackend(real)
     return AutoBackend(real, FakeBackend()) if mode == "auto" else real
 
 
@@ -66,10 +76,20 @@ async def run(request, operation):
     scenario = request.headers.get("X-Fake-Scenario", os.environ.get("FAKE_SCENARIO", "ok"))
     if scenario not in SCENARIOS:
         raise HTTPException(status_code=422, detail="Invalid fake scenario")
-    result = getattr(backend, operation)(body, scenario)
+    private_token = privacy.PRIVATE.set(request.headers.get('X-Aeye-Private') != '0')
+    switches_token = privacy.SWITCHES.set({'google': request.headers.get('X-Aeye-Google') == '1'})
+    meter = cloud_meter.Meter()
+    meter_token = cloud_meter.CURRENT.set(meter)
+    try:
+        result = getattr(backend, operation)(body, scenario)
+    finally:
+        privacy.PRIVATE.reset(private_token)
+        privacy.SWITCHES.reset(switches_token)
+        cloud_meter.CURRENT.reset(meter_token)
     result["ms"] = (perf_counter() - started) * 1000
     validate(operation + "_response", result)
-    return result
+    return JSONResponse(result, headers={'X-Aeye-Cloud-Calls': str(meter.calls),
+                                         'X-Aeye-Cloud-Bytes': str(meter.bytes)})
 
 
 @app.get("/health")

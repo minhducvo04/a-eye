@@ -1,0 +1,112 @@
+--- a/contracts/schema.json
++++ b/contracts/schema.json
+@@ -2006,9 +2006,12 @@
+       },
+       "twelvelabs": {
+        "type": "boolean"
++      },
++      "google": {
++       "type": "boolean"
+       }
+      },
+-     "description": "Home first: per-call cloud switches. claude = Smarter answers (question + written scene note, sometimes one small close-up); cartesia = Natural voice (reply sentence only); twelvelabs = Video memory search (short silent clips, deleted at call end). Missing: Claude on, Cartesia on, TwelveLabs off (on if rewind). private: all off."
++     "description": "Home first: per-call cloud switches. claude = Smarter answers (question + written scene note, sometimes one small close-up); cartesia = Natural voice (reply sentence only); twelvelabs = Video memory search (short silent clips, deleted at call end). Missing: Claude on, Cartesia on, TwelveLabs off (on if rewind). private: all off. google = Cloud vision (downscaled camera frames to Google Gemini); default off."
+     }
+    }
+   },
+--- a/contracts/types.ts
++++ b/contracts/types.ts
+@@ -110,7 +110,7 @@
+   | (OpBase & { kind: "clear" });
+ 
+ // client -> server
+-export interface V2Hello { v: V2; type: "hello"; session_id: string; pack: PackId; board_id?: string; client?: "web" | "ios"; tts?: "server" | "browser"; stt?: "browser" | "server"; voice?: string; private?: boolean; cloud?: { claude?: boolean; cartesia?: boolean; twelvelabs?: boolean } }
++export interface V2Hello { v: V2; type: "hello"; session_id: string; pack: PackId; board_id?: string; client?: "web" | "ios"; tts?: "server" | "browser"; stt?: "browser" | "server"; voice?: string; private?: boolean; cloud?: { claude?: boolean; cartesia?: boolean; twelvelabs?: boolean; google?: boolean } }
+ export interface V2Frame { v: V2; type: "frame"; session_id: string; seq: number; ts_ms: number; w: number; h: number; jpeg_b64: string }
+ export interface V2UserText { v: V2; type: "user_text"; session_id: string; text: string; final: boolean; source?: "browser_stt" | "whisper" | "typed" }
+ export interface V2BargeIn { v: V2; type: "barge_in"; session_id: string; utterance_id: string; at_ms: number }
+--- a/contracts/examples.json
++++ b/contracts/examples.json
+@@ -584,6 +584,15 @@
+    "role": "camera",
+    "pair_code": "ABCD2345",
+    "camera": true
++  },
++  {
++   "v": 2,
++   "type": "hello",
++   "session_id": "gemini-example",
++   "pack": "general",
++   "cloud": {
++    "google": true
++   }
+   }
+  ],
+  "v2_frame": [
+--- a/client-web/agent.js
++++ b/client-web/agent.js
+@@ -243,9 +243,9 @@
+   // Private mode: hello.private makes the server keep everything local; the page uses server STT (browser
+   // recognition can send audio to Google), the server voice (Kokoro) and keeps Rewind off.
+   let privateMode = (() => { try { return safeStorage()?.getItem("aeye.private") === "1"; } catch { return false; } })();
+-  // Home first: three named cloud switches (server/privacy.py enforces them). Defaults: Claude and Cartesia on,
++  // Home first: four named cloud switches (server/privacy.py enforces them). Defaults: Claude and Cartesia on,
+   // TwelveLabs off. The TwelveLabs switch and the Rewind toggle are one consent.
+-  const CLOUD_DEFAULTS = { claude: true, cartesia: true, twelvelabs: false };
++  const CLOUD_DEFAULTS = { claude: true, cartesia: true, twelvelabs: false, google: false };
+   let cloud = (() => {
+     try {
+       const saved = JSON.parse(safeStorage()?.getItem("aeye.cloud") || "null");
+@@ -255,6 +255,7 @@
+     }
+   })();
+   const cloudBoxes = {
++    google: document.getElementById("cloud-google"),
+     claude: document.getElementById("cloud-claude"),
+     cartesia: document.getElementById("cloud-cartesia"),
+     twelvelabs: document.getElementById("cloud-twelvelabs"),
+@@ -550,7 +551,7 @@
+     if (pack === "pc_build") hello.board_id = BOARD_ID;
+     if (rewindOn && !privateMode) hello.rewind = true;
+     if (privateMode) hello.private = true;
+-    else hello.cloud = { claude: cloud.claude, cartesia: cloud.cartesia, twelvelabs: cloud.twelvelabs && rewindOn };
++    else hello.cloud = { google: cloud.google, claude: cloud.claude, cartesia: cloud.cartesia, twelvelabs: cloud.twelvelabs && rewindOn };
+     const ok = send(hello);
+     if (ok) ui.dispatch({ type: "hello_sent" });
+     const keepBox = document.getElementById("rewind-keep");
+@@ -1778,6 +1779,7 @@
+     if (!leavesList) return;
+     const on = (name) => !privateMode && Boolean(cloud[name]);
+     const lines = [];
++    if (on("google")) lines.push("Downscaled camera frames go to Google Gemini for cloud vision. A-eye does not store them.");
+     if (on("claude")) lines.push("Your question and a written note about the scene go to Claude. Sometimes one small close-up photo.");
+     if (on("cartesia")) lines.push("A-eye's reply sentence goes to Cartesia, which turns it into speech.");
+     if (on("twelvelabs") && rewindOn) lines.push("Short silent video clips go to TwelveLabs. They are deleted when the call ends.");
+@@ -1791,7 +1793,7 @@
+     }
+     const home = document.createElement("li");
+     home.className = "home";
+-    home.textContent = "Always stays home: the camera picture, the memory log, and (with server speech) your voice.";
++    home.textContent = "Always stays home: the memory log and (with server speech) your voice. Camera frames stay home when Google cloud vision and Rewind are off, apart from a Claude close-up when enabled.";
+     leavesList.append(home);
+   }
+ 
+@@ -1807,7 +1809,7 @@
+     cloud[name] = Boolean(on);
+     if (on && privateMode) privateMode = false; // switching a cloud feature on leaves Private mode
+     try {
+-      safeStorage()?.setItem("aeye.cloud", JSON.stringify({ claude: cloud.claude, cartesia: cloud.cartesia }));
++      safeStorage()?.setItem("aeye.cloud", JSON.stringify({ google: cloud.google, claude: cloud.claude, cartesia: cloud.cartesia }));
+       safeStorage()?.setItem("aeye.private", privateMode ? "1" : "0");
+     } catch {
+       // per-viewer convenience only
+--- a/client-web/agent.html
++++ b/client-web/agent.html
+@@ -258,6 +258,7 @@
+     <p class="group-title">Privacy</p>
+     <div class="group">
+       <label class="row">Private mode <input id="private-toggle" type="checkbox" role="switch" aria-describedby="private-notice"></label>
++      <label class="row"><span>Cloud vision (Google)<span class="leak">Sends downscaled camera frames to Gemini; A-eye does not store them</span></span><input id="cloud-google" type="checkbox" role="switch"></label>
+       <label class="row"><span>Smarter answers (Claude)<span class="leak">Sends your question and a written scene note, sometimes one small close-up</span></span><input id="cloud-claude" type="checkbox" role="switch"></label>
+       <label class="row"><span>Natural voice (Cartesia)<span class="leak">Sends only A-eye's reply sentence</span></span><input id="cloud-cartesia" type="checkbox" role="switch"></label>
+       <label class="row"><span>Video memory search (TwelveLabs)<span class="leak">Uploads short silent clips; deleted at call end</span></span><input id="cloud-twelvelabs" type="checkbox" role="switch"></label>

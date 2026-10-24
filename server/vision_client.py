@@ -5,6 +5,7 @@ import httpx
 from jsonschema import ValidationError
 
 from contracts import validate
+from server import cloud_vision
 
 
 class VisionUnavailable(Exception):
@@ -18,10 +19,13 @@ class VisionClient:
 
     async def call(self, operation, payload):
         validate(f'{operation}_request', payload)
+        if cloud_vision.enabled():
+            return await cloud_vision.call(operation, payload)
         try:
             async with httpx.AsyncClient(base_url=self.url, timeout=5,
                                          transport=self.transport) as client:
-                response = await client.post(f'/{operation}', json=payload)
+                response = await client.post(f'/{operation}', json=payload, headers=cloud_vision.request_headers())
+                cloud_vision.record_usage(response)
                 response.raise_for_status()
                 result = response.json()
             validate(f'{operation}_response', result)

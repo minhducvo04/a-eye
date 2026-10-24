@@ -120,11 +120,11 @@ def test_private_mode_makes_no_cloud_call_at_all(calls):
     assert not [c for c in calls if c in ('claude', 'cartesia', 'twelvelabs')], calls
 
 
-def test_defaults_are_claude_on_cartesia_on_twelvelabs_off():
-    assert privacy.set_call(None) == dict(claude=True, cartesia=True, twelvelabs=False)
+def test_defaults_are_claude_cartesia_on_twelvelabs_google_off():
+    assert privacy.set_call(None) == dict(claude=True, cartesia=True, twelvelabs=False, google=False)
     assert privacy.set_call(None, rewind=True)['twelvelabs'] is True
     assert set(privacy.set_call(ALL_ON, private=True).values()) == {False}
-    assert set(privacy.WHAT_LEAVES) == {'claude', 'cartesia', 'twelvelabs'}
+    assert set(privacy.WHAT_LEAVES) == {'claude', 'cartesia', 'twelvelabs', 'google'}
 
 
 def test_twelvelabs_client_refuses_when_its_switch_is_off(calls):
