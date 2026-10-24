@@ -168,6 +168,7 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
         except WebSocketDisconnect:
             pass
 
+    app.include_router(__import__('server.trigger', fromlist=['router']).router)
     app.include_router(ws2.router)
     app.include_router(api.router)
     app.include_router(proof_wall.router)

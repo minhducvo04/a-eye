@@ -1,3 +1,4 @@
+import { triggerClient } from './trigger.js';
 import { isHeadset, requestLocalMedia } from './headset.js';
 import { bootPairCamera, phoneMicRoute, setupPairCall } from './pair.js';
 import { callOwner, ownerHeaders, ownerQuery, resetCallOwner } from './call-owner.js';
@@ -564,6 +565,7 @@ function boot() {
       setLink("live");
       renderPresence();
       sendHello();
+      startTrigger();
       turnEvent({ type: "connected" });
       renderCall();
     });
@@ -577,6 +579,7 @@ function boot() {
       }
       onServer(message);
     });
+    ws.addEventListener('close', () => { if (socket === ws) stopTrigger?.(); });
     ws.addEventListener("close", (event) => {
       if (socket !== ws) return;
       socket = null;
@@ -1430,6 +1433,32 @@ function boot() {
     }
   }
 
+  let stopTrigger = null;
+  function startTrigger() {
+    stopTrigger?.();
+    stopTrigger = triggerClient({
+      request: async (path, body) => {
+        const token = new URLSearchParams(location.search).get('token');
+        const owner = await callOwner();
+        const response = await fetch(path, { method: 'POST', headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}`, 'X-Aeye-Owner': owner } : {}),
+        }, body: JSON.stringify(body) });
+        if (!response.ok) throw new Error('Wake unavailable');
+        return response.json();
+      },
+      session: () => sessionId,
+      available: () => Boolean(pack && !ended && socket?.readyState === WebSocket.OPEN),
+      listening: () => Boolean(micRoute.phone || voice?.isListening()),
+      wake: async (line) => {
+        if (!voice) voice = await rebuildVoice();
+        if (!micRoute.phone && !voice.isListening()) await startMic();
+        onServer({ v: 2, type: 'say', agent: 'helper', text: line,
+          utterance_id: randomId(), final: true });
+      },
+    });
+  }
+
   async function onMic() {
     voice = voice || (await rebuildVoice());
     if (!voice || !voice.supported || !voice.supported.stt) return;
@@ -1586,6 +1615,7 @@ function boot() {
 
   // CallController.end: back to the mode ring with the same mode selected.
   function endCall() {
+    stopTrigger?.();
     if (!pack) return;
     window.clearInterval(memoryTimer);
     memoryEl.classList.add("hidden");
