@@ -326,3 +326,12 @@ def test_expert_crop_and_planner_draw(monkeypatch):
         await s.expert_task
         assert 'images' not in requests[-1]
     asyncio.run(check())
+
+
+def test_local_expert_uses_the_real_ollama_tag_and_checks_it():
+    """Seen by the local-brain builder: 'qwen3.5:9b' does not exist on the box; the tag is qwen3.5:9b-q4_K_M."""
+    from server.expert import check_local_model
+    assert LOCAL == 'qwen3.5:9b-q4_K_M'
+    assert check_local_model(lambda url: {'models': [{'name': 'qwen3.5:9b-q4_K_M'}]}) is True
+    assert check_local_model(lambda url: {'models': [{'name': 'qwen3.5:9b'}]}) is False
+    assert check_local_model(lambda url: (_ for _ in ()).throw(OSError('down'))) is None

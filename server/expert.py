@@ -15,12 +15,32 @@ EXPERT_RULES = (' You are the expert helping a live assistant. Resolve the quest
                 'Never invent objects or bypass safety gates. Say when evidence or search is insufficient.')
 OPUS = 'claude-opus-5-5'
 FABLE = 'claude-fable-5-1'
-LOCAL = 'qwen3.5:9b'
+# The exact Ollama tag on the GPU box (a bare 'qwen3.5:9b' 404s there). EXPERT_LOCAL_MODEL overrides.
+LOCAL = os.environ.get('EXPERT_LOCAL_MODEL', 'qwen3.5:9b-q4_K_M')
 # List prices checked 2026-10-23, USD per million tokens. Search price is unverified.
 PRICES = {'claude-haiku-5-5': (0.10, 0.50, None), OPUS: (4, 20, .20), FABLE: (10, 50, .25)}
 EXPLICIT = re.compile(r'\b(think hard|are you sure|double[ -]check)\b', re.I)
 RESEARCH = re.compile(r'\b(specs?|specifications?|prices?|standards?|sources?|look up|research)\b', re.I)
 TIMEOUT_LINE = "The expert is taking too long, let's keep going."
+
+
+def check_local_model(fetch=None):
+    """At startup: is the local expert model on the Ollama host? Logs one warning when it is not."""
+    url = os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434').rstrip('/') + '/api/tags'
+    try:
+        if fetch is None:
+            import httpx
+            body = httpx.get(url, timeout=3).json()
+        else:
+            body = fetch(url)
+        names = {m.get('name') for m in body.get('models', [])}
+    except Exception:
+        event('dependency_error', level='error', dependency='expert_local_model')
+        return None
+    ok = LOCAL in names
+    if not ok:
+        event('dependency_error', level='warning', dependency='expert_local_model')
+    return ok
 
 
 def choose_model(question):
