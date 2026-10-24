@@ -11,8 +11,8 @@ test('pair URL preserves token and mode is explicit', () => {
   assert.equal(pairUrl('https://demo.test', '/agent.html?pair=0123', ''), 'https://demo.test/agent.html?pair=0123');
 });
 test('status distinguishes call and camera', () => {
-  assert.equal(pairStatus({ state: 'joined' }), 'Phone camera connected');
-  assert.equal(pairStatus({ state: 'joined' }, true), 'Paired');
+  assert.equal(pairStatus({ state: 'joined' }), 'Phone camera + mic connected');
+  assert.equal(pairStatus({ state: 'joined' }, true), 'Camera + mic connected');
   assert.equal(pairStatus({ state: 'camera', camera_on: false }), 'Phone camera off');
   assert.equal(pairStatus({ state: 'expired', detail: 'Code expired.' }), 'Code expired.');
   assert.match(pairStatus({ state: 'left' }), /disconnected/);
@@ -32,7 +32,7 @@ test('QR dimensions, finder patterns and bounded capacity', () => {
   assert.throws(() => qrMatrix('x'.repeat(107)), /too long/);
 });
 
-test('phone entry asks only for camera, streams after joined and stops on disconnect', async () => {
+test('phone entry: camera frames and mic utterances after joined, stops on disconnect', async () => {
   const { bootPairCamera } = await import('./pair.js');
   const saved = new Map();
   const put = (key, value) => { saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { configurable: true, value }); };
@@ -40,7 +40,7 @@ test('phone entry asks only for camera, streams after joined and stops on discon
   let stopped = 0, requested;
   function element(tag) {
     return { tag, handlers: {}, style: {}, setAttribute() {}, addEventListener(k, fn) { this.handlers[k] = fn; },
-      videoWidth: 640, videoHeight: 480, play: async () => {},
+      append(...nodes) { (this.children ||= []).push(...nodes); }, videoWidth: 640, videoHeight: 480, play: async () => {},
       getContext: () => ({ drawImage() {} }), toDataURL: () => 'data:image/jpeg;base64,c3ludGhldGlj' };
   }
   class Socket {
@@ -51,19 +51,28 @@ test('phone entry asks only for camera, streams after joined and stops on discon
     close() { this.handlers.close(); }
     message(msg) { this.handlers.message({ data: JSON.stringify(msg) }); }
   }
-  put('document', { hidden: false, createElement: element, body: { replaceChildren() { children.length = 0; }, append(...nodes) { children.push(...nodes); } } });
+  put('document', { hidden: false, createElement: element, body: { style: {}, replaceChildren() { children.length = 0; }, append(...nodes) { children.push(...nodes); } } });
   put('location', { href: 'https://demo.test/agent.html?pair=0123&token=test', search: '?pair=0123&token=test', protocol: 'https:' });
   put('window', { addEventListener() {} });
   put('navigator', { mediaDevices: { getUserMedia: async options => { requested = options; return { getTracks: () => [{ stop() { stopped++; } }] }; } } });
   put('WebSocket', Socket);
   put('setInterval', fn => { timers.set(1, fn); return 1; });
   put('clearInterval', id => timers.delete(id));
+  let voiceOptions, listening = 0, unlocked = 0;
+  const makeVoice = (options) => {
+    voiceOptions = options;
+    return { supported: { stt: true }, unlockAudio: async () => { unlocked++; },
+      startListening: async () => { listening++; }, stopListening: () => { listening--; } };
+  };
   try {
-    assert.equal(bootPairCamera(), true);
-    const [video, button, status] = children;
-    assert.equal(button.textContent, 'Start camera');
+    assert.equal(bootPairCamera({ makeVoice }), true);
+    const [video, button, meter, status] = children;
+    assert.equal(button.textContent, 'Start');
     await button.handlers.click();
-    assert.equal(requested.audio, false);
+    assert.equal(requested.audio, false); // the camera stream; voice.js opens the mic itself
+    assert.equal(unlocked, 1);
+    assert.equal(listening, 1);
+    assert.equal(voiceOptions.sttMode, 'server');
     const socket = Socket.current;
     assert.match(socket.url, /token=test/);
     socket.handlers.open();
@@ -71,8 +80,17 @@ test('phone entry asks only for camera, streams after joined and stops on discon
     assert.equal(socket.messages[0].pair_code, '0123');
     timers.get(1)();
     assert.equal(socket.messages.length, 1);
+    voiceOptions.onAudioChunk('AAA=', 0, false);
+    assert.equal(socket.messages.length, 1); // nothing before joined
     socket.message({ type: 'pair_status', state: 'joined' });
-    assert.equal(status.textContent, 'Paired');
+    assert.equal(status.textContent, 'Camera + mic connected');
+    voiceOptions.onLevel(0.5);
+    assert.equal(meter.children?.[0]?.style.width ?? '50%', '50%');
+    voiceOptions.onBargePoint();
+    voiceOptions.onAudioChunk('AQA=', 1, true);
+    const mic = socket.messages.filter(m => m.type === 'barge_in' || m.type === 'audio_in');
+    assert.equal(mic[0].type, 'barge_in');
+    assert.deepEqual(mic.slice(1).map(m => [m.seq, m.final]), [[0, false], [1, true]]);
     timers.get(1)();
     assert.equal(socket.messages.at(-1).type, 'frame');
     assert.equal(socket.messages.at(-1).jpeg_b64, 'c3ludGhldGlj');
@@ -87,7 +105,7 @@ test('phone entry asks only for camera, streams after joined and stops on discon
     assert.equal(video.srcObject, null);
     assert.equal(button.disabled, true);
     assert.equal(timers.size, 0);
-    assert.ok(socket.messages.every(msg => ['hello', 'frame', 'camera'].includes(msg.type)));
+    assert.ok(socket.messages.every(msg => ['hello', 'frame', 'camera', 'audio_in', 'barge_in'].includes(msg.type)));
   } finally {
     for (const [key, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; }
   }
@@ -106,4 +124,39 @@ test("pair request uses the current session id, not the one at setup time", asyn
   listeners.click();
   assert.equal(sent[0].session_id, "new");
   delete globalThis.document;
+});
+
+test('phone mic replaces the laptop mic and leaving restores it', async () => {
+  const { phoneMicRoute } = await import('./pair.js');
+  const joined = { type: 'pair_status', role: 'call', state: 'joined' };
+  const left = { type: 'pair_status', role: 'call', state: 'left' };
+  let r = phoneMicRoute(null, joined, true);
+  assert.deepEqual(r, { route: { phone: true, resume: true }, action: 'stop_local' });
+  assert.equal(phoneMicRoute(r.route, { ...joined, state: 'camera' }, false).action, null);
+  assert.equal(phoneMicRoute(r.route, left, false).action, 'start_local');
+  assert.deepEqual(phoneMicRoute(r.route, left, false).route, { phone: false, resume: false });
+  // Laptop mic was off: it stays off after the phone leaves.
+  r = phoneMicRoute(null, joined, false);
+  assert.equal(r.action, null);
+  assert.equal(phoneMicRoute(r.route, left, false).action, null);
+  // Messages to the camera device do not move the laptop mic.
+  assert.equal(phoneMicRoute(null, { ...joined, role: 'camera' }, true).action, null);
+});
+
+test('phone audio waits for its barge point so barge_in never drops the utterance start', async () => {
+  const { createPhoneAudio } = await import('./pair.js');
+  const sent = [];
+  const a = createPhoneAudio((m) => sent.push(m));
+  a.chunk('AAA=', 0, false);
+  a.chunk('AQA=', 1, false);
+  assert.equal(sent.length, 0);
+  a.bargePoint();
+  a.chunk('AgA=', 2, true);
+  assert.deepEqual(sent.map((m) => m.type === 'audio_in' ? m.seq : m.type), ['barge_in', 0, 1, 2]);
+  // A short utterance that ends before its barge point is sent without a barge.
+  sent.length = 0;
+  a.chunk('AAA=', 3, false);
+  a.chunk('AQA=', 4, true);
+  assert.deepEqual(sent.map((m) => m.seq), [3, 4]);
+  assert.ok(sent.every((m) => m.sample_rate === 16000));
 });

@@ -94,7 +94,7 @@ export interface MarketResponse { v: V; query_key: string; category: PartCategor
 // =====================================================================
 export type V2 = 2;
 export type AgentId = "helper" | "shopper";
-export type PackId = "general" | "pc_build" | "cooking" | "assemble";
+export type PackId = "general" | "pc_build" | "cooking" | "assemble" | "memory";
 export type PresenceState = "idle" | "listening" | "thinking" | "speaking";
 export type DrawRole = "target" | "info" | "warn" | "ok";
 
@@ -110,7 +110,7 @@ export type DrawOp =
   | (OpBase & { kind: "clear" });
 
 // client -> server
-export interface V2Hello { v: V2; type: "hello"; session_id: string; pack: PackId; board_id?: string; client?: "web" | "ios"; tts?: "server" | "browser"; stt?: "browser" | "server"; voice?: string }
+export interface V2Hello { v: V2; type: "hello"; session_id: string; pack: PackId; board_id?: string; client?: "web" | "ios"; tts?: "server" | "browser"; stt?: "browser" | "server"; voice?: string; private?: boolean }
 export interface V2Frame { v: V2; type: "frame"; session_id: string; seq: number; ts_ms: number; w: number; h: number; jpeg_b64: string }
 export interface V2UserText { v: V2; type: "user_text"; session_id: string; text: string; final: boolean; source?: "browser_stt" | "whisper" | "typed" }
 export interface V2BargeIn { v: V2; type: "barge_in"; session_id: string; utterance_id: string; at_ms: number }
@@ -142,7 +142,7 @@ export interface V2Track { v: V2; type: "track"; seq: number; objects: SceneObje
 export interface V2AudioIn { v: V2; type: "audio_in"; session_id: string; seq: number; sample_rate?: 16000; pcm16_b64: string; final?: boolean }
 
 // v2.3 (additive): turn stages (ack), streamed reply text, camera on/off. V2Hello may carry camera?: boolean.
-export interface V2Turn { v: V2; type: "turn"; turn_id: string; stage: "received" | "transcribing" | "thinking" | "backup" | "speaking" | "done" | "failed" | "cancelled"; at_ms: number; text?: string; detail?: string; typical_ms?: number }
+export interface V2Turn { v: V2; type: "turn"; turn_id: string; stage: "received" | "transcribing" | "thinking" | "backup" | "speaking" | "done" | "failed" | "cancelled" | "expert" | "expert_done"; at_ms: number; text?: string; detail?: string; typical_ms?: number }
 export interface V2ReplyDelta { v: V2; type: "reply_delta"; agent: AgentId; turn_id: string; text: string }
 export interface V2Camera { v: V2; type: "camera"; session_id: string; on: boolean }
 
@@ -156,3 +156,8 @@ export interface V2PairStatus { v: V2; type: "pair_status"; state: "joined" | "l
 export interface V2Rewind { v: V2; type: "rewind"; session_id: string; on: boolean }
 export interface V2RewindState { v: V2; type: "rewind_state"; on: boolean; clips?: number; ready?: number; indexing?: number; pending?: number; notice?: string }
 export interface V2RewindHit { v: V2; type: "rewind_hit"; turn_id?: string; query: string; t_s: number; start_s: number; end_s: number; sure: boolean; alternatives?: number[]; frame_b64?: string; objects?: SceneObject[] }
+
+// v2.6 (additive): Rewind recap. V2RewindRecap joins the server v2 union.
+export interface V2RewindRecap { v: V2; type: "rewind_recap"; turn_id?: string; steps: { t_s: number; text: string }[]; skipped: string[] }
+
+// v2.7 (additive): Rewind privacy. V2Rewind may carry keep?: boolean; V2RewindState may carry locked?: boolean.

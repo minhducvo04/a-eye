@@ -27,6 +27,8 @@ from jsonschema import ValidationError
 from contracts import validate
 from market.search import search
 from server import ws2
+from server.expert import check_local_model
+from server.routing import warm_router
 from server.boards import load_board
 from server.llm import LLMClient
 from server.steps import Session, error
@@ -42,6 +44,10 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
         if not os.environ.get("A_EYE_TOKEN"):
             event("auth_disabled", level="warning")
         warmup = None if app.state.mock else asyncio.create_task(ws2.warm_brain(app))
+        if not app.state.mock:
+            # Off the event loop: warn once at startup if the local expert model tag is missing on the box.
+            asyncio.get_running_loop().run_in_executor(None, check_local_model)
+            asyncio.get_running_loop().run_in_executor(None, warm_router)
         try:
             yield
         finally:
@@ -53,6 +59,10 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
     app.state.vision = vision if vision is not None else VisionClient()
     app.state.llm = llm if llm is not None else LLMClient()
     app.state.mock = os.environ.get('A_EYE_MOCK') == '1'
+    if os.environ.get('REWIND_FAKE_TL') == '1':
+        # Rehearsals: Rewind runs end to end with an in-process TwelveLabs stand-in (nothing uploaded).
+        from server.rewind_fake import FakeTwelveLabs
+        app.state.rewind_client = FakeTwelveLabs()
     app.state.status_cache = None
     app.state.status_lock = asyncio.Lock()
     if app.state.mock:

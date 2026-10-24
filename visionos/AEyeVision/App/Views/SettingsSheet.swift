@@ -41,6 +41,31 @@ struct SettingsSheet: View {
                     Text(voiceHint)
                 }
 
+                Section {
+                    Toggle("Private mode", isOn: $controller.privateMode)
+                } header: {
+                    Text("Privacy")
+                } footer: {
+                    Text(Copy.privateFoot + " Applies from the next call.")
+                }
+
+                Section {
+                    Toggle("Rewind", isOn: Binding(get: { controller.rewind.on }, set: { controller.setRewind($0) }))
+                        .disabled(controller.privateMode || controller.rewind.locked)
+                    Toggle("Keep clips after the call",
+                           isOn: Binding(get: { controller.rewindKeep }, set: { controller.setRewindKeep($0) }))
+                        .disabled(controller.privateMode)
+                    Button("Forget this call's clips") { controller.forget() }
+                        .disabled(controller.mode == nil)
+                    if let notice = controller.memoryNotice {
+                        Text(notice).foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("Rewind")
+                } footer: {
+                    Text(rewindFoot)
+                }
+
                 Section("Connection") {
                     Text(status)
                 }
@@ -61,6 +86,12 @@ struct SettingsSheet: View {
         }
         .presentationDetents([.medium, .large])
         .task(id: controller.serverURLString) { await loadVoices() }
+    }
+
+    private var rewindFoot: String {
+        if controller.privateMode { return "Rewind stays off in Private mode." }
+        if controller.rewind.locked { return "This server keeps everything local, so Rewind cannot be turned on." }
+        return Copy.rewindNotice + " " + Copy.rewindFoot
     }
 
     private var voiceHint: String {

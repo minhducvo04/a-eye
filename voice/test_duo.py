@@ -77,3 +77,24 @@ def test_cancelled_turn_cancels_planner():
 def test_talker_model_defaults_to_haiku_with_thinking_off():
     assert turn_model() == 'claude-haiku-5-5'
     assert fast_options('claude-haiku-5-5') == dict(thinking={'type': 'disabled'}, output_config={'effort': 'low'})
+
+
+def test_planner_note_that_repeats_the_talker_is_not_spoken():
+    # Live replay 2026-10-24: talker said the camera is off, planner said it again.
+    from server.agent import repeats
+
+    class CameraOff(Talker):
+        async def stream(self, system, user, **kwargs):
+            yield "SAY: I can't see anything right now, since the camera is off."
+
+    class SamePoint(Planner):
+        async def stream(self, system, user, **kwargs):
+            yield json.dumps(dict(agent='helper', draw=[], note="Camera's off, so turn it on and show me the board.",
+                                  speak=True))
+
+    async def check():
+        messages = await run_turn(session(), 'where does it go', vision=Vision(), llm=CameraOff(), planner=SamePoint())
+        assert [m['text'] for m in messages if m['type'] == 'say'] == [
+            "I can't see anything right now,", 'since the camera is off.']
+    asyncio.run(check())
+    assert not repeats('It goes in the CPU fan header.', "Let me look, at that cable.")

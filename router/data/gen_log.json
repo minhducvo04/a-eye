@@ -1,0 +1,14 @@
+{
+  "model": "claude-sonnet-5-5",
+  "seed": 13,
+  "calls": 120,
+  "rows": 2731,
+  "counts": {
+    "now": 1627,
+    "past": 723,
+    "expert": 381
+  },
+  "input_tokens": 112220,
+  "output_tokens": 112720,
+  "cost_usd": 1.3516
+}

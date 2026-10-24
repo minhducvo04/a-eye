@@ -74,6 +74,31 @@ async def confirm(vision, jpeg, target, min_conf=0.5):
     return [o for o in scene.get('objects', []) if o.get('conf', 0) >= min_conf and label_matches(o['label'], target)]
 
 
+def local_only():
+    """LOCAL_ONLY=1 or this call's Private mode (server/privacy.py)."""
+    from server.privacy import local_only as private_or_local
+    return private_or_local()
+
+
+def identity(connection):
+    """Who is calling, for binding Rewind data to its owner. Call only after server.auth.authorized() passed:
+    the Access JWT was verified there, so its email claim is read here without re-verifying. A token gives one
+    shared identity; no auth configured means the single local user."""
+    import hashlib
+    encoded = connection.headers.get('cf-access-jwt-assertion') or connection.cookies.get('CF_Authorization')
+    if encoded:
+        try:
+            import jwt
+            email = jwt.decode(encoded, options={'verify_signature': False}).get('email', '')
+            if isinstance(email, str) and email:
+                return 'access:' + hashlib.sha256(email.lower().encode()).hexdigest()[:16]
+        except Exception:
+            pass
+    if os.environ.get('A_EYE_TOKEN'):
+        return 'token'
+    return 'local'
+
+
 def fmt_offset(seconds):
     seconds = max(0, int(round(seconds)))
     if seconds < 5:
@@ -94,6 +119,8 @@ class TwelveLabsClient:
         self.base = base
 
     def _headers(self):
+        if local_only():
+            raise RuntimeError('Private mode or LOCAL_ONLY=1: Rewind cloud is locked off')
         key = self.key or os.environ.get('TWELVELABS_API_KEY', '')
         if not key:
             raise RuntimeError('TWELVELABS_API_KEY is not set')
@@ -126,11 +153,30 @@ class TwelveLabsClient:
             body = response.json()
             return body['_id'], body.get('video_id')
 
+    async def delete_video(self, index_id, video_id):
+        async with self._client() as client:
+            response = await client.delete(f'/indexes/{index_id}/videos/{video_id}')
+            if response.status_code != 404:      # already gone counts as deleted
+                response.raise_for_status()
+
     async def task(self, task_id):
         async with self._client() as client:
             response = await client.get(f'/tasks/{task_id}')
             response.raise_for_status()
             return response.json()
+
+    async def analyze(self, mp4_bytes, prompt, schema=None, model=None, max_tokens=800):
+        """Pegasus over POST /analyze with the video as base64 (30 MB limit). Returns (text, usage)."""
+        body = dict(model_name=model or os.environ.get('REWIND_PEGASUS_MODEL', 'pegasus1.5'),
+                    video=dict(type='base64_string', base64_string=base64.b64encode(mp4_bytes).decode()),
+                    prompt=prompt, stream=False, temperature=0.1, max_tokens=max_tokens)
+        if schema:
+            body['response_format'] = dict(type='json_schema', json_schema=schema)
+        async with self._client(timeout=180) as client:
+            response = await client.post('/analyze', json=body)
+            response.raise_for_status()
+            result = response.json()
+            return result.get('data') or '', result.get('usage') or {}
 
     async def search(self, index_id, query, video_ids=None, limit=5):
         data = [('index_id', index_id), ('query_text', query), ('search_options', 'visual'),
@@ -191,12 +237,17 @@ class Rewind:
         self.lock = asyncio.Lock()
         self.uploads = []       # (task_id, upload_ms) for the report and status
         self.waits = set()
+        self.end_task = None    # end-of-call cleanup, awaited by the recap route
+        self.mode = None
+        self.owner = 'local'    # identity() of the caller that opened this call
+        self.keep = False       # True: the user keeps the TwelveLabs videos after the call
+        self.deleted = []       # video ids deleted from TwelveLabs (ids only)
 
     def now_s(self):
         return self.clock() - self.started
 
     def set_on(self, value):
-        self.on = bool(value)
+        self.on = bool(value) and not local_only()   # LOCAL_ONLY=1 keeps Rewind cloud off
         if not self.on:
             self.ring.clear()
             # Unsent clips are dropped when the user turns Rewind off.
@@ -239,6 +290,9 @@ class Rewind:
             return None
         clip = Clip(start_s=max(0.0, t - PRE_S), end_s=t + POST_S, key_s=t, reasons=[reason])
         clip.frames = [f for f in self.ring if f[0] >= clip.start_s]
+        if not clip.frames and self.ring:
+            # A still camera sends no new frame; the newest one is still the current view.
+            clip.frames = [self.ring[-1]]
         self.clips.append(clip)
         return clip
 
@@ -269,14 +323,21 @@ class Rewind:
                     self.uploads.append((clip.task_id, (monotonic() - started) * 1000))
                 except Exception as exc:
                     clip.status = 'failed'
+                    tb = exc.__traceback__
+                    while tb and tb.tb_next:
+                        tb = tb.tb_next
                     event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
-                          error=type(exc).__name__)
+                          error=type(exc).__name__,
+                          where=f'{tb.tb_frame.f_code.co_filename.rsplit("/", 1)[-1]}:{tb.tb_lineno}' if tb else '')
                 finally:
                     os.unlink(path)
                 # Keep a few frames for pointing at the answer; the rest leave memory now.
                 if len(clip.frames) > KEEP_FRAMES:
                     step = len(clip.frames) / KEEP_FRAMES
-                    clip.frames = [clip.frames[int(i * step)] for i in range(KEEP_FRAMES)]
+                    kept = {int(i * step) for i in range(KEEP_FRAMES)}
+                    # Always keep the first frame after the change: the moment the answer points at.
+                    kept.add(next((i for i, f in enumerate(clip.frames) if f[0] >= clip.key_s), 0))
+                    clip.frames = [clip.frames[i] for i in sorted(kept)]
         waits = [self.wait_ready(c, timeout) for c in ready if c.status == 'indexing']
         if wait:
             await asyncio.gather(*waits)
@@ -328,7 +389,9 @@ class Rewind:
             start, end = clip.start_s + float(row.get('start', 0)), clip.start_s + float(row.get('end', 0))
             # The change that opened the clip is the moment; fall back to the hit start.
             at = clip.key_s if start <= clip.key_s <= end else start
-            frame = min(clip.frames, key=lambda f: abs(f[0] - at))[1] if clip.frames else None
+            # The first kept frame at or after the moment: a frame just before a change shows the old scene.
+            after = [f for f in clip.frames if f[0] >= at - 1e-6]
+            frame = (after[0] if after else clip.frames[-1])[1] if clip.frames else None
             hits.append(dict(t_s=round(at, 1), start_s=round(start, 1), end_s=round(end, 1), rank=row.get('rank'),
                              video_id=clip.video_id, frame=frame))
         return hits
@@ -366,6 +429,35 @@ class Rewind:
         times = ' or '.join(fmt_offset(t) for t in [hit['t_s']] + hit['alternatives'])
         return f"I'm not sure I saw it. Maybe {times}. Here's my best guess.", hit
 
+    async def forget(self, local=True):
+        """Delete this call's TwelveLabs videos (logs ids only). local=True also drops every clip and frame;
+        local=False (call end) keeps the in-memory frames so the end-of-call recap can still run."""
+        for task in list(self.waits):
+            task.cancel()
+        await asyncio.gather(*self.waits, return_exceptions=True)
+        failed = []
+        for clip in self.clips:
+            if clip.video_id and self.index_id:
+                try:
+                    await self.client.delete_video(self.index_id, clip.video_id)
+                    self.deleted.append(clip.video_id)
+                    print(json.dumps(dict(ts=datetime.now(timezone.utc).isoformat(), level='info',
+                                          event='rewind_deleted', video_id=clip.video_id)), flush=True)
+                except Exception as exc:
+                    failed.append(clip)
+                    event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
+                          error=type(exc).__name__)
+        if local:
+            self.clips = failed        # only clips whose cloud copy could not be deleted stay listed
+            for clip in failed:
+                clip.frames = []
+        else:
+            for clip in self.clips:
+                if clip not in failed and clip.video_id:
+                    clip.status, clip.video_id = 'deleted', None
+        self.ring.clear()
+        return dict(deleted=len(self.deleted), failed=len(failed))
+
     async def aclose(self):
         for task in list(self.waits):
             task.cancel()
@@ -375,6 +467,7 @@ class Rewind:
         """Sample the session's newest frame (from this socket or a paired phone camera) and upload finished
         clips every few minutes while the call goes on. The end of the call is Registry.end."""
         every = every or float(os.environ.get('REWIND_FLUSH_S', '60'))
+        self.mode = getattr(getattr(session, 'pack', None), 'id', None)
         seq = None
         next_flush = self.clock() + every
         while True:
@@ -402,10 +495,16 @@ class Registry:
         self.calls = {}
         self.background = set()
 
-    def open(self, session_id, on=False, **kwargs):
+    def open(self, session_id, on=False, owner='local', **kwargs):
         if self.encoder is not None:
             kwargs.setdefault('encoder', self.encoder)
+        old = self.calls.get(session_id)
         rewind = Rewind(session_id, client=self.client, **kwargs)
+        rewind.owner = owner
+        if old is not None and old.owner != owner:
+            # Another caller's session id: never touch that call; this one gets an unregistered, off Rewind.
+            event('auth_rejected', level='warning', reason='rewind_owner')
+            return rewind
         rewind.set_on(on)
         self.calls.pop(session_id, None)
         self.calls[session_id] = rewind
@@ -414,15 +513,16 @@ class Registry:
             self.spawn(old.aclose())
         return rewind
 
-    def get(self, session_id):
-        return self.calls.get(session_id)
+    def get(self, session_id, owner=None):
+        """The caller's own call only. With owner given, another caller's call reads as unknown."""
+        rewind = self.calls.get(session_id)
+        if rewind is None or (owner is not None and rewind.owner != owner):
+            return None
+        return rewind
 
-    def for_question(self, session_id=None):
-        """This call when it has clips, else the newest call that does."""
-        current = self.calls.get(session_id)
-        if current and current.clips:
-            return current
-        return next((r for r in reversed(self.calls.values()) if r.clips), current)
+    def for_question(self, session_id=None, owner=None):
+        """Only this call (never another call's clips)."""
+        return self.get(session_id, owner) if session_id else None
 
     def spawn(self, coroutine):
         task = asyncio.create_task(coroutine)
@@ -431,12 +531,24 @@ class Registry:
         return task
 
     def end(self, session_id):
-        """End of call: upload whatever is left. Runs after the socket closes."""
+        """End of call: delete the call's TwelveLabs videos unless the user keeps them (then upload the rest)."""
         rewind = self.calls.get(session_id)
         if rewind is None:
             return None
         rewind.close()
-        return self.spawn(rewind.flush(wait=True)) if rewind.on else None
+        if rewind.keep and rewind.on:
+            rewind.end_task = self.spawn(rewind.flush(wait=False))
+        elif any(c.video_id for c in rewind.clips) or rewind.waits or rewind.lock.locked():
+            rewind.end_task = self.spawn(self._end_and_forget(rewind))
+        else:
+            rewind.clips = [c for c in rewind.clips if c.status not in ('open', 'pending')]
+            rewind.end_task = None
+        return rewind.end_task
+
+    async def _end_and_forget(self, rewind):
+        async with rewind.lock:        # an upload in flight finishes first, so its video id is known
+            rewind.clips = [c for c in rewind.clips if c.status not in ('open', 'pending')]
+        return await rewind.forget(local=False)
 
 
 def registry(app):
@@ -458,35 +570,211 @@ def small_frame(jpeg, size=480):
 def wants_rewind(session, text):
     """Route a turn to Rewind only for a Rewind-style question while Rewind is on or has clips to search."""
     current = getattr(session, 'rewind', None)
-    return is_rewind_question(text) and current is not None and (current.on or bool(current.clips))
+    return ((is_rewind_question(text) or is_recap_request(text)) and current is not None
+            and (current.on or bool(current.clips)))
+
+
+def hit_message(result, turn_id=None):
+    """The client card for a search_past result (frame with the object boxed), or None without a frame."""
+    from server.agent import message
+    if result.get('call_time_s') is None:
+        return None
+    fields = dict(query=result.get('query') or result.get('label') or '', t_s=result['call_time_s'],
+                  start_s=result.get('start_s', result['call_time_s']), end_s=result.get('end_s', result['call_time_s']),
+                  sure=result['sure'], alternatives=result['alternatives'][:3],
+                  objects=[dict(id='rewind-0', label=result['label'] or 'object', bbox=result['box'], conf=1.0)]
+                  if result.get('box') else [])
+    if turn_id:
+        fields['turn_id'] = turn_id
+    if result.get('frame_b64'):
+        fields['frame_b64'] = result['frame_b64']
+    return message('rewind_hit', **fields)
+
+
+def recap_message(result, turn_id=None):
+    from server.agent import message
+    return message('rewind_recap', steps=result['steps'], skipped=result['skipped'],
+                   **({'turn_id': turn_id} if turn_id else {}))
 
 
 async def rewind_turn(session, text, rewind, *, vision, turn_id):
-    """One spoken answer from Rewind plus the hit frame with the object boxed. Same shape as a refusal turn."""
+    """Regex-routed Rewind turn: a short checking line, then the answer and its card (search or recap)."""
     from server.agent import message, say   # late import: agent imports nothing from here
     emit = session.emit
-    spoken, hit = await rewind.answer(text, vision=vision)
-    msg = say(spoken)
-    msg.update(turn_id=turn_id, part=0, final=True)
-    if hit is not None:
-        fields = dict(turn_id=turn_id, query=hit['query'], t_s=hit['t_s'], start_s=hit['start_s'],
-                      end_s=hit['end_s'], sure=hit['sure'], alternatives=hit['alternatives'],
-                      objects=[{k: o[k] for k in ('id', 'label', 'bbox', 'conf')} for o in hit['objects']])
-        if hit['frame']:
-            try:
-                fields['frame_b64'] = await asyncio.to_thread(small_frame, hit['frame'])
-            except Exception:
-                pass
-        await emit(message('rewind_hit', **fields))
-    await emit(message('reply_delta', agent='helper', turn_id=turn_id, text=spoken))
-    await emit(msg)
-    if session.speak:
-        async for audio in session.speak(msg):
-            await emit(audio)
-    session.history.extend([f'user: {text}', f'helper: {spoken}'])
+    part = 0
+
+    async def speak(line, final):
+        nonlocal part
+        msg = say(line)
+        msg.update(turn_id=turn_id, part=part, final=final)
+        part += 1
+        await emit(message('reply_delta', agent='helper', turn_id=turn_id, text=line + ' '))
+        await emit(msg)
+        if session.speak:
+            async for audio in session.speak(msg):
+                await emit(audio)
+
+    recapping = is_recap_request(text)
+    await speak(RECAP_CHECKING_LINE if recapping else CHECKING_LINE, False)
+    if recapping:
+        result = await recap_call(session)
+        await emit(recap_message(result, turn_id))
+    else:
+        result = await search_past(session, text, vision=vision)
+        card = hit_message(dict(result, query=query_from(text)), turn_id)
+        if card:
+            await emit(card)
+    await speak(result['say'], True)
+    session.history.extend([f'user: {text}', f"helper: {result['say']}"])
     session.history[:] = session.history[-10:]
 
 
 def state_message(rewind):
     from server.agent import message
-    return message('rewind_state', **rewind.status(), **({'notice': NOTICE} if rewind.on else {}))
+    extra = {'notice': NOTICE} if rewind.on else {}
+    if local_only():
+        extra['locked'] = True
+    return message('rewind_state', **rewind.status(), **extra)
+
+
+# ---- Recap: Pegasus over the frames already uploaded while Rewind was on ----
+
+TYPICAL_STEPS = {
+    'pc_build': ['switch the PSU off and unplug it', 'install the CPU', 'mount the CPU cooler',
+                 'plug in the CPU fan cable', 'install the RAM', 'install the M.2 SSD',
+                 'connect the 24-pin power cable', 'connect the 8-pin CPU power cable',
+                 'connect the front panel cables'],
+    'cooking': ['wash your hands', 'prep the ingredients', 'heat the pan or oven', 'cook the food',
+                'check that it is done', 'turn off the heat'],
+    'assemble': ['lay out and count the parts', 'follow the steps in order', 'tighten every screw',
+                 'check that it is stable'],
+    'general': ['set up the workspace', 'do the main task', 'check the result', 'tidy up'],
+}
+RECAP_STEP_S = 0.5           # each kept frame shows for half a second in the recap video
+RECAP_MAX_FRAMES = 240
+_RECAP = re.compile(r"\b(recap|what have i done( so far)?|did i (skip|miss|forget) (anything|something))\b", re.I)
+RECAP_SCHEMA = {
+    'type': 'object', 'required': ['steps', 'skipped'],
+    'properties': {
+        'steps': {'type': 'array', 'items': {'type': 'object', 'required': ['t', 'text'], 'properties': {
+            't': {'type': 'number'}, 'text': {'type': 'string'}}}},
+        'skipped': {'type': 'array', 'items': {'type': 'string'}}}}
+
+
+def is_recap_request(text):
+    return bool(_RECAP.search(text or ''))
+
+
+def recap_prompt(mode):
+    typical = TYPICAL_STEPS.get(mode, TYPICAL_STEPS['general'])
+    return ('This video is a time-lapse of moments kept from a hands-on video call, in order; time jumps between '
+            'moments. List the concrete actions the person completed, in order, each with t = seconds into THIS '
+            'video where it is visible, and text = a short past-tense step (under 10 words). Describe objects and '
+            'actions only; never describe or identify people. Then, from this list of typical steps, return in '
+            '"skipped" only the ones that clearly did not happen in the video: ' + json.dumps(typical) +
+            '. Answer as JSON.')
+
+
+async def recap(rewind, mode=None, encoder=None):
+    """Ordered steps with call times, plus typical steps that look skipped. Uses only clips already uploaded."""
+    mode = mode or getattr(rewind, 'mode', None) or 'general'
+    clips = sorted((c for c in rewind.clips if c.status in ('indexing', 'ready', 'deleted') and c.frames),
+                   key=lambda c: c.start_s)
+    frames = [f for c in clips for f in c.frames][:RECAP_MAX_FRAMES]
+    if not frames:
+        return dict(steps=[], skipped=[], mode=mode, ms=0, usage={},
+                    note='Nothing to recap yet: no clips were uploaded while Rewind was on.')
+    started = monotonic()
+    handle, path = tempfile.mkstemp(suffix='.mp4', prefix='recap-')
+    os.close(handle)
+    try:
+        timed = [(i * RECAP_STEP_S, jpeg) for i, (_, jpeg) in enumerate(frames)]
+        duration = await asyncio.to_thread(encoder or rewind.encoder, timed, path)
+        with open(path, 'rb') as handle:
+            video = handle.read()
+    finally:
+        os.unlink(path)
+    text, usage = await rewind.client.analyze(video, recap_prompt(mode), schema=RECAP_SCHEMA)
+    try:
+        parsed = json.loads(text[text.find('{'):]) if '{' in text else {}
+    except ValueError:
+        parsed = {}
+    rate = max(1.0, len(frames) / max(float(duration or 1), 1e-6))
+    steps = []
+    for step in parsed.get('steps') or []:
+        if not isinstance(step, dict) or not str(step.get('text', '')).strip():
+            continue
+        try:
+            at = float(step.get('t') or 0)
+        except (TypeError, ValueError):
+            at = 0.0
+        index = min(len(frames) - 1, max(0, int(at * rate)))
+        steps.append((round(frames[index][0], 1), at, str(step['text']).strip()[:120]))
+    steps = [dict(t_s=t_s, text=text) for t_s, _, text in sorted(steps)]
+    typical = TYPICAL_STEPS.get(mode, TYPICAL_STEPS['general'])
+    # Hard rule in code: "skipped" can only name a typical step of this mode, never free text.
+    skipped = [t for t in typical if any(t.lower() == str(x).strip().lower() for x in parsed.get('skipped') or [])]
+    return dict(steps=steps[:12], skipped=skipped, mode=mode, ms=round((monotonic() - started) * 1000),
+                usage=usage, frames=len(frames), clips=len(clips))
+
+
+def recap_line(result):
+    if not result['steps']:
+        return result.get('note') or "I couldn't make a recap from the clips."
+    done = '; '.join(s['text'].rstrip('.') for s in result['steps'][:5])
+    line = f"Here's what you did: {done}."
+    if result['skipped']:
+        line += f" You may have skipped: {', '.join(result['skipped'][:3])}."
+    else:
+        line += " I don't see a typical step skipped."
+    return line
+
+
+# ---- Tool interface for the talker (the lead owns the talker; these are the functions it calls) ----
+
+CHECKING_LINE = 'Let me check the recording.'
+RECAP_CHECKING_LINE = 'Let me look back over the call.'
+
+
+def rewind_for(session, app=None):
+    """This call's own Rewind only; never another call's clips."""
+    return getattr(session, 'rewind', None)
+
+
+async def search_past(session, query, vision=None, app=None):
+    """Find a past moment of this call. Returns a JSON-safe dict for a tool_result:
+    {sure, call_time_s, label, box, clip_id, alternatives, say} (plus frame_b64 for the client card)."""
+    rewind = rewind_for(session, app)
+    empty = dict(sure=False, call_time_s=None, label=None, box=None, clip_id=None, alternatives=[])
+    if rewind is None or (not rewind.on and not rewind.clips):
+        return dict(empty, say="Rewind is off, so there's no recording to check.")
+    spoken, hit = await rewind.answer(query, vision=vision)
+    if hit is None:
+        return dict(empty, say=spoken)
+    best = hit['objects'][0] if hit['objects'] else None
+    result = dict(sure=hit['sure'], call_time_s=hit['t_s'], label=best['label'] if best else hit['target'],
+                  box=best['bbox'] if best else None, clip_id=hit['video_id'], alternatives=hit['alternatives'],
+                  start_s=hit['start_s'], end_s=hit['end_s'], say=spoken)
+    if hit.get('frame'):
+        try:
+            result['frame_b64'] = await asyncio.to_thread(small_frame, hit['frame'])
+        except Exception:
+            pass
+    return result
+
+
+async def recap_call(session, app=None):
+    """Recap of this call for a tool_result: {steps:[{t_s,text}], skipped:[...], say}."""
+    rewind = rewind_for(session, app)
+    if rewind is None or not rewind.clips:
+        return dict(steps=[], skipped=[], say="Rewind is off, so there's nothing to recap.")
+    if rewind.on and any(c.status == 'pending' for c in rewind.clips):
+        await rewind.flush()       # upload the newest finished clips first; recap uses uploaded clips only
+    mode = getattr(getattr(session, 'pack', None), 'id', None)
+    try:
+        result = await recap(rewind, mode=mode)
+    except Exception as exc:
+        event('dependency_error', getattr(session, 'session_id', None), dependency='twelvelabs', level='error',
+              error=type(exc).__name__)
+        return dict(steps=[], skipped=[], say="I couldn't make the recap just now.")
+    return dict(steps=result['steps'], skipped=result['skipped'], say=recap_line(result))

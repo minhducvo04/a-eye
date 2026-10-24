@@ -5,7 +5,9 @@ const STAGES = ['received', 'transcribing', 'thinking', 'backup', 'speaking', 'd
 export function nextTurnState(state, event, nowMs) {
   const s = state || { stage: 'idle', since: nowMs, timestamps: {}, retries: 0, turnId: '', micAt: null };
   const e = event || {};
-  if (e.type === 'sent') return { stage: 'sent', since: nowMs, timestamps: { sent: nowMs }, retries: 0, ackAt: nowMs, turnId: '', text: e.text || '', micAt: null };
+  if (e.type === 'turn' && e.stage === 'expert') return { ...s, expertAt: nowMs, expertId: e.turn_id };
+  if (e.type === 'turn' && e.stage === 'expert_done') return e.turn_id === s.expertId ? { ...s, expertAt: null, expertId: null } : s;
+  if (e.type === 'sent') return { expertAt: s.expertAt, expertId: s.expertId, stage: 'sent', since: nowMs, timestamps: { sent: nowMs }, retries: 0, ackAt: nowMs, turnId: '', text: e.text || '', micAt: null };
   if (e.type === 'mic_start') {
     if (s.micAt != null || ['sent', 'received', 'transcribing', 'thinking', 'backup', 'speaking'].includes(s.stage)) return s;
     return { ...s, stage: 'hearing', since: nowMs, micAt: nowMs, text: '' };
@@ -14,7 +16,7 @@ export function nextTurnState(state, event, nowMs) {
   // A known mic or recognizer problem replaces the generic "didn't catch that".
   if (e.type === 'cause') return { ...s, cause: e.detail || '' };
   if (e.type === 'interim' && e.text) return { ...s, stage: 'hearing', since: s.stage === 'hearing' ? s.since : nowMs, text: e.text, micAt: null, cause: '' };
-  if (e.type === 'closed') return { ...s, stage: 'disconnected', since: nowMs, micAt: null };
+  if (e.type === 'closed') return { ...s, stage: 'disconnected', expertAt: null, expertId: null, since: nowMs, micAt: null };
   if (e.type === 'connected' && s.stage === 'disconnected') return { ...s, stage: s.timestamps.sent != null && s.timestamps.received == null ? 'sent' : 'idle', since: nowMs, ackAt: nowMs };
   if (e.type === 'turn' && STAGES.includes(e.stage)) {
     // A received event binds the server-generated id. Ignore late stages from older turns.
@@ -38,6 +40,7 @@ export function nextTurnState(state, event, nowMs) {
 
 export function statusLine(state, nowMs) {
   const s = state || { stage: 'idle' };
+  if (s.expertAt != null) return `EXPERT ${(Math.max(0, nowMs - s.expertAt) / 1000).toFixed(1)} s`;
   const labels = { idle: 'Ready', muted: 'Mic muted', hearing: 'Hearing', sent: 'Sent', received: 'Received', transcribing: 'Transcribing', thinking: 'Thinking', backup: 'Brain slow, trying backup', speaking: 'Speaking', done: 'Done', cancelled: 'Cancelled', failed: s.detail || "Didn't catch that", retrying: 'Not received, retrying', connection_problem: 'Connection problem', disconnected: 'Connection lost, retrying' };
   const label = labels[s.stage] || 'Ready';
   if (['idle', 'muted'].includes(s.stage)) return s.cause || label;

@@ -1,3 +1,5 @@
+import Accelerate
+import AEyeCore
 import AVFoundation
 import Foundation
 import Observation
@@ -20,6 +22,8 @@ private nonisolated final class RecognitionPipeline: @unchecked Sendable {
         case failed
         /// Too many requests in a row failed straight away. Listening has stopped; use typed input.
         case gaveUp
+        /// RMS loudness of one mic buffer, 0...1. Only this number leaves the tap, for the waveform.
+        case level(Float)
     }
 
     enum PipelineError: Error {
@@ -131,6 +135,15 @@ private nonisolated final class RecognitionPipeline: @unchecked Sendable {
         let current = request
         lock.unlock()
         current?.append(buffer)
+        emit(.level(Self.rms(of: buffer)))
+    }
+
+    /// Loudness of the first channel. The samples themselves are not kept.
+    private static func rms(of buffer: AVAudioPCMBuffer) -> Float {
+        guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return 0 }
+        var value: Float = 0
+        vDSP_rmsqv(samples, 1, &value, vDSP_Length(buffer.frameLength))
+        return value
     }
 
     /// A route change or a finished interruption (phone call, Siri) can stop the engine. Start it again.
@@ -328,6 +341,9 @@ final class SpeechIn {
     private(set) var interim = ""
     /// True while the user has switched the mic off. The tap is stopped, not just ignored.
     private(set) var isMuted = false
+    /// Recent mic loudness, oldest first, 0...1, at most `levelHistoryCount` values. Drives the waveform.
+    private(set) var levels: [Double] = []
+    static let levelHistoryCount = 28
     private(set) var isListening = false
     /// Whether this iPhone can recognise speech without the network. When false, use typed input.
     let onDeviceSupported: Bool
@@ -382,6 +398,7 @@ final class SpeechIn {
         onResult = nil
         onFailure = nil
         interim = ""
+        levels = []
         isListening = false
         isMuted = false
     }
@@ -392,6 +409,7 @@ final class SpeechIn {
         if muted {
             pipeline?.stop()
             interim = ""
+            levels = []
             isMuted = true
         } else {
             do {
@@ -418,6 +436,9 @@ final class SpeechIn {
             let notify = onFailure
             stop()
             notify?()
+        case .level(let rms):
+            let level = smoothedLevel(previous: levels.last ?? 0, next: normalizedLevel(rms: rms))
+            levels = appendingLevel(levels, level, capacity: Self.levelHistoryCount)
         }
     }
 

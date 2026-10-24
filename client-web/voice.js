@@ -30,6 +30,7 @@ const CALIBRATE_MS = 1000;
 // An utterance needs this much voiced audio above the calibrated floor before anything is sent
 // (hall noise bursts opened utterances that Whisper returned empty, 2026-10-24 live log).
 export const MIN_UTTERANCE_MS = 400;
+const PENDING_GAP_MS = 150;
 // In a loud room a barge-in needs sustained speech, so crowd noise cannot cut the reply.
 export const NOISY_BARGE_MS = 700;
 const PREROLL_SAMPLES = PCM_RATE / 2; // 500 ms kept so a delayed start keeps the first syllable
@@ -127,8 +128,10 @@ export function createVad(options = {}) {
   // minMs: speech must stay above the gate this long before it counts (noise bursts in a loud hall).
   const minMs = Number.isFinite(options.minMs) ? options.minMs : 0;
   let pendingSince = null;
-  let noise = 0;
-  let seeded = false;
+  let lastAbove = 0;
+  // seed: a rebuilt VAD keeps the old floor; otherwise its first frame (possibly speech) would become it.
+  let noise = Number.isFinite(options.seed) ? options.seed : 0;
+  let seeded = Number.isFinite(options.seed);
   let active = false;
   let lastVoice = 0;
 
@@ -142,6 +145,13 @@ export function createVad(options = {}) {
   }
 
   return {
+    // Speech is open or pending its minMs: a rebuild now would reseed the floor on the speech itself.
+    busy() {
+      return active || pendingSince != null;
+    },
+    floor() {
+      return seeded ? noise : undefined;
+    },
     push(frameEnergy, nowMs) {
       const energy = Number.isFinite(frameEnergy) ? Math.max(0, frameEnergy) : 0;
       const now = Number.isFinite(nowMs) ? nowMs : 0;
@@ -154,12 +164,16 @@ export function createVad(options = {}) {
       if (!active) {
         if (above) {
           if (pendingSince == null) pendingSince = now;
+          lastAbove = now;
           if (now - pendingSince < minMs) return "silence";
           pendingSince = null;
           active = true;
           lastVoice = now;
           return "start";
         }
+        // Speech energy dips between syllables, and AudioWorklet frames are only 2.7 ms: a short dip inside
+        // the pending window is part of the word, not the end of it (and is not room noise to learn).
+        if (pendingSince != null && now - lastAbove < PENDING_GAP_MS) return "silence";
         pendingSince = null;
         adapt(energy);
         return "silence";
@@ -183,6 +197,9 @@ export function createVoice(options = {}) {
   const onInterim = options.onInterim || noop;
   const onState = options.onState || noop;
   const onBargeIn = options.onBargeIn || noop;
+  // Called at every barge point (same 400/700 ms rules) even when this page is not speaking: a phone mic
+  // paired to a laptop call uses it to stop the laptop's reply (pair.js).
+  const onBargePoint = options.onBargePoint || noop;
   const onAudioChunk = options.onAudioChunk || noop;
   const onLevel = options.onLevel || noop;
   const onMicError = options.onMicError || noop;
@@ -492,6 +509,7 @@ export function createVoice(options = {}) {
 
   // Server mode has no transcript yet. Speech onset is the barge, once per utterance.
   function considerServerBarge() {
+    onBargePoint();
     if (!speaking || utteranceId == null) return;
     if (bargedUtterance === utteranceId) return;
     fireBarge();
@@ -970,6 +988,9 @@ export function createVoice(options = {}) {
       return;
     }
     if (ambient == null) return;
+    // Speech is not room noise: while the VAD hears speech (or is waiting out MIN_UTTERANCE_MS) the floor only
+    // falls. Per-frame rising at 2.7 ms worklet frames lifted the gate over the talker within 400 ms.
+    if (e > ambient && vad.busy()) return;
     const next = e < ambient ? ambient * 0.9 + e * 0.1 : ambient * 0.998 + e * 0.002;
     if (Math.abs(next - ambient) > ambient * 0.25) setAmbient(next, false);
     else ambient = next;
@@ -977,7 +998,9 @@ export function createVoice(options = {}) {
 
   function setAmbient(value, calibrated) {
     ambient = value;
-    vad = createVad(energyVadOptions());
+    // Not mid-utterance: AudioWorklet frames are 2.7 ms, so the ambient tracker moves often while someone talks,
+    // and a fresh VAD would never reach MIN_UTTERANCE_MS (seen with the phone mic). The next ambient change retunes it.
+    if (!vad.busy()) vad = createVad({ ...energyVadOptions(), seed: vad.floor() });
     try {
       onAmbient({ rms: ambient, noisy: ambient > NOISY_AMBIENT, calibrated });
     } catch {

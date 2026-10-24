@@ -1,10 +1,11 @@
-import { bootPairCamera, setupPairCall } from './pair.js';
+import { bootPairCamera, phoneMicRoute, setupPairCall } from './pair.js';
 // Agent call page. Speaks the v2 WebSocket contract on /ws2.
 // Frames exist only as the JPEG about to be sent. Nothing is written to storage.
 
 import { paintDraw, applyDraw, pruneDraw, viewTransform, visibleOps } from "./draw.js";
 import { writeFrame } from "./live.js";
-import { renderHit } from "./rewind.js";
+import { agoLine, countAt, countLine, createMemoryApi, placeFor, renderSplit } from "./memory.js";
+import { fetchRecap, forgetRewind, initialRewind, nextRewind, NOTICE as REWIND_NOTICE, PROMPTS as REWIND_PROMPTS, renderRecap, showsRewindChip } from "./rewind.js";
 import { sharpCanvasSize } from "./overlay.js";
 import {
   AUDIO_FALLBACK_MS,
@@ -58,6 +59,7 @@ const MODES = [
   { id: "pc_build", title: "PC Build", pack: "pc_build" },
   { id: "cooking", title: "Cooking", pack: "cooking" },
   { id: "assemble", title: "Assembly", pack: "assemble" },
+  { id: "memory", title: "Memory", pack: "memory" },
   { id: "mechanic", title: "Mechanic", pack: null },
   { id: "plumbing", title: "Plumbing", pack: null },
   { id: "engineering", title: "Engineering", pack: null },
@@ -195,6 +197,17 @@ function boot() {
   let seq = 0;
   let cameraOn = false;
   let rewindOn = false; // off by default; the switch sends clips to TwelveLabs
+  let rewind = initialRewind(); // one state for the bottom-bar button and the Settings switch
+  let rewindNoticeTimer = 0;
+  const rewindBtn = document.getElementById("rewind-btn");
+  const privateToggle = document.getElementById("private-toggle");
+  const privateBadge = document.getElementById("private-badge");
+  // Private mode: hello.private makes the server keep everything local; the page uses server STT (browser
+  // recognition can send audio to Google), the server voice (Kokoro) and keeps Rewind off.
+  let privateMode = (() => { try { return safeStorage()?.getItem("aeye.private") === "1"; } catch { return false; } })();
+  const rewindAsk = document.getElementById("rewind-ask");
+  const rewindChip = document.getElementById("rewind-chip");
+  const rewindPrompts = document.getElementById("rewind-prompts");
   let starting = false;
   let frameTimer = 0;
   let photoUrl = "";
@@ -204,6 +217,18 @@ function boot() {
   let link = "connecting";
   let ended = false;
   let callStartedAt = 0;
+  // Memory aid (memory.js): live boxes for the split answer's arrow, caregiver homes, the remembered count.
+  const memoryApi = createMemoryApi();
+  let liveObjects = [];
+  let splitUpdate = null;
+  let memoryItems = [];
+  let memoryCount = 0;
+  let memoryShown = 0;
+  let memoryTimer = 0;
+  let memorySource = ""; // "memory" once /api/memory answers; until then the Rewind clip count stands in
+  const memoryEl = document.getElementById("memory");
+  const memoryCountEl = document.getElementById("memory-count");
+  const memoryActions = document.getElementById("memory-actions");
   let powerConfirmed = false;
   let ringIndex = DEFAULT_MODE;
   let voice = null;
@@ -218,6 +243,8 @@ function boot() {
   let levelPool = null;
   // CallState.wait: set while an agent works on an answer (wait.js).
   let wait = null;
+  // A paired phone is the camera and the mic: the laptop mic is off meanwhile (pair.js phoneMicRoute).
+  let micRoute = { phone: false, resume: false };
   let waitShown = "";
   let lastUiTick = 0;
   const tracker = createTracker();
@@ -368,6 +395,7 @@ function boot() {
 
   function setLink(next) {
     link = next;
+    if (next === "reconnecting") wait = null; // CallState: .disconnected ends the wait
     renderLink();
   }
 
@@ -449,9 +477,12 @@ function boot() {
     };
     if (tts === "server" && ttsVoice) hello.voice = ttsVoice;
     if (pack === "pc_build") hello.board_id = BOARD_ID;
-    if (rewindOn) hello.rewind = true;
+    if (rewindOn && !privateMode) hello.rewind = true;
+    if (privateMode) hello.private = true;
     const ok = send(hello);
     if (ok) ui.dispatch({ type: "hello_sent" });
+    const keepBox = document.getElementById("rewind-keep");
+    if (ok && rewindOn && keepBox && keepBox.checked) sendRewind();
     return ok;
   }
 
@@ -468,6 +499,9 @@ function boot() {
       drawState = applyDraw(null, null, 0);
       agents = { helper: "idle", shopper: "idle" };
       wait = null;
+      // The old session's phone left with it: the laptop mic comes back if it was on.
+      if (micRoute.phone) routeMic({ type: "pair_status", role: "call", state: "left" });
+      rewind = nextRewind(rewind, { type: "reset" });
       ui.dispatch({ type: "error", message: "" });
       setLink("live");
       renderPresence();
@@ -490,7 +524,6 @@ function boot() {
       socket = null;
       window.clearTimeout(retryTimer);
       setLink("reconnecting");
-      wait = null;
       turnEvent({ type: "closed" });
       if (event?.code === 4401) {
         ended = true;
@@ -517,12 +550,13 @@ function boot() {
   function onServer(message) {
     if (!message || typeof message !== "object") return;
     onPair(message);
+    if (message.type === "pair_status") routeMic(message);
     const now = Date.now();
     if (message.type === "turn") {
       wait = waitAfterTurn(wait, message, now);
       if (message.stage === "failed" && message.detail) ui.dispatch({ type: "error", message: String(message.detail) });
       if (message.stage === "received") pendingText = null;
-      if (message.text && stt === "server" && !turn.text) {
+      if (message.text && (stt === "server" || micRoute.phone) && !turn.text) {
         ui.dispatch({ type: "final", text: message.text, now });
       }
       turnEvent(message);
@@ -548,6 +582,8 @@ function boot() {
     if (message.type === "track") {
       hud = noteFrameReply(hud, message, now);
       commitTracker("track", message.seq, message.objects);
+      liveObjects = Array.isArray(message.objects) ? message.objects : [];
+      if (splitUpdate && !rewindEl.classList.contains("hidden")) splitUpdate(liveObjects);
       return;
     }
     if (message.type === "metrics") {
@@ -555,6 +591,8 @@ function boot() {
       return;
     }
     if (message.type === "agent_state") {
+      // Phone speech barged in on the server: stop this laptop's playback as its own VAD would.
+      if (micRoute.phone && message.state === "listening") stopLocalPlayback();
       wait = waitAfterAgentState(wait, message.agent, message.state, now);
       applyAgentState(message.agent, message.state);
       ui.dispatch({ type: "agent_state", agent: message.agent, state: message.state });
@@ -612,12 +650,21 @@ function boot() {
       return;
     }
     if (message.type === "rewind_state") {
+      rewind = nextRewind(rewind, { type: "server", on: message.on, clips: message.clips });
+      if (memorySource !== "memory" && Number.isInteger(message.clips)) setMemoryCount(message.clips);
+      else void refreshMemory();
       showRewind(Boolean(message.on));
       return;
     }
-    if (message.type === "rewind_hit") {
-      renderHit(document, rewindBody, message);
+    if (message.type === "rewind_recap") {
+      rewindEl.classList.remove("wide");
+      renderRecap(document, rewindBody, message);
       openSheet(rewindEl);
+      return;
+    }
+    // A find answer. TODO(rewind builder): a local `find_item` with the same fields (+ `place`) lands here too.
+    if (message.type === "rewind_hit" || message.type === "find_item") {
+      showFind(message);
       return;
     }
     if (message.type === "error") {
@@ -706,9 +753,103 @@ function boot() {
     rewindOn = on;
     if (rewindToggle) rewindToggle.checked = on;
     if (rewindBadge) rewindBadge.classList.toggle("hidden", !on);
+    if (rewindBtn) {
+      rewindBtn.setAttribute("aria-pressed", on ? "true" : "false");
+      rewindBtn.setAttribute("aria-label", on ? "Rewind on" : "Rewind off");
+    }
+    const chip = showsRewindChip(rewind);
+    rewindAsk.classList.toggle("hidden", !chip);
+    if (!chip) togglePrompts(false);
+    renderCall();
+  }
+
+  // Either control: the same state, the same message, and the upload notice on the first enable.
+  function setRewind(on) {
+    if (on && privateMode) on = false; // Rewind uploads clips to TwelveLabs: never in private mode
+    rewind = nextRewind(rewind, { type: "switch", on });
+    if (rewind.notice) {
+      window.clearTimeout(rewindNoticeTimer);
+      rewindNoticeTimer = window.setTimeout(() => {
+        rewind = nextRewind(rewind, { type: "notice_seen" });
+        renderCall();
+      }, 8000);
+    }
+    showRewind(on);
+    sendRewind();
+  }
+
+  function sendRewind() {
+    const keep = Boolean(document.getElementById("rewind-keep") && document.getElementById("rewind-keep").checked);
+    if (socket && socket.readyState === WebSocket.OPEN) send({ v: 2, type: "rewind", session_id: sessionId, on: rewindOn, keep });
+  }
+
+  function togglePrompts(open) {
+    rewindPrompts.classList.toggle("hidden", !open);
+    rewindChip.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  // Recap over HTTP: the Recap chip during a call, and the end-of-call sheet when Rewind was on.
+  async function showRecap(id) {
+    rewindEl.classList.remove("wide");
+    renderRecap(document, rewindBody, { pending: true });
+    openSheet(rewindEl);
+    try {
+      renderRecap(document, rewindBody, await fetchRecap(id));
+    } catch {
+      renderRecap(document, rewindBody, { steps: [], say: "The recap isn't available right now." });
+    }
+  }
+
+  function showFind(hit) {
+    const labels = (hit.objects || []).map((o) => o.label).join(" ");
+    const place = hit.place || placeFor(`${hit.query || ""} ${labels}`, memoryItems);
+    const callNow = callStartedAt ? (Date.now() - callStartedAt) / 1000 : hit.t_s;
+    const line = hit.sure === false ? `Best guess · ${agoLine(hit.t_s, callNow, place)}` : agoLine(hit.t_s, callNow, place);
+    const stream = cameraOn && video.srcObject ? video.srcObject : null;
+    splitUpdate = renderSplit(document, rewindBody, { hit, line, stream });
+    splitUpdate(liveObjects);
+    rewindEl.classList.add("wide");
+    openSheet(rewindEl);
+  }
+
+  // "Remembering 12 things today"; the number counts down when something is forgotten.
+  function setMemoryCount(next) {
+    const from = memoryShown;
+    memoryCount = Math.max(0, Number(next) || 0);
+    const started = performance.now();
+    const step = () => {
+      memoryShown = countAt(from, memoryCount, performance.now() - started);
+      memoryCountEl.textContent = countLine(memoryShown);
+      if (memoryShown !== memoryCount) requestAnimationFrame(step);
+      else memoryEl.classList.toggle("hidden", memoryCount === 0 && memoryActions.classList.contains("hidden"));
+    };
+    memoryEl.classList.remove("hidden");
+    step();
+  }
+
+  async function refreshMemory() {
+    if (!pack) return;
+    try {
+      const s = await memoryApi.status(sessionId);
+      memorySource = s.source;
+      if (s.count !== memoryCount) setMemoryCount(s.count);
+    } catch {
+      // the badge keeps its last number
+    }
+  }
+
+  async function forgetMemory(scope) {
+    try {
+      const r = await memoryApi.forget(sessionId, scope, rewindOn || rewind.clips > 0);
+      setMemoryCount(r.count);
+      if (scope === "today" || r.count === 0) rewind = nextRewind(rewind, { type: "reset" });
+    } catch {
+      showProblem("Nothing to forget.");
+    }
   }
 
   function openSheet(sheet) {
+    if (sheet !== rewindEl && rewindEl) rewindEl.classList.remove("wide");
     for (const other of [marketEl, settingsEl, rewindEl]) if (other && other !== sheet) other.classList.add("hidden");
     sheet.classList.remove("hidden");
     if (backdropEl) backdropEl.classList.remove("hidden");
@@ -1181,7 +1322,7 @@ function boot() {
   // CallScreen.micButton: mic when listening, struck-through mic in the warn colour when muted.
   function renderMic() {
     const ready = Boolean(voice && voice.supported && voice.supported.stt);
-    micBtn.disabled = !ready;
+    micBtn.disabled = !ready || micRoute.phone;
     const on = ui.getState().micOn;
     micBtn.setAttribute("aria-pressed", on ? "true" : "false");
     micBtn.setAttribute("data-muted", ready && !on ? "true" : "false");
@@ -1323,6 +1464,11 @@ function boot() {
     agents = { helper: "idle", shopper: "idle" };
     callStartedAt = Date.now();
     elapsedEl.textContent = "0:00";
+    memoryShown = 0;
+    setMemoryCount(0);
+    window.clearInterval(memoryTimer);
+    memoryTimer = window.setInterval(() => void refreshMemory(), 10000);
+    void memoryApi.settings().then((s) => { memoryItems = s.items; }, () => {});
     packLabel.textContent = PACK_LABEL[next];
     link = "connecting";
     renderPresence();
@@ -1361,6 +1507,8 @@ function boot() {
   // CallController.end: back to the mode ring with the same mode selected.
   function endCall() {
     if (!pack) return;
+    window.clearInterval(memoryTimer);
+    memoryEl.classList.add("hidden");
     ended = true;
     if (cameraOn || video.srcObject) stopCamera();
     holdPressed = false;
@@ -1380,6 +1528,7 @@ function boot() {
     drawState = applyDraw(null, null, 0);
     agents = { helper: "idle", shopper: "idle" };
     wait = null;
+    micRoute = { phone: false, resume: false };
     renderWait(Date.now());
     hideStill();
     closeSheets();
@@ -1389,6 +1538,7 @@ function boot() {
     picker.classList.remove("hidden");
     renderLink();
     paint(Date.now());
+    if (rewindOn) void showRecap(sessionId);   // end-of-call recap; the server uploads the last clips first
   }
 
   function ringButtons() {
@@ -1445,6 +1595,30 @@ function boot() {
     renderHold();
   }
 
+  function renderPrivate() {
+    if (privateToggle) privateToggle.checked = privateMode;
+    if (privateBadge) privateBadge.classList.toggle("hidden", !privateMode);
+  }
+
+  async function setPrivate(on) {
+    privateMode = Boolean(on);
+    try {
+      safeStorage()?.setItem("aeye.private", privateMode ? "1" : "0");
+    } catch {
+      // per-viewer convenience only
+    }
+    renderPrivate();
+    if (privateMode) {
+      if (rewindOn) setRewind(false);
+      tts = "server";
+      if (stt !== "server") {
+        await switchToServerStt(); // sends the new hello
+        return;
+      }
+    }
+    sendHello();
+  }
+
   async function switchToServerStt() {
     if (stt === "server") return;
     const micWasOn = ui.getState().micOn;
@@ -1464,7 +1638,7 @@ function boot() {
     errorEl.classList.toggle("hidden", !st.error);
     powerGate.classList.toggle("hidden", pack !== "pc_build" || powerConfirmed);
     renderLink();
-    const notes = [sttForMic ? "" : st.sttNotice, st.voiceNotice, deviceNotice].filter(Boolean);
+    const notes = [sttForMic ? "" : st.sttNotice, st.voiceNotice, deviceNotice, rewind.notice ? REWIND_NOTICE : ""].filter(Boolean);
     noticeEl.textContent = notes.join(" ");
     noticeEl.classList.toggle("hidden", notes.length === 0);
     renderReplies(st);
@@ -1497,7 +1671,7 @@ function boot() {
 
   // ListeningStrip.swift: waveform and heard line while voice input is available; "MIC OFF" while the mic is off.
   function renderListen(st) {
-    const ready = Boolean(voice && voice.supported && voice.supported.stt);
+    const ready = Boolean(voice && voice.supported && voice.supported.stt) && !micRoute.phone;
     listenEl.classList.toggle("hidden", !ready);
     if (!ready) return;
     if (!st.micOn && waveLevels.length) {
@@ -1654,12 +1828,43 @@ function boot() {
   for (const opener of openers) opener.addEventListener("click", () => void onSettingsOpen());
   wireDevices();
   document.getElementById("settings-done").addEventListener("click", closeSheets);
+  if (privateToggle) privateToggle.addEventListener("change", () => { void setPrivate(privateToggle.checked); });
+  renderPrivate();
+  if (privateMode) {
+    stt = "server";
+    tts = "server";
+  }
   if (rewindEl) document.getElementById("rewind-dismiss").addEventListener("click", closeSheets);
+  const keepBox = document.getElementById("rewind-keep");
+  if (keepBox) keepBox.addEventListener("change", sendRewind);
+  memoryCountEl.addEventListener("click", () => {
+    const open = memoryActions.classList.contains("hidden");
+    memoryActions.classList.toggle("hidden", !open);
+    memoryCountEl.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+  document.getElementById("forget-last").addEventListener("click", () => void forgetMemory("last"));
+  document.getElementById("forget-today").addEventListener("click", () => void forgetMemory("today"));
+  const forgetBtn = document.getElementById("rewind-forget");
+  if (forgetBtn) forgetBtn.addEventListener("click", () => void forgetRewind(sessionId).then(
+    (r) => showProblem(`Forgot ${r.deleted} clip${r.deleted === 1 ? "" : "s"}.`), () => showProblem("Nothing to forget.")));
+  const recapBtn = document.getElementById("rewind-recap");
+  if (recapBtn) recapBtn.addEventListener("click", () => void showRecap(sessionId));
   if (rewindToggle) {
-    rewindToggle.addEventListener("change", () => {
-      showRewind(rewindToggle.checked);
-      if (socket && socket.readyState === WebSocket.OPEN) send({ v: 2, type: "rewind", session_id: sessionId, on: rewindOn });
+    rewindToggle.addEventListener("change", () => setRewind(rewindToggle.checked));
+  }
+  rewindBtn.addEventListener("click", () => setRewind(!rewindOn));
+  rewindChip.addEventListener("click", () => togglePrompts(rewindPrompts.classList.contains("hidden")));
+  for (const prompt of REWIND_PROMPTS) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = prompt.label;
+    button.addEventListener("click", () => {
+      togglePrompts(false);
+      typedEl.value = prompt.text;
+      typedEl.focus();
+      typedEl.setSelectionRange(prompt.text.length, prompt.text.length);
     });
+    rewindPrompts.append(button);
   }
   if (backdropEl) backdropEl.addEventListener("click", closeSheets);
   window.addEventListener("keydown", (event) => {
@@ -1869,9 +2074,31 @@ function boot() {
     return deviceLabel(mediaDevices, "audioinput", micChoice);
   }
 
+  function routeMic(message) {
+    const { route, action } = phoneMicRoute(micRoute, message, ui.getState().micOn);
+    micRoute = route;
+    if (action === "stop_local" && voice) {
+      voice.stopListening();
+      ui.dispatch({ type: "mic_stop" });
+      turnEvent({ type: "mic_stop" });
+    } else if (action === "start_local" && voice && voice.supported && voice.supported.stt) {
+      void startMic();
+    }
+    renderCall();
+  }
+
+  function stopLocalPlayback() {
+    speech = bargeSpeech(speech);
+    talkQueue.length = 0;
+    talkBusy = false;
+    clearAllFallbacks();
+    if (voice && typeof voice.cancel === "function") voice.cancel();
+    ui.dispatch({ type: "audio_ended", utteranceId: "", now: Date.now() });
+  }
+
   function renderMicLine() {
     if (!micLineEl) return;
-    const text = micLine(currentMicLabel(), listening);
+    const text = micRoute.phone ? "Mic: phone" : micLine(currentMicLabel(), listening);
     if (micLineEl.textContent !== text) micLineEl.textContent = text;
   }
 

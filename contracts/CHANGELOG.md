@@ -6,6 +6,15 @@
 
 From now on, changes may only add optional fields or new message types. Do not remove or rename fields, make optional fields required, or change existing meanings. Add an entry here for every addition; update schema, TypeScript mirror and examples together through the contract PR process and run `make test-py`. Clients must ignore unknown response fields and unknown message types (and skip unknown draw kinds). Current server request validation remains strict; do not send speculative fields. A breaking change requires a separately negotiated major protocol, outside this freeze.
 
+## v2.7: Rewind privacy
+
+- Optional `v2_rewind.keep` (boolean, default false): keep this call's TwelveLabs videos after the call; otherwise they are deleted at call end.
+- Optional `v2_rewind_state.locked` (boolean): `LOCAL_ONLY=1` on the server, so Rewind cloud cannot be turned on.
+
+## v2.6: Rewind recap
+
+- New `v2_rewind_recap` (server): required `v`, `type:rewind_recap`, `steps` (up to 12 of `{t_s, text}`), `skipped` (typical step names for the mode); optional `turn_id`. Added to `server_message_v2`.
+
 ## v2.5: Rewind (call memory through TwelveLabs)
 
 - Optional `v2_hello.rewind` (boolean, default off).
@@ -13,6 +22,10 @@ From now on, changes may only add optional fields or new message types. Do not r
 - New `v2_rewind_state` (server): required `v`, `type:rewind_state`, `on`; optional `clips`, `ready`, `indexing`, `pending`, `notice` (the one-line upload notice).
 - New `v2_rewind_hit` (server): required `v`, `type:rewind_hit`, `query`, `t_s`, `start_s`, `end_s`, `sure`; optional `turn_id`, `alternatives` (other call times, seconds), `frame_b64` (the kept frame nearest the hit), `objects` (boxes on that frame, not on the live picture). Times are seconds since the call started.
 - Added rewind_state and rewind_hit to `server_message_v2`.
+
+## v2.5: call the expert
+
+- `v2_turn.stage` gains `expert` (the talker escalated; `detail` names the model) and `expert_done` (answer arrived, timed out or cancelled; `detail` says which). Additive: clients ignore unknown stages.
 
 ## v2.4: phone as camera
 

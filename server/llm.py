@@ -5,6 +5,7 @@ is 400,000 encoded bytes across the request; size cannot prove crop provenance.
 No prompts, images, credentials or provider exceptions are logged here.
 """
 import asyncio
+from contextvars import ContextVar
 import base64
 import json
 from contextlib import AsyncExitStack
@@ -14,12 +15,29 @@ import re
 from time import perf_counter
 
 import anthropic
+
+from server.privacy import local_only
 import httpx
 
 
 # Benchmarks (docs/pc-benchmarks.md): qwen3.5:9b with think off, about 125 tok/s, 7.3 GB, sits next to the VLM.
 LOCAL_DEFAULT = 'qwen3.5:9b-q4_K_M'
 _CLIENTS = {}
+TURN_USAGE = ContextVar('turn_usage', default=None)
+
+
+def cached_system(text):
+    return [{'type': 'text', 'text': text, 'cache_control': {'type': 'ephemeral'}}]
+
+
+def usage_counts(message):
+    usage = getattr(message, 'usage', None)
+    return dict(input_tokens=getattr(usage, 'input_tokens', 0) or 0,
+                output_tokens=getattr(usage, 'output_tokens', 0) or 0,
+                cache_read_tokens=getattr(usage, 'cache_read_input_tokens', 0) or 0,
+                cache_creation_tokens=getattr(usage, 'cache_creation_input_tokens', 0) or 0,
+                web_searches=getattr(getattr(usage, 'server_tool_use', None), 'web_search_requests', 0) or 0)
+
 
 
 def _shared_async_client():
@@ -68,6 +86,32 @@ def _content(user, images):
     return [{'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/jpeg', 'data': data}}
             for data in images] + [{'type': 'text', 'text': user}]
 
+TOOL_ERROR = "I couldn't check the recording just now."
+
+
+async def tool_results(content, on_tool):
+    """Keep every client tool result, including failures, in one user message."""
+    results = []
+    for block in content:
+        if getattr(block, 'type', '') != 'tool_use':
+            continue
+        failed = False
+        try:
+            if on_tool is None:
+                raise ValueError('No tool handler')
+            result = await on_tool(block.name, block.input)
+            failed = isinstance(result, dict) and result.get('is_error') is True
+            encoded = json.dumps(result)
+        except Exception:
+            failed = True
+            encoded = json.dumps({'is_error': True, 'say': TOOL_ERROR})
+        item = dict(type='tool_result', tool_use_id=block.id, content=encoded)
+        if failed:
+            item['is_error'] = True
+        results.append(item)
+    return {'role': 'user', 'content': results}
+
+
 @dataclass
 class LLMResult:
     text: str
@@ -86,7 +130,7 @@ class LLMClient:
                  images: list[str] | None = None) -> LLMResult:
         started = perf_counter()
         provider = os.environ.get('LLM_PROVIDER', 'auto')
-        cloud_allowed = os.environ.get('LOCAL_ONLY') != '1'
+        cloud_allowed = not local_only()
         if images:
             cloud_allowed = cloud_allowed and sum(len(item.encode('utf-8')) for item in images) <= 400000
         use_claude = provider == 'claude' or (
@@ -143,7 +187,7 @@ class LLMClient:
         return result(text, 'canned', 'canned')
 
     async def stream(self, system: str, user: str, *, max_tokens: int = 512, on_backup=None, model=None,
-                     images: list[str] | None = None):
+                     images: list[str] | None = None, tools=None, on_tool=None):
         """Cancellable text stream; fall back only before committing provider text.
 
         Voice turns default to the Haiku-class talker with thinking off (docs/voice-options.md).
@@ -155,20 +199,41 @@ class LLMClient:
         timeout = float(os.environ.get('BRAIN_FIRST_TOKEN_S', '3.5'))
         if images and sum(len(item.encode('utf-8')) for item in images) > 400000:
             images = None  # too large to be a crop: never send it to the cloud
-        if use_claude and os.environ.get('LOCAL_ONLY') != '1':
+        if use_claude and not local_only():
             try:
                 async with asyncio.timeout(timeout) as deadline, AsyncExitStack() as stack:
                     client = self._anthropic_client or _shared_anthropic()
                     name = model or turn_model()
-                    async with client.messages.stream(
-                        model=name, max_tokens=max_tokens, system=system,
-                        messages=[{'role': 'user', 'content': _content(user, images)}], **fast_options(name),
-                    ) as response:
-                        async for delta in response.text_stream:
-                            if delta:
-                                deadline.reschedule(None)
-                                emitted = True
-                                yield delta
+                    messages = [{'role': 'user', 'content': _content(user, images)}]
+                    for round_index in range(3):
+                        options = dict(model=name, max_tokens=max_tokens, system=cached_system(system),
+                                       messages=list(messages), **fast_options(name))
+                        if tools:
+                            options['tools'] = tools
+                            if round_index == 2:
+                                options['tool_choice'] = {'type': 'none'}
+                        final = None
+                        async with client.messages.stream(**options) as response:
+                            async for delta in response.text_stream:
+                                if delta:
+                                    deadline.reschedule(None)
+                                    emitted = True
+                                    yield delta
+                            if hasattr(response, 'get_final_message'):
+                                final = await response.get_final_message()
+                                counts = TURN_USAGE.get()
+                                if counts is not None:
+                                    counts.append(usage_counts(final))
+                        if getattr(final, 'stop_reason', None) != 'tool_use':
+                            break
+                        # Tool work can take tens of seconds; it is not first-token latency.
+                        deadline.reschedule(None)
+                        emitted = True  # Never switch providers after executing a side effect.
+                        if round_index == 2:
+                            yield TOOL_ERROR
+                            break
+                        messages.append({'role': 'assistant', 'content': final.content})
+                        messages.append(await tool_results(final.content, on_tool))
                 if emitted:
                     return
             except Exception as exc:
@@ -213,6 +278,101 @@ class LLMClient:
             yield re.split(r'(?<=[.!?])\s+', user.strip(), maxsplit=1)[0] or 'OK.'
         else:
             yield '{"agent":"helper","draw":[]}\nSAY: The brain is unavailable. Please try again.'
+
+    async def expert(self, system, user, *, model, images=None, tools=None, on_tool=None):
+        from server.expert import OPUS, FABLE, LOCAL, cost
+        started = perf_counter()
+        first = None
+        if local_only() or not os.environ.get('ANTHROPIC_API_KEY'):
+            model = LOCAL
+        counts = usage_counts(None)
+        search_errors = 0
+        if model == LOCAL:
+            client = self._httpx_client or _shared_async_client()
+            payload = dict(model=LOCAL, stream=True, think=False,
+                           messages=[{'role': 'system', 'content': system}, {'role': 'user', 'content': user}])
+            url = os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434').rstrip('/') + '/api/chat'
+            text = ''
+            async with client.stream('POST', url, json=payload, timeout=None) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+                    chunk = json.loads(line)
+                    if 'error' in chunk:
+                        raise ValueError('Local expert failed')
+                    delta = chunk.get('message', {}).get('content', '')
+                    if delta and first is None:
+                        first = (perf_counter() - started) * 1000
+                    text += delta
+                    if chunk.get('done'):
+                        counts.update(input_tokens=chunk.get('prompt_eval_count', 0),
+                                      output_tokens=chunk.get('eval_count', 0))
+                        break
+        else:
+            if images and sum(len(item.encode()) for item in images) > 400000:
+                images = None
+            client = self._anthropic_client or _shared_anthropic()
+            use_tools = True
+            retried_tool = retried_model = False
+            messages = [{'role': 'user', 'content': _content(user, images)}]
+            tool_rounds = 0
+            while True:
+                try:
+                    options = dict(model=model, max_tokens=2048, system=cached_system(system),
+                                   messages=list(messages),
+                                   output_config={'effort': 'high' if model == FABLE else 'medium'})
+                    if use_tools:
+                        options.update(tools=[{'type': 'web_search_20260209', 'name': 'web_search', 'max_uses': 3}],
+                                       tool_choice={'type': 'auto'})
+                    if tools:
+                        options['tools'] = options.get('tools', []) + list(tools)
+                    if tool_rounds == 2:
+                        options['tool_choice'] = {'type': 'none'}
+                    text = ''
+                    async with client.messages.stream(**options) as response:
+                        async for delta in response.text_stream:
+                            if delta and first is None:
+                                first = (perf_counter() - started) * 1000
+                            text += delta
+                        final = await response.get_final_message()
+                    for key, value in usage_counts(final).items():
+                        counts[key] += value
+                    if final.stop_reason == 'refusal':
+                        text = "I can't help with that request."
+                    else:
+                        for block in final.content:
+                            if getattr(block, 'type', '') == 'web_search_tool_result':
+                                content = getattr(block, 'content', None)
+                                if getattr(content, 'type', '') == 'web_search_tool_result_error' or (
+                                        isinstance(content, dict) and content.get('type') == 'web_search_tool_result_error'):
+                                    search_errors += 1
+                    if final.stop_reason == 'tool_use':
+                        if tool_rounds == 2:
+                            text = TOOL_ERROR
+                            break
+                        messages.append({'role': 'assistant', 'content': final.content})
+                        messages.append(await tool_results(final.content, on_tool))
+                        tool_rounds += 1
+                        continue
+                    break
+                except anthropic.APIStatusError as exc:
+                    if exc.status_code != 400 or model != FABLE:
+                        raise
+                    # Provider diagnostics select retries only; never log them.
+                    if use_tools and not retried_tool and ('web_search' in str(exc) or 'tool type' in str(exc)):
+                        use_tools = False
+                        retried_tool = True
+                    elif not retried_model:
+                        model = OPUS
+                        use_tools = True
+                        retried_model = True
+                    else:
+                        raise
+        return dict(text=text or 'I could not reach a conclusion.', metrics=dict(
+            model=model, first_token_ms=first, total_ms=(perf_counter() - started) * 1000,
+            **counts, web_search_errors=search_errors, cost_usd=cost(model, counts),
+            search_cost='UNVERIFIED', search_cost_excluded=True))
 
     @staticmethod
     def _claude(client, model, system, user, max_tokens, images):

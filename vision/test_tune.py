@@ -65,7 +65,7 @@ def test_all_payloads_and_caption(body):
     real.locate({**body, "board_id": "demo-b650", "header": "CPU_FAN"}, "ok")
     real.verify({**body, "board_id": "demo-b650", "header": "CPU_FAN"}, "ok")
     real.warmup()
-    assert [p["options"]["num_predict"] for p in payloads] == [60, 60, 40, 40, 60, 60, 60, 60, 60, 60, 40, 1]
+    assert [p["options"]["num_predict"] for p in payloads] == [60, 60, 80, 40, 60, 60, 60, 60, 60, 60, 40, 1]
     for payload in payloads:
         assert payload["options"]["temperature"] == 0
         assert payload["options"]["num_ctx"] == 4096

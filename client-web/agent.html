@@ -26,6 +26,7 @@
     <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 13V6.5a1.5 1.5 0 0 1 3 0V11M11 11V4.5a1.5 1.5 0 0 1 3 0V11M14 11V5.5a1.5 1.5 0 0 1 3 0V12M17 9.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1.3a6 6 0 0 1-4.7-2.3l-3.4-4.3a1.5 1.5 0 0 1 2.3-1.9L8 14"/></symbol>
     <symbol id="i-phone-down" viewBox="0 0 24 24"><path class="fill" d="M2.6 13.6c5.2-4.6 13.6-4.6 18.8 0 .5.4.5 1.2 0 1.6l-2 2c-.4.4-1 .4-1.4.1l-2.3-1.7c-.4-.3-.6-.8-.4-1.3l.5-1.6c-2.4-.8-5.2-.8-7.6 0l.5 1.6c.2.5 0 1-.4 1.3l-2.3 1.7c-.4.3-1 .3-1.4-.1l-2-2c-.5-.4-.5-1.2 0-1.6z"/></symbol>
     <symbol id="i-send" viewBox="0 0 24 24"><circle class="fill" cx="12" cy="12" r="10"/><path class="cut" d="M12 17V7.5M7.5 11.5L12 7l4.5 4.5"/></symbol>
+    <symbol id="i-rewind" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4 4.5v3.7h3.7"/><path d="M12 8v4.2l2.8 1.8"/></symbol>
     <symbol id="i-bolt-off" viewBox="0 0 24 24"><path d="M13 3L6 13h5l-1 8 7-10h-5z"/><path d="M3.5 3.5l17 17"/></symbol>
   </svg>
 
@@ -63,11 +64,24 @@
       <div class="top">
         <div class="pill glass">
           <span id="presence-dot" class="presence-dot" role="img" aria-label=""></span>
-          <b>A-eye</b><span class="sep" aria-hidden="true">·</span><span id="pack-label">General</span><span class="sep" aria-hidden="true">·</span><span id="elapsed" class="digits">0:00</span>
+          <b>A-eye</b><span id="private-badge" class="private-badge hidden">Private</span><span class="sep" aria-hidden="true">·</span><span id="pack-label">General</span><span class="sep" aria-hidden="true">·</span><span id="elapsed" class="digits">0:00</span>
+        </div>
+        <!-- Rewind on: under the pill, so it never covers it on a phone. -->
+        <div id="rewind-badge" class="rewind-badge hidden">
+          <p class="rewind-chip glass" title="Clips of this call are uploaded to TwelveLabs">Rewind on</p>
+          <button type="button" id="rewind-recap" class="rewind-chip glass" aria-label="Recap this call">Recap</button>
         </div>
         <p id="link" class="chip glass warn" role="status">Connecting…</p>
         <p id="notice" class="chip glass soft hidden" role="status"></p>
         <p id="pipeline" class="pipeline" role="status">Ready</p>
+        <!-- Memory aid: what is remembered today, and the two Forget buttons. -->
+        <div id="memory" class="memory hidden">
+          <button type="button" id="memory-count" class="chip glass soft" aria-expanded="false" aria-controls="memory-actions">Nothing remembered today</button>
+          <div id="memory-actions" class="memory-actions hidden">
+            <button type="button" id="forget-last" class="chip glass">Forget that</button>
+            <button type="button" id="forget-today" class="chip glass warn-text">Forget today</button>
+          </div>
+        </div>
         <p id="mic-line" class="pipeline mic-line" aria-live="off">Mic off · Default</p>
       </div>
       <div class="lower">
@@ -90,6 +104,11 @@
           <button type="button" id="power-off" class="power-btn"><svg aria-hidden="true"><use href="#i-bolt-off"/></svg>Power is off</button>
           <p>Switch the PSU off and unplug it first.</p>
         </div>
+        <!-- Rewind on with kept clips: starter questions for the call memory. -->
+        <div id="rewind-ask" class="rewind-ask hidden">
+          <button type="button" id="rewind-chip" class="rewind-ask-chip glass" aria-expanded="false" aria-controls="rewind-prompts"><svg aria-hidden="true"><use href="#i-rewind"/></svg>Rewind</button>
+          <div id="rewind-prompts" class="rewind-prompts hidden" role="group" aria-label="Ask Rewind"></div>
+        </div>
         <form id="composer" class="typed glass">
           <input id="typed" type="text" enterkeyhint="send" autocomplete="off" placeholder="Type a message" aria-label="Message">
           <button type="submit" class="send" aria-label="Send"><svg><use href="#i-send"/></svg></button>
@@ -98,6 +117,7 @@
           <button type="button" id="start-camera" class="glass round r56" aria-pressed="false" aria-label="Camera on"><svg><use id="camera-icon" href="#i-camera-off"/></svg></button>
           <button type="button" id="mic" class="glass round r56" aria-pressed="false" aria-label="Start microphone"><svg><use id="mic-icon" href="#i-mic-off"/></svg></button>
           <button type="button" id="end-call" class="round r68 end" aria-label="End call"><svg><use href="#i-phone-down"/></svg></button>
+          <button type="button" id="rewind-btn" class="glass round r56" aria-pressed="false" aria-label="Rewind off" title="Rewind: keep clips of this call to ask about later"><svg><use href="#i-rewind"/></svg></button>
           <button type="button" id="hold" class="glass round r56" aria-pressed="false" aria-label="Hold to talk" title="Hold to talk (Space)"><svg><use href="#i-hand"/></svg></button>
           <button type="button" class="glass round r56 open-settings" aria-label="Settings"><svg><use href="#i-gear"/></svg></button>
         </div>
@@ -127,7 +147,6 @@
     </div>
     <div id="rewind-body"></div>
   </section>
-  <p id="rewind-badge" class="rewind-badge glass hidden" title="Clips of this call are uploaded to TwelveLabs">Rewind on</p>
 
   <!-- MarketSheet.swift -->
   <section id="market" class="sheet hidden" aria-live="polite" aria-labelledby="market-title">
@@ -175,17 +194,24 @@
       <p class="row"><span>Recognition</span><span id="stt-mode" class="mono dim">Browser</span></p>
       <p class="row"><span>Room noise</span><span id="ambient" class="mono dim" aria-live="off">Noise --</span></p>
     </div>
+    <p class="group-title">Privacy</p>
+    <div class="group">
+      <label class="row">Private mode <input id="private-toggle" type="checkbox" role="switch" aria-describedby="private-notice"></label>
+    </div>
+    <p id="private-notice" class="group-foot">Nothing leaves our own machines: the local brain answers, Kokoro speaks, speech is recognized on our GPU box, and Rewind stays off.</p>
     <p class="group-title">Rewind</p>
     <div class="group">
       <label class="row">Rewind <input id="rewind-toggle" type="checkbox" role="switch" aria-describedby="rewind-notice"></label>
+      <label class="row">Keep clips after the call <input id="rewind-keep" type="checkbox" role="switch"></label>
+      <button type="button" id="rewind-forget" class="row text-btn">Forget this call's clips</button>
     </div>
-    <p id="rewind-notice" class="group-foot">When on, short video clips of this call are uploaded to TwelveLabs so you can ask about them later.</p>
+    <p id="rewind-notice" class="group-foot">When on, short video clips of this call are uploaded to TwelveLabs so you can ask about them later. They are deleted from TwelveLabs when the call ends unless you keep them.</p>
     <p class="group-title">Photo</p>
     <div class="group">
       <label class="row file-btn">Upload a photo instead of the camera<input id="upload" type="file" accept="image/*"></label>
     </div>
     <div class="group">
-      <button type="button" id="pair-request" class="row text-btn">Use my phone as camera</button>
+      <button type="button" id="pair-request" class="row text-btn">Use my phone (camera + mic)</button>
       <p id="pair-status" role="status"></p>
       <a id="pair-link" style="overflow-wrap:anywhere"></a>
       <canvas id="pair-qr" hidden style="max-width:100%;height:auto" aria-label="Phone camera pairing QR code"></canvas>

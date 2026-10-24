@@ -913,6 +913,14 @@
    "at_ms": 1761275004200,
    "detail": "brain slow, trying backup",
    "typical_ms": 1100
+  },
+  {
+   "v": 2,
+   "type": "turn",
+   "turn_id": "t12",
+   "stage": "expert",
+   "at_ms": 1761290000000,
+   "detail": "claude-opus-5-5"
   }
  ],
  "v2_reply_delta": [
@@ -971,6 +979,13 @@
    "type": "rewind",
    "session_id": "s-1",
    "on": true
+  },
+  {
+   "v": 2,
+   "type": "rewind",
+   "session_id": "s-1",
+   "on": true,
+   "keep": true
   }
  ],
  "v2_rewind_state": [
@@ -983,6 +998,12 @@
    "indexing": 1,
    "pending": 0,
    "notice": "Rewind on: short video clips of this call are uploaded to TwelveLabs so you can ask about them later."
+  },
+  {
+   "v": 2,
+   "type": "rewind_state",
+   "on": false,
+   "locked": true
   }
  ],
  "v2_rewind_hit": [
@@ -1011,6 +1032,26 @@
      ],
      "conf": 0.82
     }
+   ]
+  }
+ ],
+ "v2_rewind_recap": [
+  {
+   "v": 2,
+   "type": "rewind_recap",
+   "turn_id": "t-2",
+   "steps": [
+    {
+     "t_s": 42.0,
+     "text": "Installed the CPU"
+    },
+    {
+     "t_s": 130.0,
+     "text": "Plugged in the CPU fan cable"
+    }
+   ],
+   "skipped": [
+    "install the RAM"
    ]
   }
  ]

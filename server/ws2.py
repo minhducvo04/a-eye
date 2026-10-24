@@ -25,7 +25,9 @@ from server.keyframes import signature
 from server import packs, pairing
 from server import rewind as rewind_mod
 from server.agent import Session, Turn, message, run_turn, say, state
-from server.llm import LLMClient
+from server.llm import LLMClient, TURN_USAGE
+from server.privacy import PRIVATE, local_only
+from server.expert import DESK as expert_desk, cancel as cancel_expert
 from voice import adapter
 from voice.fake import FakeAdapter
 
@@ -69,7 +71,7 @@ def slow_part(metrics):
 
 
 def cloud_brain():
-    return (bool(os.environ.get('ANTHROPIC_API_KEY')) and os.environ.get('LOCAL_ONLY') != '1'
+    return (bool(os.environ.get('ANTHROPIC_API_KEY')) and not local_only()
             and os.environ.get('LLM_PROVIDER', 'auto') in ('auto', 'claude'))
 
 
@@ -251,7 +253,9 @@ async def websocket(ws: WebSocket):
     async def send(msg):
         validate('server_message_v2', msg)
         if msg['type'] == 'metrics' and 'turn_id' in msg:
-            event('turn_end', session.session_id if session else None, **{k: v for k, v in msg.items() if k.endswith('_ms')})
+            event('turn_end', session.session_id if session else None,
+                  cache_read_tokens=sum(x['cache_read_tokens'] for x in (TURN_USAGE.get() or [])),
+                  **{k: v for k, v in msg.items() if k.endswith('_ms')})
         async with send_lock:
             await ws.send_json(msg)
 
@@ -335,7 +339,7 @@ async def websocket(ws: WebSocket):
             await lifecycle.stage('thinking', text=text)
             # Talker + thinker: a Haiku-class talker speaks while the planner (no GPU gate) draws in parallel.
             duo = (isinstance(llm, LLMClient) and os.environ.get('BRAIN_MODE', 'duo') == 'duo'
-                   and bool(os.environ.get('ANTHROPIC_API_KEY')) and os.environ.get('LOCAL_ONLY') != '1')
+                   and bool(os.environ.get('ANTHROPIC_API_KEY')) and not local_only())
             if rewind_mod.wants_rewind(session, text):
                 await rewind_mod.rewind_turn(session, text, session.rewind, vision=vision, turn_id=lifecycle.id)
             else:
@@ -372,6 +376,10 @@ async def websocket(ws: WebSocket):
 
     async def start_text(text, lifecycle):
         nonlocal turn_task
+        if re.fullmatch(r'\s*stop[.!]?\s*', text, re.I):
+            await cancel_expert(session)
+        session.expert_start = lambda question, system, scene, seq, turn_id, planner: expert_desk.start(
+            session, question, system, scene, seq, llm, send, turn_id, planner, vision=vision, app=ws.app)
         session.voice_pending = True
         turn_task = asyncio.create_task(turn(text, lifecycle))
 
@@ -477,10 +485,30 @@ async def websocket(ws: WebSocket):
             if yolo_task is None and os.environ.get('YOLO_REFRESH') == '1':
                 yolo_task = asyncio.create_task(yolo_loop(session, box, send))
 
+    ws_read = phone_read = None
+
+    async def next_message():
+        """The call socket's next message, or phone mic audio from the paired camera socket (pairing.Call.inbox)."""
+        nonlocal ws_read, phone_read, stt_mode
+        if ws_read is None:
+            ws_read = asyncio.ensure_future(ws.receive_json())
+        if paired_call and (phone_read is None or phone_read.inbox is not paired_call.inbox):
+            if phone_read is not None:
+                phone_read.cancel()
+            phone_read = asyncio.ensure_future(paired_call.inbox.get())
+            phone_read.inbox = paired_call.inbox
+        await asyncio.wait({ws_read} | ({phone_read} if phone_read else set()), return_when=asyncio.FIRST_COMPLETED)
+        if phone_read is not None and phone_read.done():
+            done, phone_read = phone_read, None
+            stt_mode = 'server'  # phone speech is always streamed PCM for server STT
+            return done.result()
+        done, ws_read = ws_read, None
+        return done.result()
+
     try:
         while True:
             try:
-                incoming = await ws.receive_json()
+                incoming = await next_message()
                 validate('client_message_v2', incoming)
             except (json.JSONDecodeError, ValidationError, KeyError):
                 await send(message('error', code='bad_message', message='Invalid client message.'))
@@ -500,6 +528,7 @@ async def websocket(ws: WebSocket):
                 except (OSError, ValueError, ValidationError, KeyError):
                     await send(message('error', code='bad_message', message='Unknown or invalid board or pack.'))
                     continue
+                await cancel_expert(session)
                 await cancel_stt()
                 await cancel_turn()
                 await cancel_audio()
@@ -508,7 +537,13 @@ async def websocket(ws: WebSocket):
                 await close_voice()
                 await end_rewind()
                 reset_audio()
-                stt_mode = incoming.get('stt', 'browser')
+                # Private mode (hello.private): local brain, Kokoro, server STT (browser STT may send audio to
+                # Google), no crops, no Rewind cloud. Every task started from here on inherits it.
+                private = bool(incoming.get('private', False))
+                PRIVATE.set(private)
+                stt_mode = 'server' if private else incoming.get('stt', 'browser')
+                if private:
+                    new_session.tts = 'server'
                 stt_failed = False
                 if paired_call:
                     await paired_call.close()
@@ -521,7 +556,7 @@ async def websocket(ws: WebSocket):
                 voice = None
                 if session.tts == 'server':
                     factory = getattr(ws.app.state, 'voice_factory_v2', adapter.make_adapter)
-                    picked = incoming.get('voice')
+                    picked = incoming.get('voice') or new_session.pack.voice or None
                     candidate = await asyncio.to_thread(
                         factory, **({'voice': picked} if factory is adapter.make_adapter else {}))
                     if not isinstance(candidate, FakeAdapter):
@@ -535,7 +570,8 @@ async def websocket(ws: WebSocket):
                 scene_loop_task = asyncio.create_task(scene_loop(session, vision, send, gate))
                 if os.environ.get('YOLO_REFRESH') == '1':
                     yolo_task = asyncio.create_task(yolo_loop(session, box, send))
-                session.rewind = rewind_mod.registry(ws.app).open(session.session_id, on=incoming.get('rewind', False))
+                session.rewind = rewind_mod.registry(ws.app).open(
+                    session.session_id, on=incoming.get('rewind', False), owner=rewind_mod.identity(ws))
                 rewind_task = asyncio.create_task(session.rewind.follow(session))
                 if session.rewind.on:
                     await send(rewind_mod.state_message(session.rewind))
@@ -633,8 +669,10 @@ async def websocket(ws: WebSocket):
                     await emit(say('Thanks. What are we working on?'))
             elif kind == 'rewind':
                 session.rewind.set_on(incoming['on'])
+                session.rewind.keep = incoming.get('keep', session.rewind.keep)
                 await send(rewind_mod.state_message(session.rewind))
             elif kind == 'barge_in':
+                await cancel_expert(session)
                 await cancel_stt()
                 reset_audio()
                 await cancel_turn()
@@ -645,22 +683,28 @@ async def websocket(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
-        if paired_call:
-            with CancelScope(shield=True):
-                await paired_call.close()
-        await cancel_stt()
-        reset_audio()
-        await cancel_yolo()
-        await cancel_turn()
-        await cancel_audio()
-        await cancel_scene()
-        await close_voice()
-        await end_rewind()
-        await box.aclose()
-        if session:
-            session.scene = None
-            session.frame = None
-            session.history.clear()
+        # Shielded: a closing socket can cancel this task mid-cleanup (seen with the extra phone-mic read).
+        with CancelScope(shield=True):
+            for pending in (ws_read, phone_read):
+                if pending is not None:
+                    pending.cancel()
+            await cancel_expert(session)
+            if paired_call:
+                with CancelScope(shield=True):
+                    await paired_call.close()
+            await cancel_stt()
+            reset_audio()
+            await cancel_yolo()
+            await cancel_turn()
+            await cancel_audio()
+            await cancel_scene()
+            await close_voice()
+            await end_rewind()
+            await box.aclose()
+            if session:
+                session.scene = None
+                session.frame = None
+                session.history.clear()
 
 
 def small_jpeg(encoded):

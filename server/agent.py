@@ -10,7 +10,13 @@ from contextlib import aclosing
 import os
 from uuid import uuid4
 
+from server.expert import RULES as EXPERT_RULES, should_escalate, mark_failed
+from server.llm import TURN_USAGE
+from server import rewind_tools
+from server.routing import forget_request, past_tool, rewind_callback, route_turn
+
 from server.crops import crop_b64, pick_target
+from server.privacy import local_only
 
 from contracts import schema, validate
 from market.search import search
@@ -48,6 +54,10 @@ class Session:
     refresh_requested: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
     voice_pending: bool = False
     user_speaking: bool = False
+    expert_task: object = field(default=None, repr=False)
+    expert_start: object = field(default=None, repr=False)
+    expert_failures: dict = field(default_factory=dict, repr=False)
+    expert_step: str = ''
     board: dict = field(init=False)
 
     def __post_init__(self):
@@ -244,6 +254,7 @@ def stream_header(value):
 
 
 def safe_speech(value):
+    value = value.replace('[EXPERT]', '')
     value = _SAY.sub('', value).strip().strip('"` \n\t')
     # Wrapper punctuation from a quoted SAY field is not spoken.
     value = re.sub(r'["}\]\s]+$', '', value).strip()
@@ -262,8 +273,24 @@ TALKER_RULES = (' You are the TALKER: you speak first and fast, out loud, like a
 PLANNER_RULES = (' You are the PLANNER behind a fast talker who is already answering out loud. Output only one JSON '
                  'object: agent, draw, optional market_category, note, speak. draw targets and from_target must be '
                  'scene object IDs. note: at most 15 words the talker should say next (the concrete fact, for example '
-                 'which header the cable goes in). speak: true only when the note adds a fact the caption alone does '
-                 'not give. Include market_category only when asked about buying, prices or cheaper options.')
+                 'which header the cable goes in). speak: true only when the note adds a new concrete fact the caption '
+                 'alone does not give; false when it would repeat the obvious (for example that the camera is off or '
+                 'the view is unclear), and then just draw. Include market_category only when asked about buying, '
+                 'prices or cheaper options.')
+_STOP = {'the', 'a', 'an', 'it', 'its', "it's", 'is', 'to', 'and', 'so', 'i', 'you', 'me', 'on', 'in', 'of', 'that',
+         'this', 'can', "can't", 'cant', 'and', 'or', 'show', 'see', 'be', 'your', 'my', 'turn', 'just', 'now'}
+
+
+def repeats(note, said):
+    """True when most of the note's content words were already spoken this turn (e.g. 'camera is off' twice)."""
+    def bag(text):
+        return {re.sub(r"'s$", '', w).strip("'") for w in re.findall(r"[a-z0-9']+", text.lower())}
+    words = bag(note) - _STOP
+    if not words:
+        return True
+    return len(words & bag(said)) / len(words) >= 0.5
+
+
 _FILLER = re.compile(r"\b(let me (look|check|see)|one (sec|second|moment)|hang on|looking)\b", re.I)  # filler means the note is spoken
 
 
@@ -272,7 +299,7 @@ def planner_crop(session, scene, seq, text):
     """Escalation to the cloud planner sees a CROP of the object in question, never the full frame (AGENTS.md).
     Only when the camera is on, the scene belongs to the newest frame, and PLANNER_CROP is not 0."""
     frame = getattr(session, 'frame', None)
-    if (os.environ.get('PLANNER_CROP', '1') == '0' or os.environ.get('LOCAL_ONLY') == '1' or not session.camera
+    if (os.environ.get('PLANNER_CROP', '1') == '0' or local_only() or not session.camera
             or not frame or frame.get('seq') != seq or not scene.get('objects')):
         return {}
     target = pick_target(scene['objects'], text)
@@ -282,8 +309,28 @@ def planner_crop(session, scene, seq, text):
         crop = None
     return {'images': [crop]} if crop else {}
 
+async def plan_scene(session, planner, base_system, user, scene, seq, text, emit):
+    planner_system = base_system + PLANNER_RULES + ' Draw item schema: ' + json.dumps(
+        schema()['$defs']['brain_turn']['properties']['draw'])
+    raw = ''
+    async with aclosing(planner.stream(planner_system, user, max_tokens=400,
+                                       model=os.environ.get('ANTHROPIC_MODEL', 'claude-sonnet-5-5'),
+                                       **planner_crop(session, scene, seq, text))) as stream:
+        async for delta in stream:
+            raw += delta
+    parsed = stream_header(raw)
+    head = parsed[0] if parsed else {}
+    clean = sanitize_header(head, {obj['id'] for obj in scene['objects']})
+    validate('brain_turn', dict(clean, say='plan'))
+    if session.camera and clean['draw']:
+        await emit(resolve(clean, scene, seq)[0])
+    note = head.get('note') if isinstance(head.get('note'), str) else ''
+    return clean, safe_speech(note)[:160], head.get('speak') is True
+
 async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None, planner=None, stt_ms=None):
     """One voice turn. With planner set (talker + thinker mode), llm only talks and planner draws in parallel."""
+    usage = []
+    TURN_USAGE.set(usage)
     messages = []
     owner = asyncio.current_task()
 
@@ -338,6 +385,8 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
     if session.pack.id == 'pc_build':
         system += board_prompt(session.board)
     base_system = system
+    if re.search(r"\b(failed|didn.t work|still not working)\b", text, re.I) and session.expert_step:
+        mark_failed(session, session.expert_step)
     system += TALKER_RULES if duo else (' Line 1: one JSON object with agent, draw and optional market_category. '
                'Do not include say in that object. Next line: SAY: then spoken text. '
                'Start speech with a short first clause of 4 to 8 words, ending in a comma or period. '
@@ -345,32 +394,16 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                'Include market_category only when asked about buying, prices or cheaper options. '
                'Draw item schema: ' + json.dumps(schema()['$defs']['brain_turn']['properties']['draw'])
                + ' agent: helper or shopper; market_category: cpu, board, ram, ssd, gpu, psu, cooler, case, fan.')
+    system += "\n" + EXPERT_RULES
     user = json.dumps(dict(caption=scene['caption'], objects=[
         {k: obj[k] for k in ('id', 'label', 'bbox')} for obj in scene['objects']],
         memory=session.scene_memory.snapshot(monotonic(), current=bool(fresh and session.scene is not None)),
         conversation=session.history[-10:], text=text))
     planner_task = None
 
-    async def plan():
-        planner_system = base_system + PLANNER_RULES + ' Draw item schema: ' + json.dumps(
-            schema()['$defs']['brain_turn']['properties']['draw'])
-        raw = ''
-        async with aclosing(planner.stream(planner_system, user, max_tokens=400,
-                                           model=os.environ.get('ANTHROPIC_MODEL', 'claude-sonnet-5-5'),
-                                           **planner_crop(session, scene, seq, text))) as stream:
-            async for delta in stream:
-                raw += delta
-        parsed = stream_header(raw)
-        head = parsed[0] if parsed else {}
-        clean = sanitize_header(head, {obj['id'] for obj in scene['objects']})
-        validate('brain_turn', dict(clean, say='plan'))
-        if session.camera and clean['draw']:
-            await emit(resolve(clean, scene, seq)[0])
-        note = head.get('note') if isinstance(head.get('note'), str) else ''
-        return clean, safe_speech(note)[:160], head.get('speak') is True
-
-    if duo:
-        planner_task = asyncio.create_task(plan())
+    route = await route_turn(session, text)
+    if duo and route not in ('past', 'expert'):
+        planner_task = asyncio.create_task(plan_scene(session, planner, base_system, user, scene, seq, text, emit))
     queue = asyncio.Queue()
     first_audio = None
     first_say_at = None
@@ -397,6 +430,8 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
     async def speech(value, final=False, agent='helper'):
         nonlocal part, first_say_at
         value = safe_speech(value)
+        if value and session.pack.guard is not None:
+            value = session.pack.guard(value, text, part == 0)  # pack post-condition (memory: pill line, no certainty)
         if not value:
             return
         msg = say(value, agent)
@@ -408,10 +443,29 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         if worker:
             await queue.put(msg)
 
+    async def tool_first_line(value):
+        await speech(value)
+        if worker:
+            # Wait for this first line on the same ordered audio path as normal speech.
+            drained = asyncio.create_task(queue.join())
+            try:
+                await asyncio.wait((drained, worker), return_when=asyncio.FIRST_COMPLETED)
+                if worker.done():
+                    await worker
+                await drained
+            finally:
+                drained.cancel()
+                await asyncio.gather(drained, return_exceptions=True)
+
+    offered_tools = rewind_tools.tools_for(session)
+    on_tool = rewind_callback(session, emit, vision=vision, turn_id=turn_id, speak=tool_first_line)
+    tool_options = dict(tools=offered_tools, on_tool=on_tool) if offered_tools else {}
+
     turn = dict(agent='helper', draw=[])
     buffer = ''
     header = duo
     marker = False
+    expert_tag = False
     pending = None
     first_token = None
     brain_started = monotonic()
@@ -433,7 +487,35 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
             delta_at = monotonic()
 
     try:
-        async with aclosing(llm.stream(system, user)) as stream:
+        if forget_request(text) and getattr(session, 'rewind', None) is not None:
+            # Spoken "forget that": the same deletion as the Forget button (TwelveLabs copies and local frames).
+            from server.rewind import state_message
+            result = await session.rewind.forget(local=True)
+            await emit(state_message(session.rewind))
+            n = result['deleted']
+            await speech(f"Done. I deleted {n} clip{'' if n == 1 else 's'} of this call." if not result['failed']
+                         else "I couldn't delete every clip. Try the Forget button.", final=True)
+            if worker:
+                await queue.put(None)
+                await worker
+            remember()
+            return messages
+        if route == 'past' or (route == 'expert' and session.expert_start):
+            if route == 'past':
+                tool = past_tool(text)
+                result = await on_tool(tool, {'query': text} if tool == 'search_past' else {})
+                await speech(result['say'], final=True)
+            else:
+                await tool_first_line('Let me get the expert on this, one moment.')
+                notice = session.expert_start(text, base_system, scene, seq, turn_id, planner)
+                if notice:
+                    await speech(notice, final=True)
+            if worker:
+                await queue.put(None)
+                await worker
+            remember()
+            return messages
+        async with aclosing(llm.stream(system, user, **tool_options)) as stream:
             async for delta in stream:
                 if first_token is None:
                     first_token = (monotonic() - brain_started) * 1000
@@ -460,6 +542,11 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                     match = _SAY.search(buffer)
                     if match:
                         buffer = buffer[match.end():].lstrip(' \n\t"')
+                    if '[EXPERT]'.startswith(buffer) and len(buffer) < len('[EXPERT]'):
+                        continue
+                    expert_tag = buffer.startswith('[EXPERT]')
+                    if expert_tag:
+                        buffer = buffer[len('[EXPERT]'):].lstrip()
                     marker = True
                 reply_text += delta if was_marker else buffer
                 if delta_task is None or delta_task.done():
@@ -532,7 +619,8 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
             event('planner', session.session_id, ms=(monotonic() - planned_at) * 1000)
             if planned and planned.get('market_category') and not turn.get('market_category'):
                 turn['market_category'] = planned['market_category']
-            if note and (speak_note or stalled):
+            # Repeating the talker is worse than silence: then the planner only draws.
+            if note and (speak_note or stalled) and not repeats(note, reply_text):
                 session.history.append(f'planner: {note}')
                 await speech(note, final=not bool(turn.get('market_category')))
         if turn.get('market_category'):
@@ -567,6 +655,17 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         if worker:
             worker.cancel()
             await asyncio.gather(worker, return_exceptions=True)
+    if session.expert_start and should_escalate(session, text, expert_tag):
+        notice = session.expert_start(text, base_system, scene, seq, turn_id, planner)
+        if notice or not expert_tag:
+            msg = say(notice or "Let me get the expert on this, one moment.")
+            msg.update(turn_id=turn_id, part=part, final=True)
+            await emit(msg)
+            if session.speak:
+                async for audio in session.speak(msg):
+                    await emit(audio)
+    if not re.search(r"\b(failed|didn.t work|still not working)\b", text, re.I):
+        session.expert_step = next((m['text'] for m in reversed(messages) if m['type'] == 'say'), session.expert_step)
     remember()
     timings = dict(turn_id=turn_id, vlm_ms=vlm_ms,
                    brain_first_token_ms=first_token or 0, turn_ms=(monotonic() - started) * 1000)

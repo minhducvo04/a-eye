@@ -85,3 +85,47 @@ about 22 s of Marengo indexing, plus about 8 searches. The API used here exposes
 Test: .venv/bin/python -m pytest -q - PASS (427 passed; the timing test test_backbone status timeout flaked twice under load and passes alone)
 Test: node --test client-web/ - PASS (93 passed)
 Test: make browser-smoke URL=http://127.0.0.1:8438 - PASS (server with A_EYE_TOKEN unset; the smoke script sends no token)
+
+## Rewind as model tools, and Recap (pkg/rewind-tool, 2026-10-24)
+
+**Interface.** For the lead's talker, `server/rewind_tools.py` provides:
+- `TOOLS`: the Anthropic tool schemas `search_past` and `recap_call`.
+- `tools_for(session)`: the tools, offered only while Rewind is on or has clips.
+- `FIRST_LINE[name]`: the line to say while a tool runs: "Let me check the recording." or "Let me look back over the call."
+- `run_tool(name, input, session, vision=, app=, turn_id=)`: returns `(result, cards)`. The result is JSON-safe and holds no image bytes. The cards are `rewind_hit` or `rewind_recap` messages for the client.
+- Underneath are `server/rewind.search_past` and `server/rewind.recap_call`.
+
+**Recap.** Pegasus `POST /v1.3/analyze` (model `pegasus1.5`, `response_format` json_schema) runs over a short time-lapse built only from frames of clips already uploaded while Rewind was on. Each kept frame shows for 0.5 s.
+- **Typical steps per mode:** `general`, `pc_build`, `cooking` and `assemble`.
+- **Skipped steps:** "skipped" is filtered in code to that mode's typical steps, so free text from the model is dropped.
+- **Triggers:** saying "recap" or "did I skip anything?" (regex path), the Recap chip, and the end-of-call sheet when Rewind was on (`POST /api/rewind/recap`).
+- **Contract:** v2.6 `rewind_recap`.
+
+**Real run.** `scripts/rewind_recap_probe.py`: 3 synthetic scenes (red ball, blue mug, empty desk), 3 uploads, 1 Pegasus call.
+
+| Step | Result |
+|---|---|
+| Upload (3 clips) | 275, 350 and 267 ms; tasks `6adc5c84c63e9d23a6361a4e`, `6adc5c84d5408e67fdc98a41`, `6adc5c8597372efe09880960` |
+| Upload + indexing until ready | 13.9 s |
+| search_past "where did I put the blue mug?" | 2.0 s: sure=true, call time 8.0 s, box [0.256, 0.063, 0.611, 0.855], alternative 16.0 s |
+| Pegasus recap (76 KB video, 18 frames) | 4.6 s; usage 2231 input / 115 output tokens; recap_call total 4.7 s |
+
+The first search_past run said "not sure". TwelveLabs had ranked the right clip first, but the kept frame nearest the moment was the pre-roll frame just before the change, which still showed the ball. Two fixes followed:
+- The frame right after the change is now always kept.
+- The answer frame is the first kept frame at or after the moment.
+
+The re-search above ran on the same 3 indexed clips with frames regenerated deterministically, so it needed no new upload.
+
+The Pegasus output on synthetic drawings is literal ("Displayed a red circle on a lined background") and lists all four general steps as skipped. That is expected for drawings; real camera clips should give real actions, but this was not tested here.
+
+```
+pegasus: 75876 byte video, 4575 ms, usage {'output_tokens': 115, 'input_tokens': 2231}
+recap_call 4712 ms: {"steps": [{"t_s": 0.0, "text": "Displayed a red circle on a lined background."}, {"t_s": 7.8, "text": "Displayed a blue mug on a white background."}], "skipped": [...]}
+search_past 2000 ms: {"sure": true, "call_time_s": 8.0, "label": "blue mug", "box": [0.256, 0.063, 0.611, 0.855], "clip_id": "6adc5c84d5408e67fdc98a41", "alternatives": [16.0], ...}
+```
+
+**Credits.** This package added 3 uploads (about 13 s of indexing), 2 searches and 1 Pegasus analyze (about 9 s of video, 2346 tokens). Across all Rewind work that makes 8 uploads (about 35 s of video), about 10 searches and 1 Pegasus call.
+
+Test: .venv/bin/python -m pytest -q - PASS (463 passed)
+Test: node --test client-web/ - PASS (116 passed)
+Test: make browser-smoke URL=http://127.0.0.1:8438 - PASS (server with A_EYE_TOKEN and CF_ACCESS_* unset; the smoke script sends no credentials)

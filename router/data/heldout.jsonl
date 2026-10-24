@@ -1,0 +1,100 @@
+{"id": "h001", "mode": "pc_build", "label": "now", "text": "Which header is the CPU fan one?", "context": []}
+{"id": "h002", "mode": "pc_build", "label": "now", "text": "Is this the right way round for the RAM stick?", "context": []}
+{"id": "h003", "mode": "pc_build", "label": "now", "text": "what's that little white connector near the top", "context": []}
+{"id": "h004", "mode": "pc_build", "label": "now", "text": "Okay, next step?", "context": ["Push the RAM down until both clips click.", "Done, they clicked."]}
+{"id": "h005", "mode": "pc_build", "label": "now", "text": "Can you point at the M.2 slot", "context": []}
+{"id": "h006", "mode": "pc_build", "label": "now", "text": "how many SATA ports does this board have", "context": []}
+{"id": "h007", "mode": "pc_build", "label": "now", "text": "Does this cable go in here?", "context": []}
+{"id": "h008", "mode": "pc_build", "label": "now", "text": "Is the 24-pin seated all the way?", "context": []}
+{"id": "h009", "mode": "pc_build", "label": "past", "text": "Where did I put the M.2 screw?", "context": []}
+{"id": "h010", "mode": "pc_build", "label": "past", "text": "Did I already plug in the front panel cable earlier or not", "context": []}
+{"id": "h011", "mode": "pc_build", "label": "past", "text": "when did I take the GPU out", "context": []}
+{"id": "h012", "mode": "pc_build", "label": "past", "text": "Which slot was the RAM in before I pulled it?", "context": []}
+{"id": "h013", "mode": "pc_build", "label": "expert", "text": "I did everything and it still won't post, the fans spin for a second and stop", "context": []}
+{"id": "h014", "mode": "pc_build", "label": "expert", "text": "Are you sure that's the CPU fan header? I don't want to fry anything", "context": ["That's the CPU_FAN header, top right of the socket."]}
+{"id": "h015", "mode": "pc_build", "label": "expert", "text": "It's still not working", "context": ["I reseated the 8-pin like you said, nothing.", "Okay, check the PSU switch on the back."]}
+{"id": "h016", "mode": "pc_build", "label": "expert", "text": "There's a burning smell coming from the case, what do I do", "context": []}
+{"id": "h017", "mode": "cooking", "label": "now", "text": "Is this onion diced small enough?", "context": []}
+{"id": "h018", "mode": "cooking", "label": "now", "text": "how hot should the pan be", "context": []}
+{"id": "h019", "mode": "cooking", "label": "now", "text": "Does the garlic look burnt to you", "context": []}
+{"id": "h020", "mode": "cooking", "label": "now", "text": "What do I add next?", "context": ["Stir the tomatoes in and let them simmer.", "Okay they're bubbling."]}
+{"id": "h021", "mode": "cooking", "label": "now", "text": "Is that enough salt", "context": []}
+{"id": "h022", "mode": "cooking", "label": "now", "text": "which one of these is the paprika", "context": []}
+{"id": "h023", "mode": "cooking", "label": "now", "text": "how long should I knead this", "context": []}
+{"id": "h024", "mode": "cooking", "label": "now", "text": "Can I use this pan instead?", "context": []}
+{"id": "h025", "mode": "cooking", "label": "past", "text": "Did I already add the salt?", "context": []}
+{"id": "h026", "mode": "cooking", "label": "past", "text": "When did the pasta go in?", "context": []}
+{"id": "h027", "mode": "cooking", "label": "past", "text": "where'd I leave the measuring spoon", "context": []}
+{"id": "h028", "mode": "cooking", "label": "past", "text": "how many eggs did I crack in so far", "context": []}
+{"id": "h029", "mode": "cooking", "label": "expert", "text": "I think the gas is on but the burner isn't lit, I can smell it", "context": []}
+{"id": "h030", "mode": "cooking", "label": "expert", "text": "The chicken is pink inside but the thermometer says 160, is it safe to eat?", "context": []}
+{"id": "h031", "mode": "cooking", "label": "expert", "text": "My bread didn't rise again, second time today, what am I doing wrong", "context": []}
+{"id": "h032", "mode": "assembly", "label": "now", "text": "Which of these is the cam lock?", "context": []}
+{"id": "h033", "mode": "assembly", "label": "now", "text": "Is this panel upside down?", "context": []}
+{"id": "h034", "mode": "assembly", "label": "now", "text": "What size Allen key do I need for this bolt", "context": []}
+{"id": "h035", "mode": "assembly", "label": "now", "text": "Show me where the dowels go", "context": []}
+{"id": "h036", "mode": "assembly", "label": "now", "text": "okay what now", "context": ["Slide the back panel into the groove.", "It's in."]}
+{"id": "h037", "mode": "assembly", "label": "now", "text": "Does this shelf look level", "context": []}
+{"id": "h038", "mode": "assembly", "label": "now", "text": "is this the long screw or the short one", "context": []}
+{"id": "h039", "mode": "assembly", "label": "past", "text": "Where did the little bag of screws go?", "context": []}
+{"id": "h040", "mode": "assembly", "label": "past", "text": "Did I put the left hinge on already?", "context": []}
+{"id": "h041", "mode": "assembly", "label": "past", "text": "What did I do right before the drawer stopped sliding?", "context": []}
+{"id": "h042", "mode": "assembly", "label": "past", "text": "show me when I attached the side panel", "context": []}
+{"id": "h043", "mode": "assembly", "label": "expert", "text": "I've tried twice and the door still won't line up with the frame", "context": []}
+{"id": "h044", "mode": "assembly", "label": "expert", "text": "Should I anchor this bookshelf to the wall, there's a toddler in the house", "context": []}
+{"id": "h045", "mode": "assembly", "label": "expert", "text": "can you double check that before I drill", "context": ["Drill the pilot hole 5 cm from the edge."]}
+{"id": "h046", "mode": "general", "label": "now", "text": "What am I holding?", "context": []}
+{"id": "h047", "mode": "general", "label": "now", "text": "read me what this label says", "context": []}
+{"id": "h048", "mode": "general", "label": "now", "text": "What color is this shirt", "context": []}
+{"id": "h049", "mode": "general", "label": "now", "text": "Can you see me?", "context": []}
+{"id": "h050", "mode": "general", "label": "now", "text": "thanks!", "context": ["The charger is the white one on the left."]}
+{"id": "h051", "mode": "general", "label": "now", "text": "is this plant getting too much sun", "context": []}
+{"id": "h052", "mode": "general", "label": "now", "text": "How do I turn this lamp on", "context": []}
+{"id": "h053", "mode": "general", "label": "now", "text": "What's the time on that clock", "context": []}
+{"id": "h054", "mode": "general", "label": "now", "text": "Which of these two mugs is bigger", "context": []}
+{"id": "h055", "mode": "general", "label": "now", "text": "hello, are you there", "context": []}
+{"id": "h056", "mode": "general", "label": "past", "text": "Where did I put my keys?", "context": []}
+{"id": "h057", "mode": "general", "label": "past", "text": "When did I last pick up my phone", "context": []}
+{"id": "h058", "mode": "general", "label": "past", "text": "what was on the desk a few minutes ago", "context": []}
+{"id": "h059", "mode": "general", "label": "past", "text": "Rewind to when the cat walked by", "context": []}
+{"id": "h060", "mode": "general", "label": "past", "text": "Did I take my pill this morning? You saw the table", "context": []}
+{"id": "h061", "mode": "general", "label": "expert", "text": "This outlet sparked when I plugged the heater in, can I keep using it?", "context": []}
+{"id": "h062", "mode": "general", "label": "expert", "text": "think hard about this one: why does my router keep dropping wifi every evening", "context": []}
+{"id": "h063", "mode": "general", "label": "expert", "text": "I have no idea what this thing is and nothing you said matches it", "context": ["It looks like a USB hub.", "No, it has a dial on it."]}
+{"id": "h064", "mode": "pc_build", "label": "now", "text": "where does the power switch cable go on the front panel header", "context": []}
+{"id": "h065", "mode": "pc_build", "label": "now", "text": "Is this thermal paste amount okay", "context": []}
+{"id": "h066", "mode": "pc_build", "label": "now", "text": "what's this", "context": ["Now find the system fan header."]}
+{"id": "h067", "mode": "pc_build", "label": "past", "text": "What did I do before I unplugged the 8-pin?", "context": []}
+{"id": "h068", "mode": "pc_build", "label": "past", "text": "go back to where I had the cooler off", "context": []}
+{"id": "h069", "mode": "cooking", "label": "now", "text": "Does this look done?", "context": ["Flip the pancake once you see bubbles."]}
+{"id": "h070", "mode": "cooking", "label": "now", "text": "What can I make with what's on the counter", "context": []}
+{"id": "h071", "mode": "cooking", "label": "past", "text": "How long ago did I put the timer on", "context": []}
+{"id": "h072", "mode": "cooking", "label": "past", "text": "which bowl did I put the butter in", "context": []}
+{"id": "h073", "mode": "cooking", "label": "expert", "text": "My kid is allergic to peanuts, is anything on this counter unsafe for her?", "context": []}
+{"id": "h074", "mode": "assembly", "label": "now", "text": "which way does this screw turn to tighten", "context": []}
+{"id": "h075", "mode": "assembly", "label": "past", "text": "hey wait where did that washer roll off to", "context": []}
+{"id": "h076", "mode": "assembly", "label": "expert", "text": "The instructions say step 7 but the parts don't match and I already glued step 6", "context": []}
+{"id": "h077", "mode": "bike_repair", "label": "now", "text": "Is the chain on the smallest cog?", "context": []}
+{"id": "h078", "mode": "bike_repair", "label": "now", "text": "which way do I turn the barrel adjuster", "context": []}
+{"id": "h079", "mode": "bike_repair", "label": "past", "text": "Where did I set the quick release skewer down", "context": []}
+{"id": "h080", "mode": "bike_repair", "label": "expert", "text": "The brakes still rub after I adjusted them three times, what else could it be", "context": []}
+{"id": "h081", "mode": "gardening", "label": "now", "text": "Is this a weed or a seedling?", "context": []}
+{"id": "h082", "mode": "gardening", "label": "now", "text": "how deep should this hole be for the tomato", "context": []}
+{"id": "h083", "mode": "gardening", "label": "past", "text": "did I water this row already", "context": []}
+{"id": "h084", "mode": "home_repair", "label": "now", "text": "Which of these wires is the neutral?", "context": []}
+{"id": "h085", "mode": "home_repair", "label": "expert", "text": "Is it safe to replace this light switch without turning off the breaker?", "context": []}
+{"id": "h086", "mode": "home_repair", "label": "now", "text": "what's this valve under the sink for", "context": []}
+{"id": "h087", "mode": "home_repair", "label": "past", "text": "where did I put the old cartridge after I pulled it out", "context": []}
+{"id": "h088", "mode": "home_repair", "label": "expert", "text": "I replaced the flapper and it still runs, and now there's water on the floor", "context": []}
+{"id": "h089", "mode": "makeup", "label": "now", "text": "Is my eyeliner even on both sides?", "context": []}
+{"id": "h090", "mode": "crafts", "label": "now", "text": "Which needle is the bigger one", "context": []}
+{"id": "h091", "mode": "crafts", "label": "past", "text": "How many rows did I knit since we started", "context": []}
+{"id": "h092", "mode": "general", "label": "now", "text": "And this one?", "context": ["That's a 9 volt battery.", "Okay."]}
+{"id": "h093", "mode": "general", "label": "now", "text": "Can you circle the blue one", "context": []}
+{"id": "h094", "mode": "general", "label": "now", "text": "what did you tell me earlier about the second step", "context": []}
+{"id": "h095", "mode": "general", "label": "expert", "text": "Hmm, that doesn't sound right. Are you really sure?", "context": ["That's a 12 volt adapter, it'll work with your 5 volt device."]}
+{"id": "h096", "mode": "pc_build", "label": "now", "text": "Is that the one?", "context": ["Look for the header labelled SYS_FAN1."]}
+{"id": "h097", "mode": "cooking", "label": "now", "text": "should I lower the heat", "context": ["Sear the steak on high for two minutes per side."]}
+{"id": "h098", "mode": "pc_build", "label": "expert", "text": "the board has a red CPU light and a white VGA light now, what does that combo mean and what should I check first", "context": []}
+{"id": "h099", "mode": "general", "label": "now", "text": "say that again?", "context": ["The remote is under the left cushion."]}
+{"id": "h100", "mode": "assembly", "label": "past", "text": "Did I use the short bolts or the long bolts on the first leg?", "context": []}

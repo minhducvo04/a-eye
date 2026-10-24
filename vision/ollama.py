@@ -10,6 +10,8 @@ from pathlib import Path
 from time import perf_counter
 
 import httpx
+
+CAPTION_TOKENS = 80
 from PIL import Image
 
 
@@ -242,8 +244,10 @@ class OllamaBackend:
         # Captions must not consume the budget for starting grounding queries.
         if not queries or body.get("caption", False):
             answer, _ = self._chat(body,
-                'Describe the frame briefly. Return JSON {"caption":str}. No boxes.',
-                40, model=self.caption_model)
+                'Describe the frame in at most 15 words. Return JSON {"caption":str}. No boxes.',
+                # 40 tokens cut longer captions mid-string, the JSON never closed, and every frame read
+                # "Could not describe the frame." (reported by the local-brain builder).
+                CAPTION_TOKENS, model=self.caption_model)
             caption = answer.get("caption") if isinstance(answer, dict) else None
             result["caption"] = caption.strip() if isinstance(caption, str) and caption.strip() else "Could not describe the frame."
         return result
