@@ -1,5 +1,6 @@
 import { triggerClient } from './trigger.js';
 import { setupFamily } from './family-note.js';
+import { createValveCard } from './step-check.js';
 import { isHeadset, requestLocalMedia } from './headset.js';
 import { bootPairCamera, phoneMicRoute, setupPairCall } from './pair.js';
 import { callOwner, ownerHeaders, ownerQuery, resetCallOwner } from './call-owner.js';
@@ -554,6 +555,7 @@ function boot() {
   }
 
   function connect() {
+    valveCard.reset();
     if (!pack) return;
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
     const ws = new WebSocket(wsUrl());
@@ -590,6 +592,7 @@ function boot() {
     ws.addEventListener('close', () => { if (socket === ws) stopTrigger?.(); });
     ws.addEventListener("close", (event) => {
       if (socket !== ws) return;
+      valveCard.reset();
       socket = null;
       window.clearTimeout(retryTimer);
       setLink("reconnecting");
@@ -615,9 +618,11 @@ function boot() {
 
   // A getter: sessionId changes when a new call starts, and a captured value sent stale ids (seen in the two-page run).
   const onPair = setupPairCall(send, () => sessionId);
+  const valveCard = createValveCard(document.getElementById('valve-check'));
 
   function onServer(message) {
     if (!message || typeof message !== "object") return;
+    valveCard.event(message);
     onPair(message);
     if (message.type === "pair_status") routeMic(message);
     const now = Date.now();
@@ -1267,6 +1272,7 @@ function boot() {
   }
 
   function stopCamera() {
+    valveCard.reset();
     const stream = video.srcObject;
     if (stream && typeof stream.getTracks === "function") {
       for (const track of stream.getTracks()) track.stop();
@@ -1623,6 +1629,7 @@ function boot() {
 
   // CallController.end: back to the mode ring with the same mode selected.
   function endCall() {
+    valveCard.reset();
     stopTrigger?.();
     if (!pack) return;
     window.clearInterval(memoryTimer);

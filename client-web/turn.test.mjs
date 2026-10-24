@@ -148,6 +148,10 @@ for (const headset of [false, true]) test(headset ? 'headset call never acquires
     assert.equal(node('proof-safety').classList.contains('hidden'), false);
     socket.message({ type: 'turn', stage: 'received', turn_id: 'next' });
     assert.equal(node('proof-safety').classList.contains('hidden'), true);
+    socket.message({ type: 'turn', stage: 'thinking', turn_id: 'next', detail: 'Valve: checking' });
+    assert.equal(node('valve-check').textContent, 'Checking the valve...');
+    socket.message({ type: 'turn', stage: 'thinking', turn_id: 'next', detail: 'Valve: closed' });
+    assert.match(node('valve-check').textContent, /^Water is off/);
     if (headset) {
       node('start-camera').handlers.click();
       node('permission-retry').handlers.click();
@@ -205,6 +209,7 @@ for (const headset of [false, true]) test(headset ? 'headset call never acquires
     assert.equal(node('presence-dot').attrs['data-agent'], 'helper');
     assert.equal(node('presence-dot').attrs['aria-label'], 'Helper is thinking');
     socket.close();
+    assert.equal(node('valve-check').classList.contains('hidden'), true);
     assert.match(node('pipeline').textContent, /^Connection lost, retrying/);
     const retry = [...timeouts.values()].at(-1);
     assert.equal(retry.ms, 500);

@@ -21,7 +21,7 @@ class NoCacheStatic(StaticFiles):
 from fastapi.responses import JSONResponse
 from server.auth import authorized, accept_socket, mint_owner, warn_unconfigured
 from server.logs import event, protect_transport_logs
-from server import api, mock, rewind_api, proof_wall, cloud_meter
+from server import api, mock, rewind_api, proof_wall, cloud_meter, step_check_api
 from jsonschema import ValidationError
 
 from contracts import validate
@@ -172,6 +172,7 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
     app.include_router(ws2.router)
     app.include_router(api.router)
     app.include_router(proof_wall.router)
+    app.include_router(step_check_api.router)
     from server.family_note import router as family_router
     app.include_router(family_router)
     app.include_router(rewind_api.router)
