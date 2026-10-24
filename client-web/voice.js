@@ -246,6 +246,7 @@ export function createVoice(options = {}) {
   let speaking = false;
   let utteranceId = null;
   let spokenText = "";
+  let localSpeech = null;
   let playbackStartedAt = 0;
   let bargedUtterance = null;
   let synthActive = false;
@@ -311,6 +312,7 @@ export function createVoice(options = {}) {
     const was = speaking;
     const ended = utteranceId;
     speaking = false;
+    finishLocalSpeech();
     currentUtter = null;
     setState(listening ? "listening" : "idle");
     if (was) onSpeakEnd(ended);
@@ -346,6 +348,7 @@ export function createVoice(options = {}) {
   }
 
   function haltPlayback() {
+    finishLocalSpeech(new Error("Read aloud did not finish. Please try again."));
     audioGen += 1;
     synthGen += 1;
     synthActive = false;
@@ -474,7 +477,7 @@ export function createVoice(options = {}) {
 
   function handleResult(event) {
     const results = event && event.results;
-    if (!results || !listening) return;
+    if (!results || !listening || localSpeech) return;
     recHeard = true;
     quickEnds = 0;
     const from = Number.isInteger(event.resultIndex) ? event.resultIndex : 0;
@@ -524,8 +527,34 @@ export function createVoice(options = {}) {
     onBargeIn(id, atMs);
   }
 
-  function speak(id, text) {
+  function finishLocalSpeech(error) {
+    if (!localSpeech) return;
+    const pending = localSpeech;
+    localSpeech = null;
+    if (error) pending.reject(error);
+    else pending.resolve();
+  }
+
+  function speak(id, text, { localOnly = false } = {}) {
+    if (localSpeech) return localOnly
+      ? Promise.reject(new Error("Please wait for read aloud to finish.")) : undefined;
+    // Family words never go to a remote voice. Fail closed if no local voice is installed.
+    const localVoice = localOnly && synth?.getVoices?.().find(v => v.localService && v.lang.startsWith("en"));
+    if (localOnly && (!localVoice || typeof synth.speak !== "function")) return Promise.reject(new Error("Enable an on-device English voice, then tap Read aloud."));
     haltPlayback();
+    let completion;
+    if (localOnly) {
+      completion = new Promise((resolve, reject) => { localSpeech = { resolve, reject }; });
+      early.reset();
+      lastInterim = null;
+      dropQueue();
+      preroll = [];
+      prerollSamples = 0;
+      sentInUtt = 0;
+      utteranceOpen = false;
+      bargeArmedAt = null;
+      vad = createVad(energyVadOptions());
+    }
     utteranceId = id;
     spokenText = String(text || "");
     bargedUtterance = null;
@@ -538,27 +567,30 @@ export function createVoice(options = {}) {
     }
     const utter = makeUtterance(spokenText);
     utter.lang = lang;
+    if (localVoice) utter.voice = localVoice;
     utter.volume = effectiveVolume();
     currentUtter = utter;
     const token = ++synthGen;
     synthActive = true;
-    const done = () => {
+    const done = (error) => {
       if (token !== synthGen) return;
+      finishLocalSpeech(error);
       synthActive = false;
       maybeIdle();
     };
     utter.onstart = () => { if (token === synthGen) onSpeakStart(id); };
-    utter.onend = done;
-    utter.onerror = done;
+    utter.onend = () => done();
+    utter.onerror = () => done(new Error("Read aloud did not finish. Please try again."));
     try {
       synth.speak(utter);
     } catch {
-      synthActive = false;
-      maybeIdle();
+      done(new Error("Read aloud did not finish. Please try again."));
     }
+    return completion;
   }
 
   function playPcm(id, pcm16Base64, finalChunk) {
+    if (localSpeech) return;
     const same = speaking && utteranceId === id;
     if (!same) {
       const keepText = utteranceId === id ? spokenText : "";
@@ -813,7 +845,7 @@ export function createVoice(options = {}) {
   }
 
   function onCapture(samples, sampleRate, token) {
-    if (token !== captureGen || !listening) return;
+    if (token !== captureGen || !listening || localSpeech) return;
     const down = downsample(samples, sampleRate, PCM_RATE);
     if (down.length === 0) return;
     const energy = rms(down);
@@ -1146,6 +1178,7 @@ export function createVoice(options = {}) {
   // One VAD event: duck on the first speech frame, stop after minSpeechMs, restore on a misfire,
   // and on the end of speech send the words without waiting for the recognizer's own final.
   function vadEvent(event) {
+    if (localSpeech) return;
     const live = speaking && utteranceId != null && bargedUtterance !== utteranceId;
     const result = nextBarge(barge, event, live);
     barge = result.state;
@@ -1255,6 +1288,7 @@ export function createVoice(options = {}) {
     playPcm,
     cancel,
     isSpeaking,
+    isInputBlocked() { return Boolean(localSpeech); },
     isListening() { return listening; },
     neuralVadActive() { return Boolean(neural); },
     setSensitivity(next) {
@@ -1281,7 +1315,7 @@ export function createVoice(options = {}) {
     holdMode() { return holdMode; },
     // Press: stop the AI and open an utterance. Release: send it to server Whisper.
     holdStart() {
-      if (!serverMode || !listening) return false;
+      if (!serverMode || !listening || localSpeech) return false;
       holding = true;
       dropQueue();
       sentInUtt = 0;
