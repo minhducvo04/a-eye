@@ -19,10 +19,21 @@ def normalized(text):
     return re.sub(r'\s+', ' ', unicodedata.normalize('NFKC', text).lower().replace('’', "'")).strip()
 
 
+def claim_tokens(text):
+    # Punctuation separates words, including straight/curly apostrophes.
+    return re.findall(r'\w+', normalized(text))
+
+
+# Up to three filler words between each pair; whole tokens avoid substring hits.
+CLAIM_PATTERNS = tuple(re.compile(
+    r'\b' + r'(?: \w+){0,3} '.join(map(re.escape, claim_tokens(claim))) + r'\b'
+) for claim in CLAIMS)
+
+
 def allowed(text):
-    text = normalized(text)
+    text = ' '.join(claim_tokens(text))
     return not (re.search(r'\b(?:' + '|'.join(ROLE_WORDS) + r')s?\b', text)
-                or any(claim in text for claim in CLAIMS))
+                or any(pattern.search(text) for pattern in CLAIM_PATTERNS))
 
 
 def check(text):

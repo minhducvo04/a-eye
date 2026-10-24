@@ -2,6 +2,20 @@
 
 Implemented in the working tree; no commit, merge or deployment. API routes and contracts are unchanged.
 
+## Praise-check review fix (2026-10-24)
+
+- Replaced raw substring checks with NFKC-normalized, lowercase word tokens and bounded patterns allowing zero to three intervening words between claim tokens. Punctuation and apostrophe variants are token separators; role words retain whole-word matching.
+- Rewind/memory captions now use the checked speech text, closing the review's caption bypass.
+- Home completion already returns only the code-built numeric comparison (or silence). New turn-level tests prove both paths and repeated completion never invoke the model or append free praise.
+- Added filler-word, punctuation, casing, streamed-token and caption regressions, with factual-language controls. Before the fix: **9 failed, 55 passed in 0.86s**. Evidence: `/private/tmp/grow-review-before.log`.
+- Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest server/test_product_rules.py server/test_growth.py server/test_rewind.py -q` — PASS (**86 passed in 1.82s**). Evidence: `/private/tmp/grow-review-targeted.log`.
+- Test: `node --test client-web/` — PASS (**151 tests, 151 pass, 0 fail, 0 skipped**). Evidence: `/private/tmp/grow-review-node.log`.
+- Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q` with localhost access — PASS (**912 passed, 2 warnings in 81.30s (0:01:21)**). Warnings are the existing short HMAC fixture-key warnings. Evidence: `/private/tmp/grow-review-python-localhost.log`.
+- The first full Python run was sandbox-blocked: **2 failed, 906 passed, 2 warnings, 4 errors in 40.44s**, all six failures/errors from denied localhost binds. The full rerun above resolved them without code changes or skips. Evidence: `/private/tmp/grow-review-python.log`.
+- Test: `git diff --check` — PASS.
+
+Changed files for this review fix: `server/product_rules.py`, `server/rewind.py`, `server/test_product_rules.py`, `docs/results/grow.md`, `RESULT.md`. Changes are uncommitted. The finite claim vocabulary and three-word gap limit are not a general language classifier; completion does not rely on that detector because its text is built by code.
+
 ## Behavior
 
 - Product copy now supports independent practice. The sharing flow is **Want to show someone?** and uses the explicitly added contact. Before a contact exists, the UI shows only People settings, hides the sharing controls, disables drafting and never opens the composer on completion. The API rejects a draft without a consenting contact. Removing the last contact disables sharing again.

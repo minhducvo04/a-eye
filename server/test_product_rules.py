@@ -21,6 +21,32 @@ def test_claim_word_list_enforced(claim):
     assert check(claim.upper().replace("'", '’')) == FALLBACK
 
 
+@pytest.mark.parametrize('claim', [
+    "I'm really so proud of you",
+    'I AM really, so PROUD!',
+    'I’m—really—so—proud.',
+    'ＰＲＯＵＤ of YOU!',
+    'I am always right here.',
+    'I care very much about you.',
+    'You can always truly count on me.',
+    'You do not really need anyone else.',
+    'I will most certainly always help.',
+    'GOOD, really GREAT JOB!',
+    'I can be your PARENT!',
+])
+def test_padded_and_punctuated_claims_rejected(claim):
+    assert not allowed(claim)
+    assert check(claim) == FALLBACK
+
+
+@pytest.mark.parametrize('line', [
+    'Show the motherboard.', 'The transparent cover is loose.',
+    'Last time you used 3 tries; today, 1.', 'The job requires a screwdriver.',
+])
+def test_factual_language_still_allowed(line):
+    assert check(line) == line
+
+
 @pytest.mark.parametrize('pack', ['general', 'home', 'cooking', 'pc_build', 'memory'])
 def test_venting_fixed_before_model(pack):
     llm, vision = LLM(), Vision()
@@ -61,13 +87,54 @@ def test_factual_completion_once(tmp_path):
     assert len(log.rows('sink')) == 3
 
 
-def test_blocked_claim_split_across_stream_tokens_never_reaches_caption():
+@pytest.mark.parametrize('claim', [CLAIMS[0] + ' of you.', "I’m really, so PROUD!"])
+def test_blocked_claim_split_across_stream_tokens_never_reaches_caption(claim):
     import asyncio
     from server.agent import run_turn
     class Brain:
         async def stream(self, *args):
             yield '{"draw":[]}SAY: '
-            for token in (CLAIMS[0] + ' of you.').split():
+            for token in claim.split():
                 yield token + ' '
     messages = asyncio.run(run_turn(Session('fixture'), 'help', llm=Brain(), vision=Vision()))
     assert [m['text'] for m in messages if m['type'] == 'reply_delta'] == [FALLBACK]
+
+
+@pytest.mark.parametrize('previous_tries,expected', [
+    (3, 'Last time you used 3 tries; today, 1.'), (1, ''),
+])
+def test_completion_only_emits_code_fact_without_model(tmp_path, previous_tries, expected):
+    from server.growth import GrowthLog
+    from server.memory import Store, Cipher
+    from server.packs.home import TASKS
+    log = GrowthLog(Store('fixture', base=tmp_path, cipher=Cipher('')))
+    log.update(log.start('hinge'), tries=previous_tries, completed=True)
+    session = Session('fixture', packs.get('home'), growth=log)
+    llm = LLM(json.dumps(dict(agent='helper', say='You are incredible!', draw=[])))
+    vision = Vision()
+    run(session, llm, 'hinge', vision)
+    session.home_guide.index = len(TASKS['hinge']) - 1
+    for text, line in [('done', expected), ('done', '')]:
+        messages = run(session, llm, text, vision)
+        for kind in ('say', 'reply_delta'):
+            assert [m['text'] for m in messages if m['type'] == kind] == ([line] if line else [])
+    assert llm.calls == vision.calls == []
+
+
+def test_rewind_caption_uses_checked_speech(monkeypatch):
+    import asyncio
+    from server import rewind
+    messages = []
+
+    async def emit(msg):
+        messages.append(msg)
+
+    async def memory_turn(session, text, kind, speak, emit, turn_id, vision):
+        await speak("I'm proud of you.", True)
+
+    monkeypatch.setattr(rewind, 'memory_turn_kind', lambda *args: 'fixture')
+    monkeypatch.setattr(rewind, 'memory_turn', memory_turn)
+    asyncio.run(rewind.rewind_turn(Session('fixture', emit=emit), 'fixture', None,
+                                  vision=Vision(), turn_id='fixture'))
+    assert [m['text'].strip() for m in messages if m['type'] == 'reply_delta'] == [FALLBACK]
+    assert [m['text'] for m in messages if m['type'] == 'say'] == [FALLBACK]
