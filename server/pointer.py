@@ -76,7 +76,7 @@ def visible(name, caption):
     return bool(noun) and noun in {w.removesuffix('s') for w in re.findall(r'\w+', caption.casefold())}
 
 
-async def ground(session, vision, name):
+async def ground(session, vision, name, *, allow_cloud=False):
     """Return a validated draw message or None. Never save or log frame content.
 
     The existing /scene endpoint is our own vision service. Reject its auto/fake fallback.
@@ -97,7 +97,8 @@ async def ground(session, vision, name):
                                                    max_objects=1, caption=caption is None))
         validate('scene_response', scene)
         if (monotonic() - started >= BUDGET_S or monotonic() - observed_at >= BUDGET_S
-                or not session.camera or scene.get('source') != 'ollama'
+                or not session.camera or not (scene.get('source') == 'ollama'
+                    or (allow_cloud and scene.get('source') is None))
                 or not visible(name, caption if caption is not None else scene['caption'])):
             return None
         objects = scene['objects']
