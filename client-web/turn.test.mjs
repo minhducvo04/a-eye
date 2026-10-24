@@ -78,11 +78,12 @@ test('early final uses latest interim at 700ms and never sends a late correction
   assert.equal(sent.length, 2);
 });
 
-test('call page toggles camera, keeps voice-only hello, retries text, reconnects, and renders streamed replies', async () => {
+for (const headset of [false, true]) test(headset ? 'headset call never acquires local video through camera or permission controls' : 'call page toggles camera, keeps voice-only hello, retries text, reconnects, and renders streamed replies', async () => {
   const saved = new Map();
   const put = (key, value) => { saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { value, configurable: true, writable: true }); };
   const nodes = new Map(), intervals = new Map(), timeouts = new Map();
   let timerId = 0, stops = 0, gets = 0;
+  const constraints = [];
   const context = new Proxy({}, { get: (_obj, key) => key === 'measureText' ? () => ({ width: 20 }) : key === 'createRadialGradient' ? () => ({ addColorStop() {} }) : () => {} });
   class Element {
     constructor() { this.handlers = {}; this.attrs = {}; this.children = []; this.style = {}; this.textContent = ''; this.value = ''; this.clientWidth = 390; this.clientHeight = 844; this.width = 320; this.height = 200; const classes = new Set(); this.classList = { add: k => classes.add(k), remove: k => classes.delete(k), contains: k => classes.has(k), toggle: (k, on) => on ? classes.add(k) : classes.delete(k) }; }
@@ -110,21 +111,40 @@ test('call page toggles camera, keeps voice-only hello, retries text, reconnects
   put('document', { getElementById: node, createElement: () => new Element(), createTextNode: text => ({ textContent: text }), hidden: false });
   put('window', { isSecureContext: true, innerWidth: 390, innerHeight: 844, devicePixelRatio: 1, matchMedia: () => ({ matches: true }), addEventListener() {}, requestAnimationFrame() { return 1; }, setInterval(fn, ms) { intervals.set(++timerId, { fn, ms }); return timerId; }, clearInterval(id) { intervals.delete(id); }, setTimeout(fn, ms) { timeouts.set(++timerId, { fn, ms }); return timerId; }, clearTimeout(id) { timeouts.delete(id); } });
   put('localStorage', null);
-  put('location', { search: '', protocol: 'https:', host: 'example.test' });
-  put('navigator', { mediaDevices: { getUserMedia: async () => { gets++; return { getTracks: () => [{ stop() { stops++; } }] }; } } });
+  put('location', { search: headset ? '?device=headset' : '', protocol: 'https:', host: 'example.test' });
+  put('navigator', { mediaDevices: { enumerateDevices: async () => [], getUserMedia: async c => { constraints.push(c); gets++; return { getTracks: () => [{ stop() { stops++; } }] }; } } });
   put('SpeechRecognition', class { start() {} stop() {} });
   put('WebSocket', Socket);
   const realNow = Date.now;
   let now = 1000;
   Date.now = () => now;
   try {
-    await import('./agent.js');
+    await import(`./agent.js?headset-test=${headset}`);
     node('picker').handlers.click({ target: { closest: () => ({ getAttribute: () => 'general' }) } });
     await settle();
     const socket = Socket.all[0];
     assert.ok(socket);
     socket.open();
     assert.equal(socket.messages[0].camera, false);
+    if (headset) {
+      node('start-camera').handlers.click();
+      node('permission-retry').handlers.click();
+      await settle();
+      assert.equal(gets, 0);
+      node('devices-allow').handlers.click();
+      await settle();
+      assert.equal(constraints.some(c => c.video), false);
+      socket.message({ type: 'pair_status', role: 'call', state: 'joined' });
+      assert.equal(node('headset-status').textContent, 'Phone camera connected');
+      const before = gets;
+      node('devices-allow').handlers.click();
+      await settle();
+      assert.equal(gets, before);
+      socket.message({ type: 'pair_status', role: 'call', state: 'left' });
+      assert.equal(node('headset-status').textContent, 'Waiting for your phone camera');
+      node('end-call').handlers.click();
+      return;
+    }
     node('start-camera').handlers.click();
     await settle();
     assert.equal(gets, 1);

@@ -72,6 +72,15 @@
 
     <!-- Call screen (CallScreen.swift): pill on top, caption card, power gate, input, bottom bar. -->
     <section id="call" class="call hidden" aria-label="Call">
+      <div id="headset-panel" class="headset-panel hidden">
+        <h1 id="headset-status" role="status">Waiting for your phone camera</h1>
+        <button type="button" id="headset-sound" class="glass">Enable sound</button>
+        <div id="headset-help">
+          <p>Keep your remembered phone page open. It joins this call automatically.</p>
+          <button type="button" id="headset-pair" class="glass">Pair phone · show QR</button>
+          <p>Vision Pro uses your phone camera, never its own.</p>
+        </div>
+      </div>
       <div class="top">
         <div class="pill glass">
           <span id="presence-dot" class="presence-dot" role="img" aria-label=""></span>
@@ -200,6 +209,13 @@
       </div>
     </div>
     <p class="group-foot">Use your phone as the camera and mic for this call. Scan the code with the phone.</p>
+    <p class="group-title">Works with</p>
+    <div class="group works-with">
+      <p><b>Phone</b> — Open the pairing link or scan the QR; tap Start and remember this phone.</p>
+      <p><b>Laptop</b> — Open A-eye in your browser, start a call and enable camera and mic.</p>
+      <p><b>Raspberry Pi device</b> — Configure the A-eye server address using docs/device.md, then press its button.</p>
+      <p><b>Vision Pro (browser or app)</b> — In Safari open agent.html?device=headset and use your remembered phone; in the native app connect to your A-eye server.</p>
+    </div>
 
     <p class="group-title">Privacy</p>
     <div class="group">
