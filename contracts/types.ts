@@ -147,9 +147,9 @@ export interface V2ReplyDelta { v: V2; type: "reply_delta"; agent: AgentId; turn
 export interface V2Camera { v: V2; type: "camera"; session_id: string; on: boolean }
 
 // v2.4 (additive): phone as camera. V2Hello may carry role?: "call" | "camera" and pair_code?: string.
-export interface V2PairRequest { v: V2; type: "pair_request"; session_id: string }
+export interface V2PairRequest { v: V2; type: "pair_request"; session_id: string; kick?: boolean }
 export interface V2Pair { v: V2; type: "pair"; code: string; expires_in_s: number; path?: string }
-export interface V2PairStatus { v: V2; type: "pair_status"; state: "joined" | "left" | "camera" | "rejected" | "expired"; role?: "call" | "camera"; camera_on?: boolean; source?: "call" | "camera"; detail?: string }
+export interface V2PairStatus { v: V2; type: "pair_status"; state: "joined" | "left" | "camera" | "rejected" | "expired"; role?: "call" | "camera"; camera_on?: boolean; source?: "call" | "camera"; detail?: string; retry_s?: number }
 
 // v2.5 (additive): Rewind, a searchable memory of the call (TwelveLabs). V2Hello may carry rewind?: boolean.
 // V2Rewind joins the client v2 union; V2RewindState and V2RewindHit join the server v2 union.

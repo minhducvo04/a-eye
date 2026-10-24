@@ -1531,6 +1531,7 @@ function boot() {
     agents = { helper: "idle", shopper: "idle" };
     wait = null;
     micRoute = { phone: false, resume: false };
+    document.getElementById("phone-chip")?.classList.add("hidden");
     renderWait(Date.now());
     hideStill();
     closeSheets();
@@ -1913,6 +1914,10 @@ function boot() {
     memoryCountEl.setAttribute("aria-expanded", open ? "true" : "false");
   });
   document.getElementById("forget-last").addEventListener("click", () => void forgetMemory("last"));
+  // Disconnect the paired phone; a remembered phone then waits for the next call (server: Call.kick).
+  document.getElementById("phone-kick").addEventListener("click", () => {
+    send({ v: 2, type: "pair_request", session_id: sessionId, kick: true });
+  });
   document.getElementById("forget-today").addEventListener("click", () => void forgetMemory("today"));
   const forgetBtn = document.getElementById("rewind-forget");
   if (forgetBtn) forgetBtn.addEventListener("click", () => void forgetRewind(sessionId).then(
@@ -2148,6 +2153,8 @@ function boot() {
   function routeMic(message) {
     const { route, action } = phoneMicRoute(micRoute, message, ui.getState().micOn);
     micRoute = route;
+    const phoneChip = document.getElementById("phone-chip");
+    if (phoneChip) phoneChip.classList.toggle("hidden", !micRoute.phone);
     if (action === "stop_local" && voice) {
       voice.stopListening();
       ui.dispatch({ type: "mic_stop" });
