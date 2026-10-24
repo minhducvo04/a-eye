@@ -186,6 +186,7 @@ async def websocket(ws: WebSocket):
     async def speech_audio(msg):
         active_audio.add(msg['utterance_id'])
         try:
+            voice.turn = msg.get('turn_id')  # Cartesia keeps one context (prosody) per turn
             pending = None
             async for chunk in voice.say(msg['utterance_id'], msg['text']):
                 if pending is not None:
@@ -398,10 +399,14 @@ async def websocket(ws: WebSocket):
                 voice = None
                 if session.tts == 'server':
                     factory = getattr(ws.app.state, 'voice_factory_v2', adapter.make_adapter)
-                    candidate = await asyncio.to_thread(factory)
+                    picked = incoming.get('voice')
+                    candidate = await asyncio.to_thread(
+                        factory, **({'voice': picked} if factory is adapter.make_adapter else {}))
                     if not isinstance(candidate, FakeAdapter):
                         voice = candidate
-                        voice.voice = incoming.get('voice')  # schema-checked id; the adapter checks its own kind
+                        voice.voice = picked  # schema-checked id; the adapter checks its own kind
+                        if hasattr(voice, 'warm'):
+                            await voice.warm()
                     else:
                         event('fallback_used', session.session_id, dependency='tts', to='browser')
                 session.speak = speech_audio if voice else None

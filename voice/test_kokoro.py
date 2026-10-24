@@ -64,14 +64,19 @@ def test_auto_order_and_health_cache(monkeypatch):
     original = httpx.Client
     monkeypatch.setattr(httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs))
     adapter._health_cache.clear()
-    voice = adapter.make_adapter()
-    assert isinstance(voice, KokoroAdapter)
+    from voice.cartesia_ws import CartesiaWsAdapter
+    voice = adapter.make_adapter()  # Cartesia when keyed, with Kokoro as its fallback
+    assert isinstance(voice, CartesiaWsAdapter) and isinstance(voice.backup, KokoroAdapter)
     asyncio.run(voice.aclose())
+    picked = adapter.make_adapter(voice='af_kore')  # a Kokoro voice asks for Kokoro
+    assert isinstance(picked, KokoroAdapter)
+    asyncio.run(picked.aclose())
     assert adapter._kokoro_available()
     assert len(calls) == 1
     available = False
     adapter._health_cache.clear()
-    assert isinstance(adapter.make_adapter(), CartesiaAdapter)
+    fallbackless = adapter.make_adapter()
+    assert isinstance(fallbackless, CartesiaWsAdapter) and fallbackless.backup is None
     monkeypatch.delenv('CARTESIA_API_KEY')
     assert isinstance(adapter.make_adapter(), FakeAdapter)
     assert len(calls) == 2

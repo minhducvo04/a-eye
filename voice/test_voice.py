@@ -86,7 +86,8 @@ def test_make_adapter_cartesia_when_env_set(monkeypatch):
     monkeypatch.setenv("CARTESIA_API_KEY", "sk_test_dummy")
     monkeypatch.setenv("VOICE", "cartesia")
     adapter = make_adapter()
-    assert isinstance(adapter, CartesiaAdapter)
+    from voice.cartesia_ws import CartesiaWsAdapter
+    assert isinstance(adapter, CartesiaWsAdapter)
 
 
 COMMAND_TABLE = [

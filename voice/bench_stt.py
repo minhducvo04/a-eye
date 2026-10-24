@@ -39,7 +39,8 @@ async def main(url, turns):
         async def send(kind, **fields):
             await ws.send(json.dumps(dict(v=2, type=kind, session_id=sid, **fields)))
 
-        await send('hello', pack='general', tts='server', stt='server', camera=False)
+        await send('hello', pack='general', tts='server', stt='server', camera=False,
+                   **({'voice': os.environ['BENCH_VOICE']} if os.environ.get('BENCH_VOICE') else {}))
         inbox = asyncio.Queue()
 
         async def reader():

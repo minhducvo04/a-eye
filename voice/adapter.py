@@ -91,17 +91,25 @@ def _check_kokoro():
     return available
 
 
-def make_adapter(**kwargs: Any) -> VoiceAdapter:
-    """Prefer Cartesia Sonic when keyed (most natural), then local Kokoro, then browser speech."""
+def make_adapter(voice: str | None = None, **kwargs: Any) -> VoiceAdapter:
+    """Cartesia Sonic (WebSocket) when keyed, with Kokoro as its fallback; else Kokoro; else browser speech.
+
+    voice is hello.voice: 'cartesia:<id>' asks for Cartesia, a Kokoro id asks for Kokoro.
+    """
     mode = os.environ.get('VOICE', 'auto')
-    if mode == 'auto' and os.environ.get('CARTESIA_API_KEY') and os.environ.get('CARTESIA_VOICE_ID'):
-        from voice.cartesia import CartesiaAdapter
-        return CartesiaAdapter(**kwargs)
+    wants_kokoro = bool(voice) and not voice.startswith('cartesia:')
+    if os.environ.get('CARTESIA_API_KEY') and (mode == 'cartesia' or (mode == 'auto' and not wants_kokoro)):
+        from voice.cartesia_ws import CartesiaWsAdapter
+        backup = None
+        if _kokoro_available():
+            from voice.kokoro import KokoroAdapter
+            backup = KokoroAdapter()
+        return CartesiaWsAdapter(backup=backup, **kwargs)
     if mode == 'kokoro' or (mode == 'auto' and _kokoro_available()):
         from voice.kokoro import KokoroAdapter
         return KokoroAdapter(**kwargs)
     if mode in ('auto', 'cartesia') and os.environ.get('CARTESIA_API_KEY'):
-        from voice.cartesia import CartesiaAdapter
-        return CartesiaAdapter(**kwargs)
+        from voice.cartesia_ws import CartesiaWsAdapter  # a Kokoro voice was asked for but the box is down
+        return CartesiaWsAdapter(**kwargs)
     from voice.fake import FakeAdapter
     return FakeAdapter(**kwargs)
