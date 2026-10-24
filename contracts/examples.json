@@ -1054,5 +1054,62 @@
     "install the RAM"
    ]
   }
+ ],
+ "v2_find_item": [
+  {
+   "v": 2,
+   "type": "find_item",
+   "turn_id": "t-3",
+   "item": "keys",
+   "found": true,
+   "at_ms": 1792850000000,
+   "t_s": -86400.0,
+   "start_s": -86400.0,
+   "end_s": -86400.0,
+   "sure": true,
+   "alternatives": [],
+   "when": "yesterday at 3:02 PM",
+   "place": "under the left red cup",
+   "home": "blue bowl",
+   "say": "I last saw your keys under the left red cup, yesterday at 3:02 PM. Their home is the blue bowl.",
+   "frame_b64": "AAAA",
+   "objects": [
+    {
+     "id": "memory-0",
+     "label": "keys",
+     "bbox": [
+      0.1,
+      0.2,
+      0.5,
+      0.5
+     ],
+     "conf": 1.0
+    }
+   ],
+   "live": {
+    "object_id": "o2",
+    "bbox": [
+     0.1,
+     0.4,
+     0.2,
+     0.3
+    ]
+   },
+   "count": 12,
+   "count_item": 3
+  }
+ ],
+ "v2_memory_state": [
+  {
+   "v": 2,
+   "type": "memory_state",
+   "on": true,
+   "memory_id": "me",
+   "count": 0,
+   "crops": 0,
+   "bytes": 96,
+   "encrypted": true,
+   "retention_days": 7
+  }
  ]
 }

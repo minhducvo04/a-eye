@@ -120,17 +120,17 @@ class TwelveLabsClient:
         self.transport = transport
         self.base = base
 
-    def _headers(self):
-        if local_only():
+    def _headers(self, force=False):
+        if local_only() and not force:
             raise RuntimeError('Private mode or LOCAL_ONLY=1: Rewind cloud is locked off')
         key = self.key or os.environ.get('TWELVELABS_API_KEY', '')
         if not key:
             raise RuntimeError('TWELVELABS_API_KEY is not set')
         return {'x-api-key': key}
 
-    def _client(self, timeout=30):
+    def _client(self, timeout=30, force=False):
         return httpx.AsyncClient(base_url=self.base, timeout=timeout, transport=self.transport,
-                                 headers=self._headers())
+                                 headers=self._headers(force))
 
     async def ensure_index(self, name=INDEX_NAME):
         async with self._client() as client:
@@ -155,8 +155,9 @@ class TwelveLabsClient:
             body = response.json()
             return body['_id'], body.get('video_id')
 
-    async def delete_video(self, index_id, video_id):
-        async with self._client() as client:
+    async def delete_video(self, index_id, video_id, force=False):
+        """force=True: allowed in Private mode too, since it only removes data."""
+        async with self._client(force=force) as client:
             response = await client.delete(f'/indexes/{index_id}/videos/{video_id}')
             if response.status_code != 404:      # already gone counts as deleted
                 response.raise_for_status()
@@ -242,6 +243,11 @@ class Rewind:
         self.end_task = None    # end-of-call cleanup, awaited by the recap route
         self.mode = None
         self.owner = 'local'    # identity() of the caller that opened this call
+        self.index_name = INDEX_NAME   # local memory attaches a per-person index: a-eye-<memory id>
+        self.on_upload = None   # callback(index_id, video_id), e.g. the person's memory store
+        self.memory_writer = None   # server.memory.Writer while local memory is attached to this call
+        self.memories = None        # server.memory.Memories, set by the registry, for auto attach
+        self.session = None
         self.keep = False       # True: the user keeps the TwelveLabs videos after the call
         self.deleted = []       # video ids deleted from TwelveLabs (ids only)
         self.last_sig = None    # newest frame signature (32x32 gray), for local activity
@@ -330,7 +336,7 @@ class Rewind:
             if not ready:
                 return []
             if self.index_id is None:
-                self.index_id = await self.client.ensure_index()
+                self.index_id = await self.client.ensure_index(self.index_name)
             for clip in ready:
                 clip.status = 'uploading'
                 started = monotonic()
@@ -342,6 +348,8 @@ class Rewind:
                                     end_s=round(clip.end_s, 2), started_at=int(self.started_wall))
                     clip.task_id, clip.video_id = await self.client.upload(self.index_id, path, metadata)
                     clip.status = 'indexing'
+                    if self.on_upload:
+                        self.on_upload(self.index_id, clip.video_id)
                     self.uploads.append((clip.task_id, (monotonic() - started) * 1000))
                 except Exception as exc:
                     clip.status = 'failed'
@@ -501,13 +509,31 @@ class Rewind:
         clips every few minutes while the call goes on. The end of the call is Registry.end."""
         every = every or float(os.environ.get('REWIND_FLUSH_S', '60'))
         self.mode = getattr(getattr(session, 'pack', None), 'id', None)
+        self.session = session  # the live scene, for local memory's arrow to an object in view now
+        if self.memories is not None:
+            try:
+                self.memories.auto_attach(self)
+            except Exception as exc:
+                event('dependency_error', self.session_id, dependency='memory', level='error',
+                      error=type(exc).__name__)
         seq = None
         next_flush = self.clock() + every
+        recent = {}             # seq -> jpeg_b64, so a scan's own frame is found for local memory
+        noted_seq = None
+        noting = None
         while True:
             frame = session.frame if session.camera else None
             if frame is not None and frame.get('seq') != seq:
                 seq = frame.get('seq')
                 self.add_frame(frame['jpeg_b64'])
+                recent[seq] = frame['jpeg_b64']
+                while len(recent) > 40:
+                    recent.pop(next(iter(recent)))
+            scene_seq = getattr(session, 'scene_seq', None)
+            if (self.memory_writer is not None and session.camera and getattr(session, 'scene', None)
+                    and scene_seq != noted_seq and scene_seq in recent and (noting is None or noting.done())):
+                noted_seq = scene_seq
+                noting = asyncio.create_task(self._note(session.scene, recent[scene_seq]))
             if self.on and self.clock() >= next_flush:
                 next_flush = self.clock() + every
                 try:
@@ -517,12 +543,19 @@ class Rewind:
                           error=type(exc).__name__)
             await asyncio.sleep(1 / SAMPLE_FPS / 2)
 
+    async def _note(self, scene, jpeg_b64):
+        try:
+            await self.memory_writer.observe(scene, jpeg_b64)
+        except Exception as exc:
+            event('dependency_error', self.session_id, dependency='memory', level='error', error=type(exc).__name__)
+
 
 class Registry:
     """Recent calls' Rewind state for this server process, so a question after the call still finds it."""
 
-    def __init__(self, client=None, keep=5, encoder=None):
+    def __init__(self, client=None, keep=5, encoder=None, memories=None):
         self.client = client
+        self.memories = memories
         self.encoder = encoder
         self.keep = keep
         self.calls = {}
@@ -534,6 +567,7 @@ class Registry:
         old = self.calls.get(session_id)
         rewind = Rewind(session_id, client=self.client, **kwargs)
         rewind.owner = owner
+        rewind.memories = self.memories
         if old is not None and old.owner != owner:
             # Another caller's session id: never touch that call; this one gets an unregistered, off Rewind.
             event('auth_rejected', level='warning', reason='rewind_owner')
@@ -569,6 +603,9 @@ class Registry:
         if rewind is None:
             return None
         rewind.close()
+        if self.memories is not None:
+            self.memories.detach(session_id)      # local memory stops writing when the call ends
+        rewind.memory_writer = None
         if rewind.keep and rewind.on:
             rewind.end_task = self.spawn(rewind.flush(wait=False))
         elif any(c.video_id for c in rewind.clips) or rewind.waits or rewind.lock.locked():
@@ -587,6 +624,9 @@ class Registry:
 def registry(app):
     if not hasattr(app.state, 'rewind'):
         app.state.rewind = Registry(getattr(app.state, 'rewind_client', None))
+    if getattr(app.state.rewind, 'memories', None) is None:
+        from server.memory import memories
+        app.state.rewind.memories = memories(app)
     return app.state.rewind
 
 
@@ -600,9 +640,33 @@ def small_frame(jpeg, size=480):
         return base64.b64encode(out.getvalue()).decode()
 
 
-def wants_rewind(session, text):
-    """Route a turn to Rewind only for a Rewind-style question while Rewind is on or has clips to search."""
+_ITEM = re.compile(r"\b(where (are|is|did i (put|leave)|have i (put|left)) (my|the)|where'?s my|have you seen (my|the))\b",
+                   re.I)
+_FORGET = re.compile(r"\bforget (that|it|them|today|everything|all of it)\b", re.I)
+
+
+def is_item_question(text):
+    return bool(_ITEM.search(text or ''))
+
+
+def memory_turn_kind(session, text):
+    """'find' or 'forget' when this call has local memory attached and the words ask for it, else None."""
     current = getattr(session, 'rewind', None)
+    if current is None or current.memory_writer is None:
+        return None
+    if _FORGET.search(text or ''):
+        return 'forget'
+    if is_item_question(text):
+        return 'find'
+    return None
+
+
+def wants_rewind(session, text):
+    """Route a turn to Rewind for a Rewind-style question while Rewind is on or has clips to search, or to local
+    memory for "where are my keys?" and "forget that" while memory is attached."""
+    current = getattr(session, 'rewind', None)
+    if memory_turn_kind(session, text):
+        return True
     return ((is_rewind_question(text) or is_recap_request(text)) and current is not None
             and (current.on or bool(current.clips)))
 
@@ -647,6 +711,10 @@ async def rewind_turn(session, text, rewind, *, vision, turn_id):
             async for audio in session.speak(msg):
                 await emit(audio)
 
+    kind = memory_turn_kind(session, text)
+    if kind:
+        await memory_turn(session, text, kind, speak, emit, turn_id, vision)
+        return
     recapping = is_recap_request(text)
     await speak(RECAP_CHECKING_LINE if recapping else CHECKING_LINE, False)
     if recapping:
@@ -657,6 +725,59 @@ async def rewind_turn(session, text, rewind, *, vision, turn_id):
         card = hit_message(dict(result, query=query_from(text)), turn_id)
         if card:
             await emit(card)
+    await speak(result['say'], True)
+    session.history.extend([f'user: {text}', f"helper: {result['say']}"])
+    session.history[:] = session.history[-10:]
+
+
+async def memory_turn(session, text, kind, speak, emit, turn_id, vision=None):
+    """Local memory answer: no cloud call. Falls back to Rewind cloud search only when memory has nothing and
+    Rewind cloud is on for this call."""
+    from server import memory
+    from server.agent import resolve
+    from server.rewind_tools import memory_hit_message, memory_state_message
+    writer = session.rewind.memory_writer
+    store = writer.store
+    if kind == 'forget':
+        words_ = text.lower()
+        if 'everything' in words_ or 'all of it' in words_:
+            await memory.delete_cloud(store)
+            store.forget_all()
+            line = 'Everything is forgotten.'
+        elif 'today' in words_:
+            from datetime import datetime
+            since = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+            await memory.delete_cloud(store, since=since)
+            store.forget_since(since)
+            line = 'Forgotten. Nothing from today is kept.'
+        else:
+            item = getattr(session, 'memory_last_item', None)
+            if not item:
+                await speak('Tell me what to forget.', True)
+                return
+            store.forget_item(item)
+            line = f'Forgotten. I no longer remember your {item}.'
+        await emit(memory_state_message(store, getattr(session, 'memory_last_item', None) if 'today' not in words_
+                                        and 'everything' not in words_ and 'all of it' not in words_ else None))
+        await speak(line, True)
+        return
+    await speak('Let me think back.', False)
+    frame = session.frame if session.camera and session.frame else None
+    result = await memory.find(store, text, embedder=writer.embedder, scene=getattr(session, 'scene', None),
+                               vision=writer.vision or vision, live_frame=frame and frame['jpeg_b64'])
+    session.memory_last_item = result.get('item')
+    if not result['found'] and session.rewind.on and session.rewind.clips:
+        cloud = await search_past(session, text)
+        card = hit_message(dict(cloud, query=query_from(text)), turn_id)
+        if card:
+            await emit(card)
+        await speak(cloud['say'], True)
+        return
+    await emit(memory_hit_message(result, turn_id, session.rewind.started_wall))
+    if result.get('live') and session.camera and result.get('live_scene'):
+        turn = dict(agent='helper', draw=[dict(kind='arrow', target=result['live']['object_id'], role='target')])
+        seq = frame['seq'] if frame else getattr(session, 'scene_seq', 0)
+        await emit(resolve(turn, result['live_scene'], seq)[0])
     await speak(result['say'], True)
     session.history.extend([f'user: {text}', f"helper: {result['say']}"])
     session.history[:] = session.history[-10:]

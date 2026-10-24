@@ -6,6 +6,12 @@
 
 From now on, changes may only add optional fields or new message types. Do not remove or rename fields, make optional fields required, or change existing meanings. Add an entry here for every addition; update schema, TypeScript mirror and examples together through the contract PR process and run `make test-py`. Clients must ignore unknown response fields and unknown message types (and skip unknown draw kinds). Current server request validation remains strict; do not send speculative fields. A breaking change requires a separately negotiated major protocol, outside this freeze.
 
+## v2.8: local memory across calls
+
+- New `v2_find_item` (server): required `v`, `type:find_item`, `item`, `found`, `count`; optional `turn_id`, `at_ms`, `when`, `place`, `home`, `say`, `live` (`object_id`, `bbox` in the current view), `count_item`, and the `rewind_hit` fields `t_s` (seconds since this call started, negative for an earlier call), `start_s`, `end_s`, `sure`, `alternatives`, `frame_b64` (a small crop of the item, never a full frame) and `objects` (the item's box on that crop).
+- New `v2_memory_state` (server): required `v`, `type:memory_state`, `on`, `count`; optional `memory_id`, `crops`, `bytes`, `encrypted`, `retention_days`, `item`, `count_item`.
+- Added find_item and memory_state to `server_message_v2`.
+
 ## v2.7: Rewind privacy
 
 - Optional `v2_rewind.keep` (boolean, default false): keep this call's TwelveLabs videos after the call; otherwise they are deleted at call end.

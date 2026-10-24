@@ -4,14 +4,14 @@ from fastapi.responses import JSONResponse
 
 from server.rewind import NOTICE, identity, registry
 
-router = APIRouter(prefix='/api/rewind')
+_rewind = APIRouter(prefix='/api/rewind')
 
 
 def public(hit):
     return {k: hit[k] for k in ('t_s', 'start_s', 'end_s', 'rank') if k in hit}
 
 
-@router.get('/status')
+@_rewind.get('/status')
 async def status(request: Request, session_id: str = ''):
     rewind = registry(request.app).for_question(session_id or None, identity(request))
     return dict(rewind.status() if rewind else dict(on=False, clips=0, ready=0, indexing=0, pending=0),
@@ -26,7 +26,7 @@ async def body(request):
     return value if isinstance(value, dict) else None
 
 
-@router.post('/search')
+@_rewind.post('/search')
 async def search(request: Request):
     value = await body(request)
     query = value.get('query') if value else None
@@ -42,7 +42,7 @@ async def search(request: Request):
     return {'hits': [public(h) for h in hits]}
 
 
-@router.post('/flush')
+@_rewind.post('/flush')
 async def flush(request: Request):
     value = await body(request)
     rewind = registry(request.app).get(value.get('session_id'), identity(request)) if value else None
@@ -55,7 +55,7 @@ async def flush(request: Request):
     return dict(rewind.status(), uploaded=len(sent))
 
 
-@router.post('/recap')
+@_rewind.post('/recap')
 async def recap(request: Request):
     """Recap of a call (also after it ended). Waits for the end-of-call upload, then asks Pegasus."""
     import asyncio
@@ -83,7 +83,7 @@ async def recap(request: Request):
                 mode=result['mode'])
 
 
-@router.post('/forget')
+@_rewind.post('/forget')
 async def forget(request: Request):
     """Forget this call: delete its TwelveLabs videos and every local clip and frame."""
     value = await body(request)
@@ -92,3 +92,11 @@ async def forget(request: Request):
         return JSONResponse({'error': 'unknown_session'}, status_code=404)
     rewind.set_on(False)
     return await rewind.forget(local=True)
+
+
+# The app includes one router from this module; local memory rides along so app.py needs no change.
+from server import memory_api  # noqa: E402
+
+router = APIRouter()
+router.include_router(_rewind)
+router.include_router(memory_api.router)
