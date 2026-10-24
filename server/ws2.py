@@ -298,6 +298,11 @@ async def websocket(ws: WebSocket):
             audio_tasks.pop(msg['utterance_id'], None)
 
     async def emit(msg):
+        if (msg['type'] == 'turn' and msg['stage'] == 'speaking' and current_turn
+                and msg['turn_id'] == current_turn.id and not current_turn.spoken):
+            # Proof details accompany the first speech transition; do not announce it again at say.
+            await current_turn.stage('speaking', detail=msg['detail'])
+            return
         if msg['type'] == 'say' and current_turn and not current_turn.terminal:
             msg.setdefault('turn_id', current_turn.id)
             await current_turn.stage('speaking')
