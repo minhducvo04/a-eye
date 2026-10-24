@@ -148,7 +148,7 @@ async def scene_loop(session, vision, send, gate=None):
             async def refresh():
                 try:
                     scene = await vision.call('scene', dict(image_b64=frame['jpeg_b64'],
-                                                           queries=list(session.pack.default_queries)[:2]))
+                                                           queries=list(session.pack.default_queries)[:2], caption=True))
                     validate('scene_response', scene)
                     if not session.camera:
                         return

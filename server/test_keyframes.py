@@ -135,3 +135,10 @@ def test_new_hello_clears_memory(monkeypatch):
         send(socket, 'user_text', text='help', final=True)
         finish(socket)
         assert json.loads(application.state.llm_v2.calls[-1][1])['memory'] == []
+
+
+def test_keyframe_scan_always_asks_for_a_caption():
+    """Live bug: with pack queries the scene had no caption and the brain said the camera was off."""
+    import inspect
+    from server import ws2
+    assert "caption=True" in inspect.getsource(ws2.scene_loop)
