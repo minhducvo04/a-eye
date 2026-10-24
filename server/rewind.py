@@ -254,6 +254,9 @@ class Rewind:
             return None
         clip = Clip(start_s=max(0.0, t - PRE_S), end_s=t + POST_S, key_s=t, reasons=[reason])
         clip.frames = [f for f in self.ring if f[0] >= clip.start_s]
+        if not clip.frames and self.ring:
+            # A still camera sends no new frame; the newest one is still the current view.
+            clip.frames = [self.ring[-1]]
         self.clips.append(clip)
         return clip
 

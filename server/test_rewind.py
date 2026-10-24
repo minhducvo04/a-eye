@@ -263,6 +263,11 @@ def test_voice_path_through_ws2():
         ws.send_json(FRAME)
         until(ws, 'track')                                  # first keyframe scanned: a clip is open
         rewind = app.state.rewind.get('s')
+        import time
+        for _ in range(100):                                # the sampler adds the frame within ~125 ms
+            if rewind.clips and rewind.clips[0].frames:
+                break
+            time.sleep(0.02)
         assert rewind.clips and rewind.clips[0].frames
         rewind.clips[0].status = 'pending'
         assert client.post('/api/rewind/flush', json={'session_id': 's'}).json()['uploaded'] == 1
