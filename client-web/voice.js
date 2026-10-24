@@ -1,3 +1,5 @@
+import { createEarlyFinal } from "./turn.js";
+
 // Browser mic, speech-to-text, and talk-back for the call page.
 // No recording, no storage, and no logging. Status leaves only through onState.
 // Server STT streams 16 kHz PCM16 through onAudioChunk and keeps only the unsent
@@ -152,6 +154,7 @@ export function createVoice(options = {}) {
   const onLevel = options.onLevel || noop;
   const onMicError = options.onMicError || noop;
   const onSpeakEnd = options.onSpeakEnd || noop;
+  const onSpeakStart = options.onSpeakStart || noop;
   const onAudioError = options.onAudioError || noop;
   const serverMode = options.sttMode === "server";
   const lang = options.lang || "en-US";
@@ -161,6 +164,8 @@ export function createVoice(options = {}) {
   const audioContextFactory = options.audioContextFactory || defaultAudioContextFactory;
   const customAudio = Object.prototype.hasOwnProperty.call(options, "audioContextFactory");
 
+  const early = createEarlyFinal(onFinal, options.clock || globalThis);
+  let recGeneration = 0;
   let rec = null;
   try {
     rec = recognitionFactory();
@@ -309,6 +314,7 @@ export function createVoice(options = {}) {
 
   function stopListening() {
     listening = false;
+    early.reset();
     stopBrowserMeter();
     if (serverMode) {
       captureGen += 1;
@@ -330,6 +336,7 @@ export function createVoice(options = {}) {
   }
 
   function handleRecEnd() {
+    recGeneration += 1;
     recRunning = false;
     if (!listening || !rec) return;
     try {
@@ -344,6 +351,7 @@ export function createVoice(options = {}) {
     const code = event && event.error;
     if (code === "not-allowed" || code === "service-not-allowed" || code === "audio-capture") {
       listening = false;
+      early.reset();
       stopBrowserMeter();
       if (!speaking) setState("idle");
       if (code === "service-not-allowed") onMicError("unsupported");
@@ -353,18 +361,20 @@ export function createVoice(options = {}) {
 
   function handleResult(event) {
     const results = event && event.results;
-    if (!results) return;
+    if (!results || !listening) return;
     const from = Number.isInteger(event.resultIndex) ? event.resultIndex : 0;
     for (let i = from; i < results.length; i++) {
       const row = results[i];
       const text = transcriptOf(row).trim();
       if (!text) continue;
+      const resultId = `${recGeneration}:${i}`;
+      if (early.hasSent(resultId)) continue;
       // While playback is up, a result whose words all sit inside the spoken line
       // is the speaker heard by the mic. Drop it instead of treating it as the user.
       if (speaking && isEcho(text, spokenText)) continue;
       considerBarge(text);
-      if (row && row.isFinal) onFinal(text);
-      else onInterim(text);
+      if (row && row.isFinal) early.final(text, resultId);
+      else if (early.interim(text, resultId)) onInterim(text);
     }
   }
 
@@ -415,6 +425,7 @@ export function createVoice(options = {}) {
       synthActive = false;
       maybeIdle();
     };
+    utter.onstart = () => { if (token === synthGen) onSpeakStart(id); };
     utter.onend = done;
     utter.onerror = done;
     try {
@@ -503,6 +514,7 @@ export function createVoice(options = {}) {
         }
       };
       src.start(startAt);
+      if (ctx.state === "running" && startAt === current) onSpeakStart(id);
     } catch (err) {
       onAudioError(id, err);
       if (src) {
@@ -894,6 +906,7 @@ export function createVoice(options = {}) {
     playPcm,
     cancel,
     isSpeaking,
+    isListening() { return listening; },
     unlockAudio,
     setVolume,
     setMuted,

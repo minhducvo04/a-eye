@@ -11,6 +11,7 @@ import {
   TEST_LINE,
   createCallUi,
   fallbackDecision,
+  replyLines,
 } from "./ui.js";
 import {
   bargeSpeech,
@@ -31,6 +32,8 @@ import {
   shouldTrack,
 } from "./realtime.js";
 import { applyAnchors, createTracker, toGray } from "./track.js";
+
+import { nextTurnState, statusLine } from "./turn.js";
 
 const PACK_LABEL = {
   general: "General",
@@ -91,6 +94,9 @@ function boot() {
   let pack = "";
   let socket = null;
   let retryTimer = 0;
+  let reconnectDelay = 500;
+  let turn = nextTurnState(null, {}, Date.now());
+  let pendingText = null;
   let seq = 0;
   let cameraOn = false;
   let starting = false;
@@ -126,6 +132,7 @@ function boot() {
         sendUser(clean, stt === "server" ? "server_stt" : "browser_stt");
       },
       onInterim: (text) => {
+        turnEvent({ type: "interim", text });
         ui.dispatch({ type: "interim", text: String(text || "").trim(), now: Date.now() });
         renderCall();
       },
@@ -133,9 +140,11 @@ function boot() {
         if (state === "listening") {
           listening = true;
           ui.dispatch({ type: "mic_start" });
+          turnEvent({ type: "mic_start" });
         } else if (state === "idle" || state === "stopped") {
           listening = false;
           ui.dispatch({ type: "mic_stop" });
+          turnEvent({ type: "mic_stop" });
           presence = nextPresence(presence, { type: "level", level: null }, Date.now());
         }
         renderMic();
@@ -174,6 +183,9 @@ function boot() {
           renderCall();
         }
       },
+      onSpeakStart: (id) => {
+        if (id !== "test-voice") markSound();
+      },
       onSpeakEnd: () => {
         talkBusy = false;
         ui.dispatch({ type: "audio_ended", utteranceId: "", now: Date.now() });
@@ -185,6 +197,8 @@ function boot() {
       },
       sttMode: stt,
       onAudioChunk: (pcm16Base64, audioSeq, final) => {
+        if (turn.stage === "hearing") turnEvent({ type: "interim", text: "Speech detected" });
+        if (final) turnEvent({ type: "sent" });
         send({
           v: 2,
           type: "audio_in",
@@ -234,17 +248,36 @@ function boot() {
     renderCall();
   }
 
+  function turnEvent(event) {
+    const before = turn.timestamps;
+    turn = nextTurnState(turn, event, Date.now());
+    if (turn.timestamps !== before) {
+      ui.dispatch({ type: "turn_times", timestamps: turn.timestamps });
+      renderTranscript(ui.getState());
+    }
+    document.getElementById("pipeline").textContent = statusLine(turn, Date.now());
+  }
+
+  const pipelineTimer = window.setInterval(() => {
+    const retries = turn.retries;
+    turnEvent({ type: "tick" });
+    if (turn.retries > retries && pendingText) send(pendingText);
+  }, 100);
+  window.addEventListener("pagehide", () => window.clearInterval(pipelineTimer));
+
   function sendUser(text, source) {
     const clean = String(text || "").trim();
     if (!clean) return false;
-    const ok = send({
+    pendingText = {
       v: 2,
       type: "user_text",
       session_id: sessionId,
       text: clean,
       final: true,
       source,
-    });
+    };
+    turnEvent({ type: "sent", text: clean });
+    const ok = send(pendingText);
     if (ok) hud = noteFinalWords(hud, Date.now());
     if (!ok) showProblem("Not connected.");
     return ok;
@@ -260,6 +293,7 @@ function boot() {
       client: "web",
       tts,
       stt,
+      camera: cameraOn,
     };
     if (pack === "pc_build") hello.board_id = BOARD_ID;
     const ok = send(hello);
@@ -273,7 +307,9 @@ function boot() {
     socket = new WebSocket(wsUrl());
     socket.addEventListener("open", () => {
       setStatus(true);
+      reconnectDelay = 500;
       sendHello();
+      turnEvent({ type: "connected" });
     });
     socket.addEventListener("message", (event) => {
       if (typeof event.data !== "string") return;
@@ -289,7 +325,9 @@ function boot() {
       setStatus(false);
       socket = null;
       window.clearTimeout(retryTimer);
-      retryTimer = window.setTimeout(connect, 2000);
+      turnEvent({ type: "closed" });
+      retryTimer = window.setTimeout(connect, reconnectDelay);
+      reconnectDelay = Math.min(10000, reconnectDelay * 2);
     });
     socket.addEventListener("error", () => {
       setStatus(false);
@@ -299,6 +337,21 @@ function boot() {
   function onServer(message) {
     if (!message || typeof message !== "object") return;
     const now = Date.now();
+    if (message.type === "turn") {
+      if (message.stage === "received") pendingText = null;
+      if (message.text && stt === "server" && !turn.text) {
+        ui.dispatch({ type: "final", text: message.text, now });
+      }
+      turnEvent(message);
+      renderCall();
+      return;
+    }
+    if (message.type === "reply_delta") {
+      turnEvent({ type: "first_text" });
+      ui.dispatch({ type: "reply_delta", turnId: `turn:${message.turn_id}`, agent: message.agent, text: message.text });
+      renderCall();
+      return;
+    }
     if (message.type === "draw") {
       hud = noteFrameReply(hud, message, now);
       const before = drawState;
@@ -325,6 +378,7 @@ function boot() {
       return;
     }
     if (message.type === "say") {
+      turnEvent({ type: "first_text" });
       const result = pushSay(speech, message);
       speech = result.state;
       if (result.reset) {
@@ -361,7 +415,6 @@ function boot() {
       }
       clearFallback(id);
       ui.dispatch({ type: "audio_started", utteranceId: id, now });
-      markSound();
       renderCall();
       try {
         voice.playPcm(message.utterance_id, message.pcm16_b64, Boolean(message.final));
@@ -575,6 +628,7 @@ function boot() {
   }
 
   function markSound() {
+    turnEvent({ type: "first_sound" });
     hud = noteFirstSound(hud, Date.now());
   }
 
@@ -589,7 +643,6 @@ function boot() {
     talkBusy = true;
     ui.dispatch({ type: "audio_started", utteranceId: line.utteranceId, now: Date.now() });
     voice.speak(line.utteranceId, line.text);
-    markSound();
     renderCall();
   }
 
@@ -761,6 +814,11 @@ function boot() {
     }
     video.srcObject = null;
     cameraOn = false;
+    window.clearInterval(frameTimer);
+    frameTimer = 0;
+    startBtn.textContent = "Camera on";
+    startBtn.setAttribute("aria-pressed", "false");
+    send({ v: 2, type: "camera", session_id: sessionId, on: false });
     commitTracker("stop");
   }
 
@@ -796,7 +854,9 @@ function boot() {
       video.muted = true;
       await video.play();
       cameraOn = true;
-      startBtn.disabled = true;
+      startBtn.textContent = "Camera off";
+      startBtn.setAttribute("aria-pressed", "true");
+      send({ v: 2, type: "camera", session_id: sessionId, on: true });
       commitTracker("draw");
       sendLiveFrame();
       startFrames();
@@ -868,7 +928,7 @@ function boot() {
     micBtn.disabled = !ready;
     const on = ui.getState().micOn;
     micBtn.setAttribute("aria-pressed", on ? "true" : "false");
-    micBtn.textContent = on ? "Stop" : "Mic";
+    micBtn.textContent = on ? "Mute mic" : "Unmute mic";
     micBtn.setAttribute("aria-label", on ? "Stop microphone" : "Start microphone");
   }
 
@@ -883,6 +943,15 @@ function boot() {
     return Boolean(window.isSecureContext);
   }
 
+  async function startMic() {
+    await voice.startListening();
+    if (voice.isListening()) {
+      ui.dispatch({ type: "mic_start" });
+      turnEvent({ type: "mic_start" });
+      renderCall();
+    }
+  }
+
   async function onMic() {
     voice = voice || (await rebuildVoice());
     if (!voice || !voice.supported || !voice.supported.stt) return;
@@ -892,8 +961,13 @@ function boot() {
       return;
     }
     void voice.unlockAudio();
-    if (ui.getState().micOn) voice.stopListening();
-    else void voice.startListening();
+    if (ui.getState().micOn) {
+      voice.stopListening();
+      ui.dispatch({ type: "mic_stop" });
+      turnEvent({ type: "mic_stop" });
+      renderCall();
+    }
+    else void startMic();
     pumpTalk();
   }
 
@@ -909,7 +983,7 @@ function boot() {
       renderCall();
       return;
     }
-    if (voice.supported && voice.supported.stt) void voice.startListening();
+    if (voice.supported && voice.supported.stt) void startMic();
   }
 
   function onTestVoice() {
@@ -970,7 +1044,7 @@ function boot() {
 
   function renderReplies(st) {
     repliesEl.replaceChildren();
-    for (const line of st.replies) {
+    for (const line of replyLines(st)) {
       const row = document.createElement("p");
       row.className = "reply";
       const who = document.createElement("span");
@@ -1009,6 +1083,14 @@ function boot() {
       who.style.color = line.color || "#f4f7fb";
       who.textContent = line.speaker;
       item.append(who, document.createTextNode(line.text));
+      if (line.timestamps) {
+        const times = document.createElement("small");
+        times.textContent = " · " + ["sent", "received", "first_text", "first_sound"].map(key => {
+          const at = line.timestamps[key];
+          return `${key.replaceAll("_", " ")}: ${at == null ? "—" : new Date(at).toISOString()}`;
+        }).join(" · ");
+        item.append(times);
+      }
       transcriptList.append(item);
     }
     if (transcriptBtn.getAttribute("aria-expanded") === "true") {
@@ -1040,7 +1122,8 @@ function boot() {
     choosePack(button.getAttribute("data-pack"));
   });
   startBtn.addEventListener("click", () => {
-    startCamera();
+    if (cameraOn) stopCamera();
+    else void startCamera();
   });
   powerBtn.addEventListener("click", () => {
     const ok = send({

@@ -408,3 +408,42 @@ test("missing speech APIs report unsupported and do not throw", () => {
   voice.cancel();
   assert.equal(voice.isSpeaking(), false);
 });
+
+test('browser early send is once per result, and muting cancels pending speech', () => {
+  let task = null;
+  const clock = { setTimeout(fn, ms) { assert.equal(ms, 700); task = fn; return 1; }, clearTimeout() { task = null; } };
+  const { rec, voice, events } = harness({ options: { clock } });
+  voice.startListening();
+  rec.onresult(result('place the fan', false));
+  task();
+  rec.onresult(result('place the fan here please', true));
+  assert.deepEqual(events.finals, ['place the fan']);
+  rec.onend();
+  rec.onresult(result('new question', false));
+  assert.ok(task);
+  voice.stopListening();
+  assert.equal(task, null);
+  rec.onresult(result('new question', true));
+  assert.deepEqual(events.finals, ['place the fan']);
+});
+
+test('late early-final recognition cannot barge into the reply; sound timing waits for playback', () => {
+  let fire;
+  const starts = [];
+  const { rec, voice, synth, events } = harness({ options: {
+    clock: { setTimeout(fn) { fire = fn; return 1; }, clearTimeout() {} },
+    onSpeakStart: id => starts.push(id),
+  } });
+  voice.startListening();
+  rec.onresult(result('where is the fan', false));
+  fire();
+  voice.speak('reply', 'Look at the top edge.');
+  assert.deepEqual(starts, []);
+  synth.current.onstart();
+  assert.deepEqual(starts, ['reply']);
+  rec.onresult(result('where is the fan header', true));
+  assert.deepEqual(events.barges, []);
+  assert.equal(voice.isListening(), true);
+  voice.stopListening();
+  assert.equal(voice.isListening(), false);
+});

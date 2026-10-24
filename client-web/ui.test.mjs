@@ -264,3 +264,28 @@ test("mute and volume persist, and a throwing storage stays quiet", () => {
   assert.equal(writeAudioPrefs(broken, { muted: true, volume: 0.2 }), false);
   assert.equal(writeAudioPrefs(null, { muted: true, volume: 0.5 }), false);
 });
+
+test('reply deltas grow before audio, preserve the unfinished suffix, and retain sentence highlighting', async () => {
+  const { replyLines } = await import('./ui.js');
+  let s = nextCallState(null, { type: 'reply_delta', turnId: 'turn:a', text: 'First.' });
+  s = nextCallState(s, { type: 'reply_delta', turnId: 'turn:a', text: ' Second' });
+  assert.equal(replyLines(s)[0].text, 'First. Second');
+  s = nextCallState(s, { type: 'say', turnId: 'turn:a', utteranceId: 'a0', text: 'First.', part: 0 });
+  s = nextCallState(s, { type: 'audio_started', utteranceId: 'a0', now: 200 });
+  assert.deepEqual(replyLines(s).map(l => [l.text, l.active]), [['First.', true], ['Second', false]]);
+  s = nextCallState(s, { type: 'reply_delta', turnId: 'turn:a', text: '.' });
+  s = nextCallState(s, { type: 'say', turnId: 'turn:a', utteranceId: 'a1', text: 'Second.', part: 1 });
+  assert.equal(replyLines(s).length, 2);
+  s = nextCallState(s, { type: 'reply_delta', turnId: 'turn:b', text: 'New reply' });
+  assert.deepEqual(replyLines(s).map(l => l.text), ['New reply']);
+});
+
+test('turn timestamps update the user entry without changing older entries', () => {
+  let s = nextCallState(null, { type: 'final', text: 'one' });
+  s = nextCallState(s, { type: 'turn_times', timestamps: { sent: 10, received: 20 } });
+  s = nextCallState(s, { type: 'final', text: 'two' });
+  s = nextCallState(s, { type: 'say', text: 'reply' });
+  s = nextCallState(s, { type: 'turn_times', timestamps: { sent: 30, first_text: 40 } });
+  assert.deepEqual(s.transcript[0].timestamps, { sent: 10, received: 20 });
+  assert.deepEqual(s.transcript[1].timestamps, { sent: 30, first_text: 40 });
+});

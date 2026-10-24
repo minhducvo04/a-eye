@@ -32,6 +32,7 @@
       </div>
       <p id="error" class="banner hidden" role="alert"></p>
       <p id="notice" class="notice hidden" role="status"></p>
+      <p id="pipeline" class="pipeline" role="status">Ready</p>
       <div class="sheet">
       <section id="market" class="market hidden" aria-live="polite">
         <div class="market-head">
@@ -64,7 +65,7 @@
         <button type="button" id="mic" aria-pressed="false" aria-label="Start microphone">Mic</button>
       </div>
       <div class="controls">
-        <button type="button" id="start-camera">Start camera</button>
+        <button type="button" id="start-camera" aria-pressed="false">Camera on</button>
         <button type="button" id="power-off" class="hidden">Power is off</button>
         <label class="file-btn">Upload photo
           <input id="upload" type="file" accept="image/*">

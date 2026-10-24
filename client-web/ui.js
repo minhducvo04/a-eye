@@ -52,6 +52,8 @@ export function initialCallState() {
     transcript: [],
     replies: [],
     turnId: "",
+    replyText: "",
+    replyAgent: "helper",
     waits: {},
     seenSays: {},
   };
@@ -245,6 +247,18 @@ function reduce(state, event) {
     if (who === "shopper") return { ...state, shopperPhase: phase };
     return { ...state, helperPhase: phase };
   }
+  if (type === "turn_times") {
+    const transcript = state.transcript.slice();
+    const index = transcript.findLastIndex(line => line.agent === "you");
+    if (index >= 0) transcript[index] = { ...transcript[index], timestamps: { ...event.timestamps } };
+    return { ...state, transcript };
+  }
+  if (type === "reply_delta") {
+    const newTurn = event.turnId !== state.turnId;
+    return { ...state, turnId: event.turnId, replyAgent: event.agent || "helper",
+      replies: newTurn ? [] : state.replies, waits: newTurn ? {} : state.waits,
+      replyText: (newTurn ? "" : state.replyText) + String(event.text || "") };
+  }
   if (type === "say") return reduceSay(state, event);
   if (type === "audio_started") return reduceAudioStarted(state, event);
   if (type === "audio_ended") return reduceAudioEnded(state, event);
@@ -317,6 +331,7 @@ function reduceSay(state, event) {
     error: "",
     turnId,
     seenSays,
+    replyText: newTurn ? "" : state.replyText,
     replies,
     waits,
     transcript: transcriptModel(state.transcript, { type: "say", agent, text }),
@@ -383,4 +398,17 @@ export function createCallUi(options = {}) {
       return state;
     },
   };
+}
+
+// Already spoken sentences keep their highlight; the unfinished suffix stays visible.
+export function replyLines(state) {
+  const lines = state.replies.slice();
+  const said = lines.map(line => line.text).join(" ");
+  const text = state.replyText || "";
+  const tail = text.startsWith(said) ? text.slice(said.length).trimStart() : (lines.length ? "" : text);
+  if (tail) {
+    const spec = speakerOf(state.replyAgent);
+    lines.push({ text: tail, speaker: spec.name, color: spec.color, active: false });
+  }
+  return lines;
 }
