@@ -16,7 +16,7 @@ from time import perf_counter
 
 import anthropic
 
-from server.privacy import local_only
+from server.privacy import claude_allowed
 import httpx
 
 
@@ -153,7 +153,7 @@ class LLMClient:
                  images: list[str] | None = None) -> LLMResult:
         started = perf_counter()
         provider = os.environ.get('LLM_PROVIDER', 'auto')
-        cloud_allowed = not local_only()
+        cloud_allowed = claude_allowed()
         if images:
             cloud_allowed = cloud_allowed and sum(len(item.encode('utf-8')) for item in images) <= 400000
         use_claude = provider == 'claude' or (
@@ -222,7 +222,7 @@ class LLMClient:
         timeout = float(os.environ.get('BRAIN_FIRST_TOKEN_S', '3.5'))
         if images and sum(len(item.encode('utf-8')) for item in images) > 400000:
             images = None  # too large to be a crop: never send it to the cloud
-        if use_claude and not local_only():
+        if use_claude and claude_allowed():
             try:
                 async with asyncio.timeout(timeout) as deadline, AsyncExitStack() as stack:
                     client = self._anthropic_client or _shared_anthropic()
@@ -307,7 +307,7 @@ class LLMClient:
         from server.expert import OPUS, FABLE, LOCAL, cost
         started = perf_counter()
         first = None
-        if local_only() or not os.environ.get('ANTHROPIC_API_KEY'):
+        if not claude_allowed() or not os.environ.get('ANTHROPIC_API_KEY'):
             model = LOCAL
         counts = usage_counts(None)
         search_errors = 0

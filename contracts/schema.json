@@ -1992,6 +1992,22 @@
     "private": {
      "type": "boolean",
      "description": "Private mode for this call: nothing leaves our own machines (local brain, Kokoro voice, server STT, no crops, no Rewind cloud)."
+    },
+    "cloud": {
+     "type": "object",
+     "additionalProperties": false,
+     "properties": {
+      "claude": {
+       "type": "boolean"
+      },
+      "cartesia": {
+       "type": "boolean"
+      },
+      "twelvelabs": {
+       "type": "boolean"
+      }
+     },
+     "description": "Home first: per-call cloud switches. claude = Smarter answers (question + written scene note, sometimes one small close-up); cartesia = Natural voice (reply sentence only); twelvelabs = Video memory search (short silent clips, deleted at call end). Missing: Claude on, Cartesia on, TwelveLabs off (on if rewind). private: all off."
     }
    }
   },

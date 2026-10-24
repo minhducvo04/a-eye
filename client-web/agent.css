@@ -954,6 +954,30 @@ svg .fill {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
+.group .row .leak {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-footnote);
+  color: var(--text-3);
+}
+
+.leaves {
+  margin: 0;
+  padding: 10px 16px 10px 32px;
+  font-size: var(--fs-subhead);
+  line-height: 1.4;
+}
+
+.leaves li + li {
+  margin-top: 6px;
+}
+
+.leaves .home {
+  list-style: none;
+  margin-left: -16px;
+  color: var(--text-3);
+}
+
 .group-foot {
   margin: 6px 16px 0;
   font-size: var(--fs-footnote);

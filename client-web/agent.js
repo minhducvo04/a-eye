@@ -207,6 +207,23 @@ function boot() {
   // Private mode: hello.private makes the server keep everything local; the page uses server STT (browser
   // recognition can send audio to Google), the server voice (Kokoro) and keeps Rewind off.
   let privateMode = (() => { try { return safeStorage()?.getItem("aeye.private") === "1"; } catch { return false; } })();
+  // Home first: three named cloud switches (server/privacy.py enforces them). Defaults: Claude and Cartesia on,
+  // TwelveLabs off. The TwelveLabs switch and the Rewind toggle are one consent.
+  const CLOUD_DEFAULTS = { claude: true, cartesia: true, twelvelabs: false };
+  let cloud = (() => {
+    try {
+      const saved = JSON.parse(safeStorage()?.getItem("aeye.cloud") || "null");
+      return { ...CLOUD_DEFAULTS, ...(saved && typeof saved === "object" ? saved : {}), twelvelabs: false };
+    } catch {
+      return { ...CLOUD_DEFAULTS };
+    }
+  })();
+  const cloudBoxes = {
+    claude: document.getElementById("cloud-claude"),
+    cartesia: document.getElementById("cloud-cartesia"),
+    twelvelabs: document.getElementById("cloud-twelvelabs"),
+  };
+  const leavesList = document.getElementById("leaves-list");
   const rewindAsk = document.getElementById("rewind-ask");
   const rewindChip = document.getElementById("rewind-chip");
   const rewindPrompts = document.getElementById("rewind-prompts");
@@ -490,6 +507,7 @@ function boot() {
     if (pack === "pc_build") hello.board_id = BOARD_ID;
     if (rewindOn && !privateMode) hello.rewind = true;
     if (privateMode) hello.private = true;
+    else hello.cloud = { claude: cloud.claude, cartesia: cloud.cartesia, twelvelabs: cloud.twelvelabs && rewindOn };
     const ok = send(hello);
     if (ok) ui.dispatch({ type: "hello_sent" });
     const keepBox = document.getElementById("rewind-keep");
@@ -777,6 +795,7 @@ function boot() {
   // Either control: the same state, the same message, and the upload notice on the first enable.
   function setRewind(on) {
     if (on && privateMode) on = false; // Rewind uploads clips to TwelveLabs: never in private mode
+    cloud.twelvelabs = Boolean(on);
     rewind = nextRewind(rewind, { type: "switch", on });
     if (rewind.notice) {
       window.clearTimeout(rewindNoticeTimer);
@@ -787,6 +806,7 @@ function boot() {
     }
     showRewind(on);
     sendRewind();
+    renderPrivate();
   }
 
   function sendRewind() {
@@ -1614,6 +1634,53 @@ function boot() {
   function renderPrivate() {
     if (privateToggle) privateToggle.checked = privateMode;
     if (privateBadge) privateBadge.classList.toggle("hidden", !privateMode);
+    for (const [name, box] of Object.entries(cloudBoxes)) {
+      if (box) box.checked = !privateMode && Boolean(cloud[name]);
+    }
+    renderLeaves();
+  }
+
+  // Plain words for a caregiver: what is leaving the home with the switches as they are right now.
+  function renderLeaves() {
+    if (!leavesList) return;
+    const on = (name) => !privateMode && Boolean(cloud[name]);
+    const lines = [];
+    if (on("claude")) lines.push("Your question and a written note about the scene go to Claude. Sometimes one small close-up photo.");
+    if (on("cartesia")) lines.push("A-eye's reply sentence goes to Cartesia, which turns it into speech.");
+    if (on("twelvelabs") && rewindOn) lines.push("Short silent video clips go to TwelveLabs. They are deleted when the call ends.");
+    if (stt !== "server") lines.push("Your speech goes to your browser's speech service (in Chrome, that is Google).");
+    if (!lines.length) lines.push("Nothing leaves your home right now.");
+    leavesList.textContent = "";
+    for (const text of lines) {
+      const item = document.createElement("li");
+      item.textContent = text;
+      leavesList.append(item);
+    }
+    const home = document.createElement("li");
+    home.className = "home";
+    home.textContent = "Always stays home: the camera picture, the memory log, and (with server speech) your voice.";
+    leavesList.append(home);
+  }
+
+  function setCloud(name, on) {
+    if (name === "twelvelabs") {
+      if (on && privateMode) {
+        privateMode = false;
+        sendHello();
+      }
+      setRewind(on); // the same consent as the Rewind toggle; sends its own message
+      return;
+    }
+    cloud[name] = Boolean(on);
+    if (on && privateMode) privateMode = false; // switching a cloud feature on leaves Private mode
+    try {
+      safeStorage()?.setItem("aeye.cloud", JSON.stringify({ claude: cloud.claude, cartesia: cloud.cartesia }));
+      safeStorage()?.setItem("aeye.private", privateMode ? "1" : "0");
+    } catch {
+      // per-viewer convenience only
+    }
+    renderPrivate();
+    sendHello();
   }
 
   async function setPrivate(on) {
@@ -1644,6 +1711,7 @@ function boot() {
     applyAudioPrefs();
     sendHello();
     renderCall();
+    renderLeaves();
     // The mic was on when browser recognition failed: keep listening through server STT.
     if (voice && micWasOn && voice.supported && voice.supported.stt) void startMic();
   }
@@ -1913,6 +1981,9 @@ function boot() {
   wireDevices();
   document.getElementById("settings-done").addEventListener("click", closeSheets);
   if (privateToggle) privateToggle.addEventListener("change", () => { void setPrivate(privateToggle.checked); });
+  for (const [name, box] of Object.entries(cloudBoxes)) {
+    if (box) box.addEventListener("change", () => setCloud(name, box.checked));
+  }
   renderPrivate();
   if (privateMode) {
     stt = "server";

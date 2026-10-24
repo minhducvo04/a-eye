@@ -63,6 +63,21 @@ TwelveLabs [delete video](https://docs.twelvelabs.io/v1.3/api-reference/videos/d
   TwelveLabs call (`server/rewind.py:122`, `:250`, `:635`). A private hello also forces server STT
   (`server/ws2.py:544`), so the browser's own recognition is not used. The web page has Settings > Private mode, a
   green Private badge in the call pill, and Rewind refuses to turn on (`client-web/agent.js:480`).
+- **Home-first switches** (built, `pkg/home-first`): `local_only()` is split into three named switches in
+  `server/privacy.py`, set per call from `hello.cloud` and shown in Settings > Privacy with their "what leaves"
+  line. Defaults: Claude on, Cartesia on, TwelveLabs off (the Rewind toggle is the same consent).
+  | Switch | What leaves | Enforced at |
+  |---|---|---|
+  | Smarter answers (Claude) | your question and a written scene note, sometimes one small close-up | `claude_allowed()`: talker and planner (`server/llm.py`), cloud crops (`server/agent.py` `planner_crop`), planner on/off (`server/ws2.py`), expert (`server/expert.py`, `server/llm.py` `expert`) |
+  | Natural voice (Cartesia) | only A-eye's reply sentence | `cartesia_allowed()`: `voice/adapter.py` picks Kokoro (or the browser voice) instead |
+  | Video memory search (TwelveLabs) | short silent clips, deleted at call end | `twelvelabs_allowed()`: every TwelveLabs request (`server/rewind.py` `_headers`), Rewind cannot turn on |
+  Private mode and `LOCAL_ONLY=1` turn all three off. Outside a call (HTTP routes such as the Rewind recap) only
+  Private and `LOCAL_ONLY` apply, because no clip exists unless its switch was on during the call. The test
+  `voice/test_home_first.py` patches the Anthropic SDK, Cartesia's WebSocket and httpx's network transports and
+  fails if a provider is called with its switch off, per switch and for Private. Settings also has a "What leaves
+  your home" panel that lists, in plain words, what is on right now (including browser speech recognition).
+  Not switchable yet: `/api/voice_sample` for a Cartesia voice (Test voice) follows only `LOCAL_ONLY=1`, and
+  `/api/status` pings the providers' metadata endpoints with the keys.
 - **`LLM_PROVIDER=local`** ("brain local") makes `use_claude` false, so turns go to Ollama on the box (`server/llm.py:130`, `:193`).
 - **Vision**: frames go to `VISION_URL` (default `127.0.0.1:8001`, `server/vision_client.py:16`), which runs local
   models on the box (Ollama over Tailscale).
@@ -133,12 +148,14 @@ Camera frames for detection and captions, server speech recognition (Whisper), K
 | Cloud brain sees crops only, never full frames; size and area caps | **Built** (`server/crops.py`, `server/llm.py:133`) |
 | Logs carry metadata only, hashed ids and email | **Built** (`server/logs.py:8`, `server/auth.py:105`) |
 | One-tap **Private mode**: local brain, no cloud vision crops, Kokoro instead of Cartesia, Rewind off and locked, server STT forced | **Built** (`9c5b4f2`, `server/privacy.py`) |
+| Three named cloud switches (Claude, Cartesia, TwelveLabs) with the "what leaves" line, a plain "What leaves your home" panel, and a test that fails on any cloud call with its switch off | **Built** (`pkg/home-first`, `server/privacy.py`, `voice/test_home_first.py`) |
+| Tailscale as the home transport, Cloudflare as the fallback | Documented (`docs/home-setup.md`); commands for the owner to run |
 | Make `LOCAL_ONLY=1` also block Cartesia and Rewind | **Built** (`9c5b4f2`, `12fc35b`); the `AGENTS.md` wording is still to fix (gap 3) |
 | Rewind deletes its TwelveLabs videos at call end, and on "Forget" (voice or button) | **Built** (`12fc35b`, `722a745`); verified with fakes only, the real delete not run live yet |
 | Delete the whole index on a schedule as a backstop | Proposed |
 | Rewind searches only the caller's own call; drop the newest-call fallback and bind HTTP search to the caller | **Built** (`12fc35b`) |
 | Memory pack: fixed pill line, no dosing advice, no "you took" claims, no "you forgot" | **Built** (`58cbe9c`) |
 | Opt out of training on the TwelveLabs account settings and the Cartesia data-controls form; record the date here | Proposed (account action for the owner; not done yet) |
-| No transcript logging, enforced by a test that greps log output for the question text | Partly built: no transcript logging found; the enforcing test is proposed |
+| No transcript logging, enforced by a test that greps log output for the question text | **Built** (`voice/test_private.py::test_server_never_logs_transcripts`) |
 | Private mode never picks a Covered Model (Fable) for the expert | **Built** (Private mode never calls the cloud expert, `server/expert.py:61`) |
 | Ask Anthropic for ZDR on the non Covered Models | Proposed (account action) |

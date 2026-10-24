@@ -26,7 +26,8 @@ from server import packs, pairing
 from server import rewind as rewind_mod
 from server.agent import Session, Turn, message, run_turn, say, state
 from server.llm import LLMClient, TURN_USAGE
-from server.privacy import PRIVATE, local_only
+from server import privacy
+from server.privacy import claude_allowed
 from server.expert import DESK as expert_desk, cancel as cancel_expert
 from voice import adapter
 from voice.fake import FakeAdapter
@@ -71,7 +72,7 @@ def slow_part(metrics):
 
 
 def cloud_brain():
-    return (bool(os.environ.get('ANTHROPIC_API_KEY')) and not local_only()
+    return (bool(os.environ.get('ANTHROPIC_API_KEY')) and claude_allowed()
             and os.environ.get('LLM_PROVIDER', 'auto') in ('auto', 'claude'))
 
 
@@ -340,7 +341,7 @@ async def websocket(ws: WebSocket):
             await lifecycle.stage('thinking', text=text)
             # Talker + thinker: a Haiku-class talker speaks while the planner (no GPU gate) draws in parallel.
             duo = (isinstance(llm, LLMClient) and os.environ.get('BRAIN_MODE', 'duo') == 'duo'
-                   and bool(os.environ.get('ANTHROPIC_API_KEY')) and not local_only())
+                   and bool(os.environ.get('ANTHROPIC_API_KEY')) and claude_allowed())
             if rewind_mod.wants_rewind(session, text):
                 await rewind_mod.rewind_turn(session, text, session.rewind, vision=vision, turn_id=lifecycle.id)
             else:
@@ -542,7 +543,8 @@ async def websocket(ws: WebSocket):
                 # Private mode (hello.private): local brain, Kokoro, server STT (browser STT may send audio to
                 # Google), no crops, no Rewind cloud. Every task started from here on inherits it.
                 private = bool(incoming.get('private', False))
-                PRIVATE.set(private)
+                # Home first: this call's cloud switches (hello.cloud; Private mode or LOCAL_ONLY=1 = all off).
+                privacy.set_call(incoming.get('cloud'), private=private, rewind=incoming.get('rewind', False))
                 stt_mode = 'server' if private else incoming.get('stt', 'browser')
                 if private:
                     new_session.tts = 'server'
@@ -673,6 +675,7 @@ async def websocket(ws: WebSocket):
                 if session.power_off:
                     await emit(say('Thanks. What are we working on?'))
             elif kind == 'rewind':
+                privacy.update(privacy.TWELVELABS, incoming['on'])  # the Rewind toggle is the video-search consent
                 session.rewind.set_on(incoming['on'])
                 session.rewind.keep = incoming.get('keep', session.rewind.keep)
                 await send(rewind_mod.state_message(session.rewind))
