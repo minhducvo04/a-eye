@@ -56,6 +56,7 @@ function boot() {
   const powerBtn = document.getElementById("power-off");
   const grab = document.createElement("canvas");
   const grayCanvas = document.createElement("canvas");
+  const devOn = new URLSearchParams(location.search).get("dev") === "1";
   const devEl = devOn ? document.createElement("p") : null;
   if (devEl) {
     devEl.className = "dev-hud";
@@ -67,7 +68,6 @@ function boot() {
   const sessionId = randomId();
   const params = new URLSearchParams(location.search);
   const tts = params.get("tts") === "server" ? "server" : "browser";
-  const devOn = params.get("dev") === "1";
   const reducedQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 
   let pack = "";
