@@ -1267,7 +1267,7 @@ function boot() {
         showPermission("Camera access is off",
           "A-eye looks through the camera to point at parts while you work. Allow the camera for this site in your browser settings, or upload a photo from Settings.");
       } else {
-        showProblem("Camera unavailable. Use Upload photo.");
+        showProblem("The camera is not available. You can use your phone or a photo from Settings.");
       }
     } finally {
       starting = false;

@@ -50,7 +50,7 @@
       <div class="intro">
         <h1 class="intro-title">I look, point, and remember.</h1>
         <p class="intro-text">Show me what you are working on, or ask where you left something. Choose a helper below to start.</p>
-        <p class="intro-note"><svg aria-hidden="true"><use href="#i-shield"/></svg>No video or sound is kept unless you turn it on.</p>
+        <p class="intro-note"><svg aria-hidden="true"><use href="#i-shield"/></svg>Video is not saved unless you turn on Rewind or the memory aid.</p>
       </div>
       <div class="ring-bottom">
         <div class="ring-label" aria-live="polite">
@@ -205,7 +205,7 @@
     <div class="group">
       <label class="row">Private mode <input id="private-toggle" type="checkbox" role="switch" aria-describedby="private-notice"></label>
     </div>
-    <p id="private-notice" class="group-foot">Nothing leaves our own machines: the local brain answers, Kokoro speaks, speech is recognized on our GPU box, and Rewind stays off.</p>
+    <p id="private-notice" class="group-foot">Everything stays on our own computers: no cloud model, voice or upload. Answers can be a little slower. Rewind stays off.</p>
 
     <p class="group-title">Rewind</p>
     <div class="group">
@@ -262,7 +262,7 @@
         <ol id="transcript-list" class="transcript-list hidden"></ol>
       </div>
     </details>
-    <p class="group-foot sheet-foot">Camera frames go only to this server and are not saved, unless Rewind is on.</p>
+    <p class="group-foot sheet-foot">Camera frames go to this server and are not saved unless Rewind or the memory aid is on. Outside Private mode, the cloud model may see a small crop of the picture.</p>
   </section>
 
   <script type="module" src="agent.js"></script>

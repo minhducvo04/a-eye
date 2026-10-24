@@ -1847,3 +1847,90 @@ input[type="checkbox"][role="switch"]:disabled {
 .call .caption {
   background-color: rgba(8, 10, 14, 0.66);
 }
+
+/* ---------- Review d64c237 fixes ---------- */
+
+/* Problems read as information, not alarms: white text with a small amber dot. */
+.caption-error {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  color: var(--text);
+}
+
+.caption-error::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--amber);
+  transform: translateY(-1px);
+}
+
+/* Memory mode: one filled button at most (the mic). Rewind lives in its badge and Settings; the starter chip goes. */
+body[data-mode="memory"] #rewind-btn,
+body[data-mode="memory"] .rewind-ask {
+  display: none;
+}
+
+/* Memory mode type: no monospace in what the person reads; sentence case in the listening strip. */
+body[data-mode="memory"] .pill,
+body[data-mode="memory"] .eyebrow,
+body[data-mode="memory"] .listen-text.mono {
+  font-family: var(--font);
+  letter-spacing: 0;
+}
+
+body[data-mode="memory"] .listen-text.mono {
+  font-size: var(--fs-subhead);
+  text-transform: lowercase;
+}
+
+body[data-mode="memory"] .listen-text.mono::first-letter {
+  text-transform: uppercase;
+}
+
+.ring-hint {
+  font-family: var(--font);
+  font-size: var(--fs-subhead);
+}
+
+/* Memory count shares the badge look (sans, glass, thin edge). */
+#memory-count {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+}
+
+/* Recap: brighter on dark glass. */
+.badge.action {
+  color: #B9D0FF;
+}
+
+/* Desktop row: coming-soon modes say so instead of only looking disabled. */
+@media (min-width: 700px) and (hover: hover) and (pointer: fine) {
+  .ring > button:not([data-pack]) .ring-name::after {
+    content: " · soon";
+  }
+}
+
+/* Find answer on a phone: both panes fit, the answer line first. */
+@media (max-width: 640px) {
+  .sheet.wide {
+    max-height: 92dvh;
+  }
+
+  .memory-split .memory-pane {
+    aspect-ratio: 16 / 9;
+  }
+}
+
+/* Status chips (Connecting, notices) in the reading font too. */
+.chip {
+  font-family: var(--font);
+  font-size: var(--fs-footnote);
+}
+
+#rewind-recap {
+  background-color: rgba(8, 10, 14, 0.72);
+  color: #C9DBFF;
+}
