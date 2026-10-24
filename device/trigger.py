@@ -67,11 +67,15 @@ class Motion:
     on a fixed surface goes over it. Works on Pillow images; no numpy or OpenCV needed.
     """
 
-    def __init__(self, pixel_delta=25, min_share=0.02, size=(64, 48)):
+    def __init__(self, pixel_delta=25, min_share=0.02, size=(64, 48), zone=None):
         self.pixel_delta, self.min_share, self.size = pixel_delta, min_share, size
         self.previous = None
+        self.zone = zone
 
     def thumb(self, image):
+        if self.zone:
+            w, h = image.size
+            image = image.crop(tuple(int(v * (w if i % 2 == 0 else h)) for i, v in enumerate(self.zone)))
         return image.convert('L').resize(self.size)
 
     def share(self, image):

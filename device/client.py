@@ -1,10 +1,4 @@
-"""Headless A-eye device: capture only while on, relay to the family's own server over /ws2, play the reply.
-
-Off: camera closed (or, with the motion trigger, a local 1 fps look that is never sent), mic closed, no socket.
-On (button, or motion on a fixed surface): one /ws2 call with Private mode on by default. Frames go up at about
-1 fps, mic utterances as audio_in, reply audio plays on the device speaker. It turns itself off after
-`idle_off_s` with no change (no motion, no speech) or at the `cap_s` cap, whichever comes first.
-"""
+"""Headless client: explicit Session calls plus RAM-only private motion Events."""
 import asyncio
 import base64
 import json
@@ -14,6 +8,7 @@ import time
 from PIL import ImageFilter, ImageStat
 
 from device import hw
+from device.capture import Capture
 from device.trigger import Motion, Power, Speech
 
 try:
@@ -47,6 +42,7 @@ class Device:
         self.stats = dict(calls=0, frames_sent=0, frames_dropped_person=0, utterances=0, audio_in_bytes=0,
                           audio_out_bytes=0, replies=[], turns=[], off_reasons=[], find_items=[], errors=[])
         self.stop = asyncio.Event()
+        self.capture = Capture(self)
         self.unauthorized = False
 
     # ---- top level ----------------------------------------------------------------------------------------------
@@ -55,26 +51,25 @@ class Device:
         """Wait for triggers, run one call per on-period. `presses` is an optional coroutine feeding self.events."""
         self.indicator.set(False)
         if self.person is not None and not self.person.available:
-            self.log('person_filter', available=False, note='OpenCV missing; the server memory check still applies')
+            self.log('person_filter', available=False, note='OpenCV missing; Events refuse all frames')
         feeders = [asyncio.create_task(presses)] if presses else []
         try:
             while not self.stop.is_set():
-                if self.cfg['trigger']['motion']:
-                    watcher = asyncio.create_task(self.watch_motion())
-                else:
-                    watcher = None
+                if self.cfg['trigger']['motion'] and not getattr(self, '_armed_once', False):
+                    self._armed_once = True
+                    await self.capture.run()
                 getter = asyncio.create_task(self.events.get())
                 stopper = asyncio.create_task(self.stop.wait())
                 await asyncio.wait({getter, stopper}, return_when=asyncio.FIRST_COMPLETED)
-                for task in (watcher, stopper):
-                    if task:
-                        task.cancel()
-                        await asyncio.gather(task, return_exceptions=True)
+                stopper.cancel()
+                await asyncio.gather(stopper, return_exceptions=True)
                 if not getter.done():
                     getter.cancel()
                     break
                 kind, source = getter.result()
-                if kind in ('press', 'motion') and self.power.turn_on(source if kind == 'press' else 'motion'):
+                if kind in ('arm', 'remember'):
+                    await self.capture.run(immediate=kind == 'remember')
+                if kind in ('press', 'session') and self.power.turn_on(source):
                     await self.call()
                 if self.unauthorized:
                     break
@@ -84,25 +79,11 @@ class Device:
             await asyncio.gather(*feeders, return_exceptions=True)
             self.speaker.close()
 
-    async def watch_motion(self):
-        """Off, with the motion trigger: look at the surface once a second on the device. Nothing is sent."""
-        motion = Motion(min_share=self.cfg['trigger']['motion_share'])
-        self.camera.open()
-        try:
-            while True:
-                img = await asyncio.to_thread(self.camera.read)
-                if img is not None and motion.changed(img):
-                    self.events.put_nowait(('motion', 'motion'))
-                    return
-                await asyncio.sleep(1.0)
-        finally:
-            self.camera.close()
-
     # ---- one on-period ------------------------------------------------------------------------------------------
 
     async def call(self):
         self.stats['calls'] += 1
-        self.indicator.set(True, self.power.reason)
+        self.capture.signal('Session')
         self.log('on', reason=self.power.reason)
         backoff = 1
         try:
@@ -126,7 +107,7 @@ class Device:
         finally:
             self.power.turn_off(self.power.reason if not self.power.on else 'stopped')
             self.stats['off_reasons'].append(self.power.reason)
-            self.indicator.set(False, self.power.reason)
+            self.capture.signal('Off')
             self.log('off', reason=self.power.reason)
 
     async def session(self):
@@ -169,6 +150,10 @@ class Device:
         """While on, a press turns the device off."""
         while True:
             kind, _ = await self.events.get()
+            if kind == 'remember':
+                self.power.turn_off('remember')
+                self.events.put_nowait(('remember', 'command'))
+                return
             if kind == 'press':
                 self.power.press()
                 return

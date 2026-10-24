@@ -28,7 +28,7 @@ async def run(cfg):
     loop.add_signal_handler(signal.SIGUSR1, lambda: device.events.put_nowait(('press', 'signal')))
     button = cfg['trigger']['button']
     presses = {'keyboard': lambda: hw.keyboard_presses(device.events),
-               'gpio': lambda: hw.gpio_presses(device.events, cfg['trigger']['button_pin']),
+               'gpio': lambda: hw.gpio_presses(device.events, cfg['trigger']['button_pin'], cfg['trigger']['remember_pin']),
                'none': lambda: None}[button]()
     print('A-eye device ready. ' + {'keyboard': 'Press Enter to turn on or off.',
                                      'gpio': 'Press the button to turn on or off.',

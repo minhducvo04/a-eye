@@ -32,6 +32,9 @@ class ImageSequenceCamera:
     def open(self):
         self.t0 = time.monotonic()
 
+    def open_low(self):
+        self.open()
+
     def read(self):
         i = int((time.monotonic() - self.t0) * self.clip_fps)
         i = i % len(self.paths) if self.loop else min(i, len(self.paths) - 1)
@@ -54,6 +57,13 @@ class OpenCVCamera:
         if not self.cap.isOpened():
             raise RuntimeError(f'camera {self.source!r} did not open')
 
+    def open_low(self):
+        import cv2
+        self.open()
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 64)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 48)
+        self.cap.set(cv2.CAP_PROP_FPS, 1)
+
     def read(self):
         import cv2
         ok, frame = self.cap.read()
@@ -73,10 +83,14 @@ class PiCamera:
     def __init__(self):
         self.cam = None
 
-    def open(self):
+    def open_low(self):
+        self.open(size=(64, 48), fps=1)
+
+    def open(self, size=(640, 480), fps=1):
         from picamera2 import Picamera2
         self.cam = Picamera2()
-        self.cam.configure(self.cam.create_still_configuration(main={'size': (1280, 960), 'format': 'RGB888'}))
+        self.cam.configure(self.cam.create_still_configuration(main={'size': size, 'format': 'RGB888'},
+                                                              controls={'FrameRate': fps}))
         self.cam.start()
 
     def read(self):
@@ -143,6 +157,8 @@ class PersonFilter:
         import numpy as np
         img = image.convert('L')
         img.thumbnail((400, 400))
+        if img.width < 64 or img.height < 128:
+            return True
         rects, weights = self.hog.detectMultiScale(np.asarray(img), winStride=(8, 8), padding=(8, 8), scale=1.05)
         return any(float(w) > 0.5 for w in (weights.ravel() if len(rects) else []))
 
@@ -342,22 +358,30 @@ class TerminalIndicator:
         self.state = None
 
     def set(self, on, detail=''):
-        self.state = on
-        mark = '[ON  ] camera and mic on, sending to the home server' if on else '[off ] not capturing'
-        print(f'{mark}{" - " + detail if detail else ""}', file=self.stream, flush=True)
+        self.state = ('Session' if on else 'Off') if isinstance(on, bool) else on
+        print(f'[{self.state}] {detail}', file=self.stream, flush=True)
 
 
 class GpioLed(TerminalIndicator):
-    """Privacy LED on a GPIO pin (gpiozero). Also prints, so the journal shows on/off."""
-
     def __init__(self, pin):
         super().__init__()
-        from gpiozero import LED
-        self.led = LED(pin)
+        from gpiozero import PWMLED
+        self.led = PWMLED(pin)
 
     def set(self, on, detail=''):
-        (self.led.on if on else self.led.off)()
         super().set(on, detail)
+        self.led.source = None
+        self.led.off()
+        if self.state == 'Armed':
+            import itertools
+            import math
+            self.led.source_delay = 0.1
+            self.led.source = itertools.cycle([0.15 * (1 - math.cos(i * math.pi / 20)) / 2
+                                               for i in range(40)])
+        elif self.state == 'Event':
+            self.led.value = 0.6
+        elif self.state == 'Session':
+            self.led.value = 1
 
 
 def make_indicator(cfg):
@@ -373,14 +397,18 @@ async def keyboard_presses(queue):
         line = await loop.run_in_executor(None, sys.stdin.readline)
         if not line:
             return
-        queue.put_nowait(('press', 'keyboard'))
+        command = line.strip().lower()
+        kind = {'arm': 'arm', 'remember this': 'remember', 'session': 'session'}.get(command, 'press')
+        queue.put_nowait((kind, 'keyboard'))
 
 
-async def gpio_presses(queue, pin):
+async def gpio_presses(queue, pin, remember_pin=22):
     """A push button between `pin` and ground (internal pull-up)."""
     from gpiozero import Button
     loop = asyncio.get_running_loop()
     button = Button(pin, bounce_time=0.05)
+    remember = Button(remember_pin, bounce_time=0.05)
+    remember.when_pressed = lambda: loop.call_soon_threadsafe(queue.put_nowait, ('remember', 'gpio'))
     button.when_pressed = lambda: loop.call_soon_threadsafe(queue.put_nowait, ('press', 'gpio'))
     await asyncio.Event().wait()
 

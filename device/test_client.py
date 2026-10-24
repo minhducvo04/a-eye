@@ -36,6 +36,9 @@ def server(monkeypatch, tmp_path):
     from server.app import create_app
     app = create_app()
     app.state.llm = app.state.llm_v2 = Brain()
+    async def judge(frames):
+        return {'worth': True, 'note': 'Keys placed on the table.'}
+    app.state.capture_judge = judge
     with socket.socket() as s:
         s.bind(('127.0.0.1', 0))
         port = s.getsockname()[1]
@@ -95,11 +98,6 @@ def test_button_turn_reply_audio_then_idle_off(server, tmp_path):
     assert s['audio_out_bytes'] > 0                      # mock server voice: a tone, played on the null speaker
     assert s['off_reasons'] == ['idle'] and not s['errors']
 
-
-def test_motion_turns_it_on_without_a_button(server, tmp_path):
-    device = make(server, tmp_path, idle=2, keys_from=2, motion=True)
-    asyncio.run(until_off(device))
-    assert device.stats['calls'] == 1 and device.stats['off_reasons'] == ['idle']
 
 
 def test_frames_with_a_person_never_leave_the_device(server, tmp_path):
