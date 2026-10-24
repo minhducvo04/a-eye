@@ -4,7 +4,7 @@ import json
 import pytest
 
 from contracts import schema, validate
-from eval.brain import CASES_PATH, evaluate, header_facts, message_facts, parse_model
+from eval.brain_turns import CASES_PATH, evaluate, header_facts, message_facts, parse_model
 from server import packs
 
 CASES = json.loads(CASES_PATH.read_text())

@@ -32,11 +32,11 @@ flowchart LR
 
 ## Brain eval
 
-Replays `eval/brain_cases.json` (31 text-only cases, no frames) through the real `server.agent.run_turn` on the single-brain path, the one a local model serves when there is no Anthropic key or `LOCAL_ONLY=1`. Each case's scene becomes the session's cached scene. Market searches are recorded, never sent.
+Replays `eval/brain_cases.json` (26 text-only cases, no frames; price questions are excluded because `server/shopping.py` answers them in code before the brain runs) through the real `server.agent.run_turn` on the single-brain path, the one a local model serves when there is no Anthropic key or `LOCAL_ONLY=1`. Each case's scene becomes the session's cached scene. Market searches are recorded, never sent.
 
 ```sh
-python -m eval.brain --model local:qwen3.5:9b-q4_K_M --model local:<small model>
-python -m eval.brain --model claude:claude-haiku-5-5 --tag shop
+python -m eval.brain_turns --model local:qwen3.5:9b-q4_K_M --model local:<small model>
+python -m eval.brain_turns --model claude:claude-haiku-5-5 --tag shop
 ```
 
 Per turn:

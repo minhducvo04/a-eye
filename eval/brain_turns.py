@@ -5,7 +5,7 @@ SAY: speech. That is the path a local model serves when there is no Anthropic ke
 LOCAL_ONLY=1. Each case's scene is loaded as the session's cached scene, so no frames
 are used. Market searches are recorded, never sent.
 
-    python -m eval.brain --model local:qwen3.5:9b-q4_K_M --model local:<small model>
+    python -m eval.brain_turns --model local:qwen3.5:9b-q4_K_M --model local:<small model>
 """
 import argparse
 import asyncio
