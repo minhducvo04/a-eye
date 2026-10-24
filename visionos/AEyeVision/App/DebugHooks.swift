@@ -9,6 +9,13 @@ import UIKit
 ///   -AEyeDebugStart general              start a call in that mode id
 ///   -AEyeDebugSay "what am I looking at" send this typed line once connected
 ///   -AEyeDebugTyped YES                  typed input, never ask for the mic (read in `CallController`)
+///   -AEyeDebugVoiceUI YES                with -AEyeDebugTyped: show the voice controls, mic still closed
+///   -AEyeDebugInject /path/messages.jsonl  once connected, feed these server messages one per line, as if
+///                                        the server sent them; a line {"sleep_s": 1.5} pauses
+///   -AEyeDebugRewind YES                 Rewind on before the call starts
+///   -AEyeDebugForget today               press that Forget button 4 s into the call (last, today, or call)
+///   -AEyeDebugEnd 8                      end the call after this many seconds
+///   -AEyeDebugPair YES                   request a pairing code and open the Pair phone sheet (`CallScreen`)
 /// Nothing here exists in a Release build.
 @MainActor
 enum DebugHooks {
@@ -47,9 +54,40 @@ enum DebugHooks {
         if let path = defaults.string(forKey: "AEyeDebugPhoto"), let image = UIImage(contentsOfFile: path) {
             photo.use(image)
         }
+        if defaults.bool(forKey: "AEyeDebugRewind") { controller.setRewind(true) }
         guard let id = defaults.string(forKey: "AEyeDebugStart"),
               let mode = Modes.all.first(where: { $0.id == id }) else { return }
         controller.start(mode)
+        if let path = defaults.string(forKey: "AEyeDebugInject"),
+           let text = try? String(contentsOfFile: path, encoding: .utf8) {
+            Task {
+                for _ in 0..<50 where controller.state.link != .live {
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                }
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                for line in text.split(separator: "\n") where !line.isEmpty {
+                    let data = Data(line.utf8)
+                    if let pause = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["sleep_s"] as? Double {
+                        try? await Task.sleep(nanoseconds: UInt64(pause * 1_000_000_000))
+                    } else {
+                        controller.debugReceive(data)
+                    }
+                }
+            }
+        }
+        if let scope = defaults.string(forKey: "AEyeDebugForget") {
+            Task {
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                controller.forget(scope: scope == "call" ? nil : scope)
+            }
+        }
+        let endAfter = defaults.double(forKey: "AEyeDebugEnd")
+        if endAfter > 0 {
+            Task {
+                try? await Task.sleep(nanoseconds: UInt64(endAfter * 1_000_000_000))
+                controller.end()
+            }
+        }
         guard let line = defaults.string(forKey: "AEyeDebugSay") else { return }
         Task {
             for _ in 0..<50 where controller.state.link != .live {

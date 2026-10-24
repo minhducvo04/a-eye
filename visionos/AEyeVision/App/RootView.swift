@@ -42,7 +42,7 @@ struct RootView: View {
             }
 
             if controller.mode != nil {
-                CallScreen(controller: controller)
+                CallScreen(controller: controller, livePicture: photo.image)
             } else {
                 cameraChrome
             }
@@ -50,6 +50,9 @@ struct RootView: View {
         .clipShape(RoundedRectangle(cornerRadius: 46, style: .continuous))
         .sheet(isPresented: $showSettings) {
             SettingsSheet(controller: controller)
+        }
+        .sheet(item: $controller.recap) { recap in
+            RecapSheet(recap: recap)
         }
         .onChange(of: pickedItem) { _, item in
             guard let item else { return }

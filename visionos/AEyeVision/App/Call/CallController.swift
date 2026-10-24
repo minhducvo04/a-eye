@@ -12,6 +12,7 @@ import Observation
 final class CallController {
     private static let serverURLKey = "serverURL"
     private static let voiceKey = "voice"
+    private static let privateKey = "private"
 
     private(set) var state = CallState.initial
     /// Non-nil while a call is active (including while reconnecting).
@@ -48,6 +49,50 @@ final class CallController {
     /// The voice this call was started with. A change in Settings applies to the next call.
     @ObservationIgnored private var callVoiceId = ""
 
+    /// Private mode (`hello.private`): the server keeps the call on our own machines. Saved; applies to the
+    /// next call. Forces the server voice and keeps Rewind off.
+    var privateMode: Bool {
+        get { storedPrivate }
+        set {
+            storedPrivate = newValue
+            UserDefaults.standard.set(newValue, forKey: Self.privateKey)
+            if newValue, rewind.on { setRewind(false) }
+        }
+    }
+    private var storedPrivate: Bool
+    /// Private mode as this call's `hello` sent it.
+    private(set) var callPrivate = false
+
+    // MARK: Rewind, expert and memory (see `CallController+Extras.swift`)
+
+    /// One state behind the bottom-bar Rewind button and the Settings switch, like the web page's `rewind.js`.
+    var rewind = RewindStatus(on: false, clips: 0, locked: false)
+    /// Keep this call's TwelveLabs videos after the call (`rewind.keep`). Off by default.
+    var rewindKeep = false
+    /// The TwelveLabs upload notice, shown on the first switch-on of this app run.
+    var showsRewindNotice = false
+    @ObservationIgnored var rewindNoticed = false
+    @ObservationIgnored var rewindNoticeTask: Task<Void, Never>?
+    /// Rewind was on at some point in this call: the end of the call opens the Recap sheet.
+    @ObservationIgnored var rewindUsedThisCall = false
+    /// Set while the expert model works on a turn (`turn.stage == expert`); cleared by its own `expert_done`.
+    var expert: (turnId: String, startedAt: Date, detail: String?)?
+    /// The Rewind answer: the earlier frame boxed, beside the live view.
+    var rewindHit: RewindHit?
+    /// The Recap sheet. Lives here (not in the call screen) because it also opens after the call ends.
+    var recap: Recap?
+    /// Newest `track` boxes on the live picture, for the split view's arrow.
+    var liveObjects: [SceneBox] = []
+    /// What is remembered today (memory status, or this call's Rewind clips), and a short result line.
+    var memoryCount = 0
+    var memoryNotice: String?
+    @ObservationIgnored var memoryTask: Task<Void, Never>?
+    /// Server voice the call asked for heard nothing (no voice engine on the server): speak locally instead.
+    @ObservationIgnored var serverVoiceSilent = false
+    @ObservationIgnored var heardServerAudio = false
+    /// The headset mic was on when a phone joined as camera and mic; turn it back on when the phone leaves.
+    @ObservationIgnored var resumeMicAfterPhone = false
+
     /// Spoken replies. Exposed so voice input can read `speakingText` / `startedAt` and call `stop()`.
     let speech = SpeechOut()
 
@@ -64,7 +109,7 @@ final class CallController {
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var isSocketOpen = false
     @ObservationIgnored private var isFrameInFlight = false
-    @ObservationIgnored private var sessionId = ""
+    @ObservationIgnored private(set) var sessionId = ""
     /// Continues across calls for the whole app run; never reset.
     @ObservationIgnored private var seq = 0
     @ObservationIgnored private var frameTask: Task<Void, Never>?
@@ -83,6 +128,7 @@ final class CallController {
         self.camera = camera
         self.storedServerURL = UserDefaults.standard.string(forKey: Self.serverURLKey) ?? Self.bundledServerURL()
         self.storedVoiceId = UserDefaults.standard.string(forKey: Self.voiceKey) ?? ""
+        self.storedPrivate = UserDefaults.standard.bool(forKey: Self.privateKey)
     }
 
     /// Milliseconds since 1970. The clock `CallState.reduce(nowMs:)` and `DrawState.visible(nowMs:)` share.
@@ -99,6 +145,8 @@ final class CallController {
         sessionId = UUID().uuidString
         callStartedAt = Date()
         callVoiceId = voiceId
+        callPrivate = privateMode
+        resetExtras()
         speech.resetServerVoice()
         speech.prepareAudioSession()
         connect()
@@ -125,10 +173,21 @@ final class CallController {
         speech.releaseAudioSession()
         state = .initial
         pairing = PairingState()
+        let endedSession = sessionId
+        let endedURL = pairingSocketURL
         pairingSocketURL = nil
+        let showRecap = rewindUsedThisCall && !callPrivate
+        resetExtras()
         mode = nil
         callStartedAt = nil
         lastFrameSize = .zero
+        // End-of-call recap when Rewind was on, as on the web page (the server uploads the last clips first).
+        if showRecap, let endedURL { openRecap(sessionId: endedSession, socketURL: endedURL) }
+    }
+
+    /// Whether this call's replies come as server `audio` (a picked server voice, or Private mode).
+    var usesServerVoice: Bool {
+        (!callVoiceId.isEmpty || callPrivate) && !serverVoiceSilent
     }
 
     // MARK: - Things the views ask for
@@ -160,6 +219,14 @@ final class CallController {
         }
     }
 
+    /// Sends one message on the open socket. False when there is none.
+    @discardableResult
+    func sendRaw(_ data: Data) -> Bool {
+        guard isSocketOpen, let socket else { return false }
+        socket.send(data) { _ in }
+        return true
+    }
+
     func dismissMarket() {
         apply(.marketDismissed)
     }
@@ -183,6 +250,8 @@ final class CallController {
         #if DEBUG
         // Simulator runs: typed input without asking for the mic (see `DebugHooks`).
         if UserDefaults.standard.bool(forKey: "AEyeDebugTyped") {
+            // -AEyeDebugVoiceUI YES: lay out the voice controls (waveform strip) without opening the mic.
+            if UserDefaults.standard.bool(forKey: "AEyeDebugVoiceUI") { inputMode = .voice }
             isInputResolved = true
             return
         }
@@ -288,10 +357,15 @@ final class CallController {
         guard socketGeneration == generation, let pack = mode?.pack, let socket else { return }
         isSocketOpen = true
         apply(.connected)
-        let hello = callVoiceId.isEmpty
-            ? ClientMessage.hello(sessionId: sessionId, pack: pack)
-            : ServerVoiceMessage.hello(sessionId: sessionId, pack: pack, voice: callVoiceId)
+        // Private mode never sends a Cartesia voice id: the server would only fall back to Kokoro anyway.
+        let voice = callPrivate && callVoiceId.hasPrefix("cartesia:") ? nil : callVoiceId
+        let hello = Wire.hello(sessionId: sessionId, pack: pack, serverVoice: !callVoiceId.isEmpty || callPrivate,
+                               voice: voice, rewind: rewind.on && !callPrivate, isPrivate: callPrivate)
         socket.send(hello) { _ in }
+        if rewind.on, !callPrivate {
+            if rewindKeep { sendRewind() }
+            startMemoryPolling()
+        }
     }
 
     private func socketDidReceive(_ data: Data, _ socketGeneration: Int) {
@@ -301,20 +375,31 @@ final class CallController {
             pairing.receive(message)
             if wasJoined != pairing.joined {
                 state.draw = .empty  // Frame sequence numbers belong to different camera sources.
+                phoneMicChanged(joined: pairing.joined)
             }
+            return
+        }
+        if let extra = ExtraMessage.decode(data) {
+            receive(extra)
             return
         }
         guard let message = ServerMessage.decode(data) else { return }
         if case .ignored(type: "audio") = message {
-            if !callVoiceId.isEmpty, let chunk = ServerVoiceMessage.audio(data) { speech.playServerAudio(chunk) }
+            if usesServerVoice, let chunk = ServerVoiceMessage.audio(data) {
+                heardServerAudio = true
+                speech.playServerAudio(chunk)
+            }
             return
         }
         apply(.server(message))
+        // A cancelled turn (a new question, or the paired phone talking over the answer) stops its voice here too.
+        if case .turn(_, .cancelled, _, _) = message { speech.stop() }
         if case .say(_, let utteranceId, let text) = message, !text.isEmpty {
-            if callVoiceId.isEmpty {
-                speech.speak(text: text, utteranceId: utteranceId)
-            } else {
+            if usesServerVoice {
                 speech.queueServerLine(text: text, utteranceId: utteranceId)
+                watchServerVoice(text: text, utteranceId: utteranceId)
+            } else {
+                speech.speak(text: text, utteranceId: utteranceId)
             }
         }
     }
@@ -372,6 +457,13 @@ final class CallController {
             self.isFrameInFlight = false
         }
     }
+
+    #if DEBUG
+    /// Debug builds only: feeds one server message as if it came on the socket (`-AEyeDebugInject`).
+    func debugReceive(_ data: Data) {
+        socketDidReceive(data, generation)
+    }
+    #endif
 
     // MARK: - State
 
