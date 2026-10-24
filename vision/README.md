@@ -1,4 +1,4 @@
-# Fake vision service
+# Vision service
 
 Run `make vision` from the repository root to serve `vision.app:app` on port 8001.
 Use `GET /health` and JSON `POST /identify`, `/locate`, `/verify`, `/scene` with the request
@@ -54,18 +54,36 @@ is added to health. HTTP errors and malformed model answers do not trigger demo
 fallback. Auto mode inherits the fake backend's canned passing verdicts, so its
 results are for demos, not physical connection assurance.
 
-`OLLAMA_URL` defaults to `http://100.93.176.7:11434`; `VISION_MODEL` defaults to
-`qwen2.5vl:7b-q4_K_M`. Chat requests use an 8-second HTTP timeout; each health GET
+`OLLAMA_URL` defaults to `http://100.93.176.7:11434`. Model routing:
+
+| Environment variable | Default | Calls |
+| --- | --- | --- |
+| `VISION_GROUND_MODEL` | `qwen3.5:9b-q4_K_M` | Scene queries and locate boxes; also identify, verify and warm-up |
+| `VISION_CAPTION_MODEL` | `qwen2.5vl:7b-q4_K_M` | Scene captions (no queries, or `caption: true`) |
+| `VISION_FALLBACK_MODEL` | `qwen2.5vl:7b-q4_K_M` | One retry per failed box query |
+
+`VISION_MODEL` is replaced by these variables. The constructor's `model=`
+overrides the ground model for probes/tests. Chat requests use an 8-second HTTP timeout; each health GET
 uses 2 seconds. `/health` checks `/api/tags` for availability and `/api/ps` for
-residency. It reports `gpu`, `partial`, `cpu`, or `not_loaded`; `ok` is false when
-the configured model is absent from tags. This exposes CPU fallback after reboot.
+residency. It lists `models: [ground, caption]` and reports the ground model's
+`gpu`, `partial`, `cpu`, or `not_loaded` mode; `ok` is false when either
+configured model is absent from tags. This exposes CPU fallback after reboot.
 These are httpx operation timeouts, not a total wall-clock deadline.
 
 Images are decoded and resized in memory with Pillow: the longer side is exactly
-1280 pixels, preserving aspect ratio to the nearest pixel. Returned pixel corners
-are normalized against that resized image, clipped, and converted to `[x,y,w,h]`.
+1280 pixels, preserving aspect ratio to the nearest pixel. The code's `BOX_FORMATS`
+table controls both native prompts and corner parsing:
+
+| Family | Coordinates | Corner order |
+| --- | --- | --- |
+| qwen2.5vl | Pixels of the resized image | x1,y1,x2,y2 |
+| qwen3.5, gemma4:12b | 0 to 1000 | x1,y1,x2,y2 |
+| gemma4:26b | 0 to 1000 | y1,x1,y2,x2 |
+| Unknown | 0 to 1000 | x1,y1,x2,y2 |
+
+Corners become normalized `[x,y,w,h]`, clamped to 0..1; zero-area boxes are dropped.
 No frames are saved or logged. Every generation uses temperature 0, `num_ctx: 4096`
-and `keep_alive: "30m"`. Token caps are 60 for boxes, 40 for captions,
+and `keep_alive: "30m"`; qwen3.5 and gemma4 also receive `think: false`. Token caps are 60 for boxes, 40 for captions,
 identification and verification, and 1 for warm-up. One shared `httpx.Client`
 reuses connections (keep-alive expiry 30 minutes), including health requests.
 Fenced JSON, trailing prose and broken closing brackets on labelled boxes are
@@ -77,7 +95,7 @@ A user request arriving immediately can still encounter cold loading. Warm-up
 failure does not switch the configured backend or prevent later retries.
 
 Locate requests the target silkscreen first, then at most two other board-table
-labels, one per call in table order. It stops starting calls after 1.5 seconds.
+labels, one per call in table order. It stops starting new labels after 1.5 seconds.
 It returns text boxes, never connector or pin grids. Header names and silkscreen
 aliases match case-insensitively with underscores and whitespace ignored. Exact
 matches get 0.7 confidence; a unique best SequenceMatcher ratio of at least 0.8
@@ -107,7 +125,7 @@ allows offline testing. Callers supplying a client retain ownership of it.
 ## General scene grounding
 
 `POST /scene` accepts `image_b64`, optional `queries` (up to eight strings), and
-optional `max_objects` (1–20, default 8). It returns a short `caption`, `objects`
+optional `max_objects` (1–20, default 8), and optional boolean `caption`. It returns a short `caption`, `objects`
 with consecutive `o1`, `o2`, … IDs, normalized `[x,y,w,h]` boxes and confidence,
 plus `source` and measured `ms`. The object cap applies even if more queries
 were supplied. Ollama processes only the first three queries, in order.
@@ -121,13 +139,19 @@ Ollama scenes send one label per call, sequentially, at 1280 pixels long edge.
 Only matching query labels are returned, with heuristic confidence 0.7 and
 consecutive IDs. No extra salient objects are requested. Further calls stop once
 1.5 seconds have elapsed or `max_objects` is reached; a call already in flight
-can exceed this budget, up to the HTTP operation timeout. Empty or malformed
-answers contribute no boxes. Partial results survive budget exhaustion.
+can exceed this budget, up to the HTTP operation timeout. HTTP/transport errors,
+timeouts, or answers without a valid matching box trigger exactly one fallback
+attempt using that model's native format. This retry completes even after the
+label budget expires (so a failed primary plus retry may take two operation
+timeouts). An invalid fallback contributes no box; fallback HTTP errors propagate,
+with auto mode retaining its connection/timeout demo fallback. Partial results
+survive budget exhaustion when no exception propagates.
 
-With queries, `caption` is an empty string. Without queries, one short caption
+With queries, `caption` is an empty string unless `caption: true` is requested.
+That flag adds a caption-model call after grounding, so caption latency does not
+consume the budget for starting box queries. Without queries, one short caption
 call returns no boxes (or `Could not describe the frame.` on parse failure).
-The unchanged request contract has no explicit caption flag; omit queries to
-request a caption. Fake scene behavior remains unchanged. Auto mode still falls
+Fake scene behavior remains unchanged. Auto mode still falls
 back on connection errors/timeouts. Ollama does not independently detect blur.
 
 Run the additional synthetic scene probe on the real PC:
@@ -144,11 +168,16 @@ they do not establish real-model grounding accuracy.
 ## Latency breakdown
 
 ```sh
-.venv/bin/python -m vision.probe_ollama --bench 5
+.venv/bin/python -m vision.probe_ollama --bench 5 --model qwen3.5:9b-q4_K_M
+.venv/bin/python -m vision.probe_ollama --bench 5 --model qwen2.5vl:7b-q4_K_M
 ```
 
 Runs exactly N single-label scene requests against synthetic shapes using the
-same client. Prints each wall time and Ollama's `load_duration`,
+same client and selected ground model. A scene request can make two HTTP calls
+if fallback is needed. Prints the model actually used and IoU against the known
+red square box on each run, plus median/min/max IoU (missing boxes score zero).
+Fallback runs must not be attributed to the selected model's accuracy.
+Prints each wall time and Ollama's `load_duration`,
 `prompt_eval_duration`, and `eval_duration` converted from nanoseconds to ms,
 then median/min/max for each. Missing counters are reported as unavailable.
 The first request is included and may be cold. Repeated identical synthetic

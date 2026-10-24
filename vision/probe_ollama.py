@@ -57,13 +57,16 @@ def main(argv=()):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scene", action="store_true", help="Ground labelled synthetic shapes")
     parser.add_argument("--bench", type=int, metavar="N", help="Time N single-label scene calls")
+    parser.add_argument("--model", help="Override the ground model for this probe")
     args = parser.parse_args(argv)
     if args.bench is not None and args.bench < 1:
         parser.error("--bench must be positive")
     image, target = (synthetic_scene(), None) if args.scene or args.bench else synthetic_board()
-    backend = OllamaBackend()
+    backend = OllamaBackend(model=args.model) if args.model else OllamaBackend()
     try:
         if args.bench:
+            target = [100 / 1280, 100 / 960, 200 / 1280, 200 / 960]
+            scores = []
             samples = {key: [] for key in
                        ("wall", "load_duration", "prompt_eval_duration", "eval_duration")}
             # Include the first (possibly cold) request, and expose it separately.
@@ -74,11 +77,14 @@ def main(argv=()):
                 validate("scene_response", result)
                 values = {"wall": result["ms"], **{key: value / 1_000_000
                           for key, value in backend.last_timings.items()}}
-                print(f"run={index + 1} " + " ".join(
+                score = iou(result["objects"][0]["bbox"], target) if result["objects"] else 0
+                scores.append(score)
+                print(f"run={index + 1} model={backend.last_ground_model} IoU={score:.4f} " + " ".join(
                     f"{key}_ms={values[key]:.1f}" if key in values else f"{key}_ms=n/a"
                     for key in samples), flush=True)
                 for key, value in values.items():
                     samples[key].append(value)
+            print(f"IoU median={median(scores):.4f} min={min(scores):.4f} max={max(scores):.4f}")
             for key, values in samples.items():
                 if values:
                     print(f"{key} median_ms={median(values):.1f} min_ms={min(values):.1f} "

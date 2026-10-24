@@ -65,7 +65,7 @@ def test_all_payloads_and_caption(body):
     real.locate({**body, "board_id": "demo-b650", "header": "CPU_FAN"}, "ok")
     real.verify({**body, "board_id": "demo-b650", "header": "CPU_FAN"}, "ok")
     real.warmup()
-    assert [p["options"]["num_predict"] for p in payloads] == [60, 40, 40, 60, 60, 60, 40, 1]
+    assert [p["options"]["num_predict"] for p in payloads] == [60, 60, 40, 40, 60, 60, 60, 60, 60, 60, 40, 1]
     for payload in payloads:
         assert payload["options"]["temperature"] == 0
         assert payload["options"]["num_ctx"] == 4096
@@ -141,7 +141,7 @@ def test_bench_timings(monkeypatch, capsys):
     monkeypatch.setattr(probe_ollama, "OllamaBackend", lambda: real)
     probe_ollama.main(["--bench", "3"])
     output = capsys.readouterr().out
-    assert len(requests) == 3
+    assert len(requests) == 6
     assert "wall median_ms=" in output
     for key, value in [("load_duration", 1), ("prompt_eval_duration", 2), ("eval_duration", 3)]:
         assert f"{key} median_ms={value:.1f} min_ms={value:.1f} max_ms={value:.1f} n=3" in output

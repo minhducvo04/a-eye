@@ -26,7 +26,7 @@ def backend(answer, requests=None):
         if requests is not None:
             requests.append(request)
         return httpx.Response(200, json={"message": {"content": answer}})
-    return OllamaBackend(transport=httpx.MockTransport(handle))
+    return OllamaBackend(model="qwen2.5vl:7b-q4_K_M", transport=httpx.MockTransport(handle))
 
 
 def check(operation, result):
@@ -49,7 +49,7 @@ def test_locate_resize_and_fences(body):
     image = Image.open(BytesIO(base64.b64decode(payload["messages"][0]["images"][0])))
     assert image.size == (1280, 960)
     assert "DDR5_A2" not in payload["messages"][0]["content"]
-    assert len(requests) == 3
+    assert len(requests) == 4
     assert requests[0].extensions["timeout"]["read"] == 8
 
 
@@ -90,10 +90,10 @@ def test_health(vram, expected):
         rows = [{"name": model, "size": 100, "size_vram": vram}]
         if request.url.path == "/api/ps" and vram is None:
             rows = []
-        return httpx.Response(200, json={"models": rows})
+        return httpx.Response(200, json={"models": rows + [{"name": "qwen2.5vl:7b-q4_K_M"}]})
     result = OllamaBackend(model=model, transport=httpx.MockTransport(handle)).health()
     validate("health_response", result)
-    assert result == {"ok": True, "models": [model], "gpu": expected, "fake": False}
+    assert result == {"ok": True, "models": [model, "qwen2.5vl:7b-q4_K_M"], "gpu": expected, "fake": False}
 
 
 @pytest.mark.parametrize("error", [httpx.ConnectError, httpx.ReadTimeout])
@@ -107,7 +107,7 @@ def test_auto_fallback_and_retry(body, monkeypatch, caplog, error):
     monkeypatch.setenv("VISION_BACKEND", "auto")
     monkeypatch.setattr(OllamaBackend, "warmup", lambda self: None)
     monkeypatch.setattr(service, "backend", service.select_backend(
-        OllamaBackend(transport=httpx.MockTransport(handle))))
+        OllamaBackend(model="qwen2.5vl:7b-q4_K_M", transport=httpx.MockTransport(handle))))
     with TestClient(service.app) as client:
         request = {"image_b64": body["image_b64"], "candidates": ["ram_stick"]}
         assert client.post("/identify", json=request).json()["conf"] == .9
@@ -136,8 +136,8 @@ def test_selection_and_env(monkeypatch):
     monkeypatch.delenv("VISION_BACKEND", raising=False)
     assert isinstance(service.select_backend(), FakeBackend)
     monkeypatch.setenv("OLLAMA_URL", "http://pc:11434/")
-    monkeypatch.setenv("VISION_MODEL", "configured-model")
-    real = backend('{}')
+    monkeypatch.setenv("VISION_GROUND_MODEL", "configured-model")
+    real = OllamaBackend(transport=httpx.MockTransport(lambda request: httpx.Response(200)))
     assert real.url == "http://pc:11434" and real.model == "configured-model"
     monkeypatch.setenv("VISION_BACKEND", "ollama")
     assert service.select_backend(real) is real
@@ -148,7 +148,7 @@ def test_selection_and_env(monkeypatch):
 def test_auto_does_not_hide_http_errors(body):
     from vision.ollama import AutoBackend
     from vision.fake import FakeBackend
-    real = OllamaBackend(transport=httpx.MockTransport(lambda request: httpx.Response(500)))
+    real = OllamaBackend(model="qwen2.5vl:7b-q4_K_M", transport=httpx.MockTransport(lambda request: httpx.Response(500)))
     with pytest.raises(httpx.HTTPStatusError):
         AutoBackend(real, FakeBackend()).locate(body, "ok")
 
@@ -163,7 +163,7 @@ def test_probe_offline(monkeypatch, capsys):
             return httpx.Response(200, json={"models": []})
         answer = [{"label": "CPU_FAN", "bbox_2d": [x * 1280, y * 960, (x + w) * 1280, (y + h) * 960]}]
         return httpx.Response(200, json={"message": {"content": json.dumps(answer)}})
-    real = OllamaBackend(transport=httpx.MockTransport(handle))
+    real = OllamaBackend(model="qwen2.5vl:7b-q4_K_M", transport=httpx.MockTransport(handle))
     monkeypatch.setattr(probe_ollama, "OllamaBackend", lambda: real)
     probe_ollama.main()
     output = capsys.readouterr().out
