@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  agoLine, arrowTo, cleanSettings, countAt, countLine, createMemoryApi, matchLive, parseTag, placeFor, retentionLine, roomAllowed,
+  agoLine, arrowTo, cleanSettings, countAt, countLine, createMemoryApi, liveTarget, matchLive, parseTag, placeFor, retentionLine, roomAllowed,
 } from "./memory.js";
 
 test("answer line says how long ago and where", () => {
@@ -19,6 +19,20 @@ test("live match and arrow", () => {
   const { from, to } = arrowTo([0.6, 0.2, 0.2, 0.2]);
   assert.deepEqual(from, { x: 0.5, y: 0.96 });
   assert.ok(Math.abs(to.x - 0.7) < 1e-9 && Math.abs(to.y - 0.42) < 1e-9);
+});
+
+test("Now panel: server live box first, tracker label match only without it", () => {
+  const tracked = [{ id: "o2", label: "cup", bbox: [0.1, 0.1, 0.1, 0.1], conf: 0.8 }];
+  // keys in view per the server, though no tracker box is labelled keys
+  const hit = { item: "keys", objects: [{ label: "keys" }], live: { object_id: "o7", bbox: [0.5, 0.5, 0.1, 0.1] } };
+  assert.deepEqual(liveTarget(hit, tracked), { id: "o7", label: "keys", bbox: [0.5, 0.5, 0.1, 0.1], conf: 1 });
+  // a fresh tracker box with the same id moves the arrow
+  const moved = liveTarget(hit, [{ id: "o7", label: "thing", bbox: [0.4, 0.4, 0.1, 0.1], conf: 0.9 }]);
+  assert.deepEqual(moved.bbox, [0.4, 0.4, 0.1, 0.1]);
+  assert.equal(moved.label, "keys");
+  // no live field: old label match
+  assert.equal(liveTarget({ objects: [{ label: "cup" }] }, tracked).id, "o2");
+  assert.equal(liveTarget({ objects: [{ label: "keys" }] }, tracked), null);
 });
 
 test("caregiver homes answer where", () => {
