@@ -6,7 +6,7 @@ Implemented in the working tree; **not committed**. Software checks pass. Arduin
 
 - `server/trigger.py`: authenticated owner mailbox, POST `/api/trigger`, owner-wide five-second trigger cooldown (429 + Retry-After), status, client polling/acknowledgement, and presence lease renewal. Existing `/api/` token/Access middleware handles auth; trigger routes additionally reject the unauthenticated local/open identity.
 - `server/app.py`: exactly one added router-registration line. Dynamic import keeps registration inside the requested one-line integration boundary. **No `server/ws2.py` or contract changes.**
-- `client-web/trigger.js`, `client-web/agent.js`: poll only while an agent call is connected; deduplicate wakes; start the existing microphone route and feed one reminder into the existing speech path. No camera callback, camera message, or pairing action. Stop polling on socket close/end.
+- `client-web/trigger.js`, `client-web/agent.js`: poll only while an agent call is connected; deduplicate wakes; resume the existing microphone route only if `ui.getState().micOn` is already true and feed one reminder into the existing speech path. Wake never turns on a user-off mic; it still speaks the reminder. No camera callback, camera message, or pairing action. Stop polling on socket close/end.
 - `device/arduino/aeye_wake/aeye_wake.ino`: D2 PIR, D9/D10/D11 RGB, 115200 baud P1/P0 transitions plus one-second state heartbeats; L OFF/ARMED/EVENT/SESSION; shared-leg polarity constant; only one color at a time; five-second command-loss watchdog.
 - `scripts/wake_bridge.py`: pyserial discovery or explicit port, five-second minimum cooldown, configurable quiet window (30 s default), high-state/short-pulse retention, server LED state, one-second LED keepalives, `--fake` serial mode. Added `pyserial` to `requirements.txt` because USB serial access needs it.
 - `server/test_trigger.py`, `scripts/test_wake_bridge.py`, `client-web/trigger.test.mjs`: auth and valid control, owner isolation, rate limit, real ws2-backed wake mailbox delivery, camera-off preservation, acknowledgement/expiry/disconnect state, no invented memory fact, short arm-motion pulses, and network failure.
@@ -17,7 +17,7 @@ Implemented in the working tree; **not committed**. Software checks pass. Arduin
 
 ```text
 PIR / Shortcut → authenticated trigger → owner's live client mailbox
-                                         ↓ starts existing mic / speaks local line
+                                         ↓ resumes enabled mic / speaks local line
                           client ACK → server state → bridge → LED
 ```
 
@@ -33,6 +33,22 @@ Local zone text uses an existing memory **place tag**: its name matches the zone
 The server's default wake lease is 30 seconds. Bridge positive PIR reports renew it with `--quiet`; P0 never immediately ends it. Continuous high holds it awake, and subsequent short P1 pulses renew it. Quiet expiry rearms the indicator; it does not turn off a manually chosen microphone or camera. `POST /api/trigger/presence` renews only an already-active same-zone lease and does not generate speech. Changing `source` or `zone` cannot evade the trigger cooldown.
 
 ## Verification on this working tree
+
+### Independent-review High fix
+
+Wake now calls `startMic()` only when `ui.getState().micOn` is already true; a user-off mic stays off while the reminder still enters the existing `say` path. The Low place-reminder finding is intentionally unchanged. Unattended listening requires leaving the mic enabled.
+
+Fail-before proof: `node --test client-web/trigger.test.mjs` - FAIL (3 tests, 2 pass, 1 fail). The new mic-off regression observed one `startMic()` call instead of zero; the mic-on control passed.
+
+Test: `node --test client-web/trigger.test.mjs` - PASS (3 tests, 3 pass, 0 fail).
+
+Test: `node --test client-web/` - PASS (141 tests, 141 pass, 0 fail).
+
+Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest server/test_trigger.py scripts/test_wake_bridge.py -q` - PASS (5 passed in 0.88s).
+
+The regression executes the actual `startTrigger` function with stubbed mic and speech boundaries; it does not prove physical microphone or speaker behavior. Changes remain uncommitted.
+
+### Original implementation checks
 
 Python executable: `/Users/minhducvo/Projects/a-eye/.venv/bin/python` (shared existing environment).
 
