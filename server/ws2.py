@@ -271,11 +271,19 @@ async def websocket(ws: WebSocket):
         try:
             voice.turn = msg.get('turn_id')  # Cartesia keeps one context (prosody) per turn
             pending = None
-            async for chunk in voice.say(msg['utterance_id'], msg['text']):
-                if pending is not None:
-                    yield message('audio', agent=msg['agent'], utterance_id=msg['utterance_id'],
-                                  sample_rate=16000, pcm16_b64=base64.b64encode(pending).decode(), final=False)
-                pending = chunk
+            try:
+                async for chunk in voice.say(msg['utterance_id'], msg['text']):
+                    if pending is not None:
+                        yield message('audio', agent=msg['agent'], utterance_id=msg['utterance_id'],
+                                      sample_rate=16000, pcm16_b64=base64.b64encode(pending).decode(), final=False)
+                    pending = chunk
+            except httpx.HTTPError as exc:
+                # A failed "Let me think back" must not abort the lookup and final text answer.
+                event('dependency_error', session.session_id, dependency='tts', error=type(exc).__name__)
+                if msg.get('turn_id'):
+                    await send(message('turn', turn_id=msg['turn_id'], stage='speaking',
+                                       at_ms=int(datetime.now(timezone.utc).timestamp() * 1000),
+                                       detail=f'Voice unavailable ({type(exc).__name__})'))
             yield message('audio', agent=msg['agent'], utterance_id=msg['utterance_id'],
                           sample_rate=16000, pcm16_b64=base64.b64encode(pending or b'').decode(), final=True)
         finally:

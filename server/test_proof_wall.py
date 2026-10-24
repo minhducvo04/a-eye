@@ -1,11 +1,59 @@
 import asyncio
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from server import privacy
 from server.agent import Session, run_turn
 from server.test_agent import LLM, Vision
+
+
+@pytest.mark.parametrize('error', [httpx.ConnectTimeout, httpx.ReadTimeout])
+def test_memory_final_survives_preface_tts_failure(tmp_path, monkeypatch, error):
+    from server import memory
+    from server.app import create_app
+    from scripts.offline_check import seed
+    from voice.kokoro import KokoroAdapter
+    monkeypatch.setenv('A_EYE_MOCK', '1')
+    monkeypatch.setenv('LOCAL_ONLY', '1')
+    monkeypatch.setenv('ROUTER', 'off')
+    monkeypatch.delenv('A_EYE_TOKEN', raising=False)
+    requests = []
+
+    def tts(request):
+        import json
+        text = json.loads(request.content)['text']
+        requests.append(text)
+        if text == 'Let me think back.':
+            raise error('synthetic voice failure', request=request)
+        return httpx.Response(200, content=b'\x01\x00' * 2048)
+
+    app = create_app()
+    app.state.memories = memory.Memories(base=tmp_path)
+    store = app.state.memories.for_owner('local')
+    store.save_settings(dict(consent=dict(person=True, caregiver=True), remembering=True,
+                             items=[dict(item='keys', home='blue tray')], rooms=['kitchen'], kept_days=7))
+    seed(store)
+    app.state.voice_factory_v2 = lambda: KokoroAdapter(
+        client=httpx.AsyncClient(transport=httpx.MockTransport(tts)))
+    with TestClient(app) as client, client.websocket_connect('/ws2') as ws:
+        ws.send_json(dict(v=2, type='hello', session_id='recall', private=True, pack='general', camera=False))
+        while ws.receive_json().get('type') != 'agent_state':
+            pass
+        ws.send_json(dict(v=2, type='user_text', session_id='recall', final=True,
+                          text='Where did I leave my keys yesterday?'))
+        messages = []
+        while True:
+            msg = ws.receive_json()
+            messages.append(msg)
+            if msg['type'] == 'turn' and msg['stage'] in ('done', 'failed', 'cancelled'):
+                break
+        assert any(m['type'] == 'find_item' and m['found'] for m in messages), messages
+        assert any(m['type'] == 'say' and m.get('final') and 'yesterday' in m['text'] for m in messages)
+        assert any(m['type'] == 'audio' and m.get('pcm16_b64') for m in messages)
+        assert messages[-1]['stage'] == 'done'
+        assert requests[-1] != 'Let me think back.'
 
 
 def test_private_expert_answers_locally_without_handoff():

@@ -2,8 +2,11 @@
 import asyncio
 import os
 
+import httpx
+
 from contracts import validate
 from server.box_client import BoxClient
+from server.logs import event
 from voice.adapter import VoiceAdapter
 
 
@@ -33,14 +36,23 @@ class KokoroAdapter(VoiceAdapter):
         self._begin(utterance_id)
         self.tasks[utterance_id] = asyncio.current_task()
         try:
-            async with self.box.client.stream('POST', self.box.url + '/tts', json=dict(
-                    text=text, voice=self.voice if self.voice in KOKORO_VOICES else default_voice()), timeout=5) as response:
-                response.raise_for_status()
-                async for chunk in response.aiter_bytes(2048):
-                    if self._stopped(utterance_id):
-                        return
-                    if chunk:
-                        yield chunk
+            for attempt in range(2):
+                try:
+                    async with self.box.client.stream('POST', self.box.url + '/tts', json=dict(
+                            text=text, voice=self.voice if self.voice in KOKORO_VOICES else default_voice()), timeout=5) as response:
+                        response.raise_for_status()
+                        async for chunk in response.aiter_bytes(2048):
+                            if self._stopped(utterance_id):
+                                return
+                            if chunk:
+                                yield chunk
+                    break
+                except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                    # No request reached Kokoro: one new connection is safe. Never replay a failed read
+                    # or partial stream, which could duplicate speech or leave synthesis running.
+                    if attempt:
+                        raise
+                    event('dependency_retry', dependency='tts', error=type(exc).__name__)
             if not self._stopped(utterance_id):
                 self._emit_spoken(utterance_id)
         finally:
