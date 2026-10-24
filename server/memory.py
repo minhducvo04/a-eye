@@ -31,6 +31,7 @@ from server.logs import event
 
 ROOT = Path(__file__).resolve().parents[1] / 'data' / 'private' / 'memory'
 CROP_SIDE = 224
+GROUND_GAP_S = float(os.environ.get('A_EYE_MEMORY_GROUND_GAP_S', '3'))
 _ID = re.compile(r'^[a-z0-9][a-z0-9-]{0,39}$')
 _PERSON = re.compile(r'\b(person|people|man|woman|boy|girl|child|face|baby)\b', re.I)
 _WORD = re.compile(r'[a-z0-9]+')
@@ -375,14 +376,14 @@ class Writer:
         self.purged_at = 0.0
 
     async def ground(self, tags, jpeg_b64, note):
-        """Ask our vision host for the tagged things (the scene loop only asks the pack's own queries).
-        Runs when the note changed, or every 30 s, and only while tags exist."""
+        """Ask our vision host for the tagged things on every scan and activity frame (the scene loop only asks the
+        pack's own queries, and a caption often leaves small things out). At most one call every GROUND_GAP_S."""
         if not tags or self.vision is None:
             return []
         now = monotonic()
-        if (note, ) == getattr(self, '_ground_note', None) and now - self.grounded_at < 30:
+        if now - self.grounded_at < GROUND_GAP_S:
             return []
-        self._ground_note, self.grounded_at = (note, ), now
+        self.grounded_at = now
         items = [t['label'] for t in tags.values() if t['kind'] == 'object'][:2]
         places = [t['label'] for t in tags.values() if t['kind'] == 'place'][:1]
         queries = items + ([f"{places[0]} closest to the {items[0]}"] if places and items else places)
@@ -414,6 +415,10 @@ class Writer:
                     continue            # places are context ("under the left red cup"), not items to crop
                 if words(tag['label']) & words(obj['label']) or words(tag['name']) & words(obj['label']):
                     hits.append((tag, obj))
+        seen = {t['name'] for t, _ in hits}
+        for tag in tags.values():            # the caption names it but grounding gave no box: keep a text sighting
+            if tag['kind'] == 'object' and tag['name'] not in seen and (words(tag['label']) | words(tag['name'])) & words(note):
+                hits.append((tag, dict(id='caption', label=tag['label'], bbox=None)))
         key = (note, tuple(sorted({t['name'] for t, _ in hits})))
         if not note or key == self.last_key:
             self._skip('unchanged')
@@ -424,6 +429,9 @@ class Writer:
                       labels=[o['label'] for o in objects][:12], tags=[], crops={})
         for tag, obj in hits:
             near = None
+            if obj['bbox'] is None:
+                record['tags'].append(dict(tag=tag['name'], label=obj['label'], bbox=None, near=None, text_only=True))
+                continue
             others = [o for o in objects if o is not obj]
             places = [o for o in others for t in tags.values()
                       if t['kind'] == 'place' and words(t['label']) & words(o['label'])]
@@ -445,6 +453,8 @@ class Writer:
             else:
                 jpeg = base64.b64decode(jpeg_b64)
                 for tag, obj in hits:
+                    if obj['bbox'] is None:
+                        continue
                     piece, inner = await asyncio.to_thread(crop_jpeg, jpeg, obj['bbox'])
                     if piece:
                         record['crops'][tag['name']] = self.store.save_crop(piece)
@@ -478,6 +488,31 @@ def spoken_time(t, now):
     if (today - moment.date()).days == 1:
         return f'yesterday at {clock}'
     return moment.strftime('%A at ') + clock
+
+
+def arrived(sightings, target, same=0.08):
+    """The moment the item reached where it is now: the newest sighting with a box, walked back over earlier
+    boxed sightings at about the same spot (text-only sightings in between are skipped). Without any box, the
+    newest sighting. Records are in write order."""
+    def spot(record):
+        entry = next((e for e in record.get('tags') or [] if words(e['tag']) & words(target) and e.get('bbox')), None)
+        if not entry:
+            return None
+        near = entry.get('near') or {}
+        return center(entry['bbox']) + (near.get('label'), center(near['bbox']) if near.get('bbox') else None)
+    boxed = [r for r in sightings if spot(r)]
+    if not boxed:
+        return sightings[-1]
+    best = boxed[-1]
+    here = spot(best)
+    for record in reversed(boxed[:-1]):
+        there = spot(record)
+        moved = ((there[0] - here[0]) ** 2 + (there[1] - here[1]) ** 2) ** 0.5 > same
+        if moved or there[2] != here[2] or (there[3] and here[3] and
+                                            ((there[3][0] - here[3][0]) ** 2 + (there[3][1] - here[3][1]) ** 2) ** 0.5 > same):
+            break
+        best = record
+    return best
 
 
 def item_from(question):
@@ -520,10 +555,42 @@ def place_words(tag_entry, tags=None):
     return f"{rel} the {side}{place['name'] if place else label}"
 
 
-async def ground_live(vision, jpeg_b64, item, entry, caption=''):
-    """Live objects for the arrow: the item itself (only when the live caption mentions it: grounding alone
-    can invent a box for a hidden thing), and its last place by side ("the left red cup")."""
-    queries = [item] if words(item) & words(caption) else []
+def iou(a, b):
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    w = max(0.0, min(ax + aw, bx + bw) - max(ax, bx))
+    h = max(0.0, min(ay + ah, by + bh) - max(ay, by))
+    inter = w * h
+    union = aw * ah + bw * bh - inter
+    return inter / union if union > 0 else 0.0
+
+
+async def item_box_is_real(box, item, places, jpeg_b64, detector=None):
+    """Grounding can return a box for a hidden thing, and it is then the cup it hides under (seen live: the middle
+    cup came back as "keys"). Accept the item's box only when it is small and does not coincide with a place box or
+    a detector hit for something else (YOLO on our GPU box; COCO knows cups and bowls)."""
+    if box[2] * box[3] > 0.15:
+        return False
+    if any(iou(box, p) >= 0.5 for p in places):
+        return False
+    try:
+        from server.box_client import BoxClient
+        client = detector or BoxClient()
+        try:
+            detections = await client.detect(jpeg_b64)
+        finally:
+            if detector is None:
+                await client.aclose()
+    except Exception:
+        return not places          # without the detector, only trust a box when no place box could contradict it
+    return not any(iou(box, d['bbox']) >= 0.5 and not (words(d.get('label')) & words(item)) for d in detections)
+
+
+async def ground_live(vision, jpeg_b64, item, entry, caption='', detector=None):
+    """Live objects for the arrow: the item itself (when the caption names it, or when its grounded box passes
+    item_box_is_real), and its last place by side ("the left red cup")."""
+    named = bool(words(item) & words(caption))
+    queries = [item]
     place = place_words(entry)
     if place:
         queries.append(place.split(' the ', 1)[1])
@@ -537,7 +604,14 @@ async def ground_live(vision, jpeg_b64, item, entry, caption=''):
         if entry and entry.get('near') and label != item:
             label = entry['near']['label']
         objects.append(dict(obj, id=f'live{i}', label=label))
-    return dict(caption='', objects=objects)
+    places = [o['bbox'] for o in objects if o['label'] != item]
+    kept = []
+    for obj in objects:
+        if obj['label'] == item and not named and not await item_box_is_real(obj['bbox'], item, places, jpeg_b64,
+                                                                            detector):
+            continue
+        kept.append(obj)
+    return dict(caption='', objects=kept)
 
 
 async def find(store, question, embedder=None, scene=None, now=None, vision=None, live_frame=None):
@@ -552,11 +626,11 @@ async def find(store, question, embedder=None, scene=None, now=None, vision=None
     hit, how = None, None
     exact = [r for r in records if any(words(e['tag']) & words(target) for e in r.get('tags') or [])]
     if exact:
-        hit, how = max(exact, key=lambda r: r['t']), 'tag'
+        hit, how = arrived(exact, target), 'tag'
     if hit is None:
         labelled = [r for r in records if any(words(label) & words(item) for label in r.get('labels') or [])]
         if labelled:
-            hit, how = max(labelled, key=lambda r: r['t']), 'label'
+            hit, how = labelled[max(range(len(labelled)), key=lambda i: (labelled[i]['t'], i))], 'label'
     if hit is None and records:
         try:
             query = (await asyncio.to_thread((embedder or GemmaEmbedder()).embed, [item], True))[0]
@@ -592,13 +666,15 @@ async def find(store, question, embedder=None, scene=None, now=None, vision=None
             scene = grounded
     result['live'] = live_target(scene, item, entry)
     result['live_scene'] = scene if result['live'] else None
-    where = place or f'where I saw "{hit["note"]}"'
+    seen = (f"I last saw your {item} {place}, {when}." if place else
+            f"I last saw your {item} {when}: {hit['note'].rstrip('.')}." if how in ('label', 'similar') else
+            f"I last saw your {item} {when}.")
     if home and place and words(home) & words(place):
-        line = f"Your {item} {'are' if item.endswith('s') else 'is'} {where}, where {'they live' if item.endswith('s') else 'it lives'}. Seen {when}."
+        line = f"Your {item} {'are' if item.endswith('s') else 'is'} {place}, where {'they live' if item.endswith('s') else 'it lives'}. Seen {when}."
     elif home:
-        line = f"I last saw your {item} {where}, {when}. Their home is the {home}."
+        line = f"{seen} Their home is the {home}."
     else:
-        line = f"I last saw your {item} {where}, {when}."
+        line = seen
     if result['live']:
         line += " I'm pointing at it now." if result['live']['what'] == 'item' else " I'm pointing at that spot."
     result['say'] = line

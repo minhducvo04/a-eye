@@ -80,6 +80,8 @@ async def forget(request: Request):
     if scope == 'last':
         item = item or getattr(session, 'memory_last_item', None)
         deleted = store.forget_item(item) if item else store.forget_since(store.clock() - 300)
+        if rewind is not None and rewind.clips:
+            await rewind.forget(local=True)       # "forget that" also clears this call's Rewind clips
     elif scope == 'item' and item and item.strip():
         deleted = store.forget_item(item)
     elif scope == 'today':
