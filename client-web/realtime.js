@@ -456,3 +456,39 @@ export function devHudPosition(view, poses) {
   }
   return fallback;
 }
+
+// Neural VAD barge-in, in two steps so speaker echo cannot cut the reply by itself:
+// the first speech frame ducks playback at once; speech that lasts minSpeechMs stops it;
+// a misfire (too short, usually echo or a click) restores it. Pure: the caller applies actions.
+export const BARGE_VAD = Object.freeze({
+  model: "v5",
+  positiveSpeechThreshold: 0.5,
+  negativeSpeechThreshold: 0.35,
+  minSpeechMs: 120,
+  redemptionMs: 450,
+  preSpeechPadMs: 200,
+});
+
+export function initialBarge() {
+  return { phase: "idle", ducked: false };
+}
+
+// event: "start" | "real_start" | "misfire" | "end"; speaking: is the AI talking right now.
+export function nextBarge(state, event, speaking) {
+  const prev = state || initialBarge();
+  if (event === "start") {
+    if (speaking && !prev.ducked) return { state: { phase: "maybe", ducked: true }, action: "duck" };
+    return { state: { ...prev, phase: "maybe" }, action: null };
+  }
+  if (event === "real_start") {
+    if (speaking) return { state: { phase: "user", ducked: false }, action: "stop" };
+    return { state: { phase: "user", ducked: false }, action: prev.ducked ? "unduck" : null };
+  }
+  if (event === "misfire") {
+    return { state: initialBarge(), action: prev.ducked ? "unduck" : null };
+  }
+  if (event === "end") {
+    return { state: initialBarge(), action: prev.ducked ? "unduck" : (prev.phase === "user" ? "flush" : null) };
+  }
+  return { state: prev, action: null };
+}

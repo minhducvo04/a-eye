@@ -447,3 +447,104 @@ test('late early-final recognition cannot barge into the reply; sound timing wai
   voice.stopListening();
   assert.equal(voice.isListening(), false);
 });
+
+function fakeVadLib() {
+  const lib = { options: null, started: 0, destroyed: 0 };
+  lib.MicVAD = {
+    async new(options) {
+      lib.options = options;
+      return {
+        start() { lib.started += 1; },
+        destroy() { lib.destroyed += 1; },
+      };
+    },
+  };
+  return lib;
+}
+
+function manualClock() {
+  const timers = new Map();
+  let next = 1;
+  return {
+    setTimeout(fn, ms) { timers.set(next, fn); return next++; },
+    clearTimeout(id) { timers.delete(id); },
+    runAll() { for (const [id, fn] of [...timers]) { timers.delete(id); fn(); } },
+    size() { return timers.size; },
+  };
+}
+
+test("neural VAD loads pinned v5 settings and stops on stop listening", async () => {
+  const lib = fakeVadLib();
+  const h = harness({ options: { neuralVad: true, vadLoader: async () => lib } });
+  h.voice.startListening();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(lib.started, 1);
+  assert.equal(lib.options.model, "v5");
+  assert.equal(lib.options.minSpeechMs, 120);
+  assert.match(lib.options.baseAssetPath, /vad-web@0\.0\.31\/dist\/$/);
+  assert.match(lib.options.onnxWASMBasePath, /onnxruntime-web@1\.22\.0\/dist\/$/);
+  assert.equal(h.voice.neuralVadActive(), true);
+  h.voice.stopListening();
+  assert.equal(lib.destroyed, 1);
+  assert.equal(h.voice.neuralVadActive(), false);
+});
+
+test("VAD speech start pauses speech, real start barges at once, misfire resumes", () => {
+  const synth = fakeSynth();
+  synth.pauses = 0;
+  synth.resumes = 0;
+  synth.pause = () => { synth.pauses += 1; };
+  synth.resume = () => { synth.resumes += 1; };
+  const h = harness({ synth, options: { neuralVad: false } });
+  h.voice.startListening();
+  h.voice.speak("u1", "The cable goes in the CPU fan header.");
+  h.voice.vadEvent("start");
+  assert.equal(synth.pauses, 1);
+  h.voice.vadEvent("misfire");
+  assert.equal(synth.resumes, 1);
+  assert.equal(h.events.barges.length, 0);
+  assert.equal(h.voice.isSpeaking(), true);
+  h.voice.vadEvent("start");
+  h.setTime(130);
+  h.voice.vadEvent("real_start");
+  assert.equal(h.events.barges.length, 1);
+  assert.equal(h.events.barges[0][0], "u1");
+  assert.equal(h.voice.isSpeaking(), false);
+  assert.ok(synth.cancels >= 1);
+  assert.equal(synth.resumes, 2); // resumed before cancel so the next line is not stuck paused
+});
+
+test("VAD end of speech sends the latest words before the recognizer's final", () => {
+  const clock = manualClock();
+  const h = harness({ options: { neuralVad: false, clock } });
+  h.voice.startListening();
+  h.voice.vadEvent("start");
+  h.voice.vadEvent("real_start");
+  h.rec.onresult(result("where does this go", false));
+  h.voice.vadEvent("end");
+  h.rec.onresult(result("where does this go now", false));
+  clock.runAll();
+  assert.deepEqual(h.events.finals, ["where does this go now"]);
+  h.rec.onresult({ results: [{ 0: { transcript: "where does this go now" }, isFinal: true }] });
+  assert.deepEqual(h.events.finals, ["where does this go now"]);
+});
+
+test("ducked Web Audio playback stays ducked for chunks that arrive mid-duck", () => {
+  const ctx = fakeContext();
+  ctx.gains = [];
+  ctx.createGain = () => {
+    const node = { gain: { value: 1 }, connect() {}, disconnect() {} };
+    ctx.gains.push(node);
+    return node;
+  };
+  const h = harness({ ctx, options: { neuralVad: false } });
+  h.voice.startListening();
+  h.voice.playPcm("u2", pcm16Base64([1000, 2000, 3000, 4000]), false);
+  const out = ctx.gains[0];
+  h.voice.vadEvent("start");
+  assert.ok(out.gain.value < 0.2);
+  h.voice.playPcm("u2", pcm16Base64([1000, 2000]), false);
+  assert.ok(out.gain.value < 0.2);
+  h.voice.vadEvent("misfire");
+  assert.equal(out.gain.value, 1);
+});

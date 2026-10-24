@@ -257,3 +257,16 @@ test("dev HUD stays off the presence orbs", () => {
   assert.equal(overlaps(moved, helper), false);
   assert.equal(overlaps(moved, shopper), false);
 });
+
+test("barge gate: duck on start, stop on real start, unduck on misfire, flush on end", async () => {
+  const { initialBarge, nextBarge, BARGE_VAD } = await import("./realtime.js");
+  let r = nextBarge(initialBarge(), "start", true);
+  assert.equal(r.action, "duck");
+  assert.equal(nextBarge(r.state, "misfire", true).action, "unduck");
+  assert.equal(nextBarge(r.state, "real_start", true).action, "stop");
+  r = nextBarge(initialBarge(), "start", false);
+  assert.equal(r.action, null);
+  r = nextBarge(r.state, "real_start", false);
+  assert.equal(nextBarge(r.state, "end", false).action, "flush");
+  assert.ok(BARGE_VAD.minSpeechMs <= 150);
+});

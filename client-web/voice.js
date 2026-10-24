@@ -1,4 +1,5 @@
 import { createEarlyFinal } from "./turn.js";
+import { BARGE_VAD, initialBarge, nextBarge } from "./realtime.js";
 
 // Browser mic, speech-to-text, and talk-back for the call page.
 // No recording, no storage, and no logging. Status leaves only through onState.
@@ -15,6 +16,12 @@ const VAD_UP = 0.2;
 const VAD_DOWN = 0.05;
 const SPEECH_RMS = 0.02;
 const HANG_MS = 400;
+// Silero VAD (v5) in the browser, pinned. Loaded lazily from the CDN; any failure falls back to word barge-in.
+export const VAD_ORT_BASE = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
+export const VAD_WEB_BASE = "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.31/dist/";
+const DUCK_LEVEL = 0.15;
+// After the VAD hears the end of speech, send the latest words once the recognizer is quiet this long.
+export const VAD_FLUSH_MS = 120;
 
 export function wordCount(text) {
   return wordsOf(text).length;
@@ -163,8 +170,12 @@ export function createVoice(options = {}) {
   const recognitionFactory = options.recognitionFactory || defaultRecognitionFactory;
   const audioContextFactory = options.audioContextFactory || defaultAudioContextFactory;
   const customAudio = Object.prototype.hasOwnProperty.call(options, "audioContextFactory");
+  const clock = options.clock || globalThis;
+  const onVad = options.onVad || noop;
+  const neuralWanted = options.neuralVad !== undefined ? Boolean(options.neuralVad) : defaultNeuralWanted();
+  const vadLoader = options.vadLoader || loadVadWeb;
 
-  const early = createEarlyFinal(onFinal, options.clock || globalThis);
+  const early = createEarlyFinal(onFinal, clock);
   let recGeneration = 0;
   let rec = null;
   try {
@@ -215,6 +226,12 @@ export function createVoice(options = {}) {
   let meterTimer = 0;
   let meterSmooth = 0;
   const meterNodes = [];
+  let neural = null;
+  let neuralGen = 0;
+  let barge = initialBarge();
+  let lastInterim = null;
+  let flushTimer = 0;
+  let synthPaused = false;
 
   if (rec) {
     rec.onresult = handleResult;
@@ -247,8 +264,12 @@ export function createVoice(options = {}) {
     return clamp01(volume);
   }
 
+  function outputLevel() {
+    return barge.ducked ? effectiveVolume() * DUCK_LEVEL : effectiveVolume();
+  }
+
   function applyOutput() {
-    const level = effectiveVolume();
+    const level = outputLevel();
     if (outputGain && outputGain.gain) outputGain.gain.value = level;
     if (currentUtter) currentUtter.volume = level;
   }
@@ -276,6 +297,9 @@ export function createVoice(options = {}) {
     pcmFinal = false;
     nextTime = null;
     speaking = false;
+    if (barge.ducked) barge = { ...barge, ducked: false };
+    if (outputGain && outputGain.gain) outputGain.gain.value = effectiveVolume();
+    resumeSynth();
     if (synth && typeof synth.cancel === "function") {
       try {
         synth.cancel();
@@ -310,10 +334,12 @@ export function createVoice(options = {}) {
     }
     if (!speaking) setState("listening");
     startBrowserMeter();
+    void startNeural();
   }
 
   function stopListening() {
     listening = false;
+    stopNeural();
     early.reset();
     stopBrowserMeter();
     if (serverMode) {
@@ -373,8 +399,14 @@ export function createVoice(options = {}) {
       // is the speaker heard by the mic. Drop it instead of treating it as the user.
       if (speaking && isEcho(text, spokenText)) continue;
       considerBarge(text);
-      if (row && row.isFinal) early.final(text, resultId);
-      else if (early.interim(text, resultId)) onInterim(text);
+      if (row && row.isFinal) {
+        early.final(text, resultId);
+        lastInterim = null;
+      } else if (early.interim(text, resultId)) {
+        lastInterim = { text, id: resultId };
+        if (flushTimer) scheduleFlush();
+        onInterim(text);
+      }
     }
   }
 
@@ -754,10 +786,10 @@ export function createVoice(options = {}) {
     if (!ctx || typeof ctx.createGain !== "function") return ctx ? ctx.destination : null;
     if (!outputGain) {
       outputGain = ctx.createGain();
-      if (outputGain.gain) outputGain.gain.value = effectiveVolume();
+      if (outputGain.gain) outputGain.gain.value = outputLevel();
       if (ctx.destination && typeof outputGain.connect === "function") outputGain.connect(ctx.destination);
     } else if (outputGain.gain) {
-      outputGain.gain.value = effectiveVolume();
+      outputGain.gain.value = outputLevel();
     }
     return outputGain;
   }
@@ -859,6 +891,103 @@ export function createVoice(options = {}) {
     return gain;
   }
 
+  function resumeSynth() {
+    if (!synthPaused) return;
+    synthPaused = false;
+    try {
+      if (synth && typeof synth.resume === "function") synth.resume();
+    } catch {
+      // ignore
+    }
+  }
+
+  // Applies barge.ducked (already set by nextBarge) to Web Audio gain and speechSynthesis.
+  function duck(on) {
+    if (outputGain && outputGain.gain) outputGain.gain.value = outputLevel();
+    if (on && synthActive && synth && typeof synth.pause === "function") {
+      try {
+        synth.pause();
+        synthPaused = true;
+      } catch {
+        // ignore
+      }
+    } else if (!on) {
+      resumeSynth();
+    }
+  }
+
+  function scheduleFlush() {
+    if (serverMode) return;
+    if (flushTimer) clock.clearTimeout(flushTimer);
+    flushTimer = clock.setTimeout(() => {
+      flushTimer = 0;
+      const pending = lastInterim;
+      lastInterim = null;
+      if (pending && listening && !early.hasSent(pending.id)) early.final(pending.text, pending.id);
+    }, VAD_FLUSH_MS);
+  }
+
+  // One VAD event: duck on the first speech frame, stop after minSpeechMs, restore on a misfire,
+  // and on the end of speech send the words without waiting for the recognizer's own final.
+  function vadEvent(event) {
+    const live = speaking && utteranceId != null && bargedUtterance !== utteranceId;
+    const result = nextBarge(barge, event, live);
+    barge = result.state;
+    if (result.action === "duck") duck(true);
+    else if (result.action === "unduck") duck(false);
+    else if (result.action === "stop") {
+      duck(false);
+      fireBarge();
+    } else if (result.action === "flush") scheduleFlush();
+    try {
+      onVad(event, now(), result.action);
+    } catch {
+      // the page owns timing displays
+    }
+  }
+
+  async function startNeural() {
+    if (!neuralWanted || neural || serverMode) return;
+    const token = ++neuralGen;
+    try {
+      const lib = await vadLoader();
+      if (token !== neuralGen || !listening || !lib || !lib.MicVAD) return;
+      const ctx = ensureAudio();
+      const instance = await lib.MicVAD.new({
+        ...BARGE_VAD,
+        baseAssetPath: VAD_WEB_BASE,
+        onnxWASMBasePath: VAD_ORT_BASE,
+        ...(ctx ? { audioContext: ctx } : {}),
+        getStream: options.vadGetStream || (() => requestMic()),
+        onSpeechStart: () => vadEvent("start"),
+        onSpeechRealStart: () => vadEvent("real_start"),
+        onVADMisfire: () => vadEvent("misfire"),
+        onSpeechEnd: () => vadEvent("end"),
+      });
+      if (token !== neuralGen || !listening) {
+        destroyVad(instance);
+        return;
+      }
+      neural = instance;
+      await instance.start();
+    } catch {
+      if (token === neuralGen) neural = null;
+    }
+  }
+
+  function stopNeural() {
+    neuralGen += 1;
+    const instance = neural;
+    neural = null;
+    barge = initialBarge();
+    lastInterim = null;
+    if (flushTimer) {
+      clock.clearTimeout(flushTimer);
+      flushTimer = 0;
+    }
+    if (instance) destroyVad(instance);
+  }
+
   function primeSpeech() {
     if (!synth || typeof synth.speak !== "function") return false;
     const utter = makeUtterance(" ");
@@ -907,6 +1036,8 @@ export function createVoice(options = {}) {
     cancel,
     isSpeaking,
     isListening() { return listening; },
+    neuralVadActive() { return Boolean(neural); },
+    vadEvent,
     unlockAudio,
     setVolume,
     setMuted,
@@ -1076,6 +1207,55 @@ function stopTracks(stream) {
       // already stopped
     }
   }
+}
+
+function destroyVad(instance) {
+  try {
+    if (typeof instance.destroy === "function") Promise.resolve(instance.destroy()).catch(noop);
+    else if (typeof instance.pause === "function") instance.pause();
+  } catch {
+    // already gone
+  }
+}
+
+// On unless the page URL says ?vad=0. Node tests have no location and get the word-based path.
+function defaultNeuralWanted() {
+  const loc = globalThis.location;
+  if (!loc || typeof loc.search !== "string") return false;
+  return new URLSearchParams(loc.search).get("vad") !== "0";
+}
+
+let vadPromise = null;
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const doc = globalThis.document;
+    if (!doc) {
+      reject(new Error("no document"));
+      return;
+    }
+    const tag = doc.createElement("script");
+    tag.src = src;
+    tag.crossOrigin = "anonymous";
+    tag.onload = () => resolve();
+    tag.onerror = () => reject(new Error("load failed"));
+    doc.head.appendChild(tag);
+  });
+}
+
+// vad-web's UMD bundle reads the global `ort`, so onnxruntime-web loads first.
+export function loadVadWeb() {
+  if (globalThis.vad && globalThis.vad.MicVAD) return Promise.resolve(globalThis.vad);
+  if (!vadPromise) {
+    vadPromise = loadScript(`${VAD_ORT_BASE}ort.wasm.min.js`)
+      .then(() => loadScript(`${VAD_WEB_BASE}bundle.min.js`))
+      .then(() => globalThis.vad)
+      .catch((err) => {
+        vadPromise = null;
+        throw err;
+      });
+  }
+  return vadPromise;
 }
 
 function noop() {}
