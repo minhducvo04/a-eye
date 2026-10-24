@@ -66,3 +66,8 @@ async def locate(request: Request):
 @app.post("/verify")
 async def verify(request: Request):
     return await run(request, "verify")
+
+
+@app.post("/scene")
+async def scene(request: Request):
+    return await run(request, "scene")

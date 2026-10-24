@@ -3,6 +3,7 @@ import base64
 from difflib import SequenceMatcher
 from io import BytesIO
 import json
+import re
 import math
 import os
 from pathlib import Path
@@ -26,6 +27,22 @@ def parse_json(text):
             except ValueError:
                 continue
     return None
+
+
+_LABEL_BOX = re.compile(r'"label"\s*:\s*"([^"]+)"\s*,\s*"bbox_2d"\s*:\s*\[\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)')
+_CAPTION = re.compile(r'"caption"\s*:\s*"([^"]*)"')
+
+
+def salvage_scene(text):
+    """Qwen2.5-VL sometimes emits broken JSON (seen live: a box closed with '}' instead of ']').
+    Pull caption and label/box pairs out with regexes instead of losing the whole answer."""
+    if not isinstance(text, str):
+        return None
+    rows = [{"label": m[0], "bbox_2d": [float(v) for v in m[1:]]} for m in _LABEL_BOX.findall(text)]
+    caption = _CAPTION.search(text)
+    if not rows and not caption:
+        return None
+    return {"caption": caption.group(1) if caption else "", "objects": rows}
 
 
 def normalized(text):
@@ -92,9 +109,10 @@ class OllamaBackend:
         })
         response.raise_for_status()
         try:
-            answer = parse_json(response.json()["message"]["content"])
+            self.last_text = response.json()["message"]["content"]
+            answer = parse_json(self.last_text)
         except (ValueError, KeyError, TypeError):
-            answer = None
+            self.last_text, answer = "", None
         return answer, size
 
     def health(self):
@@ -113,6 +131,46 @@ class OllamaBackend:
             gpu = "cpu" if vram == 0 else "gpu" if vram == size else "partial"
         return {"ok": any(is_model(row) for row in available), "models": [self.model],
                 "gpu": gpu, "fake": False}
+
+    def scene(self, body, scenario):
+        queries = body.get("queries", [])
+        limit = body.get("max_objects", 8)
+        answer, (width, height) = self._chat(body,
+            'Describe the frame in one short sentence and locate objects. First try these queries '
+            'in order: ' + json.dumps(queries) + '. For each visible query match, use the exact '
+            'query text as its label. Omit queries that are not visible. Then add other salient '
+            f'objects, returning at most {limit} objects total. Return JSON '
+            '{"caption": str, "objects": [{"label": str, "bbox_2d": [x1,y1,x2,y2]}]} '
+            'with boxes in this image\'s own pixel coordinates.')
+        result = {"caption": "Could not describe the frame.", "objects": [], "source": "ollama"}
+        if not (isinstance(answer, dict) and isinstance(answer.get("objects"), list)):
+            answer = salvage_scene(getattr(self, "last_text", ""))
+        if not isinstance(answer, dict):
+            return result
+        if isinstance(answer.get("caption"), str) and answer["caption"].strip():
+            result["caption"] = answer["caption"].strip()
+        rows = answer.get("objects")
+        if not isinstance(rows, list):
+            return result
+        query_order = {}
+        for index, query in enumerate(queries):
+            query_order.setdefault(normalized(query), index)
+        found = []
+        for row in rows:
+            if not isinstance(row, dict) or not isinstance(row.get("label"), str):
+                continue
+            label = row["label"].strip()
+            box = box_normalized(row.get("bbox_2d"), width, height)
+            if not label or box is None:
+                continue
+            priority = query_order.get(normalized(label), len(queries))
+            # Heuristic scores, not calibrated VLM probabilities.
+            found.append((priority, {"label": label, "bbox": box,
+                                     "conf": .7 if priority < len(queries) else .5}))
+        found.sort(key=lambda entry: entry[0])
+        result["objects"] = [{"id": f"o{index + 1}", **row}
+                             for index, (_, row) in enumerate(found[:limit])]
+        return result
 
     def identify(self, body, scenario):
         candidates = body["candidates"]
@@ -194,6 +252,9 @@ class AutoBackend:
 
     def identify(self, body, scenario):
         return self._call("identify", body, scenario)
+
+    def scene(self, body, scenario):
+        return self._call("scene", body, scenario)
 
     def locate(self, body, scenario):
         return self._call("locate", body, scenario)
