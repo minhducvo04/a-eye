@@ -59,6 +59,7 @@ class Session:
     expert_failures: dict = field(default_factory=dict, repr=False)
     expert_step: str = ''
     home_guide: object = field(default=None, repr=False)
+    step_checker: object = field(default=None, repr=False)
     board: dict = field(init=False)
 
     def __post_init__(self):
@@ -363,8 +364,37 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         store = None
         if app is not None and hasattr(app.state, 'memories'):
             store, _ = app.state.memories.for_call(session.session_id)
-        # The guide checks hazards itself so they also invalidate a previous water check.
+        # A previous turn's pass never authorizes this turn, even when repeating a repair.
+        session.home_guide.water_off_passed = False
         refusal = session.home_guide.reply(text, store)
+        from server.safety import WATER_OFF_LINE
+        if refusal == WATER_OFF_LINE and not session.pack.refuse(text):
+            from server.step_check import Verdict, configured_checker, RETRY_LINE
+            from server.step_check_api import load_references
+            await emit(message('turn', turn_id=turn_id, stage='thinking', detail='Valve: checking',
+                               at_ms=int(time() * 1000)))
+            result = Verdict()
+            try:
+                if session.camera and session.frame:
+                    import base64
+                    checker = session.step_checker
+                    if checker is None:
+                        checker = session.step_checker = configured_checker()
+                    result = await checker.check(base64.b64decode(session.frame['jpeg_b64'], validate=True),
+                                                 *load_references(store), captured_at=session.frame_time)
+                if not session.camera:
+                    result = Verdict()
+            except Exception:
+                result = Verdict()
+            # No await between granting the gate and consuming it. Cancellation cannot leave a pass.
+            try:
+                session.home_guide.water_off_passed = result.passed
+                refusal = session.home_guide.reply(text, store) if result.passed else RETRY_LINE
+            finally:
+                session.home_guide.water_off_passed = False
+            await emit(message('turn', turn_id=turn_id, stage='thinking',
+                               detail='Valve: closed' if result.passed else 'Valve: unsure',
+                               at_ms=int(time() * 1000)))
     if refusal or (session.pack.requires_power_off and not session.power_off):
         msg = say(refusal or POWER_LINE)
         msg.update(turn_id=turn_id, part=0, final=True)

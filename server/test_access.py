@@ -203,6 +203,8 @@ def test_4401_stops_retries_and_offers_reload():
     subprocess.run(['node', '--input-type=module', '-e', '''
 import assert from 'node:assert/strict';
 let close, button, problem, reloaded = false;
+let valveCleared = false;
+const valveCard = {reset() { valveCleared = true; }};
 const ws = {addEventListener: (_, fn) => { close = fn; }};
 let socket = ws, ended = false, retryTimer = 1, reconnectDelay = 500;
 const pipelineTimer = 2, linkEl = {}, connStatusEl = {};
@@ -216,6 +218,7 @@ let wait = null; // agent.js close handler also clears the wait card (web-wait m
 close({code: 4401});
 assert.equal(problem, 'Please sign in again');
 assert.equal(ended, true);
+assert.equal(valveCleared, true);
 assert.equal(button.textContent, 'Reload to sign in');
 button.click();
 assert.equal(reloaded, true);
