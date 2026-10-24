@@ -224,3 +224,68 @@ def test_routes(monkeypatch):
         assert hits == [dict(t_s=10.0, start_s=8.0, end_s=13.0, rank=1)]
         status = client.get('/api/rewind/status', params={'session_id': 's1'}).json()
         assert status['ready'] == 1 and 'TwelveLabs' in status['notice']
+
+
+def test_voice_path_through_ws2():
+    """Typed "when did I ..." over /ws2: Rewind state with the notice, then a spoken answer and the hit frame."""
+    from contracts import validate
+    from server.app import create_app
+    from server.test_agent import FRAME, LLM, Vision
+
+    app = create_app(static_dir='/nonexistent')
+    app.state.vision_v2 = Vision()
+    app.state.llm_v2 = LLM()
+    app.state.rewind = Registry(FakeTL([dict(video_id='vid-1', start=0, end=4, rank=1)]), encoder=fake_encoder)
+
+    def until(ws, kind):
+        while True:
+            msg = ws.receive_json()
+            validate('server_message_v2', msg)
+            if msg['type'] == kind:
+                return msg
+
+    with TestClient(app) as client, client.websocket_connect('/ws2') as ws:
+        ws.send_json(dict(v=2, type='hello', session_id='s', pack='general', rewind=True))
+        state = until(ws, 'rewind_state')
+        assert state['on'] and 'TwelveLabs' in state['notice']
+        ws.send_json(FRAME)
+        until(ws, 'track')                                  # first keyframe scanned: a clip is open
+        rewind = app.state.rewind.get('s')
+        assert rewind.clips and rewind.clips[0].frames
+        rewind.clips[0].status = 'pending'
+        assert client.post('/api/rewind/flush', json={'session_id': 's'}).json()['uploaded'] == 1
+        for _ in range(100):
+            if rewind.clips[0].status == 'ready':
+                break
+            import time
+            time.sleep(0.02)
+        ws.send_json(dict(v=2, type='user_text', session_id='s', text='Where did I put the screw?', final=True))
+        hit = until(ws, 'rewind_hit')
+        said = until(ws, 'say')
+        assert hit['sure'] and hit['objects'][0]['label'] == 'screw' and hit['frame_b64']
+        assert said['text'].startswith('That was about') and said['final']
+        assert until(ws, 'turn')['stage'] in ('speaking', 'done')
+        ws.send_json(dict(v=2, type='rewind', session_id='s', on=False))
+        assert until(ws, 'rewind_state')['on'] is False
+
+
+def test_follow_samples_any_frame_source():
+    """A paired phone camera writes session.frame directly; Rewind samples it the same way."""
+    class S:
+        camera = True
+        frame = None
+
+    async def go():
+        rewind = Rewind('s1', client=FakeTL(), encoder=fake_encoder)
+        rewind.set_on(True)
+        session = S()
+        task = asyncio.create_task(rewind.follow(session, every=999))
+        session.frame = dict(seq=1, jpeg_b64=JPEG)
+        await asyncio.sleep(0.3)                          # sampling is capped at 4 frames per second
+        session.frame = dict(seq=2, jpeg_b64=JPEG)
+        await asyncio.sleep(0.3)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        return len(rewind.ring)
+
+    assert asyncio.run(go()) == 2

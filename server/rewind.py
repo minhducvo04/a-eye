@@ -369,25 +369,40 @@ class Rewind:
             task.cancel()
         await asyncio.gather(*self.waits, return_exceptions=True)
 
-    async def run(self, every=None):
-        """Upload finished clips every few minutes while the call goes on (end of call: Registry.end)."""
+    async def follow(self, session, every=None):
+        """Sample the session's newest frame (from this socket or a paired phone camera) and upload finished
+        clips every few minutes while the call goes on. The end of the call is Registry.end."""
         every = every or float(os.environ.get('REWIND_FLUSH_S', '60'))
+        seq = None
+        next_flush = self.clock() + every
         while True:
-            await asyncio.sleep(every)
-            if self.on:
-                await self.flush()
+            frame = session.frame if session.camera else None
+            if frame is not None and frame.get('seq') != seq:
+                seq = frame.get('seq')
+                self.add_frame(frame['jpeg_b64'])
+            if self.on and self.clock() >= next_flush:
+                next_flush = self.clock() + every
+                try:
+                    await self.flush()
+                except Exception as exc:
+                    event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
+                          error=type(exc).__name__)
+            await asyncio.sleep(1 / SAMPLE_FPS / 2)
 
 
 class Registry:
     """Recent calls' Rewind state for this server process, so a question after the call still finds it."""
 
-    def __init__(self, client=None, keep=5):
+    def __init__(self, client=None, keep=5, encoder=None):
         self.client = client
+        self.encoder = encoder
         self.keep = keep
         self.calls = {}
         self.background = set()
 
     def open(self, session_id, on=False, **kwargs):
+        if self.encoder is not None:
+            kwargs.setdefault('encoder', self.encoder)
         rewind = Rewind(session_id, client=self.client, **kwargs)
         rewind.set_on(on)
         self.calls.pop(session_id, None)
@@ -426,3 +441,50 @@ def registry(app):
     if not hasattr(app.state, 'rewind'):
         app.state.rewind = Registry(getattr(app.state, 'rewind_client', None))
     return app.state.rewind
+
+
+def small_frame(jpeg, size=480):
+    from PIL import Image
+    import io
+    with Image.open(io.BytesIO(jpeg)) as image:
+        image.thumbnail((size, size))
+        out = io.BytesIO()
+        image.convert('RGB').save(out, format='JPEG', quality=80)
+        return base64.b64encode(out.getvalue()).decode()
+
+
+def wants_rewind(session, text):
+    """Route a turn to Rewind only for a Rewind-style question while Rewind is on or has clips to search."""
+    current = getattr(session, 'rewind', None)
+    return is_rewind_question(text) and current is not None and (current.on or bool(current.clips))
+
+
+async def rewind_turn(session, text, rewind, *, vision, turn_id):
+    """One spoken answer from Rewind plus the hit frame with the object boxed. Same shape as a refusal turn."""
+    from server.agent import message, say   # late import: agent imports nothing from here
+    emit = session.emit
+    spoken, hit = await rewind.answer(text, vision=vision)
+    msg = say(spoken)
+    msg.update(turn_id=turn_id, part=0, final=True)
+    if hit is not None:
+        fields = dict(turn_id=turn_id, query=hit['query'], t_s=hit['t_s'], start_s=hit['start_s'],
+                      end_s=hit['end_s'], sure=hit['sure'], alternatives=hit['alternatives'],
+                      objects=[{k: o[k] for k in ('id', 'label', 'bbox', 'conf')} for o in hit['objects']])
+        if hit['frame']:
+            try:
+                fields['frame_b64'] = await asyncio.to_thread(small_frame, hit['frame'])
+            except Exception:
+                pass
+        await emit(message('rewind_hit', **fields))
+    await emit(message('reply_delta', agent='helper', turn_id=turn_id, text=spoken))
+    await emit(msg)
+    if session.speak:
+        async for audio in session.speak(msg):
+            await emit(audio)
+    session.history.extend([f'user: {text}', f'helper: {spoken}'])
+    session.history[:] = session.history[-10:]
+
+
+def state_message(rewind):
+    from server.agent import message
+    return message('rewind_state', **rewind.status(), **({'notice': NOTICE} if rewind.on else {}))
