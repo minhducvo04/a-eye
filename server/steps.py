@@ -1,4 +1,4 @@
-"""Pure session logic. Returns (messages, optional (vision operation, payload)).
+"""Pure session logic. Returns (messages, optional (operation, payload)).
 
 The caller supplies time, board data and vision results. Images live only in memory.
 """
@@ -57,8 +57,15 @@ class Session:
 
     def handle(self, message, now_ms):
         kind = message['type']
-        if kind in {'market', 'parts_scan', 'project_open', 'audio'}:
-            # TODO: connect market, project memory, part scanning and voice adapters.
+        if kind == 'market':
+            query = dict(v=1, category=message['category'], owned_parts=[dict(
+                category='board', model=self.board['model'],
+                specs=self.board.get('specs', {}), confirmed=True, source='fixture')])
+            if 'budget_usd' in message:
+                query['budget_usd'] = message['budget_usd']
+            return [], ('market', query)
+        if kind in {'parts_scan', 'project_open', 'audio'}:
+            # TODO: connect project memory, part scanning and voice adapters.
             return [error('internal', 'not wired yet')], None
         if kind == 'user_text':
             refusal = refusal_for_text(message['text'])
@@ -68,7 +75,15 @@ class Session:
                 message = dict(type='confirm', what='power_off', value=True)
                 kind = 'confirm'
             else:
-                return [], None
+                return [], ('text', dict(
+                    system=('Answer in one or two plain sentences, only about the current step '
+                            'and board. Never advise opening a PSU or mains wiring. '
+                            'Say "check the manual page" when unsure.'),
+                    user=(f'Board: {self.board_id} ({self.board["model"]})\n'
+                          f'Step state: {self.state}\nItem: {self.item}\n'
+                          f'Target header: {self.target_header}\n'
+                          f'Board headers: {", ".join(h["name"] for h in self.board["headers"])}\n'
+                          f'Question: {message["text"]}')))
         if kind == 'confirm' and message['what'] == 'power_off':
             self.power_off = message['value']
             if not self.power_off:
