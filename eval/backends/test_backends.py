@@ -27,3 +27,10 @@ def test_score_row_keyword_and_iou():
     s = score_row(case, row, "pixels")
     assert s["topic_kw"] and s["target_kw"] and s["iou"] > .3
     assert not kw_hit("", ["cpu"])
+
+
+def test_generic_ollama_backends():
+    from eval.backends import run
+    assert run.backend("ollama:moondream:1.8b")[1] == "norm1000"
+    assert run.backend("ollama-cpu4:qwen2.5vl:3b")[1] == "pixels"
+    assert run.CPU4 == {"num_gpu": 0, "num_thread": 4}

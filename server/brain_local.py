@@ -113,7 +113,8 @@ class LocalBrain(LLMClient):
         for attempt_images in ([images, None] if images else [None]):
             try:
                 async with asyncio.timeout(first_token_s) as deadline:
-                    payload = _payload(name, system, user, attempt_images, max_tokens, False)
+                    payload = _payload(name, system, user, attempt_images, max_tokens,
+                                       os.environ.get('BRAIN_TALKER_THINK', '0') == '1')
                     async for chunk in self._chunks(payload, None):
                         delta = chunk.get('message', {}).get('content', '')
                         if isinstance(delta, str) and delta:

@@ -26,7 +26,7 @@ from PIL import Image
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
-OUT = HERE / "out"
+OUT = Path(os.environ.get("EVAL_BACKENDS_OUT", HERE / "out"))
 OLLAMA = os.environ.get("OLLAMA_URL", "http://100.93.176.7:11434").rstrip("/")
 BOXSVC = os.environ.get("BOX_URL", "http://100.93.176.7:8090").rstrip("/")
 CODEX = "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex"
@@ -81,7 +81,7 @@ def parse_json(text):
 
 
 # ---------------------------------------------------------------- backends
-def run_ollama(model, case, box_format, image=True, caption=None):
+def run_ollama(model, case, box_format, image=True, caption=None, options=None):
     b64, (w, h) = image_b64(case)
     content = user_text(case, w, h, box_format)
     msg = {"role": "user", "content": content}
@@ -93,7 +93,7 @@ def run_ollama(model, case, box_format, image=True, caption=None):
                           .replace(fmt_instr(case, w, h, box_format), '') +
                           'Reply with only one JSON object: {"topic": str, "target": str, "answer": str}.')
     body = {"model": model, "stream": True, "think": False, "keep_alive": "30m",
-            "options": {"temperature": 0, "num_ctx": 4096, "num_predict": 200},
+            "options": {"temperature": 0, "num_ctx": 4096, "num_predict": 200, **(options or {})},
             "messages": [{"role": "system", "content": SYSTEM}, msg]}
     # Unique first line defeats prompt-prefix caching (same method as docs/pc-benchmarks.md).
     body["messages"][0]["content"] = f"[run {time.time_ns()}]\n" + SYSTEM
@@ -101,7 +101,7 @@ def run_ollama(model, case, box_format, image=True, caption=None):
     ttft = None
     text = []
     final = {}
-    with httpx.Client(timeout=120) as client:
+    with httpx.Client(timeout=600) as client:  # CPU-only tiny models can take minutes on a big frame
         with client.stream("POST", OLLAMA + "/api/chat", json=body) as r:
             r.raise_for_status()
             for line in r.iter_lines():
@@ -260,6 +260,21 @@ def caption_text_backend(model):
 BACKENDS["pipe:qwen2.5vl-caption>qwen3.5:9b"] = caption_text_backend("qwen3.5:9b-q4_K_M")
 
 
+CPU4 = {"num_gpu": 0, "num_thread": 4}  # roughly a Raspberry Pi 5: 4 cores, no usable GPU
+
+
+def backend(name):
+    """Registered backend, or a generic Ollama one: "ollama:<tag>" (GPU) or "ollama-cpu4:<tag>" (CPU, 4 threads)."""
+    if name in BACKENDS:
+        return BACKENDS[name]
+    kind, _, tag = name.partition(":")
+    if kind in ("ollama", "ollama-cpu4") and tag:
+        fmt = "pixels" if tag.startswith("qwen2.5vl") else "norm1000"
+        options = CPU4 if kind == "ollama-cpu4" else None
+        return (lambda c: run_ollama(tag, c, fmt, options=options), fmt)
+    raise KeyError(name)
+
+
 def available(name):
     if name.startswith("api:anthropic") and not os.environ.get("ANTHROPIC_API_KEY"):
         return "pending: ANTHROPIC_API_KEY is empty in .env"
@@ -380,7 +395,10 @@ def summarize():
     out = []
     for f in sorted(OUT.glob("*.jsonl")):
         name = f.stem.replace("__", ":")
-        fmt = BACKENDS.get(name, (None, None))[1]
+        try:
+            fmt = backend(name)[1]
+        except KeyError:
+            fmt = None
         rows = [json.loads(l) for l in f.read_text().splitlines() if l.strip()]
         ok_rows = [r for r in rows if not r.get("error")]
         first = [r for r in ok_rows if r.get("rep") == 0]
@@ -433,7 +451,7 @@ def run(names, reps, only=None):
         if why:
             print(f"SKIP {name}: {why}")
             continue
-        fn = BACKENDS[name][0]
+        fn = backend(name)[0]
         path = OUT / (name.replace(":", "__") + ".jsonl")
         done = set()
         if path.exists():
@@ -467,10 +485,11 @@ def main():
     names = [n for n in a.backends.split(",") if n]
     if a.warm:
         for n in names:
-            if n.startswith("ollama:") or n.startswith("pipe:"):
-                model = n.split(":", 1)[1] if n.startswith("ollama:") else "qwen3.5:9b-q4_K_M"
-                httpx.post(OLLAMA + "/api/chat", timeout=180, json={"model": model, "stream": False, "think": False,
-                           "keep_alive": "30m", "options": {"num_ctx": 4096, "num_predict": 1},
+            if n.startswith(("ollama:", "ollama-cpu4:", "pipe:")):
+                model = n.split(":", 1)[1] if n.startswith("ollama") else "qwen3.5:9b-q4_K_M"
+                extra = CPU4 if n.startswith("ollama-cpu4:") else {}
+                httpx.post(OLLAMA + "/api/chat", timeout=600, json={"model": model, "stream": False, "think": False,
+                           "keep_alive": "30m", "options": {"num_ctx": 4096, "num_predict": 1, **extra},
                            "messages": [{"role": "user", "content": "OK"}]})
     if names:
         run(names, a.reps, set(a.cases.split(",")) if a.cases else None)

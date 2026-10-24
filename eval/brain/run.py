@@ -105,7 +105,8 @@ async def claude_stream(client, model, system, user, max_tokens, options):
 async def local_talk(brain, model, system, user):
     started = time.perf_counter()
     first, text = None, ''
-    async for delta in brain.stream(system, user, model=model, max_tokens=200):
+    max_tokens = 1500 if os.environ.get('BRAIN_TALKER_THINK') == '1' else 200
+    async for delta in brain.stream(system, user, model=model, max_tokens=max_tokens):
         if first is None:
             first = (time.perf_counter() - started) * 1000
         text += delta
@@ -135,7 +136,8 @@ def done(path):
 
 async def run_backend(name, only):
     OUT.mkdir(exist_ok=True)
-    path = OUT / (name.replace(':', '_').replace('/', '_') + '.jsonl')
+    tag = os.environ.get('BRAIN_RUN_TAG', '')  # e.g. '+think' to keep a config variant in its own file
+    path = OUT / (name.replace(':', '_').replace('/', '_') + tag + '.jsonl')
     have = done(path)
     data = cases()
     brain = LocalBrain() if name.startswith('local:') else None
@@ -166,7 +168,7 @@ async def run_backend(name, only):
                     row = await claude_stream(client, OPUS, system, user, 2048, {'output_config': {'effort': 'medium'}})
         except Exception as exc:  # recorded, never dropped
             row = dict(error=type(exc).__name__)
-        row.update(kind=kind, case=case['id'], backend=name, at=time.strftime('%Y-%m-%dT%H:%M:%S'))
+        row.update(kind=kind, case=case['id'], backend=name + tag, at=time.strftime('%Y-%m-%dT%H:%M:%S'))
         with path.open('a') as f:
             f.write(json.dumps(row) + '\n')
         print(name, kind, case['id'], round(row.get('ttft_ms') or 0), round(row.get('total_ms') or 0),
