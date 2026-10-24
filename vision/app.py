@@ -1,4 +1,8 @@
 """Vision HTTP boundary: contract validation and timing around a backend."""
+from contextlib import asynccontextmanager
+import logging
+import threading
+
 import json
 import os
 from time import perf_counter
@@ -10,7 +14,30 @@ from contracts import validate
 from vision.fake import FakeBackend, SCENARIOS
 
 
-app = FastAPI(title="A-eye fake vision")
+def warm_backend(real):
+    started = perf_counter()
+    status = "ok"
+    try:
+        real.warmup()
+    except Exception:
+        # Exception strings may include request content; log status and time only.
+        status = "failed"
+    logging.getLogger(__name__).info("ollama warm-up %s ms=%.1f", status,
+                                     (perf_counter() - started) * 1000)
+
+
+@asynccontextmanager
+async def lifespan(app):
+    from vision.ollama import AutoBackend, OllamaBackend
+    real = backend.ollama if isinstance(backend, AutoBackend) else backend
+    if isinstance(real, OllamaBackend):
+        thread = threading.Thread(target=warm_backend, args=(real,), daemon=True)
+        app.state.warmup_thread = thread
+        thread.start()
+    yield
+
+
+app = FastAPI(title="A-eye vision", lifespan=lifespan)
 def select_backend(ollama=None):
     mode = os.environ.get("VISION_BACKEND", "fake")
     if mode == "fake":

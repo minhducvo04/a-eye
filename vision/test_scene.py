@@ -76,18 +76,17 @@ def test_ollama_scene(body):
     backend = OllamaBackend(transport=httpx.MockTransport(handle))
     result = backend.scene(body, "ok")
     validate("scene_response", {**result, "ms": 0})
-    assert result["source"] == "ollama" and result["caption"] == answer["caption"]
-    assert [row["label"] for row in result["objects"]] == ["red square", "blue circle", "table"]
-    assert [row["id"] for row in result["objects"]] == ["o1", "o2", "o3"]
-    assert [row["conf"] for row in result["objects"]] == [.7, .7, .5]
+    assert result["source"] == "ollama" and result["caption"] == ""
+    assert [row["label"] for row in result["objects"]] == ["red square", "blue circle"]
+    assert [row["id"] for row in result["objects"]] == ["o1", "o2"]
+    assert [row["conf"] for row in result["objects"]] == [.7, .7]
     assert result["objects"][0]["bbox"] == pytest.approx([.1, .1, .2, .2])
-    assert result["objects"][2]["bbox"] == pytest.approx([0, .9375, 1, .0625])
-    assert len(requests) == 1
+    assert len(requests) == 2
     payload = json.loads(requests[0].content)
     message = payload["messages"][0]
     with Image.open(BytesIO(base64.b64decode(message["images"][0]))) as image:
         assert image.size == (1280, 960)
-    assert all(query in message["content"] for query in body["queries"])
+    assert "red square" in message["content"] and "blue circle" not in message["content"]
     capped = backend.scene({**body, "max_objects": 1}, "ok")
     assert [row["label"] for row in capped["objects"]] == ["red square"]
 
@@ -113,7 +112,7 @@ def test_scene_probe(monkeypatch, capsys):
                         lambda: OllamaBackend(transport=httpx.MockTransport(handle)))
     probe_ollama.main(["--scene"])
     output = capsys.readouterr().out
-    assert "Three colored shapes." in output and '"objects"' in output and '"ms"' in output
+    assert '"caption": ""' in output and '"objects"' in output and '"ms"' in output
     assert "image_b64" not in output
 
 

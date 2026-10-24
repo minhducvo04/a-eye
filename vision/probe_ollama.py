@@ -4,6 +4,7 @@ import base64
 from io import BytesIO
 import json
 import sys
+from statistics import median
 from time import perf_counter
 
 from PIL import Image, ImageDraw, ImageFont
@@ -55,10 +56,36 @@ def synthetic_scene():
 def main(argv=()):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scene", action="store_true", help="Ground labelled synthetic shapes")
+    parser.add_argument("--bench", type=int, metavar="N", help="Time N single-label scene calls")
     args = parser.parse_args(argv)
-    image, target = (synthetic_scene(), None) if args.scene else synthetic_board()
+    if args.bench is not None and args.bench < 1:
+        parser.error("--bench must be positive")
+    image, target = (synthetic_scene(), None) if args.scene or args.bench else synthetic_board()
     backend = OllamaBackend()
     try:
+        if args.bench:
+            samples = {key: [] for key in
+                       ("wall", "load_duration", "prompt_eval_duration", "eval_duration")}
+            # Include the first (possibly cold) request, and expose it separately.
+            for index in range(args.bench):
+                start = perf_counter()
+                result = backend.scene({"image_b64": image, "queries": ["red square"]}, "ok")
+                result["ms"] = (perf_counter() - start) * 1000
+                validate("scene_response", result)
+                values = {"wall": result["ms"], **{key: value / 1_000_000
+                          for key, value in backend.last_timings.items()}}
+                print(f"run={index + 1} " + " ".join(
+                    f"{key}_ms={values[key]:.1f}" if key in values else f"{key}_ms=n/a"
+                    for key in samples), flush=True)
+                for key, value in values.items():
+                    samples[key].append(value)
+            for key, values in samples.items():
+                if values:
+                    print(f"{key} median_ms={median(values):.1f} min_ms={min(values):.1f} "
+                          f"max_ms={max(values):.1f} n={len(values)}")
+                else:
+                    print(f"{key}: unavailable")
+            return
         health = backend.health()
         validate("health_response", health)
         print("health:", json.dumps(health), flush=True)

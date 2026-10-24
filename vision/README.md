@@ -55,7 +55,7 @@ fallback. Auto mode inherits the fake backend's canned passing verdicts, so its
 results are for demos, not physical connection assurance.
 
 `OLLAMA_URL` defaults to `http://100.93.176.7:11434`; `VISION_MODEL` defaults to
-`qwen2.5vl:7b-q4_K_M`. Chat requests use a 20-second HTTP timeout; each health GET
+`qwen2.5vl:7b-q4_K_M`. Chat requests use an 8-second HTTP timeout; each health GET
 uses 2 seconds. `/health` checks `/api/tags` for availability and `/api/ps` for
 residency. It reports `gpu`, `partial`, `cpu`, or `not_loaded`; `ok` is false when
 the configured model is absent from tags. This exposes CPU fallback after reboot.
@@ -64,17 +64,25 @@ These are httpx operation timeouts, not a total wall-clock deadline.
 Images are decoded and resized in memory with Pillow: the longer side is exactly
 1280 pixels, preserving aspect ratio to the nearest pixel. Returned pixel corners
 are normalized against that resized image, clipped, and converted to `[x,y,w,h]`.
-No frames are saved or logged. The model uses temperature zero and no Ollama
-`format` option; fenced JSON and trailing prose are accepted. Measured warm calls
-were roughly 1.4 seconds at 640x480 and 3 seconds at 1280x960; this backend always
-sends the resized image, and the first call can include model loading.
+No frames are saved or logged. Every generation uses temperature 0, `num_ctx: 4096`
+and `keep_alive: "30m"`. Token caps are 60 for boxes, 40 for captions,
+identification and verification, and 1 for warm-up. One shared `httpx.Client`
+reuses connections (keep-alive expiry 30 minutes), including health requests.
+Fenced JSON, trailing prose and broken closing brackets on labelled boxes are
+accepted; invalid/empty boxes are still discarded.
 
-Locate searches all board-table silkscreen labels in one call and returns text
-boxes, never connector or pin grids. Header names and silkscreen aliases match
-case-insensitively with underscores and whitespace ignored. Exact matches get
-0.7 confidence; a unique best SequenceMatcher ratio of at least 0.8 gets 0.5.
-These scores are heuristics, not calibrated probabilities. Ambiguous fuzzy
-matches are omitted. Unknown boards/headers and invalid boxes yield not found.
+At startup, Ollama and auto backends send a synthetic 1280×960 warm-up in a daemon
+thread. Startup and shutdown do not wait for it; one status/timing line is logged.
+A user request arriving immediately can still encounter cold loading. Warm-up
+failure does not switch the configured backend or prevent later retries.
+
+Locate requests the target silkscreen first, then at most two other board-table
+labels, one per call in table order. It stops starting calls after 1.5 seconds.
+It returns text boxes, never connector or pin grids. Header names and silkscreen
+aliases match case-insensitively with underscores and whitespace ignored. Exact
+matches get 0.7 confidence; a unique best SequenceMatcher ratio of at least 0.8
+gets 0.5. These scores are heuristics, not calibrated probabilities. Ambiguous
+fuzzy matches are omitted. Unknown boards/headers and invalid boxes yield not found.
 
 Identify is limited to the supplied candidates and caps confidence at 0.85.
 Verify requires a boolean `plugged` and an exact board-label match to pass. Its
@@ -102,24 +110,25 @@ allows offline testing. Callers supplying a client retain ownership of it.
 optional `max_objects` (1–20, default 8). It returns a short `caption`, `objects`
 with consecutive `o1`, `o2`, … IDs, normalized `[x,y,w,h]` boxes and confidence,
 plus `source` and measured `ms`. The object cap applies even if more queries
-were supplied. Query matches precede other salient objects.
+were supplied. Ollama processes only the first three queries, in order.
 
 Fake scenes use query labels verbatim at fixed spread-out positions, then canned
 motherboard, fan cable and table objects within the cap. The `blurry` scenario
 returns no objects and caption `too blurry to see`; other scenarios use the
 normal canned scene. These objects do not describe the submitted image.
 
-Ollama scenes use one chat call and the same 1280-pixel resize and fenced-JSON
-parser as locate. The prompt asks for visible query matches first, labelled with
-the exact query text, followed by other salient objects. Code orders matches by
-query order, enforces the cap, clips boxes to the image and drops zero-area or
-invalid boxes. Labels match queries with case, whitespace and underscores
-ignored. Query matches receive 0.7 confidence and other objects 0.5: these are
-heuristics, not calibrated scores. If the model paraphrases a query label, it is
-treated as an ordinary object. Unparseable answers return an empty scene with
-`Could not describe the frame.`; invalid object rows are omitted. Ollama ignores
-fake scenarios and does not independently detect blur. Auto mode falls back to
-fake on connection errors and timeouts, as with the other endpoints.
+Ollama scenes send one label per call, sequentially, at 1280 pixels long edge.
+Only matching query labels are returned, with heuristic confidence 0.7 and
+consecutive IDs. No extra salient objects are requested. Further calls stop once
+1.5 seconds have elapsed or `max_objects` is reached; a call already in flight
+can exceed this budget, up to the HTTP operation timeout. Empty or malformed
+answers contribute no boxes. Partial results survive budget exhaustion.
+
+With queries, `caption` is an empty string. Without queries, one short caption
+call returns no boxes (or `Could not describe the frame.` on parse failure).
+The unchanged request contract has no explicit caption flag; omit queries to
+request a caption. Fake scene behavior remains unchanged. Auto mode still falls
+back on connection errors/timeouts. Ollama does not independently detect blur.
 
 Run the additional synthetic scene probe on the real PC:
 
@@ -131,3 +140,23 @@ It draws labelled red, blue and green shapes in memory, queries `red square`, an
 prints health, caption, objects and milliseconds without printing or saving the
 image. Offline tests exercise the HTTP boundary and mocked Ollama transport;
 they do not establish real-model grounding accuracy.
+
+## Latency breakdown
+
+```sh
+.venv/bin/python -m vision.probe_ollama --bench 5
+```
+
+Runs exactly N single-label scene requests against synthetic shapes using the
+same client. Prints each wall time and Ollama's `load_duration`,
+`prompt_eval_duration`, and `eval_duration` converted from nanoseconds to ms,
+then median/min/max for each. Missing counters are reported as unavailable.
+The first request is included and may be cold. Repeated identical synthetic
+requests can benefit from prompt caching; this is a diagnostic, not an uncached
+accuracy or production-latency benchmark. It never saves or prints the image.
+
+See `docs/pc-benchmarks.md` for measured GPU results. The integrator must run this
+probe on the real box; offline tests cannot establish the speedup. Scheduling
+LLM speech generation outside grounding calls belongs to the orchestrator and
+cannot be enforced in this package. Other callers sharing this model must also
+keep `num_ctx` at 4096 to avoid reloads.

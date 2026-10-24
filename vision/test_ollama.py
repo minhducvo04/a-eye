@@ -45,11 +45,12 @@ def test_locate_resize_and_fences(body):
     assert result["others"][0]["bbox"] == pytest.approx([0, .9375, 1, .0625])
     payload = json.loads(requests[0].content)
     assert "format" not in payload and payload["stream"] is False
-    assert payload["options"] == {"temperature": 0}
+    assert payload["options"] == {"temperature": 0, "num_ctx": 4096, "num_predict": 60}
     image = Image.open(BytesIO(base64.b64decode(payload["messages"][0]["images"][0])))
     assert image.size == (1280, 960)
-    assert "DDR5_A2" in payload["messages"][0]["content"]
-    assert requests[0].extensions["timeout"]["read"] == 20
+    assert "DDR5_A2" not in payload["messages"][0]["content"]
+    assert len(requests) == 3
+    assert requests[0].extensions["timeout"]["read"] == 8
 
 
 @pytest.mark.parametrize("label,conf", [("CPU_FAM", .5), ("CPU_FAN", .7)])
@@ -104,6 +105,7 @@ def test_auto_fallback_and_retry(body, monkeypatch, caplog, error):
             raise error("unreachable", request=request)
         return httpx.Response(200, json={"message": {"content": '{"item":"ram_stick","confidence":0.8}'}})
     monkeypatch.setenv("VISION_BACKEND", "auto")
+    monkeypatch.setattr(OllamaBackend, "warmup", lambda self: None)
     monkeypatch.setattr(service, "backend", service.select_backend(
         OllamaBackend(transport=httpx.MockTransport(handle))))
     with TestClient(service.app) as client:

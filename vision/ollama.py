@@ -7,6 +7,7 @@ import re
 import math
 import os
 from pathlib import Path
+from time import perf_counter
 
 import httpx
 from PIL import Image
@@ -43,6 +44,28 @@ def salvage_scene(text):
     if not rows and not caption:
         return None
     return {"caption": caption.group(1) if caption else "", "objects": rows}
+
+
+def salvage_box(text):
+    """Recover the first labelled box even when its closing bracket is broken."""
+    scene = salvage_scene(text)
+    return scene["objects"][0] if scene and scene["objects"] else None
+
+
+def box_rows(answer):
+    if isinstance(answer, list):
+        return answer
+    if isinstance(answer, dict):
+        rows = answer.get("objects")
+        return rows if isinstance(rows, list) else [answer]
+    return []
+
+
+def box_prompt(label, printed=False):
+    return ('Locate only ' + json.dumps(label) +
+            ('. Box the printed text, not the connector' if printed else '') +
+            '. Return one JSON {"label":str,"bbox_2d":[x1,y1,x2,y2]} in image pixels. '
+            'Use the exact label. If absent return {}.')
 
 
 def normalized(text):
@@ -92,9 +115,11 @@ class OllamaBackend:
     def __init__(self, *, url=None, model=None, transport=None, client=None):
         self.url = (url or os.environ.get("OLLAMA_URL", "http://100.93.176.7:11434")).rstrip("/")
         self.model = model or os.environ.get("VISION_MODEL", "qwen2.5vl:7b-q4_K_M")
-        self.client = client if client is not None else httpx.Client(transport=transport)
+        self.client = client if client is not None else httpx.Client(transport=transport, timeout=8,
+            limits=httpx.Limits(keepalive_expiry=1800))
+        self.last_timings = {}
 
-    def _chat(self, body, prompt):
+    def _chat(self, body, prompt, num_predict=40):
         with Image.open(BytesIO(base64.b64decode(body["image_b64"]))) as original:
             width, height = original.size
             scale = 1280 / max(width, height)
@@ -102,17 +127,31 @@ class OllamaBackend:
             resized = original.convert("RGB").resize(size, Image.Resampling.LANCZOS)
             buffer = BytesIO()
             resized.save(buffer, format="JPEG")
-        response = self.client.post(self.url + "/api/chat", timeout=20, json={
-            "model": self.model, "stream": False, "options": {"temperature": 0},
+        response = self.client.post(self.url + "/api/chat", timeout=8, json={
+            "model": self.model, "stream": False, "options": {"temperature": 0, "num_ctx": 4096,
+                                                          "num_predict": num_predict},
+            "keep_alive": "30m",
             "messages": [{"role": "user", "content": prompt,
                           "images": [base64.b64encode(buffer.getvalue()).decode("ascii")]}],
         })
         response.raise_for_status()
+        self.last_timings = {}
         try:
-            self.last_text = response.json()["message"]["content"]
-            answer = parse_json(self.last_text)
+            data = response.json()
+            self.last_timings = {key: data[key] for key in
+                ("load_duration", "prompt_eval_duration", "eval_duration") if key in data}
+            text = data["message"]["content"]
+            answer = parse_json(text)
+            # A malformed outer object can parse as an inner array. Prefer salvage
+            # when it recovered labelled boxes that the JSON parser did not.
+            recovered = salvage_scene(text)
+            if recovered and recovered["objects"] and not any(
+                    isinstance(row, dict) and "bbox_2d" in row for row in box_rows(answer)):
+                answer = recovered
+            elif answer is None:
+                answer = salvage_box(text) or recovered
         except (ValueError, KeyError, TypeError):
-            self.last_text, answer = "", None
+            answer = None
         return answer, size
 
     def health(self):
@@ -132,44 +171,36 @@ class OllamaBackend:
         return {"ok": any(is_model(row) for row in available), "models": [self.model],
                 "gpu": gpu, "fake": False}
 
+    def warmup(self):
+        # Low-byte synthetic frame, same grounding resolution and context size.
+        buffer = BytesIO()
+        Image.new("RGB", (1280, 960), "white").save(buffer, format="JPEG")
+        self._chat({"image_b64": base64.b64encode(buffer.getvalue()).decode("ascii")},
+                   "Reply OK.", num_predict=1)
+
     def scene(self, body, scenario):
-        queries = body.get("queries", [])
+        started = perf_counter()
+        queries = body.get("queries", [])[:3]
         limit = body.get("max_objects", 8)
-        answer, (width, height) = self._chat(body,
-            'Describe the frame in one short sentence and locate objects. First try these queries '
-            'in order: ' + json.dumps(queries) + '. For each visible query match, use the exact '
-            'query text as its label. Omit queries that are not visible. Then add other salient '
-            f'objects, returning at most {limit} objects total. Return JSON '
-            '{"caption": str, "objects": [{"label": str, "bbox_2d": [x1,y1,x2,y2]}]} '
-            'with boxes in this image\'s own pixel coordinates.')
-        result = {"caption": "Could not describe the frame.", "objects": [], "source": "ollama"}
-        if not (isinstance(answer, dict) and isinstance(answer.get("objects"), list)):
-            answer = salvage_scene(getattr(self, "last_text", ""))
-        if not isinstance(answer, dict):
+        result = {"caption": "", "objects": [], "source": "ollama"}
+        if not queries:
+            answer, _ = self._chat(body,
+                'Describe the frame briefly. Return JSON {"caption":str}. No boxes.', 40)
+            caption = answer.get("caption") if isinstance(answer, dict) else None
+            result["caption"] = caption.strip() if isinstance(caption, str) and caption.strip() else "Could not describe the frame."
             return result
-        if isinstance(answer.get("caption"), str) and answer["caption"].strip():
-            result["caption"] = answer["caption"].strip()
-        rows = answer.get("objects")
-        if not isinstance(rows, list):
-            return result
-        query_order = {}
-        for index, query in enumerate(queries):
-            query_order.setdefault(normalized(query), index)
-        found = []
-        for row in rows:
-            if not isinstance(row, dict) or not isinstance(row.get("label"), str):
-                continue
-            label = row["label"].strip()
-            box = box_normalized(row.get("bbox_2d"), width, height)
-            if not label or box is None:
-                continue
-            priority = query_order.get(normalized(label), len(queries))
-            # Heuristic scores, not calibrated VLM probabilities.
-            found.append((priority, {"label": label, "bbox": box,
-                                     "conf": .7 if priority < len(queries) else .5}))
-        found.sort(key=lambda entry: entry[0])
-        result["objects"] = [{"id": f"o{index + 1}", **row}
-                             for index, (_, row) in enumerate(found[:limit])]
+        for query in queries:
+            if perf_counter() - started >= 1.5 or len(result["objects"]) >= limit:
+                break
+            answer, (width, height) = self._chat(body, box_prompt(query), 60)
+            for row in box_rows(answer):
+                if not isinstance(row, dict) or not isinstance(row.get("label"), str):
+                    continue
+                box = box_normalized(row.get("bbox_2d"), width, height)
+                if normalized(row["label"]) == normalized(query) and box:
+                    result["objects"].append({"id": f'o{len(result["objects"]) + 1}',
+                                              "label": query, "bbox": box, "conf": .7})
+                    break
         return result
 
     def identify(self, body, scenario):
@@ -190,23 +221,22 @@ class OllamaBackend:
         target, _ = match_header(body["header"], headers)
         if target is None:
             return {"found": False, "conf": 0}
-        labels = [header.get("silkscreen", header["name"]) for header in headers]
-        answer, (width, height) = self._chat(body,
-            'Find the printed silkscreen label text for ' + target.get("silkscreen", target["name"]) +
-            ' and all these board headers: ' + json.dumps(labels) +
-            '. Return [{"label": str, "bbox_2d": [x1,y1,x2,y2]}] in this image\'s own pixel coordinates. '
-            'Boxes must surround the printed text, not connectors. Omit labels that are not visible.')
-        rows = answer if isinstance(answer, list) else [answer]
+        started = perf_counter()
+        candidates = [target] + [header for header in headers if header != target][:2]
         found = {}
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            header, conf = match_header(row.get("label"), headers, fuzzy=True)
-            box = box_normalized(row.get("bbox_2d"), width, height)
-            if header and box:
-                name = header["name"]
-                if name not in found or conf > found[name]["conf"]:
-                    found[name] = {"header": name, "bbox": box, "conf": conf}
+        for candidate in candidates:
+            if perf_counter() - started >= 1.5:
+                break
+            label = candidate.get("silkscreen", candidate["name"])
+            answer, (width, height) = self._chat(body, box_prompt(label, printed=True), 60)
+            for row in box_rows(answer):
+                if not isinstance(row, dict):
+                    continue
+                header, conf = match_header(row.get("label"), headers, fuzzy=True)
+                box = box_normalized(row.get("bbox_2d"), width, height)
+                if header == candidate and box:
+                    found[header["name"]] = {"header": header["name"], "bbox": box, "conf": conf}
+                    break
         requested = found.pop(target["name"], None)
         result = {"found": requested is not None, "conf": requested["conf"] if requested else 0,
                   "others": list(found.values())}
