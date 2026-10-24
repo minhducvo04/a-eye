@@ -47,6 +47,13 @@ def local_options(max_tokens=None):
 LOCAL_KEEP_ALIVE = os.environ.get('LOCAL_KEEP_ALIVE', '2h')   # a cold CPU load takes many seconds
 _CLIENTS = {}
 TURN_USAGE = ContextVar('turn_usage', default=None)
+TURN_BRAIN = ContextVar('turn_brain', default=None)
+
+
+def record_brain(provider, model):
+    metadata = TURN_BRAIN.get()
+    if metadata is not None and metadata.get('owner', asyncio.current_task()) is asyncio.current_task():
+        metadata.update(provider=provider, model=model)
 
 
 def cached_system(text):
@@ -292,6 +299,7 @@ class LLMClient:
                         async with client.messages.stream(**options) as response:
                             async for delta in response.text_stream:
                                 if delta:
+                                    record_brain('expert', name)
                                     deadline.reschedule(None)
                                     emitted = True
                                     yield delta
@@ -337,6 +345,7 @@ class LLMClient:
                                 raise ValueError('Local stream failed')
                             delta = chunk.get('message', {}).get('content', '')
                             if isinstance(delta, str) and delta:
+                                record_brain('local', local_model())
                                 deadline.reschedule(None)
                                 emitted = True
                                 yield delta
@@ -349,6 +358,7 @@ class LLMClient:
                     raise
                 if isinstance(exc, TimeoutError) and on_backup:
                     await on_backup()
+        record_brain('unavailable', 'canned')
         try:
             json.loads(user)
         except ValueError:

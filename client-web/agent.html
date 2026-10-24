@@ -103,6 +103,13 @@
         <p id="link" class="chip glass warn" role="status">Connecting…</p>
         <p id="notice" class="chip glass soft hidden" role="status"></p>
         <p id="pipeline" class="pipeline" role="status">Ready</p>
+        <p id="proof-strip" class="pipeline" aria-live="off">
+          <span id="proof-pictures">Pictures saved: unknown</span> ·
+          <span id="proof-cloud-calls" title="Current call: outgoing public provider request attempts, including retries">Cloud AI calls: unknown</span> ·
+          <span id="proof-cloud-bytes" title="Outgoing request payload bytes; excludes headers and network overhead">Bytes to cloud: unknown</span> ·
+          <span id="proof-brain">Brain: awaiting answer</span>
+          <span id="proof-safety" class="hidden"> · Stopped by code</span>
+        </p>
         <!-- Memory aid: what is remembered today, and the two Forget buttons. -->
         <div id="memory" class="memory hidden">
           <button type="button" id="memory-count" class="chip glass soft" aria-expanded="false" aria-controls="memory-actions">Nothing remembered today</button>

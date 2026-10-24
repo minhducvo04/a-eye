@@ -84,6 +84,13 @@ for (const headset of [false, true]) test(headset ? 'headset call never acquires
   const nodes = new Map(), intervals = new Map(), timeouts = new Map();
   let timerId = 0, stops = 0, gets = 0;
   const constraints = [];
+  let proofAvailable = true;
+  const proofRequests = [];
+  put('fetch', async path => {
+    if (!path.startsWith('/api/proof?')) throw new Error('Fixture unavailable');
+    proofRequests.push(path);
+    return { ok: proofAvailable, json: async () => ({ pictures_saved: 0, cloud_ai_calls: 3, bytes_to_cloud: 125 }) };
+  });
   const context = new Proxy({}, { get: (_obj, key) => key === 'measureText' ? () => ({ width: 20 }) : key === 'createRadialGradient' ? () => ({ addColorStop() {} }) : () => {} });
   class Element {
     constructor() { this.handlers = {}; this.attrs = {}; this.children = []; this.style = {}; this.textContent = ''; this.value = ''; this.clientWidth = 390; this.clientHeight = 844; this.width = 320; this.height = 200; const classes = new Set(); this.classList = { add: k => classes.add(k), remove: k => classes.delete(k), contains: k => classes.has(k), toggle: (k, on) => on ? classes.add(k) : classes.delete(k) }; }
@@ -126,6 +133,21 @@ for (const headset of [false, true]) test(headset ? 'headset call never acquires
     assert.ok(socket);
     socket.open();
     assert.equal(socket.messages[0].camera, false);
+    const proofPoll = [...intervals.values()].find(timer => timer.fn.name === 'refreshProof');
+    await proofPoll.fn();
+    assert.ok(proofRequests.at(-1).includes(encodeURIComponent(socket.messages[0].session_id)));
+    assert.equal(node('proof-cloud-calls').textContent, 'Cloud AI calls: 3');
+    assert.equal(node('proof-cloud-bytes').textContent, 'Bytes to cloud: 125');
+    proofAvailable = false;
+    await proofPoll.fn();
+    assert.equal(node('proof-cloud-calls').textContent, 'Cloud AI calls: unknown');
+    assert.equal(node('proof-cloud-bytes').textContent, 'Bytes to cloud: unknown');
+    socket.message({ type: 'turn', stage: 'speaking', turn_id: 'proof', detail: 'Brain: local / fixture-model' });
+    assert.equal(node('proof-brain').textContent, 'Brain: local / fixture-model');
+    socket.message({ type: 'turn', stage: 'speaking', turn_id: 'proof', detail: 'Stopped by code' });
+    assert.equal(node('proof-safety').classList.contains('hidden'), false);
+    socket.message({ type: 'turn', stage: 'received', turn_id: 'next' });
+    assert.equal(node('proof-safety').classList.contains('hidden'), true);
     if (headset) {
       node('start-camera').handlers.click();
       node('permission-retry').handlers.click();

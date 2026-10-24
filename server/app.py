@@ -21,7 +21,7 @@ class NoCacheStatic(StaticFiles):
 from fastapi.responses import JSONResponse
 from server.auth import authorized, accept_socket, mint_owner, warn_unconfigured
 from server.logs import event, protect_transport_logs
-from server import api, mock, rewind_api
+from server import api, mock, rewind_api, proof_wall, cloud_meter
 from jsonschema import ValidationError
 
 from contracts import validate
@@ -74,7 +74,14 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
         if request.url.path.startswith('/api/') and not authorized(request):
             event('auth_rejected', level='warning')
             return JSONResponse({'error': 'unauthorized'}, status_code=401)
-        return await call_next(request)
+        session_id = request.query_params.get('session_id')
+        call = (rewind_api.registry(request.app).get(session_id, rewind_api.identity(request))
+                if session_id else None)
+        token = cloud_meter.CURRENT.set(getattr(call, 'cloud_meter', None))
+        try:
+            return await call_next(request)
+        finally:
+            cloud_meter.CURRENT.reset(token)
 
     now = clock if clock is not None else lambda: int(time.time() * 1000)
 
@@ -163,6 +170,7 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
 
     app.include_router(ws2.router)
     app.include_router(api.router)
+    app.include_router(proof_wall.router)
     app.include_router(rewind_api.router)
     # Routes must precede the catch-all static mount. The client package owns this directory.
     if Path(static_dir).is_dir():

@@ -7,7 +7,7 @@ from time import perf_counter
 import httpx
 
 from server.brain_local import LocalBrain, _canned
-from server.llm import LLMClient, LLMResult, _shared_async_client
+from server.llm import LLMClient, LLMResult, _shared_async_client, record_brain
 from server.privacy import claude_allowed
 
 TIMEOUT = 30
@@ -73,6 +73,7 @@ class OpenAICompatBrain(LLMClient):
                 choices = chunk.get('choices') or []
                 delta = choices[0].get('delta', {}).get('content') if choices else None
                 if isinstance(delta, str) and delta:
+                    record_brain('expert', os.environ['OPENAI_COMPAT_TALKER_MODEL'])
                     emitted = True
                     yield delta
             if emitted:
@@ -82,6 +83,7 @@ class OpenAICompatBrain(LLMClient):
                 raise RuntimeError('Hosted brain stream interrupted') from None
             if on_backup:
                 await on_backup()
+        record_brain('unavailable', 'canned')
         yield _canned(user)
 
     async def expert(self, system, user, *, model=None, images=None, tools=None, on_tool=None):

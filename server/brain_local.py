@@ -14,7 +14,7 @@ from time import perf_counter
 
 import httpx
 
-from server.llm import LLMClient, LLMResult, _shared_async_client
+from server.llm import LLMClient, LLMResult, _shared_async_client, record_brain
 
 TALKER = 'qwen3.6:35b-a3b-q4_K_M'
 EXPERT = 'qwen3.6:35b-a3b-q4_K_M'
@@ -121,6 +121,7 @@ class LocalBrain(LLMClient):
                     async for chunk in self._chunks(payload, None):
                         delta = chunk.get('message', {}).get('content', '')
                         if isinstance(delta, str) and delta:
+                            record_brain('local', name)
                             deadline.reschedule(None)
                             emitted = True
                             yield delta
@@ -134,6 +135,7 @@ class LocalBrain(LLMClient):
                         await on_backup()
                     break
                 # A text-only model rejects images: retry once without them.
+        record_brain('unavailable', 'canned')
         yield _canned(user)
 
     async def expert(self, system, user, *, model=None, images=None):

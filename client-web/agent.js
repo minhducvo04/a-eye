@@ -1,6 +1,6 @@
 import { isHeadset, requestLocalMedia } from './headset.js';
 import { bootPairCamera, phoneMicRoute, setupPairCall } from './pair.js';
-import { callOwner, ownerQuery, resetCallOwner } from './call-owner.js';
+import { callOwner, ownerHeaders, ownerQuery, resetCallOwner } from './call-owner.js';
 // Agent call page. Speaks the v2 WebSocket contract on /ws2.
 // Frames exist only as the JPEG about to be sent. Nothing is written to storage.
 
@@ -202,6 +202,24 @@ function boot() {
   let retryTimer = 0;
   let reconnectDelay = 500;
   let turn = nextTurnState(null, {}, Date.now());
+  async function refreshProof() {
+    const proofSession = sessionId;
+    try {
+      const response = await apiFetch('/api/proof?session_id=' + encodeURIComponent(sessionId));
+      if (!response.ok) throw new Error('Proof unavailable');
+      const proof = await response.json();
+      if (proofSession !== sessionId) return;
+      document.getElementById('proof-pictures').textContent = `Pictures saved: ${proof.pictures_saved ?? 'unknown'}`;
+      document.getElementById('proof-cloud-calls').textContent = `Cloud AI calls: ${proof.cloud_ai_calls ?? 'unknown'}`;
+      document.getElementById('proof-cloud-bytes').textContent = `Bytes to cloud: ${proof.bytes_to_cloud ?? 'unknown'}`;
+    } catch {
+      document.getElementById('proof-pictures').textContent = 'Pictures saved: unknown';
+      document.getElementById('proof-cloud-calls').textContent = 'Cloud AI calls: unknown';
+      document.getElementById('proof-cloud-bytes').textContent = 'Bytes to cloud: unknown';
+    }
+  }
+  refreshProof();
+  window.setInterval(refreshProof, 2000);
   let pendingText = null;
   let seq = 0;
   let cameraOn = false;
@@ -593,6 +611,9 @@ function boot() {
     if (message.type === "pair_status") routeMic(message);
     const now = Date.now();
     if (message.type === "turn") {
+      if (message.stage === 'received') document.getElementById('proof-safety')?.classList.add('hidden');
+      if (message.detail === 'Stopped by code') document.getElementById('proof-safety')?.classList.remove('hidden');
+      if (message.detail?.startsWith('Brain: ')) document.getElementById('proof-brain').textContent = message.detail;
       wait = waitAfterTurn(wait, message, now);
       if (message.stage === "failed" && message.detail) ui.dispatch({ type: "error", message: String(message.detail) });
       if (message.stage === "received") pendingText = null;
@@ -1449,7 +1470,7 @@ function boot() {
     applyAudioPrefs();
     if (tts === "server") {
       try {
-        const reply = await apiFetch(`/api/voice_sample?voice=${encodeURIComponent(ttsVoice)}`);
+        const reply = await apiFetch(`/api/voice_sample?voice=${encodeURIComponent(ttsVoice)}&session_id=${encodeURIComponent(sessionId)}`);
         if (reply.ok) {
           const sample = await reply.json();
           voice.playPcm("test-voice", sample.pcm16_b64, true);
@@ -2478,9 +2499,11 @@ function safeStorage() {
 
 // Same-origin API calls carry the page token when there is one (LAN, quick tunnel). Behind Cloudflare Access the
 // cookie rides along by itself. Seen live: /api/voices returned 401 on a token server because no token was sent.
-function apiFetch(path) {
+async function apiFetch(path) {
   const token = new URLSearchParams(location.search).get("token");
-  return fetch(path, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
+  const headers = await ownerHeaders();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return fetch(path, { headers });
 }
 
 if (typeof document !== "undefined") boot();

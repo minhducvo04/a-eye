@@ -10,6 +10,56 @@ from voice.cartesia import CartesiaAdapter
 from voice.fake import FakeAdapter
 
 
+@pytest.mark.parametrize('error', [httpx.ConnectTimeout, httpx.ConnectError])
+def test_retry_connection_failure_before_speech(error):
+    async def check():
+        calls = []
+        def handler(request):
+            calls.append(request)
+            if len(calls) == 1:
+                raise error('synthetic connect failure', request=request)
+            return httpx.Response(200, content=b'\x01\x00' * 2048)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            voice = KokoroAdapter(client=client)
+            chunks = [chunk async for chunk in voice.say('u', 'Hello.')]
+            assert b''.join(chunks) == b'\x01\x00' * 2048
+            assert len(calls) == 2
+    asyncio.run(check())
+
+
+@pytest.mark.parametrize('error, attempts', [(httpx.ConnectTimeout, 2), (httpx.ReadTimeout, 1)])
+def test_retry_is_bounded_and_never_replays_reads(error, attempts):
+    async def check():
+        calls = []
+        def handler(request):
+            calls.append(request)
+            raise error('synthetic transport failure', request=request)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            voice = KokoroAdapter(client=client)
+            with pytest.raises(error):
+                _ = [chunk async for chunk in voice.say('u', 'Hello.')]
+            assert len(calls) == attempts
+            assert voice.tasks == {}
+    asyncio.run(check())
+
+
+@pytest.mark.parametrize('failures', [1, 2])
+def test_transient_health_failure_does_not_disable_voice_for_a_minute(monkeypatch, failures):
+    monkeypatch.setenv('BOX_URL', 'http://health-recovery.test')
+    monkeypatch.setattr(adapter, '_health_cache', {})
+    calls = []
+    def handler(request):
+        calls.append(request)
+        if len(calls) <= failures:
+            raise httpx.ConnectTimeout('synthetic health timeout', request=request)
+        return httpx.Response(200, json=dict(tts=True))
+    original = httpx.Client
+    monkeypatch.setattr(httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs))
+    assert adapter._kokoro_available() is (failures == 1)
+    assert adapter._kokoro_available() is True
+    assert len(calls) == failures + 1
+
+
 @pytest.mark.parametrize('stop', [False, True])
 def test_stream_and_stop(stop):
     async def check():

@@ -11,12 +11,12 @@ import os
 from uuid import uuid4
 
 from server.expert import RULES as EXPERT_RULES, should_escalate, mark_failed
-from server.llm import TURN_USAGE
+from server.llm import TURN_USAGE, TURN_BRAIN
 from server import rewind_tools
 from server.routing import forget_request, past_tool, rewind_callback, route_turn
 
 from server.crops import crop_b64, pick_target
-from server.privacy import claude_allowed
+from server.privacy import claude_allowed, local_only
 
 from contracts import schema, validate
 from market.search import search
@@ -332,6 +332,8 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
     """One voice turn. With planner set (talker + thinker mode), llm only talks and planner draws in parallel."""
     usage = []
     TURN_USAGE.set(usage)
+    brain = {'owner': asyncio.current_task()}
+    TURN_BRAIN.set(brain)
     messages = []
     owner = asyncio.current_task()
 
@@ -348,10 +350,17 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         session.history[:] = session.history[-10:]
 
     turn_id = turn_id or uuid4().hex
+    async def proof(detail):
+        await emit(message('turn', turn_id=turn_id, stage='speaking', detail=detail,
+                           at_ms=int(time() * 1000)))
+
     refusal = session.pack.refuse(text)
     if refusal or (session.pack.requires_power_off and not session.power_off):
         msg = say(refusal or POWER_LINE)
         msg.update(turn_id=turn_id, part=0, final=True)
+        from server.safety import LINES
+        if refusal in LINES:
+            await proof('Stopped by code')
         await emit(message('reply_delta', agent='helper', turn_id=turn_id, text=msg['text']))
         await emit(msg)
         if session.speak:
@@ -437,6 +446,9 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
     planner_task = None
 
     route = route if route is not None else await route_turn(session, text)   # ws2 may have routed already
+    private_expert = route == 'expert' and local_only()
+    if private_expert:
+        route = 'now'
     if duo and route not in ('past', 'expert'):
         planner_task = asyncio.create_task(plan_scene(session, planner, base_system, user, scene, seq, text, emit))
     queue = asyncio.Queue()
@@ -467,6 +479,9 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         value = safe_speech(value)
         if value and session.pack.guard is not None:
             value = session.pack.guard(value, text, part == 0)  # pack post-condition (memory: pill line, no certainty)
+        from server.safety import LINES
+        if value in LINES:
+            await proof('Stopped by code')
         if not value:
             return
         msg = say(value, agent)
@@ -559,8 +574,14 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                 await worker
             remember()
             return messages
+        if private_expert:
+            await speech('Private mode: I will answer with the local model.')
+        reported_brain = False
         async with aclosing(llm.stream(system, user, **tool_options)) as stream:
             async for delta in stream:
+                if 'provider' in brain and not reported_brain:
+                    await proof('Brain: ' + brain['provider'] + ' / ' + brain['model'])
+                    reported_brain = True
                 if first_token is None:
                     first_token = (monotonic() - brain_started) * 1000
                     if duo:
@@ -701,7 +722,7 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         if worker:
             worker.cancel()
             await asyncio.gather(worker, return_exceptions=True)
-    if session.expert_start and should_escalate(session, text, expert_tag):
+    if not local_only() and session.expert_start and should_escalate(session, text, expert_tag):
         notice = session.expert_start(text, base_system, scene, seq, turn_id, planner)
         if notice or not expert_tag:
             msg = say(notice or "Let me get the expert on this, one moment.")

@@ -76,17 +76,29 @@ def _check_kokoro():
     # make_adapter is synchronous; socket callers run it in a worker thread.
     import httpx
     from server.box_client import box_url
+    from server.logs import event
     url = box_url()
     cached = _health_cache.get(url)
     if cached and time.monotonic() - cached[0] < 60:
         return cached[1]
     try:
         with httpx.Client(timeout=1) as client:
-            response = client.get(url + '/health')
+            for attempt in range(2):
+                try:
+                    response = client.get(url + '/health')
+                    break
+                except httpx.RequestError as exc:
+                    # Read-only readiness: retry one transient link failure before choosing silence.
+                    if attempt:
+                        raise
+                    event('dependency_retry', dependency='tts_health', error=type(exc).__name__)
             response.raise_for_status()
             available = response.json().get('tts') is True
-    except Exception:
-        available = False
+    except Exception as exc:
+        event('dependency_error', dependency='tts_health', error=type(exc).__name__)
+        # A failed probe is not a health report. Let the next call check again instead of caching
+        # an unreachable link as "no TTS" for every caller over the next minute.
+        return False
     _health_cache[url] = (time.monotonic(), available)
     return available
 

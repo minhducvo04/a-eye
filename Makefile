@@ -62,3 +62,7 @@ demo-rehearsal:   ## stage demo rehearsal (Where are my keys?) in Chromium with 
 .PHONY: ready
 ready:            ## morning connection and device checks (no settings changed)
 	$(PY) scripts/ready.py
+
+.PHONY: offline-check
+offline-check:    ## unplug WAN first; real local service probes and Private boundary tests
+	$(PY) scripts/offline_check.py

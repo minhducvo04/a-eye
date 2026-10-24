@@ -59,8 +59,10 @@ def main():
 
         page.goto(page_url())
         page.wait_for_timeout(1200)
+        page.wait_for_function("/^Pictures saved: [0-9]+$/.test(document.getElementById('proof-pictures').textContent)")
         page.click('button[data-pack="general"]')
         page.wait_for_timeout(600)
+        page.wait_for_function("document.getElementById('proof-cloud-calls').textContent === 'Cloud AI calls: 0' && document.getElementById('proof-cloud-bytes').textContent === 'Bytes to cloud: 0'")
         if page.locator("#start-overlay:not(.hidden)").count():
             page.click("#start-overlay")
             page.wait_for_timeout(400)
