@@ -125,3 +125,13 @@ export function nextRewind(state, event) {
 export function showsRewindChip(state) {
   return Boolean(state && state.on && state.clips > 0);
 }
+
+// POST /api/rewind/forget: delete this call's TwelveLabs videos and its local clips.
+export async function forgetRewind(sessionId, search = globalThis.location ? globalThis.location.search : "") {
+  const token = new URLSearchParams(search).get("token");
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const reply = await fetch("/api/rewind/forget", { method: "POST", headers, body: JSON.stringify({ session_id: sessionId }) });
+  if (!reply.ok) throw new Error(`forget ${reply.status}`);
+  return reply.json();
+}
