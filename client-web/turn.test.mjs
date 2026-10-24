@@ -201,3 +201,15 @@ test('a finished turn shows the slow part the server named', () => {
   const s = nextTurnState(undefined, { type: 'turn', stage: 'done', turn_id: 't', detail: 'Slow: brain 1.3 s' }, 0);
   assert.match(statusLine(s, 500), /^Done 0\.5 s · Slow: brain 1\.3 s$/);
 });
+
+test('expert elapsed state survives new turns and clears only its own completion', () => {
+  let s = nextTurnState(null, { type: 'turn', stage: 'expert', turn_id: 'a' }, 100);
+  s = nextTurnState(s, { type: 'sent', text: 'hello' }, 200);
+  s = nextTurnState(s, { type: 'turn', stage: 'received', turn_id: 'b' }, 300);
+  assert.equal(statusLine(s, 2100), 'EXPERT 2.0 s');
+  s = nextTurnState(s, { type: 'turn', stage: 'expert_done', turn_id: 'other' }, 2200);
+  assert.match(statusLine(s, 2200), /^EXPERT/);
+  s = nextTurnState(s, { type: 'turn', stage: 'expert_done', turn_id: 'a' }, 2300);
+  assert.equal(s.turnId, 'b');
+  assert.match(statusLine(s, 2300), /^Received/);
+});

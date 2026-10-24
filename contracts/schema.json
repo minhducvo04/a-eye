@@ -2720,8 +2720,11 @@
       "speaking",
       "done",
       "failed",
-      "cancelled"
-     ]
+      "cancelled",
+      "expert",
+      "expert_done"
+     ],
+     "description": "expert: the talker called the expert model and is waiting for it (detail names the model); expert_done: its answer arrived, timed out (detail) or was cancelled."
     },
     "at_ms": {
      "type": "integer",
