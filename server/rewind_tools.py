@@ -146,6 +146,7 @@ async def run_memory_tool(name, args, session, app, turn_id=None):
         item = args.get('item') or getattr(session, 'memory_last_item', None)
         if scope == 'item' and item:
             deleted = store.forget_item(item)
+
             line = f"Forgotten. I no longer remember your {item}."
         elif scope == 'today':
             from datetime import datetime
@@ -160,7 +161,13 @@ async def run_memory_tool(name, args, session, app, turn_id=None):
         else:
             return dict(say="Tell me what to forget: that, today, or everything."), []
         state = memory_state_message(store, item if scope == 'item' else None)
-        return dict(deleted=deleted, count=state['count'], count_item=state.get('count_item'), say=line), [state]
+        cards = [state]
+        rewind = getattr(session, 'rewind', None)
+        if rewind is not None:                    # this call's Rewind clips go too; the clip count drops to 0
+            from server.rewind import state_message
+            await rewind.forget(local=True)
+            cards.append(state_message(rewind))
+        return dict(deleted=deleted, count=state['count'], count_item=state.get('count_item'), say=line), cards
     raise KeyError(name)
 
 
