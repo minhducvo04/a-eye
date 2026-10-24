@@ -1,10 +1,29 @@
 // Agent call page. Speaks the v2 WebSocket contract on /ws2.
 // Frames exist only as the JPEG about to be sent. Nothing is written to storage.
 
-import { paintDraw, applyDraw, pruneDraw, viewTransform } from "./draw.js";
+import { paintDraw, applyDraw, pruneDraw, viewTransform, visibleOps } from "./draw.js";
 import { writeFrame } from "./live.js";
 import { sharpCanvasSize } from "./overlay.js";
 import { AGENTS, layoutOrbs, nextPresence, paintPresence } from "./presence.js";
+import {
+  bargeSpeech,
+  devHudPosition,
+  emptySpeech,
+  formatHud,
+  initialHud,
+  initialTrackerBook,
+  nextTrackerPlan,
+  noteFinalWords,
+  noteFirstSound,
+  noteFrameReply,
+  noteFrameSent,
+  noteMetrics,
+  notePaint,
+  noteTrackerMs,
+  pushSay,
+  shouldTrack,
+} from "./realtime.js";
+import { applyAnchors, createTracker, toGray } from "./track.js";
 
 const PACK_LABEL = {
   general: "General",
@@ -15,6 +34,7 @@ const PACK_LABEL = {
 
 const FRAME_MS = 1000;
 const BOARD_ID = "demo-b650";
+const TRACK_W = 320;
 
 function boot() {
   const picker = document.getElementById("picker");
@@ -35,9 +55,19 @@ function boot() {
   const startBtn = document.getElementById("start-camera");
   const powerBtn = document.getElementById("power-off");
   const grab = document.createElement("canvas");
+  const grayCanvas = document.createElement("canvas");
+  const devEl = devOn ? document.createElement("p") : null;
+  if (devEl) {
+    devEl.className = "dev-hud";
+    devEl.setAttribute("aria-hidden", "true");
+    const hudRoot = stage.querySelector(".hud");
+    if (hudRoot) hudRoot.append(devEl);
+  }
 
   const sessionId = randomId();
-  const tts = new URLSearchParams(location.search).get("tts") === "server" ? "server" : "browser";
+  const params = new URLSearchParams(location.search);
+  const tts = params.get("tts") === "server" ? "server" : "browser";
+  const devOn = params.get("dev") === "1";
   const reducedQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 
   let pack = "";
@@ -54,6 +84,16 @@ function boot() {
   let voice = null;
   let listening = false;
   let raf = 0;
+  let speech = emptySpeech();
+  let speakQueue = [];
+  let voicedTurn = null;
+  const tracker = createTracker();
+  let tracks = new Map();
+  let book = initialTrackerBook();
+  let pendingPlan = null;
+  let trackBusy = false;
+  let lastTrackAt = null;
+  let hud = initialHud();
 
   const voiceReady = loadVoice({
     onFinal: (text) => {
@@ -71,6 +111,9 @@ function boot() {
       renderMic();
     },
     onBargeIn: (id, ms) => {
+      speech = bargeSpeech(speech);
+      speakQueue = [];
+      voicedTurn = null;
       send({
         v: 2,
         type: "barge_in",
@@ -137,6 +180,7 @@ function boot() {
       final: true,
       source,
     });
+    if (ok) hud = noteFinalWords(hud, Date.now());
     if (!ok) setSpeaker("helper", "Not connected.");
     return ok;
   }
@@ -183,7 +227,22 @@ function boot() {
     if (!message || typeof message !== "object") return;
     const now = Date.now();
     if (message.type === "draw") {
+      hud = noteFrameReply(hud, message, now);
+      const before = drawState;
       drawState = applyDraw(drawState, message, now);
+      if (drawState !== before) {
+        const changed = Array.isArray(message.ops) ? message.ops : [];
+        commitTracker("draw", message.seq, null, changed);
+      }
+      return;
+    }
+    if (message.type === "track") {
+      hud = noteFrameReply(hud, message, now);
+      commitTracker("track", message.seq, message.objects);
+      return;
+    }
+    if (message.type === "metrics") {
+      hud = noteMetrics(hud, message);
       return;
     }
     if (message.type === "agent_state") {
@@ -192,18 +251,22 @@ function boot() {
     }
     if (message.type === "say") {
       errorEl.classList.add("hidden");
-      const agent = message.agent === "shopper" ? "shopper" : "helper";
-      setSpeaker(agent, message.text || "");
-      if (tts === "browser" && voice && message.text) {
-        Promise.resolve()
-          .then(() => voice.unlockAudio())
-          .catch(() => {})
-          .then(() => voice.speak(message.utterance_id, message.text))
-          .catch(() => {});
+      const result = pushSay(speech, message);
+      speech = result.state;
+      if (!result.ignored) setSpeaker(result.agent, result.caption);
+      if (result.reset) {
+        speakQueue = [];
+        voicedTurn = null;
+        if (voice) voice.cancel();
+      }
+      if (tts === "browser" && result.speak.length) {
+        speakQueue.push(...result.speak);
+        flushSpeech();
       }
       return;
     }
     if (message.type === "audio" && voice) {
+      markSound();
       Promise.resolve()
         .then(() => voice.playPcm(message.utterance_id, message.pcm16_b64, Boolean(message.final)))
         .catch(() => {});
@@ -274,6 +337,187 @@ function boot() {
     marketEl.classList.remove("hidden");
   }
 
+  function currentOps() {
+    const ops = [];
+    for (const agent of ["helper", "shopper"]) {
+      for (const item of drawState.ops[agent] || []) ops.push(item.op);
+    }
+    return ops;
+  }
+
+  function commitTracker(kind, seq, objects, changedOps) {
+    const plan = nextTrackerPlan(book, {
+      camera: kind === "stop" ? false : cameraOn,
+      kind,
+      seq,
+      ops: currentOps(),
+      changed: changedOps || (kind === "draw" ? currentOps() : null),
+      objects,
+    });
+    book = plan.state;
+    if (!cameraOn || kind === "stop") {
+      for (const id of plan.drop) tracker.drop(id);
+      tracks = new Map();
+      pendingPlan = null;
+      return;
+    }
+    const shot = captureGray();
+    if (!shot) {
+      pendingPlan = plan;
+      return;
+    }
+    applyPlan(plan, shot.gray);
+  }
+
+  function applyPlan(plan, gray) {
+    for (const id of plan.drop) {
+      tracker.drop(id);
+      tracks.delete(id);
+    }
+    for (const item of plan.reseed) {
+      try {
+        tracker.reseed(item.id, item.bbox, gray);
+        tracks.set(item.id, { bbox: item.bbox.slice(), score: 1, lost: false });
+      } catch {
+        tracker.drop(item.id);
+        tracks.delete(item.id);
+      }
+    }
+    pendingPlan = null;
+  }
+
+  function reseedKnown(gray) {
+    for (const id of book.ids) {
+      const bbox = book.boxes[id];
+      if (!bbox) continue;
+      try {
+        tracker.reseed(id, bbox, gray);
+        tracks.set(id, { bbox: bbox.slice(), score: 1, lost: false });
+      } catch {
+        tracker.drop(id);
+        tracks.delete(id);
+      }
+    }
+  }
+
+  function captureGray() {
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!(vw > 0) || !(vh > 0)) return null;
+    const w = TRACK_W;
+    const h = Math.max(1, Math.round((vh / vw) * w));
+    const resized = grayCanvas.width !== w || grayCanvas.height !== h;
+    if (resized) {
+      grayCanvas.width = w;
+      grayCanvas.height = h;
+    }
+    const ctx = grayCanvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    try {
+      ctx.drawImage(video, 0, 0, w, h);
+      const image = ctx.getImageData(0, 0, w, h);
+      return { gray: toGray(image.data, image.width, image.height, 1), resized };
+    } catch {
+      return null;
+    }
+  }
+
+  function stepTracker(now) {
+    if (!cameraOn || !shouldTrack(lastTrackAt, now, trackBusy)) return;
+    if (!video.videoWidth || !video.videoHeight) return;
+    trackBusy = true;
+    try {
+      const shot = captureGray();
+      if (!shot) return;
+      if (pendingPlan) applyPlan(pendingPlan, shot.gray);
+      else if (shot.resized) reseedKnown(shot.gray);
+      const started = Date.now();
+      tracks = tracker.update(shot.gray) || new Map();
+      hud = noteTrackerMs(hud, Date.now() - started);
+    } catch {
+      /* keep the last good tracks */
+    } finally {
+      lastTrackAt = now;
+      trackBusy = false;
+    }
+  }
+
+  function dropUnanchored() {
+    if (!cameraOn || !book.ids.length) return;
+    const live = new Set();
+    for (const op of currentOps()) {
+      const id = op && op.anchor && op.anchor.object_id;
+      if (typeof id === "string" && id) live.add(id);
+    }
+    if (book.ids.every((id) => live.has(id))) return;
+    const plan = nextTrackerPlan(book, {
+      camera: true,
+      kind: "draw",
+      seq: 0,
+      ops: currentOps(),
+      changed: [],
+    });
+    book = plan.state;
+    for (const id of plan.drop) {
+      tracker.drop(id);
+      tracks.delete(id);
+    }
+  }
+
+  function anchoredState(state, live, now) {
+    if (!live || live.size === 0) return state;
+    const vis = visibleOps(state, now);
+    if (!vis.length) return state;
+    const moved = applyAnchors(vis.map((item) => item.op), live);
+    const ops = { helper: [], shopper: [] };
+    for (let i = 0; i < vis.length; i += 1) {
+      const agent = vis[i].agent === "shopper" ? "shopper" : "helper";
+      ops[agent].push({ op: moved[i], bornMs: vis[i].bornMs, agent });
+    }
+    return { seq: state.seq, ops };
+  }
+
+  function markSound() {
+    hud = noteFirstSound(hud, Date.now());
+  }
+
+  function flushSpeech() {
+    if (!voice || tts !== "browser" || !speakQueue.length) return;
+    const lines = speakQueue.splice(0, speakQueue.length);
+    for (const line of lines) {
+      if (voicedTurn !== speech.turnId) {
+        voice.speak(line.utteranceId, line.text);
+        voicedTurn = speech.turnId;
+        markSound();
+      } else {
+        queueUtterance(line.text);
+      }
+    }
+  }
+
+  function queueUtterance(text) {
+    const synth = globalThis.speechSynthesis;
+    if (!synth || typeof synth.speak !== "function") return;
+    const Ctor = globalThis.SpeechSynthesisUtterance;
+    const utter = typeof Ctor === "function" ? new Ctor(text) : { text };
+    utter.lang = "en-US";
+    try {
+      synth.speak(utter);
+    } catch {
+      /* caption still shows the sentence */
+    }
+  }
+
+  function placeDevHud(view, poses) {
+    if (!devEl) return;
+    const box = devHudPosition(view, poses);
+    devEl.style.left = `${box.x}px`;
+    devEl.style.top = `${box.y}px`;
+    devEl.style.width = `${box.w}px`;
+    const text = formatHud(hud);
+    if (devEl.textContent !== text) devEl.textContent = text;
+  }
+
   function sourceSize() {
     if (cameraOn && video.videoWidth && video.videoHeight) {
       return { w: video.videoWidth, h: video.videoHeight };
@@ -310,16 +554,22 @@ function boot() {
     if (!(view.w > 0) || !(view.h > 0)) return;
     const reduced = reducedMotion();
     drawState = pruneDraw(drawState, now);
+    dropUnanchored();
     const laid = layoutOrbs(presence, motion, view, now, reduced);
     motion = laid.motion;
+    hud = notePaint(hud, now);
     const drawCtx = fitCanvas(drawCanvas, view.w, view.h);
     const presenceCtx = fitCanvas(presenceCanvas, view.w, view.h);
-    paintDraw(drawCtx, drawState, view, now, reduced);
+    const frameState = cameraOn ? anchoredState(drawState, tracks, now) : drawState;
+    paintDraw(drawCtx, frameState, view, now, reduced);
     paintPresence(presenceCtx, presence, laid.poses, view, now, reduced);
+    placeDevHud(view, laid.poses);
   }
 
   function loop() {
-    paint(Date.now());
+    const now = Date.now();
+    stepTracker(now);
+    paint(now);
     raf = window.requestAnimationFrame(loop);
   }
 
@@ -330,16 +580,19 @@ function boot() {
     if (!video.videoWidth || !video.videoHeight) return;
     const shot = writeFrame(grab, video, video.videoWidth, video.videoHeight);
     if (!shot || !shot.jpeg_b64) return;
-    send({
+    const sentAt = Date.now();
+    const frameSeq = nextSeq();
+    const ok = send({
       v: 2,
       type: "frame",
       session_id: sessionId,
-      seq: nextSeq(),
-      ts_ms: Date.now(),
+      seq: frameSeq,
+      ts_ms: sentAt,
       w: shot.w,
       h: shot.h,
       jpeg_b64: shot.jpeg_b64,
     });
+    if (ok) hud = noteFrameSent(hud, frameSeq, sentAt);
   }
 
   function startFrames() {
@@ -354,6 +607,7 @@ function boot() {
     }
     video.srcObject = null;
     cameraOn = false;
+    commitTracker("stop");
   }
 
   function hideStill() {
@@ -388,6 +642,7 @@ function boot() {
       await video.play();
       cameraOn = true;
       startBtn.disabled = true;
+      commitTracker("draw");
       sendLiveFrame();
       startFrames();
     } catch (err) {
@@ -433,16 +688,19 @@ function boot() {
         still.src = url;
         still.classList.remove("hidden");
       }
+      const sentAt = Date.now();
+      const frameSeq = nextSeq();
       const ok = send({
         v: 2,
         type: "frame",
         session_id: sessionId,
-        seq: nextSeq(),
-        ts_ms: Date.now(),
+        seq: frameSeq,
+        ts_ms: sentAt,
         w: shot.w,
         h: shot.h,
         jpeg_b64: shot.jpeg_b64,
       });
+      if (ok) hud = noteFrameSent(hud, frameSeq, sentAt);
       if (!ok) setSpeaker("helper", "Not connected.");
     } catch {
       if (photoUrl !== url) URL.revokeObjectURL(url);
@@ -459,6 +717,7 @@ function boot() {
 
   async function onMic() {
     voice = voice || (await voiceReady);
+    flushSpeech();
     if (!voice || !voice.supported || !voice.supported.stt) return;
     try {
       await voice.unlockAudio();
@@ -483,6 +742,7 @@ function boot() {
     picker.classList.add("hidden");
     stage.classList.remove("hidden");
     voice = voice || (await voiceReady);
+    flushSpeech();
     if (voice) {
       try {
         await voice.unlockAudio();
