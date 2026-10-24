@@ -964,5 +964,54 @@
    "role": "camera",
    "detail": "Unknown or expired code."
   }
+ ],
+ "v2_rewind": [
+  {
+   "v": 2,
+   "type": "rewind",
+   "session_id": "s-1",
+   "on": true
+  }
+ ],
+ "v2_rewind_state": [
+  {
+   "v": 2,
+   "type": "rewind_state",
+   "on": true,
+   "clips": 3,
+   "ready": 2,
+   "indexing": 1,
+   "pending": 0,
+   "notice": "Rewind on: short video clips of this call are uploaded to TwelveLabs so you can ask about them later."
+  }
+ ],
+ "v2_rewind_hit": [
+  {
+   "v": 2,
+   "type": "rewind_hit",
+   "turn_id": "t-1",
+   "query": "plug in the CPU fan",
+   "t_s": 130.0,
+   "start_s": 128.0,
+   "end_s": 133.0,
+   "sure": true,
+   "alternatives": [
+    402.5
+   ],
+   "frame_b64": "AAAA",
+   "objects": [
+    {
+     "id": "o1",
+     "label": "CPU fan",
+     "bbox": [
+      0.4,
+      0.3,
+      0.2,
+      0.2
+     ],
+     "conf": 0.82
+    }
+   ]
+  }
  ]
 }

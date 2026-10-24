@@ -6,6 +6,14 @@
 
 From now on, changes may only add optional fields or new message types. Do not remove or rename fields, make optional fields required, or change existing meanings. Add an entry here for every addition; update schema, TypeScript mirror and examples together through the contract PR process and run `make test-py`. Clients must ignore unknown response fields and unknown message types (and skip unknown draw kinds). Current server request validation remains strict; do not send speculative fields. A breaking change requires a separately negotiated major protocol, outside this freeze.
 
+## v2.5: Rewind (call memory through TwelveLabs)
+
+- Optional `v2_hello.rewind` (boolean, default off).
+- New `v2_rewind` (client): required `v`, `type:rewind`, `session_id`, `on`. Added to `client_message_v2`.
+- New `v2_rewind_state` (server): required `v`, `type:rewind_state`, `on`; optional `clips`, `ready`, `indexing`, `pending`, `notice` (the one-line upload notice).
+- New `v2_rewind_hit` (server): required `v`, `type:rewind_hit`, `query`, `t_s`, `start_s`, `end_s`, `sure`; optional `turn_id`, `alternatives` (other call times, seconds), `frame_b64` (the kept frame nearest the hit), `objects` (boxes on that frame, not on the live picture). Times are seconds since the call started.
+- Added rewind_state and rewind_hit to `server_message_v2`.
+
 ## v2.4: phone as camera
 
 - Optional `v2_hello.role` (`call` default, `camera`) and `v2_hello.pair_code` (4 to 8 digits). A camera socket only streams frames and camera on/off into the call's session; speech and audio stay on the call device.

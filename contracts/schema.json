@@ -1983,6 +1983,10 @@
      "type": "string",
      "pattern": "^[0-9]{4,8}$",
      "description": "Required with role camera: the single-use code the call device got in v2_pair."
+    },
+    "rewind": {
+     "type": "boolean",
+     "description": "true: Rewind on from the start (clips of this call go to TwelveLabs). Default off."
     }
    }
   },
@@ -2495,6 +2499,9 @@
     },
     {
      "$ref": "#/$defs/v2_pair_request"
+    },
+    {
+     "$ref": "#/$defs/v2_rewind"
     }
    ]
   },
@@ -2535,6 +2542,12 @@
     },
     {
      "$ref": "#/$defs/v2_pair_status"
+    },
+    {
+     "$ref": "#/$defs/v2_rewind_state"
+    },
+    {
+     "$ref": "#/$defs/v2_rewind_hit"
     }
    ]
   },
@@ -2866,6 +2879,131 @@
     },
     "detail": {
      "type": "string"
+    }
+   }
+  },
+  "v2_rewind": {
+   "description": "Client to server: Rewind switched on or off. On keeps short clips around keyframes and uploads them to TwelveLabs for search; off drops unsent clips.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "v",
+    "type",
+    "session_id",
+    "on"
+   ],
+   "properties": {
+    "v": {
+     "$ref": "#/$defs/v2"
+    },
+    "type": {
+     "const": "rewind"
+    },
+    "session_id": {
+     "type": "string"
+    },
+    "on": {
+     "type": "boolean"
+    }
+   }
+  },
+  "v2_rewind_state": {
+   "description": "Server to client: Rewind status after a switch or upload. notice is the one-line upload notice to show while on.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "v",
+    "type",
+    "on"
+   ],
+   "properties": {
+    "v": {
+     "$ref": "#/$defs/v2"
+    },
+    "type": {
+     "const": "rewind_state"
+    },
+    "on": {
+     "type": "boolean"
+    },
+    "clips": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "ready": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "indexing": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "pending": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "notice": {
+     "type": "string"
+    }
+   }
+  },
+  "v2_rewind_hit": {
+   "description": "Server to client: the call moment that answers a Rewind question. Times are seconds since the call started. sure is false when our own vision did not confirm the object in the frame; objects are boxes on frame_b64, not on the live picture.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "v",
+    "type",
+    "query",
+    "t_s",
+    "start_s",
+    "end_s",
+    "sure"
+   ],
+   "properties": {
+    "v": {
+     "$ref": "#/$defs/v2"
+    },
+    "type": {
+     "const": "rewind_hit"
+    },
+    "turn_id": {
+     "type": "string"
+    },
+    "query": {
+     "type": "string"
+    },
+    "t_s": {
+     "type": "number",
+     "minimum": 0
+    },
+    "start_s": {
+     "type": "number",
+     "minimum": 0
+    },
+    "end_s": {
+     "type": "number",
+     "minimum": 0
+    },
+    "sure": {
+     "type": "boolean"
+    },
+    "alternatives": {
+     "type": "array",
+     "items": {
+      "type": "number",
+      "minimum": 0
+     },
+     "maxItems": 3
+    },
+    "frame_b64": {
+     "$ref": "#/$defs/jpeg_b64"
+    },
+    "objects": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/scene_object"
+     }
     }
    }
   }
