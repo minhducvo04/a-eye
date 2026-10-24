@@ -55,7 +55,7 @@ def run(session=None, llm=None, text='point here', vision=None):
 def test_resolves_shapes_and_unknown_targets():
     draw = [dict(kind=k, target='a') for k in ('box', 'circle', 'arrow', 'pin', 'label', 'highlight', 'path')]
     draw += [dict(kind='arrow', target='a', from_target='b'), dict(kind='box', target='missing')]
-    messages = run(llm=LLM('```json\n' + json.dumps(dict(agent='helper', say='Here.', draw=draw)) + '\n```'))
+    messages = run(Session('s', pack=packs.get('cooking'), frame=FRAME), llm=LLM('```json\n' + json.dumps(dict(agent='helper', say='Here.', draw=draw)) + '\n```'))
     ops = messages[1]['ops']
     assert len(ops) == 9
     assert ops[0] == dict(kind='clear', id='*')

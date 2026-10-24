@@ -13,6 +13,7 @@ from uuid import uuid4
 from server.expert import RULES as EXPERT_RULES, should_escalate, mark_failed
 from server.llm import TURN_USAGE, TURN_BRAIN
 from server import rewind_tools
+from server import pointer
 from server.routing import forget_request, past_tool, rewind_callback, route_turn
 
 from server.crops import crop_b64, pick_target
@@ -514,6 +515,7 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
     system = session.pack.system_prompt + (
         " memory lists earlier views, oldest last; only the entry marked now is what the camera shows.")
     duo = planner is not None
+    pointing = session.pack.id == 'general'
     if not session.camera:
         system += ' The camera is off. Answer by voice only; do not draw.'
     if session.pack.id == 'pc_build':
@@ -521,7 +523,10 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
     base_system = system
     if re.search(r"\b(failed|didn.t work|still not working)\b", text, re.I) and session.expert_step:
         mark_failed(session, session.expert_step)
-    system += TALKER_RULES if duo else (' Line 1: one JSON object with agent, draw and optional market_category. '
+    system += TALKER_RULES if duo else (
+               ' Line 1: {"agent":"helper","draw":[]}. Next line: SAY: then one or two short spoken sentences. '
+               'Start with a short first clause of 4 to 8 words, ending in a comma or period.'
+               if pointing else ' Line 1: one JSON object with agent, draw and optional market_category. '
                'Do not include say in that object. Next line: SAY: then spoken text. '
                'Start speech with a short first clause of 4 to 8 words, ending in a comma or period. '
                'Draw targets and from_target must be scene object IDs, never coordinates. '
@@ -529,6 +534,8 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                'Draw item schema: ' + json.dumps(schema()['$defs']['brain_turn']['properties']['draw'])
                + ' agent: helper or shopper; market_category: cpu, board, ram, ssd, gpu, psu, cooler, case, fan.')
     system += "\n" + EXPERT_RULES
+    if pointing:
+        system += pointer.RULES
     user = json.dumps(dict(caption=scene['caption'], objects=[
         {k: obj[k] for k in ('id', 'label', 'bbox')} for obj in scene['objects']],
         memory=session.scene_memory.snapshot(monotonic(), current=bool(fresh and session.scene is not None)),
@@ -539,7 +546,7 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
     private_expert = route == 'expert' and local_only()
     if private_expert:
         route = 'now'
-    if duo and route not in ('past', 'expert'):
+    if duo and not pointing and route not in ('past', 'expert'):
         planner_task = asyncio.create_task(plan_scene(session, planner, base_system, user, scene, seq, text, emit))
     queue = asyncio.Queue()
     first_audio = None
@@ -620,6 +627,7 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
     pending = None
     first_token = None
     brain_started = monotonic()
+    target_tag = pointer.TargetTag()
     try:
         if forget_request(text) and getattr(session, 'rewind', None) is not None:
             # Spoken "forget that": the same deletion as the Forget button (TwelveLabs copies and local frames).
@@ -663,16 +671,27 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                 if first_token is None:
                     first_token = (monotonic() - brain_started) * 1000
                     if duo:
+                        if pointing and session.camera:
+                            await emit(message('draw', agent='helper', seq=(session.frame or {}).get('seq', seq),
+                                               ops=[dict(kind='clear', id='*')]))
                         await emit(state('speaking'))
-                buffer += delta
+                buffer += target_tag.feed(delta) if pointing else delta
                 if not header:
                     parsed = stream_header(buffer)
                     if parsed is None:
-                        continue
-                    raw, buffer = parsed
+                        # The local talker sometimes omits its header. Stream plain General
+                        # speech immediately, but keep buffering an actual partial JSON header.
+                        if not pointing or not buffer.strip() or buffer.lstrip().startswith(('{', '`')):
+                            continue
+                        raw = {}
+                    else:
+                        raw, buffer = parsed
                     turn = sanitize_header(raw, {obj['id'] for obj in scene['objects']})
+                    if pointing:
+                        turn['draw'] = []  # General pointers must pass fresh local grounding below.
                     validate('brain_turn', dict(turn, say='stream'))
-                    drawing, focus = resolve(turn, scene, seq)
+                    draw_seq = (session.frame or {}).get('seq', seq) if pointing else seq
+                    drawing, focus = resolve(turn, scene, draw_seq)
                     if session.camera:
                         await emit(drawing)
                     await emit(state('speaking', turn['agent'], **({'focus': focus} if focus else {})))
@@ -738,6 +757,13 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         if pending or part == 0:
             await speech(pending or 'Please tell me what you need.',
                          final=not bool(turn.get('market_category')), agent=turn['agent'])
+        if pointing:
+            pointer_started = monotonic()
+            drawing = await pointer.ground(session, vision, target_tag.target(reply_text))
+            if drawing:
+                await emit(drawing)
+            event('pointer', session.session_id, ms=(monotonic() - pointer_started) * 1000,
+                  reason='drawn' if drawing else 'abstained')
         if planner_task is not None:
             # The thinker's note is spoken only when it adds a fact, or when the talker stalled with a filler.
             planned_at = monotonic()

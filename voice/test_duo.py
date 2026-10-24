@@ -4,6 +4,7 @@ import json
 from time import monotonic
 
 from contracts import validate
+from server import packs
 from server.agent import Session, run_turn
 from server.llm import fast_options, turn_model
 from server.test_agent import SCENE, Vision
@@ -29,7 +30,7 @@ class Planner:
 
 
 def session():
-    s = Session('s')
+    s = Session('s', pack=packs.get('pc_build'), power_off=True)
     s.scene, s.scene_time, s.scene_seq = SCENE, monotonic(), 3
     return s
 

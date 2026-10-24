@@ -4,6 +4,7 @@ from time import monotonic
 import pytest
 
 from contracts import validate
+from server import packs
 from server.agent import Session, run_turn
 from server.test_agent import SCENE, Vision
 
@@ -24,7 +25,8 @@ def test_live_formats(text, chunk_size):
                 for i in range(0, len(text), chunk_size):
                     yield text[i:i + chunk_size]
         scene = dict(SCENE, objects=[dict(SCENE['objects'][0], id='o1')])
-        result = await run_turn(Session('s', scene=scene, scene_time=monotonic()), 'help', vision=Vision(), llm=Brain())
+        result = await run_turn(Session('s', pack=packs.get('cooking'), scene=scene, scene_time=monotonic()),
+                                'help', vision=Vision(), llm=Brain())
         for msg in result:
             validate('server_message_v2', msg)
         drawing = next(m for m in result if m['type'] == 'draw')
