@@ -58,10 +58,14 @@ class Session:
     expert_start: object = field(default=None, repr=False)
     expert_failures: dict = field(default_factory=dict, repr=False)
     expert_step: str = ''
+    home_guide: object = field(default=None, repr=False)
     board: dict = field(init=False)
 
     def __post_init__(self):
         self.board = load_board(self.board_id)
+        if self.pack.id == 'home':
+            from server.packs.home import HomeGuide
+            self.home_guide = HomeGuide()
 
 
 def message(kind, **fields):
@@ -355,6 +359,12 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                            at_ms=int(time() * 1000)))
 
     refusal = session.pack.refuse(text)
+    if session.home_guide is not None:
+        store = None
+        if app is not None and hasattr(app.state, 'memories'):
+            store, _ = app.state.memories.for_call(session.session_id)
+        # The guide checks hazards itself so they also invalidate a previous water check.
+        refusal = session.home_guide.reply(text, store)
     if refusal or (session.pack.requires_power_off and not session.power_off):
         msg = say(refusal or POWER_LINE)
         msg.update(turn_id=turn_id, part=0, final=True)
