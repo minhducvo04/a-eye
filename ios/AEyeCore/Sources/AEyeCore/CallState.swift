@@ -35,9 +35,12 @@ public struct CallState: Equatable {
     public var errorText: String?
     /// Set while an agent works on an answer; nil once it speaks, fails or the link drops.
     public var wait: Wait?
+    /// The turn a stronger model is checking (`turn.stage == expert`), shown as the Expert badge; nil otherwise.
+    public var expertTurnId: String?
 
     public init(link: LinkStatus, caption: Caption?, presence: [Agent: PresenceState], powerOffConfirmed: Bool,
-                draw: DrawState, market: MarketResponse?, errorText: String?, wait: Wait? = nil) {
+                draw: DrawState, market: MarketResponse?, errorText: String?, wait: Wait? = nil,
+                expertTurnId: String? = nil) {
         self.link = link
         self.caption = caption
         self.presence = presence
@@ -46,7 +49,10 @@ public struct CallState: Equatable {
         self.market = market
         self.errorText = errorText
         self.wait = wait
+        self.expertTurnId = expertTurnId
     }
+
+    public var isExpertChecking: Bool { expertTurnId != nil }
 
     public static let initial = CallState(
         link: .connecting,
@@ -69,9 +75,11 @@ public struct CallState: Equatable {
             next.presence = [:]
             next.errorText = nil
             next.wait = nil
+            next.expertTurnId = nil
         case .disconnected:
             next.link = .reconnecting
             next.wait = nil
+            next.expertTurnId = nil
         case .powerOffTapped:
             next.powerOffConfirmed = true
         case .marketDismissed:
@@ -92,6 +100,12 @@ public struct CallState: Equatable {
                     next.presence[other] = .idle
                 }
                 next.wait = waitAfter(agent: agent, presence: state, nowMs: nowMs)
+            case .turn(let id, let stage, _, _) where stage.isExpertSignal:
+                if stage == .expert {
+                    next.expertTurnId = id
+                } else if expertTurnId == id {
+                    next.expertTurnId = nil
+                }
             case .turn(let id, let stage, let typicalMs, let detail):
                 next.wait = waitAfter(turnId: id, stage: stage, typicalMs: typicalMs, nowMs: nowMs)
                 if stage == .failed, let detail, !detail.isEmpty {

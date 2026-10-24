@@ -3,13 +3,21 @@ import Foundation
 /// Where a user turn is on the server (`v2_turn.stage` in `contracts/schema.json`).
 public enum TurnStage: String, Codable {
     case received, transcribing, thinking, backup, speaking, done, failed, cancelled
+    /// A stronger model is checking the answer (the Expert badge). Sent beside the normal stages, not instead.
+    case expert
+    case expertDone = "expert_done"
 
     /// The agent has not answered yet: the user should keep the camera on the thing and wait.
     public var isWaiting: Bool {
         switch self {
         case .received, .transcribing, .thinking, .backup: return true
-        case .speaking, .done, .failed, .cancelled: return false
+        case .speaking, .done, .failed, .cancelled, .expert, .expertDone: return false
         }
+    }
+
+    /// Expert stages only move the badge; they leave the wait card alone.
+    public var isExpertSignal: Bool {
+        self == .expert || self == .expertDone
     }
 }
 

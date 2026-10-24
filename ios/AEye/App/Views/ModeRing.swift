@@ -41,8 +41,8 @@ struct ModeRing: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(.white)
             Text(selectedMode.isAvailable ? "tap to start" : "coming soon")
-                .font(.system(.footnote, design: .monospaced))
-                .foregroundStyle(Color.white.opacity(0.7))
+                .font(.subheadline)
+                .foregroundStyle(Palette.text2)
         }
         .shadow(color: .black.opacity(0.5), radius: 6)
         .accessibilityElement(children: .combine)

@@ -54,3 +54,37 @@ final class CallStateTests: XCTestCase {
         XCTAssertFalse(CallState.initial.reduce(.powerOffTapped, nowMs: 0).showsPowerOffButton(for: Modes.all[1]))
     }
 }
+
+final class ExpertBadgeTests: XCTestCase {
+    private func turn(_ id: String, _ stage: TurnStage) -> CallEvent {
+        .server(.turn(id: id, stage: stage, typicalMs: nil, detail: nil))
+    }
+
+    func testExpertBadgeFollowsItsTurn() {
+        let live = CallState.initial.reduce(.connected, nowMs: 0)
+        let checking = live.reduce(turn("t1", .expert), nowMs: 1)
+        XCTAssertEqual(checking.expertTurnId, "t1")
+        XCTAssertTrue(checking.isExpertChecking)
+
+        let otherDone = checking.reduce(turn("t2", .expertDone), nowMs: 2)
+        XCTAssertEqual(otherDone.expertTurnId, "t1", "another turn's expert_done does not clear the badge")
+
+        XCTAssertNil(otherDone.reduce(turn("t1", .expertDone), nowMs: 3).expertTurnId)
+        XCTAssertNil(checking.reduce(.disconnected, nowMs: 4).expertTurnId)
+        XCTAssertNil(checking.reduce(.connected, nowMs: 5).expertTurnId)
+    }
+
+    func testExpertStageLeavesTheWaitAlone() {
+        let waiting = CallState.initial.reduce(.connected, nowMs: 0).reduce(turn("t1", .received), nowMs: 10)
+        XCTAssertNotNil(waiting.wait)
+        let checking = waiting.reduce(turn("t1", .expert), nowMs: 20)
+        XCTAssertEqual(checking.wait, waiting.wait)
+        XCTAssertEqual(checking.reduce(turn("t1", .expertDone), nowMs: 30).wait, waiting.wait)
+    }
+
+    func testExpertStagesDecode() {
+        let json = #"{"v":2,"type":"turn","turn_id":"t9","stage":"expert_done"}"#
+        guard case .turn(_, let stage, _, _)? = ServerMessage.decode(Data(json.utf8)) else { return XCTFail() }
+        XCTAssertEqual(stage, .expertDone)
+    }
+}
