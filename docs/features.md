@@ -23,6 +23,7 @@ Last updated 2026-10-24 (UI polish, `pkg/ui-polish`).
 |---|---|---|---|---|---|---|
 | Live camera, 1 fps frames to our own vision host | built | browser smoke (frames sent) | yes | yes | photo only | Full screen |
 | Drawings on the picture (box, arrow, circle, path, label, pin) with tracking | built | browser smoke; node tests | yes | yes | yes (on the photo) | Over the camera |
+| General answer points at one named object, with a box and arrow that expire after 2.5 s | implemented in `pkg/pointer` working tree; not on main | live local Qwen: 3/10 synthetic fixtures hit with cached caption, 0 wrong; uncached 0/10, all abstained; [report](results/pointer.md) | existing draw ops; tests pass | existing draw ops; Swift tests pass; device not checked | not checked | Over the camera |
 | Voice in (browser speech or server STT), voice out (Cartesia or Kokoro), barge-in | built | node tests; real mic not checked in this pass | yes | yes | typed in simulator only | Mic button; listening strip |
 | Tap to start turns the mic on; Mic on shows filled blue with "Hearing you" | built | Playwright Chromium 390 and 1280: on after start, off after the first press (b4e1855) | yes | n/a | n/a | Call bar mic |
 | Hold to talk (button and Space) | built | browser smoke | yes | no | no | Call bar, hand icon (hidden in Memory mode) |

@@ -2,8 +2,9 @@
 
 Runs the single-brain path (no planner): one streamed reply, a JSON header line, then
 SAY: speech. That is the path a local model serves when there is no Anthropic key or
-LOCAL_ONLY=1. Each case's scene is loaded as the session's cached scene, so no frames
-are used. Market searches are recorded, never sent.
+LOCAL_ONLY=1. Each case's scene is loaded as the session's cached scene. General's
+pointer queries use a fixture-only grounding oracle, not a real vision call. This
+measures target selection, not visual accuracy. Market searches are recorded, never sent.
 
     python -m eval.brain_turns --model local:qwen3.5:9b-q4_K_M --model local:<small model>
 """
@@ -23,6 +24,7 @@ from eval.brain_score import markdown, score, summarize
 from server import packs
 from server.agent import Session, run_turn, safe_speech, stream_header
 from server.llm import LLMClient
+from server.pointer import TargetTag
 
 CASES_PATH = Path(__file__).resolve().parent / 'brain_cases.json'
 FRAME = dict(v=2, type='frame', session_id='eval', seq=1, ts_ms=1, w=640, h=480, jpeg_b64='synthetic')
@@ -36,8 +38,9 @@ CSV_FIELDS = ('case_id', 'tag', 'provider', 'first_token_ms', 'turn_ms', 'passed
 class RecordingLLM:
     """Passes the stream through and keeps the raw reply, which run_turn would otherwise hide."""
 
-    def __init__(self, client):
+    def __init__(self, client, session):
         self.client = client
+        self.session = session
         self.raw = ''
         self.called = False
 
@@ -47,11 +50,22 @@ class RecordingLLM:
             async for delta in stream:
                 self.raw += delta
                 yield delta
+        # The text-only oracle holds the same fixture view throughout the answer.
+        # Present it as a fresh frame for pointing; model latency is scored separately.
+        self.session.frame_time = monotonic()
 
 
-class NoVision:
+class FixtureVision:
+    """Explicit stand-in for local grounding; no frame or request leaves the eval."""
+    def __init__(self, scene):
+        self.scene = scene
+
     async def call(self, operation, payload):
-        raise AssertionError('run_turn should use the cached scene, not call vision')
+        labels = {q.casefold() for q in payload.get('queries', [])}
+        # Simulate a successful fresh single-label Qwen result (.7), independently of
+        # the old cached scene's confidence. This oracle scores the talker's name only.
+        return dict(self.scene, source='ollama', objects=[
+            dict(obj, conf=.7) for obj in self.scene['objects'] if obj['label'].casefold() in labels])
 
 
 def parse_model(spec: str) -> tuple[str, str]:
@@ -75,7 +89,7 @@ def session_for(case: dict) -> Session:
 
 
 def header_facts(raw: str) -> dict:
-    parsed = stream_header(raw)
+    parsed = stream_header(TargetTag().feed(raw))
     if parsed is None:
         return dict(header=None, format_ok=False)
     header, rest = parsed
@@ -84,13 +98,20 @@ def header_facts(raw: str) -> dict:
     return dict(header=header if isinstance(header, dict) else None, format_ok=strict and bool(safe_speech(rest)))
 
 
-def message_facts(messages: list) -> dict:
+def message_facts(messages: list, scene=None) -> dict:
     drawn, speech, metrics = [], [], {}
     for msg in messages:
         if msg['type'] == 'agent_state' and msg['agent'] == 'shopper' and msg['state'] == 'thinking':
             break  # the code's shopper lines follow; a model-chosen shopper agent still speaks first
         if msg['type'] == 'draw':
-            drawn += [op['anchor']['object_id'] for op in msg['ops'] if 'anchor' in op]
+            for op in msg['ops']:
+                if 'anchor' not in op:
+                    continue
+                anchor = op['anchor']
+                object_id = anchor['object_id']
+                if scene and object_id.startswith('pointer-'):
+                    object_id = next((obj['id'] for obj in scene['objects'] if obj['bbox'] == anchor['bbox']), object_id)
+                drawn.append(object_id)
         elif msg['type'] == 'say':
             speech.append(msg['text'])
     for msg in messages:
@@ -101,17 +122,18 @@ def message_facts(messages: list) -> dict:
 
 
 async def ask(case: dict, client, provider: str) -> dict:
-    llm, searched = RecordingLLM(client), []
+    session = session_for(case)
+    llm, searched = RecordingLLM(client, session), []
 
     def record_search(query):
         searched.append(query['category'])
         raise RuntimeError('eval: market search recorded, not sent')
 
     with patch('server.agent.search', record_search):
-        messages = await run_turn(session_for(case), case['text'], vision=NoVision(), llm=llm)
+        messages = await run_turn(session, case['text'], vision=FixtureVision(case['scene']), llm=llm)
     if not llm.called:
         raise ValueError(f"case {case['case_id']} never reached the brain (a code gate answered)")
-    return dict(header_facts(llm.raw), **message_facts(messages), market=searched[0] if searched else None,
+    return dict(header_facts(llm.raw), **message_facts(messages, case['scene']), market=searched[0] if searched else None,
                 provider='canned' if UNAVAILABLE in llm.raw else provider)
 
 

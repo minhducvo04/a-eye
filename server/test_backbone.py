@@ -97,7 +97,7 @@ def test_mock_full_turn(audio, capsys):
             if msg['type'] == 'metrics' and 'turn_id' in msg:
                 break
         drawing = next(m for m in messages if m['type'] == 'draw')
-        assert {'box', 'arrow'} <= {op['kind'] for op in drawing['ops']}
+        assert drawing['ops'] == [dict(kind='clear', id='*')]  # Fake grounding never points in General.
         assert len([m for m in messages if m['type'] == 'say']) == 2
         assert any(m['type'] == 'audio' and m['pcm16_b64'] for m in messages)
     output = capsys.readouterr().out
@@ -177,7 +177,7 @@ def test_immediate_frame_then_text():
         while True:
             msg = ws.receive_json()
             if msg['type'] == 'draw':
-                assert {'box', 'arrow'} <= {op['kind'] for op in msg['ops']}
+                assert msg['ops'] == [dict(kind='clear', id='*')]
                 break
 
 

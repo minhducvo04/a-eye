@@ -3,6 +3,7 @@ import json
 from time import monotonic
 
 from contracts import validate
+from server import packs
 from server.agent import Session, run_turn
 from server.test_agent import SCENE, Vision
 
@@ -15,7 +16,7 @@ class Brain:
 
 def test_cached_stream():
     async def check():
-        session = Session('s')
+        session = Session('s', pack=packs.get('cooking'))
         session.scene = SCENE
         session.scene_time = monotonic()
         session.scene_seq = 7
@@ -156,7 +157,7 @@ def test_cold_scene_wait_is_bounded_and_does_not_cancel_refresh():
 
 def test_stale_scene_does_not_wait_for_refresh():
     async def check():
-        session = Session('s', scene=SCENE, scene_time=monotonic() - 3)
+        session = Session('s', pack=packs.get('cooking'), scene=SCENE, scene_time=monotonic() - 3)
         session.scene_task = asyncio.create_task(asyncio.Event().wait())
         result = await asyncio.wait_for(run_turn(session, 'point', vision=Vision(), llm=Brain()), 0.2)
         assert len(next(m for m in result if m['type'] == 'draw')['ops']) > 1
@@ -214,7 +215,7 @@ def test_header_without_draw_is_accepted_and_say_marker_stripped():
 def test_old_scene_of_the_newest_frame_is_still_used():
     """A still photo: the scene is older than 2 s but belongs to the newest frame, so the brain must see it."""
     async def check():
-        session = Session('s')
+        session = Session('s', pack=packs.get('cooking'))
         session.scene = SCENE
         session.scene_time = monotonic() - 30
         session.scene_seq = 7
@@ -236,7 +237,7 @@ def test_header_with_bent_roles_keeps_draws_and_never_speaks_json():
             yield 'SAY: Cut here.'
 
     async def check():
-        session = Session('s')
+        session = Session('s', pack=packs.get('cooking'))
         session.scene = SCENE
         session.scene_time = monotonic()
         messages = await run_turn(session, 'cut', vision=Vision(), llm=BentBrain())

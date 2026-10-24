@@ -31,6 +31,11 @@ class Perfect:
         header = dict(agent='helper', draw=[dict(kind='box', target=t) for t in expect.get('targets', [])[:1]])
         if expect.get('market'):
             header['market_category'] = expect['market']
+        if case['pack'] == 'general' and expect.get('targets'):
+            name = next(obj['label'] for obj in case['scene']['objects'] if obj['id'] == expect['targets'][0])
+            header['draw'] = []
+            yield json.dumps(header) + f'\nSAY: Use the {name}. [POINT: {name}]'
+            return
         yield json.dumps(header)
         yield '\nSAY: Here it is, right there.'
 
