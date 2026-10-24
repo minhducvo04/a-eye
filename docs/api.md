@@ -20,7 +20,7 @@ flowchart LR
   T --> P
 ```
 
-The slow loop grounds objects about once per second (default scene interval 1000 ms, subject to inference and GPU contention). Draw operations use those objects when a user turn runs; they are **not** emitted automatically every second. Scene refresh sends `track` then frame `metrics`. Optional detector refresh may add more `track` messages; its schema describes 10–15 fps when available, not a delivery guarantee.
+The slow loop grounds objects about once per second (default scene interval 1000 ms, subject to inference and GPU contention). Draw operations use those objects when a user turn runs; they are **not** emitted automatically every second. Scene refresh sends `track` then frame `metrics`. Optional detector refresh may add more `track` messages; its schema describes 10 to 15 fps when available, not a delivery guarantee.
 
 The phone owns the fast loop: for example, run Vision `VNTrackObjectRequest` between server updates. Reseed each object from `draw.ops[].anchor` and each newer `track.objects[]` entry, matched by object ID. Retain the sent frame's geometry/sequence so an old result cannot replace a newer anchor. Track each object independently; a missing object in a partial track update is not a deletion. Clear local trackers on session reset or tracking loss. Never persist raw camera or mic data.
 
@@ -109,7 +109,7 @@ Both directions use base64 of raw **16 kHz mono signed PCM16 little-endian**, wi
 
 Output chunk lengths vary: current Kokoro adapter requests 2048-byte chunks (64 ms), Cartesia 4096 bytes (128 ms); the final chunk may be shorter or empty. Do not assume these lengths are contractual. Decode, queue by utterance and stream to an audio engine; do not play base64 or use one audio player per chunk. In `tts:browser`, speak say text locally; in `tts:server`, play audio and use say only for captions. Current non-mock server may supply no audio if its voice adapter is unavailable; the client must handle that state.
 
-The schema has no JPEG byte cap, socket message-size cap, max text length or maximum frame dimensions; 640/0.7 is the phone transport recommendation, not enforced by this schema. Transport/proxy limits may still apply. Do not infer an unlimited accepted payload. Scene requests allow at most 8 nonempty queries and `max_objects` 1–20. Market `max_results` bounds are listed in the REST fields below. V2 does not implement the v1 1.5-second stale-frame rejection; freshness and seq handling on the phone matter.
+The schema has no JPEG byte cap, socket message-size cap, max text length or maximum frame dimensions; 640/0.7 is the phone transport recommendation, not enforced by this schema. Transport/proxy limits may still apply. Do not infer an unlimited accepted payload. Scene requests allow at most 8 nonempty queries and `max_objects` 1 to 20. Market `max_results` bounds are listed in the REST fields below. V2 does not implement the v1 1.5-second stale-frame rejection; freshness and seq handling on the phone matter.
 
 ### Errors and phone action
 
@@ -465,6 +465,68 @@ These are all schema-defined v2 error codes. Some are reserved/not emitted by th
 }
 ```
 
+## v2.3 additions (new tonight)
+
+Turn stages so the phone never waits silently. The server sends `turn` with `stage: received` the moment a final `user_text` (or the final `audio_in`) arrives, then `transcribing` (server speech only), `thinking` (with `typical_ms`, the median of the last 5 turns from received to first spoken text), `backup` (the brain gave no token within 3.5 s and the next provider was started, same `turn_id`), `speaking`, and exactly one of `done`, `failed` (with a plain `detail` such as "Didn't catch that") or `cancelled`. Show a status line from these. If no `received` arrives within 2 s of sending, resend once, then show a connection problem.
+
+`reply_delta` carries the reply text while it is generated (throttled to about one message per 80 ms); append it to the caption. `say` parts still drive speech and highlighting.
+
+`camera` with `on: false` (or `hello.camera: false`) makes the session voice only: the server drops the stored frame, makes no vision calls, and the helper answers by voice without drawing. Send `on: true` to resume.
+
+### turn (received, the ack)
+
+<!-- contract: v2_turn -->
+```json
+{
+  "v": 2,
+  "type": "turn",
+  "turn_id": "t9",
+  "stage": "received",
+  "at_ms": 1761275000123,
+  "text": "where does this go"
+}
+```
+
+### turn (backup)
+
+<!-- contract: v2_turn -->
+```json
+{
+  "v": 2,
+  "type": "turn",
+  "turn_id": "t9",
+  "stage": "backup",
+  "at_ms": 1761275004200,
+  "detail": "brain slow, trying backup",
+  "typical_ms": 1100
+}
+```
+
+### reply_delta
+
+<!-- contract: v2_reply_delta -->
+```json
+{
+  "v": 2,
+  "type": "reply_delta",
+  "agent": "helper",
+  "turn_id": "t9",
+  "text": "That goes on the"
+}
+```
+
+### camera
+
+<!-- contract: v2_camera -->
+```json
+{
+  "v": 2,
+  "type": "camera",
+  "session_id": "s2",
+  "on": false
+}
+```
+
 ## REST on the socket origin (new tonight)
 
 Send `Content-Type: application/json` for POSTs and the bearer header when enabled. The phone calls the orchestrator at :8000, not the internal vision host at :8001. These endpoints do not create or update a WebSocket session.
@@ -593,7 +655,7 @@ Scene request uses `image_b64`, not the socket's `jpeg_b64`. Response objects ea
 }
 ```
 
-Market request requires `v:1`, `category` and `owned_parts`; optional `budget_usd` is nonnegative, `max_results` is 1–10. Categories: `cpu`, `board`, `ram`, `ssd`, `gpu`, `psu`, `cooler`, `case`, `fan`. Owned parts require `category`, `model`, `specs`, `confirmed`; optional `id`, `brand`, `source` (`scan`, `typed`, `fixture`). Specs are optional properties, so missing facts remain unknown: `socket`, `ddr_gen` (`DDR4`/`DDR5`), `dimm_format` (`DIMM`/`SODIMM`), `ecc`, `buffered`, `speed_mts`, `max_speed_mts`, `capacity_gb`, `max_capacity_gb`, `dimm_slots`, `modules`, `form_factor`, `tdp_w`, `wattage_w`, `height_mm`, `cooler_clearance_mm`, `pcie_gen`, `m2_key`.
+Market request requires `v:1`, `category` and `owned_parts`; optional `budget_usd` is nonnegative, `max_results` is 1 to 10. Categories: `cpu`, `board`, `ram`, `ssd`, `gpu`, `psu`, `cooler`, `case`, `fan`. Owned parts require `category`, `model`, `specs`, `confirmed`; optional `id`, `brand`, `source` (`scan`, `typed`, `fixture`). Specs are optional properties, so missing facts remain unknown: `socket`, `ddr_gen` (`DDR4`/`DDR5`), `dimm_format` (`DIMM`/`SODIMM`), `ecc`, `buffered`, `speed_mts`, `max_speed_mts`, `capacity_gb`, `max_capacity_gb`, `dimm_slots`, `modules`, `form_factor`, `tdp_w`, `wattage_w`, `height_mm`, `cooler_clearance_mm`, `pcie_gen`, `m2_key`.
 
 Market response requires `v`, `query_key`, `category`, `items`; optional `note` describes the source. The offer example above is an item, not a separate endpoint. Display title, retailer, USD price plus optional shipping, URL, source and fetched time. Keep `compat.status` (`fits`, `no`, `unverified`), reasons and unknown fields visible. Never relabel unverified as fits. Current search filters incompatible offers, ranks fits before unverified, then total price, and defaults to three results. Fixture offers are not live prices; an empty items array is valid.
 
@@ -653,7 +715,7 @@ socket.connect()
 // socket.disconnect() when the call ends
 ```
 
-For a physical phone use the Mac HTTPS/WSS hostname instead of localhost. Run against `make mock` after integration; expect listening, scene track, scripted say/draw, tones and a fixed STT response. The helper waits for listening before accepting text/audio and drops frames while disconnected/busy. It reconnects with a new session and 1–30-second backoff; call disconnect when done to release its running task. It checks individual audio chunks, but the app must enforce the 60-second aggregate utterance bound. Render/stop audio on the phone rather than waiting for server cancellation.
+For a physical phone use the Mac HTTPS/WSS hostname instead of localhost. Run against `make mock` after integration; expect listening, scene track, scripted say/draw, tones and a fixed STT response. The helper waits for listening before accepting text/audio and drops frames while disconnected/busy. It reconnects with a new session and 1 to 30-second backoff; call disconnect when done to release its running task. It checks individual audio chunks, but the app must enforce the 60-second aggregate utterance bound. Render/stop audio on the phone rather than waiting for server cancellation.
 
 Local checks:
 
@@ -670,12 +732,12 @@ These are design budgets and historical measurements, not API service-level guar
 
 | Measurement | Recorded result | Source |
 |---|---|---|
-| One-label scene, fresh frame from Mac | 0.96–1.05 s wall | [Wave 4](results/wave4-latency.md) |
-| Repeated image, cached | median 406 ms [357–1748], n=5 | [Wave 4](results/wave4-latency.md) |
+| One-label scene, fresh frame from Mac | 0.96 to 1.05 s wall | [Wave 4](results/wave4-latency.md) |
+| Repeated image, cached | median 406 ms [357 to 1748], n=5 | [Wave 4](results/wave4-latency.md) |
 | Browser STT + server Kokoro, three WS runs | first audio 861, 889, 984 ms after speech | [Wave 4](results/wave4-latency.md) |
 | Server Whisper + Kokoro, real-time paced WS | 1879, 1943, 2559 ms | [Wave 4](results/wave4-latency.md) |
-| Warm Kokoro first audio from Mac | 141–153 ms | [Wave 4](results/wave4-latency.md) |
+| Warm Kokoro first audio from Mac | 141 to 153 ms | [Wave 4](results/wave4-latency.md) |
 | YOLO11n 320 px | 9 ms on box; 170 ms median wall | [Wave 4](results/wave4-latency.md) |
-| Earlier YOLO11n 320 px from Mac | 184 ms median [148–376], 5.4 fps; 9.5 fps with three requests in flight | [GPU benchmarks](pc-benchmarks.md) |
+| Earlier YOLO11n 320 px from Mac | 184 ms median [148 to 376], 5.4 fps; 9.5 fps with three requests in flight | [GPU benchmarks](pc-benchmarks.md) |
 
 The Wave 4 runs used synthetic images and synthesized speech; browser STT + Kokoro met the voice budget, server Whisper over Tailscale did not. Local phone tracking and venue LAN performance were not measured. Earlier GPU results recommend 1280-pixel grounding inputs within vision processing; the phone's 640-pixel upload recommendation is a separate transport choice and does not prove grounding accuracy. Preserve this distinction when assessing the phone demo.

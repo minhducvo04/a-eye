@@ -6,13 +6,20 @@
 
 From now on, changes may only add optional fields or new message types. Do not remove or rename fields, make optional fields required, or change existing meanings. Add an entry here for every addition; update schema, TypeScript mirror and examples together through the contract PR process and run `make test-py`. Clients must ignore unknown response fields and unknown message types (and skip unknown draw kinds). Current server request validation remains strict; do not send speculative fields. A breaking change requires a separately negotiated major protocol, outside this freeze.
 
-## v2.2 — server speech input
+## v2.3: turn stages, streamed reply text, camera switch
+
+- New `v2_turn` (server): required `v`, `type:turn`, `turn_id`, `stage`, `at_ms`; optional `text`, `detail`, `typical_ms`. Stages: received (the ack, sent at once), transcribing, thinking, backup, speaking, done, failed, cancelled. Every turn ends with exactly one of done, failed or cancelled.
+- New `v2_reply_delta` (server): required `v`, `type:reply_delta`, `agent`, `turn_id`, `text`. Spoken reply text as it is generated, for captions only; `v2_say` stays the unit for speech.
+- New `v2_camera` (client): required `v`, `type:camera`, `session_id`, `on`. Optional `v2_hello.camera`. Off means voice only: no frame stored, no scene calls.
+- Added turn and reply_delta to `server_message_v2`, camera to `client_message_v2`.
+
+## v2.2: server speech input
 
 - Optional `v2_hello.stt`: `browser` or `server`.
 - New `v2_audio_in`: required `v`, `type:audio_in`, `session_id`, `seq`, `pcm16_b64`; optional `sample_rate` (16000) and `final`. Input is 16 kHz mono PCM16; final ends an utterance.
 - Added `v2_audio_in` to `client_message_v2`. No transcript response type was added.
 
-## v2.1 — streaming and tracking
+## v2.1: streaming and tracking
 
 - New `draw_anchor` object (`object_id`, `bbox`); optional `anchor` on every draw-op kind.
 - Optional `turn_id`, `part`, `final` on `v2_say` for streamed speech parts.
@@ -20,7 +27,7 @@ From now on, changes may only add optional fields or new message types. Do not r
 - New `v2_track`: required `v`, `type`, `seq`, `objects` (scene objects).
 - Added metrics and track to `server_message_v2`.
 
-## v2.0 — general agent call
+## v2.0: general agent call
 
 - Added `/ws2` vocabulary with wire `v:2`, while keeping `/ws` v1.
 - Client messages: `v2_hello` (pack, optional board/client/TTS choice), `v2_frame`, `v2_user_text` (final and optional source), `v2_barge_in`, `v2_confirm`.
@@ -31,7 +38,7 @@ From now on, changes may only add optional fields or new message types. Do not r
 - `brain_turn`: internal agent/say/draw intent with optional market_category; object-ID targets resolved by the server. Not a phone wire message.
 - V2 errors: bad_message, power_off_required, refused, vision_unavailable, brain_unavailable, internal.
 
-## v1 — PC build flow and service boundaries
+## v1: PC build flow and service boundaries
 
 - `/ws` client messages: hello, project_open, frame, photo, confirm, user_text, parts_scan, market, audio.
 - `/ws` server messages: overlay, say, step, verdict, parts, market_results, summary, annotated, error, audio. Client/server message unions.
