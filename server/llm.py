@@ -60,6 +60,14 @@ def _shared_anthropic():
     return client
 
 
+
+def _content(user, images):
+    """Text, or image crops (JPEG base64) followed by the text."""
+    if not images:
+        return user
+    return [{'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/jpeg', 'data': data}}
+            for data in images] + [{'type': 'text', 'text': user}]
+
 @dataclass
 class LLMResult:
     text: str
@@ -134,7 +142,8 @@ class LLMClient:
         text = re.split(r'(?<=[.!?])\s+', user.strip(), maxsplit=1)[0] or 'OK.'
         return result(text, 'canned', 'canned')
 
-    async def stream(self, system: str, user: str, *, max_tokens: int = 512, on_backup=None, model=None):
+    async def stream(self, system: str, user: str, *, max_tokens: int = 512, on_backup=None, model=None,
+                     images: list[str] | None = None):
         """Cancellable text stream; fall back only before committing provider text.
 
         Voice turns default to the Haiku-class talker with thinking off (docs/voice-options.md).
@@ -144,6 +153,8 @@ class LLMClient:
             provider == 'auto' and bool(os.environ.get('ANTHROPIC_API_KEY')))
         emitted = False
         timeout = float(os.environ.get('BRAIN_FIRST_TOKEN_S', '3.5'))
+        if images and sum(len(item.encode('utf-8')) for item in images) > 400000:
+            images = None  # too large to be a crop: never send it to the cloud
         if use_claude and os.environ.get('LOCAL_ONLY') != '1':
             try:
                 async with asyncio.timeout(timeout) as deadline, AsyncExitStack() as stack:
@@ -151,7 +162,7 @@ class LLMClient:
                     name = model or turn_model()
                     async with client.messages.stream(
                         model=name, max_tokens=max_tokens, system=system,
-                        messages=[{'role': 'user', 'content': user}], **fast_options(name),
+                        messages=[{'role': 'user', 'content': _content(user, images)}], **fast_options(name),
                     ) as response:
                         async for delta in response.text_stream:
                             if delta:

@@ -10,6 +10,8 @@ from contextlib import aclosing
 import os
 from uuid import uuid4
 
+from server.crops import crop_b64, pick_target
+
 from contracts import schema, validate
 from market.search import search
 from server import packs
@@ -265,6 +267,21 @@ PLANNER_RULES = (' You are the PLANNER behind a fast talker who is already answe
 _FILLER = re.compile(r"\b(let me (look|check|see)|one (sec|second|moment)|hang on|looking)\b", re.I)  # filler means the note is spoken
 
 
+
+def planner_crop(session, scene, seq, text):
+    """Escalation to the cloud planner sees a CROP of the object in question, never the full frame (AGENTS.md).
+    Only when the camera is on, the scene belongs to the newest frame, and PLANNER_CROP is not 0."""
+    frame = getattr(session, 'frame', None)
+    if (os.environ.get('PLANNER_CROP', '1') == '0' or os.environ.get('LOCAL_ONLY') == '1' or not session.camera
+            or not frame or frame.get('seq') != seq or not scene.get('objects')):
+        return {}
+    target = pick_target(scene['objects'], text)
+    try:
+        crop = crop_b64(frame['jpeg_b64'], target['bbox']) if target else None
+    except Exception:
+        crop = None
+    return {'images': [crop]} if crop else {}
+
 async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None, planner=None):
     """One voice turn. With planner set (talker + thinker mode), llm only talks and planner draws in parallel."""
     messages = []
@@ -339,7 +356,8 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
             schema()['$defs']['brain_turn']['properties']['draw'])
         raw = ''
         async with aclosing(planner.stream(planner_system, user, max_tokens=400,
-                                           model=os.environ.get('ANTHROPIC_MODEL', 'claude-sonnet-5-5'))) as stream:
+                                           model=os.environ.get('ANTHROPIC_MODEL', 'claude-sonnet-5-5'),
+                                           **planner_crop(session, scene, seq, text))) as stream:
             async for delta in stream:
                 raw += delta
         parsed = stream_header(raw)
