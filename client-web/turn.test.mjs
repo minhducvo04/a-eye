@@ -156,7 +156,12 @@ test('call page toggles camera, keeps voice-only hello, retries text, reconnects
     assert.equal(node('pipeline').textContent, 'Thinking 1.8 s · usually 1.1 s');
     socket.message({ type: 'reply_delta', turn_id: 'a', text: 'Hello' });
     socket.message({ type: 'reply_delta', turn_id: 'a', text: ' there' });
-    assert.equal(node('replies').children[0].children[2].textContent, 'Hello there');
+    assert.equal(node('replies').children[0].textContent, 'Hello there');
+    socket.message({ type: 'agent_state', agent: 'shopper', state: 'speaking' });
+    assert.equal(node('presence-dot').attrs['data-agent'], 'shopper');
+    socket.message({ type: 'agent_state', agent: 'helper', state: 'thinking' });
+    assert.equal(node('presence-dot').attrs['data-agent'], 'helper');
+    assert.equal(node('presence-dot').attrs['aria-label'], 'Helper is thinking');
     socket.close();
     assert.match(node('pipeline').textContent, /^Connection lost, retrying/);
     const retry = [...timeouts.values()].at(-1);
@@ -169,6 +174,13 @@ test('call page toggles camera, keeps voice-only hello, retries text, reconnects
     [...timeouts.values()].at(-1).fn();
     Socket.all[2].close();
     assert.equal([...timeouts.values()].at(-1).ms, 1000);
+    [...timeouts.values()].at(-1).fn();
+    Socket.all[3].open();
+    const lastTimer = timerId;
+    node('end-call').handlers.click();
+    assert.equal(Socket.all[3].readyState, 3);
+    assert.ok([...timeouts.keys()].every(id => id <= lastTimer), 'End call does not schedule a reconnect');
+    assert.equal(node('call').classList.contains('hidden'), true);
   } finally {
     Date.now = realNow;
     for (const [key, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; }

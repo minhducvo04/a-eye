@@ -4,84 +4,157 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
-  <meta name="theme-color" content="#0e1116">
+  <meta name="theme-color" content="#000000">
   <title>A-eye</title>
   <link rel="stylesheet" href="agent.css">
 </head>
 <body>
-  <section id="picker" class="picker">
-    <div class="picker-copy">
-      <h1>A-eye</h1>
-      <p>What should we look at?</p>
-    </div>
-    <button type="button" data-pack="general">General</button>
-    <button type="button" data-pack="pc_build">PC build</button>
-    <button type="button" data-pack="cooking">Cooking</button>
-    <button type="button" data-pack="assemble">Assemble</button>
-  </section>
-  <main id="stage" class="stage hidden">
+  <!-- Icons: stand-ins for the iOS app's SF Symbols. -->
+  <svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z"/><path d="M18.5 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/></symbol>
+    <symbol id="i-desktop" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16v4"/></symbol>
+    <symbol id="i-pan" viewBox="0 0 24 24"><circle cx="9.5" cy="12.5" r="6"/><path d="M15.5 12.5H22"/></symbol>
+    <symbol id="i-hammer" viewBox="0 0 24 24"><path d="M13 4.5l2-1.5 6 6-1.5 2L13 4.5z"/><path d="M15 8.5L4 19.5l1.5 1.5L16.5 10"/></symbol>
+    <symbol id="i-car" viewBox="0 0 24 24"><path d="M4 16v-4l2.2-5h11.6L20 12v4z"/><path d="M4 12h16"/><circle cx="7.5" cy="16.5" r="1.8"/><circle cx="16.5" cy="16.5" r="1.8"/></symbol>
+    <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3c3.6 4.6 6 7.8 6 11a6 6 0 0 1-12 0c0-3.2 2.4-6.4 6-11z"/></symbol>
+    <symbol id="i-gears" viewBox="0 0 24 24"><circle cx="9" cy="10" r="2.6"/><path d="M9 4.5v2M9 13.5v2M3.5 10h2M12.5 10h2M5.1 6.1l1.4 1.4M11.5 12.5l1.4 1.4M5.1 13.9l1.4-1.4M11.5 7.5l1.4-1.4"/><circle cx="17" cy="17" r="2"/><path d="M17 13.5v1.3M17 19.2v1.3M13.5 17h1.3M19.2 17h1.3"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8M5.5 18.5l1.8-1.8M16.7 7.3l1.8-1.8"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
+    <symbol id="i-mic-off" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M4 4l16 16"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-2.5h6L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+    <symbol id="i-camera-off" viewBox="0 0 24 24"><path d="M4 8h3l2-2.5h6L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/><path d="M3 3l18 18"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 13V6.5a1.5 1.5 0 0 1 3 0V11M11 11V4.5a1.5 1.5 0 0 1 3 0V11M14 11V5.5a1.5 1.5 0 0 1 3 0V12M17 9.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1.3a6 6 0 0 1-4.7-2.3l-3.4-4.3a1.5 1.5 0 0 1 2.3-1.9L8 14"/></symbol>
+    <symbol id="i-phone-down" viewBox="0 0 24 24"><path class="fill" d="M2.6 13.6c5.2-4.6 13.6-4.6 18.8 0 .5.4.5 1.2 0 1.6l-2 2c-.4.4-1 .4-1.4.1l-2.3-1.7c-.4-.3-.6-.8-.4-1.3l.5-1.6c-2.4-.8-5.2-.8-7.6 0l.5 1.6c.2.5 0 1-.4 1.3l-2.3 1.7c-.4.3-1 .3-1.4-.1l-2-2c-.5-.4-.5-1.2 0-1.6z"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><circle class="fill" cx="12" cy="12" r="10"/><path class="cut" d="M12 17V7.5M7.5 11.5L12 7l4.5 4.5"/></symbol>
+    <symbol id="i-bolt-off" viewBox="0 0 24 24"><path d="M13 3L6 13h5l-1 8 7-10h-5z"/><path d="M3.5 3.5l17 17"/></symbol>
+  </svg>
+
+  <main id="stage" class="stage">
     <video id="camera" playsinline webkit-playsinline muted autoplay></video>
     <img id="still" class="hidden" alt="">
     <canvas id="draw" aria-hidden="true"></canvas>
-    <canvas id="presence" aria-hidden="true"></canvas>
-    <p id="call-state" class="call-state" role="status">Tap the mic to talk</p>
-    <div class="hud">
+
+    <!-- Camera screen: gear top left, mode ring at the bottom (RootView.cameraChrome + ModeRing.swift). -->
+    <section id="picker" class="ring-screen" aria-label="Choose a mode">
+      <div class="ring-top">
+        <button type="button" class="glass round r44 open-settings" aria-label="Settings"><svg><use href="#i-gear"/></svg></button>
+      </div>
+      <div class="ring-bottom">
+        <div class="ring-label" aria-live="polite">
+          <p id="ring-title" class="ring-title">PC Build</p>
+          <p id="ring-hint" class="ring-hint">tap to start</p>
+        </div>
+        <div id="ring" class="ring">
+          <button type="button" data-mode="general" data-pack="general" aria-label="General"><span class="disc"><svg><use href="#i-sparkles"/></svg></span></button>
+          <button type="button" data-mode="pc_build" data-pack="pc_build" aria-label="PC Build"><span class="disc"><svg><use href="#i-desktop"/></svg></span></button>
+          <button type="button" data-mode="cooking" data-pack="cooking" aria-label="Cooking"><span class="disc"><svg><use href="#i-pan"/></svg></span></button>
+          <button type="button" data-mode="assemble" data-pack="assemble" aria-label="Assembly"><span class="disc"><svg><use href="#i-hammer"/></svg></span></button>
+          <button type="button" data-mode="mechanic" aria-label="Mechanic, coming soon"><span class="disc"><svg><use href="#i-car"/></svg></span></button>
+          <button type="button" data-mode="plumbing" aria-label="Plumbing, coming soon"><span class="disc"><svg><use href="#i-drop"/></svg></span></button>
+          <button type="button" data-mode="engineering" aria-label="Engineering, coming soon"><span class="disc"><svg><use href="#i-gears"/></svg></span></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Call screen (CallScreen.swift): pill on top, caption card, power gate, input, bottom bar. -->
+    <section id="call" class="call hidden" aria-label="Call">
       <div class="top">
-        <p id="pack-label" class="pack-label">General</p>
-        <span id="status" class="status off" role="status" aria-label="socket disconnected"></span>
-      </div>
-      <p id="error" class="banner hidden" role="alert"></p>
-      <p id="notice" class="notice hidden" role="status"></p>
-      <p id="pipeline" class="pipeline" role="status">Ready</p>
-      <div class="sheet">
-      <section id="market" class="market hidden" aria-live="polite">
-        <div class="market-head">
-          <p class="market-kicker">Shopper</p>
-          <button type="button" id="market-dismiss">Dismiss</button>
+        <div class="pill glass">
+          <span id="presence-dot" class="presence-dot" role="img" aria-label=""></span>
+          <b>A-eye</b><span class="sep" aria-hidden="true">·</span><span id="pack-label">General</span><span class="sep" aria-hidden="true">·</span><span id="elapsed" class="digits">0:00</span>
         </div>
-        <div id="market-body"></div>
-      </section>
-      <div id="replies" class="replies" aria-live="polite"></div>
-      <p id="interim" class="user-caption" aria-live="polite"></p>
-      <section class="transcript">
-        <button type="button" id="transcript-toggle" aria-expanded="false" aria-controls="transcript-list">Transcript</button>
-        <ol id="transcript-list" class="transcript-list hidden"></ol>
-      </section>
-      <div class="speaker">
-        <button type="button" id="mute" aria-pressed="false">Mute</button>
-        <label class="vol">Volume
-          <input id="volume" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume">
-        </label>
-        <select id="voice-pick" class="voice-pick" aria-label="Voice"></select>
-        <button type="button" id="test-voice">Test voice</button>
-        <span id="stt-mode" class="stt-mode">Browser</span>
+        <p id="link" class="chip glass warn" role="status">Connecting…</p>
+        <p id="notice" class="chip glass soft hidden" role="status"></p>
+        <p id="pipeline" class="pipeline" role="status">Ready</p>
       </div>
-      <form id="composer" class="composer">
-        <input id="typed" type="text" enterkeyhint="send" autocomplete="off" placeholder="Type a message" aria-label="Message">
-        <button type="submit">Send</button>
-      </form>
-      </div>
-      <div class="mic-wrap">
-        <canvas id="wave" class="wave" width="168" height="36" aria-hidden="true"></canvas>
-        <button type="button" id="mic" aria-pressed="false" aria-label="Start microphone">Mic</button>
-        <button type="button" id="hold" class="hold" aria-pressed="false">Hold to talk</button>
-        <div class="mic-tune">
-          <label class="sens">Sensitivity
-            <input id="sensitivity" type="range" min="1" max="10" step="1" value="5" aria-label="Speech sensitivity">
-          </label>
-          <span id="ambient" class="ambient" aria-live="off">Noise --</span>
+      <div class="lower">
+        <div id="caption" class="caption glass hidden" aria-live="polite">
+          <p class="eyebrow"><span id="caption-eyebrow" aria-hidden="true">A-EYE</span><span id="caption-speaker" class="sr-only">Helper</span></p>
+          <p id="replies" class="caption-text"></p>
+          <p id="error" class="caption-error hidden" role="alert"></p>
+        </div>
+        <p id="interim" class="interim" aria-live="polite"></p>
+        <div id="power-gate" class="power-gate hidden">
+          <button type="button" id="power-off" class="power-btn"><svg aria-hidden="true"><use href="#i-bolt-off"/></svg>Power is off</button>
+          <p>Switch the PSU off and unplug it first.</p>
+        </div>
+        <form id="composer" class="typed glass">
+          <input id="typed" type="text" enterkeyhint="send" autocomplete="off" placeholder="Type a message" aria-label="Message">
+          <button type="submit" class="send" aria-label="Send"><svg><use href="#i-send"/></svg></button>
+        </form>
+        <div class="bottom">
+          <button type="button" id="start-camera" class="glass round r56" aria-pressed="false" aria-label="Camera on"><svg><use id="camera-icon" href="#i-camera-off"/></svg></button>
+          <button type="button" id="mic" class="glass round r56" aria-pressed="false" aria-label="Start microphone"><svg><use id="mic-icon" href="#i-mic-off"/></svg></button>
+          <button type="button" id="end-call" class="round r68 end" aria-label="End call"><svg><use href="#i-phone-down"/></svg></button>
+          <button type="button" id="hold" class="glass round r56" aria-pressed="false" aria-label="Hold to talk" title="Hold to talk (Space)"><svg><use href="#i-hand"/></svg></button>
+          <button type="button" class="glass round r56 open-settings" aria-label="Settings"><svg><use href="#i-gear"/></svg></button>
         </div>
       </div>
-      <div class="controls">
-        <button type="button" id="start-camera" aria-pressed="false">Camera on</button>
-        <button type="button" id="power-off" class="hidden">Power is off</button>
-        <label class="file-btn">Upload photo
-          <input id="upload" type="file" accept="image/*">
-        </label>
-      </div>
+    </section>
+
+    <button type="button" id="start-overlay" class="start-overlay glass hidden">Tap to start</button>
+
+    <!-- PermissionNotice.swift -->
+    <div id="permission" class="permission hidden" role="alertdialog" aria-labelledby="permission-title">
+      <svg class="permission-icon" aria-hidden="true"><use href="#i-camera"/></svg>
+      <p id="permission-title" class="permission-title">Camera access is off</p>
+      <p id="permission-text" class="permission-text">A-eye looks through the camera to point at parts while you work. Allow the camera for this site in your browser settings.</p>
+      <button type="button" id="permission-retry" class="permission-btn">Try again</button>
+      <button type="button" id="permission-close" class="text-btn">Not now</button>
     </div>
-    <button type="button" id="start-overlay" class="start-overlay hidden">Tap to start</button>
   </main>
+
+  <div id="backdrop" class="backdrop hidden"></div>
+
+  <!-- MarketSheet.swift -->
+  <section id="market" class="sheet hidden" aria-live="polite" aria-labelledby="market-title">
+    <div class="grabber" aria-hidden="true"></div>
+    <div class="sheet-head">
+      <div>
+        <p class="eyebrow shopper">SHOPPER</p>
+        <p id="market-title" class="sheet-title">Options</p>
+      </div>
+      <button type="button" id="market-dismiss" class="text-btn">Close</button>
+    </div>
+    <div id="market-body" class="market-body"></div>
+  </section>
+
+  <!-- SettingsSheet.swift, plus the web-only voice and mic controls. -->
+  <section id="settings" class="sheet hidden" aria-labelledby="settings-title">
+    <div class="grabber" aria-hidden="true"></div>
+    <div class="sheet-head">
+      <p id="settings-title" class="sheet-title">Settings</p>
+      <button type="button" id="settings-done" class="text-btn strong">Done</button>
+    </div>
+    <p class="group-title">Server</p>
+    <div class="group"><p id="server-host" class="row mono"></p></div>
+    <p class="group-foot">The web page always talks to the server that served it.</p>
+    <p class="group-title">Connection</p>
+    <div class="group"><p id="conn-status" class="row">Not in a call</p></div>
+    <p class="group-title">Voice</p>
+    <div class="group">
+      <label class="row">Voice <select id="voice-pick" class="voice-pick" aria-label="Voice"></select></label>
+      <div class="row"><button type="button" id="test-voice" class="text-btn">Test voice</button><button type="button" id="mute" class="text-btn" aria-pressed="false">Mute</button></div>
+      <label class="row">Volume <input id="volume" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume"></label>
+    </div>
+    <p class="group-title">Microphone</p>
+    <div class="group">
+      <label class="row">Sensitivity <input id="sensitivity" type="range" min="1" max="10" step="1" value="5" aria-label="Speech sensitivity"></label>
+      <p class="row"><span>Recognition</span><span id="stt-mode" class="mono dim">Browser</span></p>
+      <p class="row"><span>Room noise</span><span id="ambient" class="mono dim" aria-live="off">Noise --</span></p>
+    </div>
+    <p class="group-title">Photo</p>
+    <div class="group">
+      <label class="row file-btn">Upload a photo instead of the camera<input id="upload" type="file" accept="image/*"></label>
+    </div>
+    <p class="group-title">Transcript</p>
+    <div class="group">
+      <button type="button" id="transcript-toggle" class="row text-btn" aria-expanded="false" aria-controls="transcript-list">Transcript</button>
+      <ol id="transcript-list" class="transcript-list hidden"></ol>
+    </div>
+    <p class="group-foot">Camera frames go only to this server and are not saved.</p>
+  </section>
+
   <script type="module" src="agent.js"></script>
 </body>
 </html>
