@@ -1722,7 +1722,7 @@ function boot() {
     errorEl.classList.toggle("hidden", !st.error);
     powerGate.classList.toggle("hidden", pack !== "pc_build" || powerConfirmed);
     renderLink();
-    const notes = [sttForMic ? "" : st.sttNotice, st.voiceNotice, deviceNotice, rewind.notice ? REWIND_NOTICE : ""].filter(Boolean);
+    const notes = [sttForMic || !devOn ? "" : st.sttNotice /* which recognizer runs: dev only */, st.voiceNotice, deviceNotice, rewind.notice ? REWIND_NOTICE : ""].filter(Boolean);
     noticeEl.textContent = notes.join(" ");
     noticeEl.classList.toggle("hidden", notes.length === 0);
     renderReplies(st);

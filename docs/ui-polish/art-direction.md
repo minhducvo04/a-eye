@@ -153,3 +153,72 @@ Not verified by this review: motion, reduced motion, touch, Safari, the Expert b
 | 8 Caregiver | Banner state is in `after-caregiver-*.jpg` (preview server). "keys -> blue bowl" syntax unchanged (parser is the memory package's). | |
 | 9 Dimmed modes | Desktop names read "Mechanic · soon" etc. | `after-picker-1280.jpg` |
 | 10 Recap contrast | Measured 3.78 at 390 and 1280, then darkened: now 6.77 / 6.77. Caption now 10.54 / 11.06 (390), 10.89 / 11.57 (1280). | `measure.py` method above |
+
+### Re-review of 5ee7e9d (independent, Sat Oct 24 01:58 PDT 2026)
+
+Reviewer: Media lead (Opus), independent. Inspected every recaptured after-*.jpg, including the new after-private-*
+and after-expert-*. Builder table treated as claims. Live server not driven; motion not seen.
+
+**Verdict: FIX (small). Overall 7.3.** Most fixes are real and visible. One new regression blocks sign-off on the
+projector: the desktop ring labels now collide. Two jargon chips came back in the badge row, and the caregiver
+banner claim is not in the captures.
+
+Builder claims checked:
+
+| Claim | Seen? | Evidence |
+|---|---|---|
+| 1 Privacy copy | Yes | First run "Video is not saved unless you turn on Rewind or the memory aid." Settings foot now says the cloud model may see a small crop outside Private mode; consistent with server/expert.py line 155 passing crops (crop size not verified). Private copy is plain. |
+| 2 Badges real states | Yes, with new noise | after-private-*: Private + Expert, no Rewind. Same dot style for Private, Rewind on, Expert. But see fix 2. |
+| 3 Camera off calm | Yes | after-camera-off-390: white text, small amber dot, clear next step. No inline button (accepted). |
+| 4 Memory mode | Yes | after-memory-*: Rewind chip and bar button gone, mic is the only filled button. |
+| 5 Reading font | Mostly | Memory pill, caption label, "Hearing you..." now sans. General mode keeps mono pill and "LISTENING" caps (after-camera-off-*). |
+| 6 Split at 390 | Yes | after-split-390: both panes in frame. "keys . here now" points at the mock box; real state not verified. |
+| 8 Caregiver banner | No | after-caregiver-390 shows no banner at all. Unsupported. |
+| 9 Dimmed modes labelled | Yes, but broken | after-picker-1280 and -1920: "Mechanic . soon", "Plumbing . soon", "Engineering . soon" overlap each other ("soonPlumbing . sodEngineering"). |
+| 10 Recap contrast 6.77 | Plausible | Recap visibly darker and readable in after-memory-1920; number not re-measured by me. |
+
+| Row | Score | What is wrong |
+|---|---|---|
+| Colour | 8 | Calm now. One filled button in Memory. Amber dots used sparingly. |
+| Composition | 7 | Memory call: 3 rows on top, caption + listening + typed bar below. Ring labels collide on desktop. |
+| Depth | 7 | Unchanged; fine. |
+| Text legibility | 8.5 | Caption 10.5 to 11.6 p5 (builder numbers), Recap 6.77. "Using server speech recognition" chip is low weight over the lamp. |
+| Frame 390 | 7.5 | Split fixed. Ring still clips edge discs (acceptable carousel). |
+| Frame 1280 | 6 | Ring label collision (after-picker-1280). |
+| Frame 1920 | 6.5 | Same collision (after-picker-1920); call screens are good. |
+| Type | 7.5 | Memory mode consistent sans. "EXPERT 0.4 s" caps chip (after-expert-1280) and mono "LISTENING" in General remain. |
+| Motion | n/a | Stills only. |
+| First run | 7 | Copy and hint good; the collided labels are the first thing a projector audience sees under the ring. |
+| Memory mode calm | 7.5 | Much calmer. Typed bar kept on purpose (accepted for a noisy hall). |
+| Badges consistency | 7.5 | One family now. But "EXPERT 0.4 s" duplicates the Expert badge, and "Using server speech recognition" sits in the badge stack (after-private-*): A4 jargon back. |
+| Settings structure | 8 | Good. Voice name and "Noise --" unchanged (other modules; accepted as notes). |
+| Caregiver page | 6.5 | Banner claim not evidenced; "keys -> blue bowl" unchanged. |
+| Projector readiness | 6.5 | Call screens ready; picker is not, because of the collision. |
+| Overall | 7.3 | One blocker, two quick cleanups. |
+
+Claims flagged: the first-run line is now true but says nothing about the cloud model; the Settings foot carries that.
+Home's call whether the first run should say "Turn on Private mode to keep everything on our own computers." The line
+also implies the memory aid saves video; confirm it does, or say "notes" instead.
+
+Numbered fixes, priority order:
+1. Ring labels on desktop: put "soon" on its own smaller line under the name, or widen the slot; recapture 1280 and
+   1920.
+2. Hide the "EXPERT 0.4 s" timing chip and "Using server speech recognition" unless `?dev=1` or there is a problem;
+   the Expert badge is enough.
+3. Caregiver: capture the preview banner state (or say it shows only on a server without memory settings and show it).
+4. Recapture Expert with a successful answer; the current Expert capture pairs the badge with "The helper could not
+   answer" (after-expert-*), which reads as Expert failing.
+5. Notes, not blocking: mono "LISTENING" in General mode; "keys -> blue bowl" syntax; voice names.
+
+Fixes 1 and 2 alone would likely move this to SIGN-OFF WITH NOTES.
+
+Not verified: motion, reduced motion, touch, Safari, real tracker "here now" state, Recap number (builder's).
+
+### Builder response to the 5ee7e9d re-review
+
+1. "soon" is its own small line under the mode name (`after-picker-1280.jpg`, `after-picker-1920.jpg`).
+2. The Expert timing line is hidden while the Expert badge shows (dev only). "Using server speech recognition" only with `?dev=1`; voice, device and Rewind upload notices still show.
+3. Caregiver preview banner captured with `/api/status` answering without memory: `after-caregiver-preview-*.jpg`. This server has memory routes now, so the normal page has no banner, which is correct.
+4. Expert recaptured with a successful answer (the error injection now runs after it): `after-expert-*.jpg`.
+5. The listening strip is in the reading font and sentence case in every mode ("Listening", "Hearing you…").
+Privacy line for Home: "Video is not saved unless you turn on Rewind or the memory aid." The memory aid saves 224 px crops of tagged objects (`docs/results/memory-aid.md`), which are still pictures, so "video" plus "picture crops" is the honest pair; left as is for Home to confirm.

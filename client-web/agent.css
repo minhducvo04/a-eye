@@ -1906,12 +1906,13 @@ body[data-mode="memory"] .listen-text.mono {
   letter-spacing: 0;
 }
 
-body[data-mode="memory"] .listen-text.mono {
+.listen-text.mono {
+  font-family: var(--font);
   font-size: var(--fs-subhead);
   text-transform: lowercase;
 }
 
-body[data-mode="memory"] .listen-text.mono::first-letter {
+.listen-text.mono::first-letter {
   text-transform: uppercase;
 }
 
@@ -1957,4 +1958,22 @@ body[data-mode="memory"] .listen-text.mono::first-letter {
 #rewind-recap {
   background-color: rgba(8, 10, 14, 0.72);
   color: #C9DBFF;
+}
+
+/* Expert has its own badge; its timing line shows only with ?dev=1. */
+body:not(.dev) .top:has(#expert-badge:not(.hidden)) #pipeline {
+  display: none;
+}
+
+/* Desktop row: "soon" on its own small line so names never run together. */
+@media (min-width: 700px) and (hover: hover) and (pointer: fine) {
+  .ring > button:not([data-pack]) .ring-name::after {
+    content: "soon";
+    display: block;
+    margin-top: 2px;
+    font-size: var(--fs-caption2);
+    letter-spacing: 0.04em;
+    text-align: center;
+    color: var(--text-3);
+  }
 }
