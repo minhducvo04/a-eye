@@ -16,7 +16,7 @@ def test_examples_validate(name):
 
 
 def test_every_object_contract_has_an_example():
-    missing = sorted(set(MESSAGE_DEFS) - set(EXAMPLES) - {"part_specs", "box", "scene_object"})
+    missing = sorted(set(MESSAGE_DEFS) - set(EXAMPLES) - {"part_specs", "box", "scene_object", "draw_anchor"})
     assert missing == []
 
 

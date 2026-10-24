@@ -1657,6 +1657,9 @@
       },
       "bbox": {
        "$ref": "#/$defs/bbox"
+      },
+      "anchor": {
+       "$ref": "#/$defs/draw_anchor"
       }
      }
     },
@@ -1688,6 +1691,9 @@
       },
       "bbox": {
        "$ref": "#/$defs/bbox"
+      },
+      "anchor": {
+       "$ref": "#/$defs/draw_anchor"
       }
      }
     },
@@ -1723,6 +1729,9 @@
       },
       "r": {
        "$ref": "#/$defs/unit"
+      },
+      "anchor": {
+       "$ref": "#/$defs/draw_anchor"
       }
      }
     },
@@ -1758,6 +1767,9 @@
       },
       "to": {
        "$ref": "#/$defs/point"
+      },
+      "anchor": {
+       "$ref": "#/$defs/draw_anchor"
       }
      }
     },
@@ -1793,6 +1805,9 @@
         "$ref": "#/$defs/point"
        },
        "minItems": 2
+      },
+      "anchor": {
+       "$ref": "#/$defs/draw_anchor"
       }
      }
     },
@@ -1829,6 +1844,9 @@
       "text": {
        "type": "string",
        "minLength": 1
+      },
+      "anchor": {
+       "$ref": "#/$defs/draw_anchor"
       }
      }
     },
@@ -1860,6 +1878,9 @@
       },
       "at": {
        "$ref": "#/$defs/point"
+      },
+      "anchor": {
+       "$ref": "#/$defs/draw_anchor"
       }
      }
     },
@@ -1887,6 +1908,9 @@
        "type": "integer",
        "minimum": 0,
        "description": "0 or missing: stays until cleared."
+      },
+      "anchor": {
+       "$ref": "#/$defs/draw_anchor"
       }
      }
     }
@@ -2115,7 +2139,7 @@
    }
   },
   "v2_say": {
-   "description": "Server to client: one agent's sentence (caption; spoken by the browser when tts is browser).",
+   "description": "Server to client: one agent's sentence (caption; spoken by the browser when tts is browser). Streaming turns send one say per sentence with the same turn_id and increasing part.",
    "type": "object",
    "additionalProperties": false,
    "required": [
@@ -2141,6 +2165,17 @@
     "text": {
      "type": "string",
      "minLength": 1
+    },
+    "turn_id": {
+     "type": "string"
+    },
+    "part": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "final": {
+     "type": "boolean",
+     "description": "Streaming: a turn is spoken sentence by sentence; final true on the last part."
     }
    }
   },
@@ -2441,8 +2476,104 @@
     },
     {
      "$ref": "#/$defs/v2_error"
+    },
+    {
+     "$ref": "#/$defs/v2_metrics"
+    },
+    {
+     "$ref": "#/$defs/v2_track"
     }
    ]
+  },
+  "draw_anchor": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "object_id",
+    "bbox"
+   ],
+   "description": "Real time: the object region this op is attached to. The client tracks this region between server updates and moves the op with it.",
+   "properties": {
+    "object_id": {
+     "type": "string"
+    },
+    "bbox": {
+     "$ref": "#/$defs/bbox"
+    }
+   }
+  },
+  "v2_metrics": {
+   "description": "Server to client, dev HUD: timings for one turn or frame, in ms.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "v",
+    "type"
+   ],
+   "properties": {
+    "v": {
+     "$ref": "#/$defs/v2"
+    },
+    "type": {
+     "const": "metrics"
+    },
+    "turn_id": {
+     "type": "string"
+    },
+    "seq": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "vlm_ms": {
+     "type": "number",
+     "minimum": 0
+    },
+    "brain_first_token_ms": {
+     "type": "number",
+     "minimum": 0
+    },
+    "first_audio_ms": {
+     "type": "number",
+     "minimum": 0
+    },
+    "turn_ms": {
+     "type": "number",
+     "minimum": 0
+    },
+    "track_ms": {
+     "type": "number",
+     "minimum": 0
+    }
+   }
+  },
+  "v2_track": {
+   "description": "Server to client, fast loop (detector at about 10 to 15 fps when available): fresh boxes for anchored objects.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "v",
+    "type",
+    "seq",
+    "objects"
+   ],
+   "properties": {
+    "v": {
+     "$ref": "#/$defs/v2"
+    },
+    "type": {
+     "const": "track"
+    },
+    "seq": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "objects": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/scene_object"
+     }
+    }
+   }
   }
  }
 }

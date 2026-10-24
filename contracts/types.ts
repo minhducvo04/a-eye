@@ -98,7 +98,7 @@ export type PackId = "general" | "pc_build" | "cooking" | "assemble";
 export type PresenceState = "idle" | "listening" | "thinking" | "speaking";
 export type DrawRole = "target" | "info" | "warn" | "ok";
 
-interface OpBase { id: string; role?: DrawRole; label?: string; ttl_ms?: number }
+interface OpBase { id: string; role?: DrawRole; label?: string; ttl_ms?: number; anchor?: { object_id: string; bbox: BBox } }
 export type DrawOp =
   | (OpBase & { kind: "box"; bbox: BBox })
   | (OpBase & { kind: "highlight"; bbox: BBox })
@@ -119,14 +119,21 @@ export type ClientMessageV2 = V2Hello | V2Frame | V2UserText | V2BargeIn | V2Con
 
 // server -> client
 export interface V2Draw { v: V2; type: "draw"; agent: AgentId; seq: number; ops: DrawOp[] }
-export interface V2Say { v: V2; type: "say"; agent: AgentId; utterance_id: string; text: string }
+export interface V2Say { v: V2; type: "say"; agent: AgentId; utterance_id: string; text: string; turn_id?: string; part?: number; final?: boolean }
 export interface V2Audio { v: V2; type: "audio"; agent: AgentId; utterance_id: string; sample_rate?: 16000; pcm16_b64: string; final?: boolean }
 export interface V2AgentState { v: V2; type: "agent_state"; agent: AgentId; state: PresenceState; focus?: Point }
 export interface V2MarketResults { v: V2; type: "market_results"; agent: "shopper"; result: MarketResponse }
 export interface V2Error { v: V2; type: "error"; code: "bad_message" | "power_off_required" | "refused" | "vision_unavailable" | "brain_unavailable" | "internal"; message: string }
-export type ServerMessageV2 = V2Draw | V2Say | V2Audio | V2AgentState | V2MarketResults | V2Error;
+export type ServerMessageV2 = V2Draw | V2Say | V2Audio | V2AgentState | V2MarketResults | V2Error | V2Metrics | V2Track;
 
 // server -> vision: POST /scene
 export interface SceneObject { id: string; label: string; bbox: BBox; conf: number }
 export interface SceneRequest { image_b64: string; queries?: string[]; max_objects?: number }
 export interface SceneResponse { caption: string; objects: SceneObject[]; source?: "ollama" | "claude" | "fake"; ms: number }
+
+// v2.1 (additive, real time): anchored ops, streamed say parts, dev metrics, fast-loop track updates.
+export interface DrawAnchor { object_id: string; bbox: BBox }
+// Every DrawOp may carry: anchor?: DrawAnchor  (the client moves the op with its tracked region)
+export interface V2SayStreamFields { turn_id?: string; part?: number; final?: boolean }
+export interface V2Metrics { v: V2; type: "metrics"; turn_id?: string; seq?: number; vlm_ms?: number; brain_first_token_ms?: number; first_audio_ms?: number; turn_ms?: number; track_ms?: number }
+export interface V2Track { v: V2; type: "track"; seq: number; objects: SceneObject[] }

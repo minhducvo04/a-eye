@@ -630,7 +630,16 @@
       0.03
      ],
      "role": "target",
-     "label": "CPU_FAN"
+     "label": "CPU_FAN",
+     "anchor": {
+      "object_id": "o1",
+      "bbox": [
+       0.4,
+       0.55,
+       0.06,
+       0.03
+      ]
+     }
     },
     {
      "kind": "arrow",
@@ -714,6 +723,16 @@
    "agent": "helper",
    "utterance_id": "u3",
    "text": "That goes on the header with the arrow."
+  },
+  {
+   "v": 2,
+   "type": "say",
+   "agent": "helper",
+   "utterance_id": "u4.0",
+   "turn_id": "t4",
+   "part": 0,
+   "final": false,
+   "text": "Okay, I see the pan."
   }
  ],
  "v2_audio": [
@@ -816,6 +835,37 @@
    "say": "Let me check prices.",
    "draw": [],
    "market_category": "ram"
+  }
+ ],
+ "v2_metrics": [
+  {
+   "v": 2,
+   "type": "metrics",
+   "turn_id": "t4",
+   "vlm_ms": 900,
+   "brain_first_token_ms": 420,
+   "first_audio_ms": 1100,
+   "turn_ms": 2300
+  }
+ ],
+ "v2_track": [
+  {
+   "v": 2,
+   "type": "track",
+   "seq": 12,
+   "objects": [
+    {
+     "id": "o1",
+     "label": "CPU_FAN",
+     "bbox": [
+      0.41,
+      0.55,
+      0.06,
+      0.03
+     ],
+     "conf": 0.8
+    }
+   ]
   }
  ]
 }
