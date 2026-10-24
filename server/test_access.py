@@ -210,6 +210,7 @@ const location = {reload() { reloaded = true; }};
 const document = {getElementById: () => ({}), createElement: () => ({addEventListener(_, fn) { this.click = fn; }})};
 const errorEl = {append(value) { button = value; }};
 const setLink = () => {}, turnEvent = () => {}, showProblem = value => { problem = value; };
+let wait = null; // agent.js close handler also clears the wait card (web-wait merge)
 ''' + handler + '''
 close({code: 4401});
 assert.equal(problem, 'Please sign in again');
