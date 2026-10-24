@@ -1418,3 +1418,10 @@ svg .fill {
 .sheet:focus {
   outline: none;
 }
+
+/* Mic on is unmistakable: filled helper blue, like other "on" buttons. Off stays the struck mic in warn. */
+#mic[aria-pressed="true"] {
+  background: var(--helper);
+  color: #000;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--helper) 30%, transparent);
+}

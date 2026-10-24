@@ -1330,6 +1330,7 @@ function boot() {
     micBtn.setAttribute("data-muted", ready && !on ? "true" : "false");
     micIcon.setAttribute("href", on ? "#i-mic" : "#i-mic-off");
     micBtn.setAttribute("aria-label", on ? "Stop microphone" : "Start microphone");
+    micBtn.title = on ? "Mic is on. Tap to turn it off." : "Mic is off. Tap to turn it on.";
     renderMicLine();
     renderListen(ui.getState());
   }
