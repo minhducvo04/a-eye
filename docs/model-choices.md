@@ -28,7 +28,7 @@ Short answers to the questions people ask about A-eye's models. Numbers marked *
 | Privacy | Sees text notes and crops | Nothing leaves the box | design |
 
 Takeaway: Haiku is clearly smarter; the local 9B is faster on text and free, and keeps data local. A-eye uses Haiku
-by default and the local model for perception. A full local talker and expert are being benchmarked
+by default and the local model for perception. A full local talker and expert were benchmarked
 (`docs/results/local-brain.md`, `BRAIN=local`).
 
 ## Why not a small local model in front of everything?
@@ -37,26 +37,28 @@ Measured: local caption then text model gave a first word in 0.32 s, but quality
 the image. A text summary is a bottleneck (detail is lost) and its mistakes compound. A-eye keeps the local layer for
 background scene notes and sends the cloud a real crop when detail matters.
 
-## Big open-source models on the box (estimates until local-brain.md has numbers)
+## Big open-source models on the box (measured 2026-10-24 where marked)
 
-Generation speed is limited by memory bandwidth: each token reads the active weights once. GPU memory is about
-1,000 GB/s; system RAM roughly 60 to 90 GB/s (assumed, not measured on this PC). Only about 6 GB of VRAM is free while
-the vision models are loaded, so big models run mostly from RAM.
+Generation speed is limited by memory bandwidth: each token reads the active weights once. Only about 6 GB of VRAM is
+free while the vision models are loaded, so big models run from CPU RAM. Measured: CPU only with 8 of 16 cores is the
+only setup that kept live vision within noise; GPU layers slowed grounding by over 20%
+([results/local-brain.md](results/local-brain.md)).
 
-| Model | Size (4-bit) | Active per token | Est. speed mostly in RAM | Fits the box (93 GB RAM + 6 GB VRAM) |
-|---|---|---|---|---|
-| Qwen 3.8 27B (dense) | ~17 GB | all 27B | ~4 to 6 tok/s | yes |
-| Gemma 4 31B (dense) | ~19 GB | all 31B | ~3 to 5 tok/s | yes |
-| Qwen 3.6 35B-A3B (MoE) | ~23 GB | ~3B | ~20 to 40 tok/s | yes |
-| gpt-oss-120b (MoE, OpenAI open weights) | ~65 GB | ~5B | ~15 to 25 tok/s | yes, tight |
-| ~235B MoE class | ~130 GB+ | ~20B | ~3 to 5 tok/s | no |
+| Model | Size (4-bit) | Active per token | Speed mostly in RAM | Talker / expert quality (Haiku 4.00 / Opus 4.00) | Expert answer time p50 (Opus 3.6 s) |
+|---|---|---|---|---|---|
+| Qwen 3.8 27B (dense) | ~17 GB | all 27B | **3.5 to 4.0 tok/s, measured** | 2.95 / 2.50 (4 of 10), measured | 104 s, measured (n=4) |
+| Gemma 4 31B (dense) | ~19 GB | all 31B | ~3 to 5 tok/s, estimate | not run | not run |
+| Qwen 3.6 35B-A3B (MoE) | ~23 GB | ~3B | **19 to 24 tok/s, measured** | 3.25 / 3.00, measured | 69 s, measured (thinking on) |
+| gpt-oss-120b (MoE, OpenAI open weights) | ~65 GB | ~5B | ~15 to 25 tok/s, estimate | not run (pull paused) | not run |
+| ~235B MoE class | ~130 GB+ | ~20B | ~3 to 5 tok/s, estimate | does not fit | |
 
-Against Opus 5.5 as the expert: a typical expert answer is a few hundred tokens. Opus (cloud) is expected to finish in
-several seconds; a 120B MoE from RAM would take roughly 15 to 30 s for the same length, with lower quality. These are
-estimates; the benchmark will replace them.
+Against Opus 5.5 as the expert, measured: the best local model (Qwen 3.6 35B-A3B) scored 3.00 against Opus's
+4.00 and took about 69 s against 3.6 s. It thinks for about 1,600 tokens before it answers. Both local talkers
+also missed the hot-oil safety turn. Judge: Claude Sonnet 5.5, blind, n = 1 per answer, so a Claude bias is
+possible.
 
 ## What we train
 
 - Router (now/past/expert): yes, trained on generated questions, scored on a hand-written held-out set.
 - Vision fine-tune of Qwen: parked; the base already gets 15/16 boxes and training would take the box's GPU for 6 to 8 h.
-- Local brain distillation (LoRA on Claude's answers): planned only; needs 4 to 6 h of exclusive GPU or a cloud GPU.
+- Local brain distillation: planned only ([results/local-brain.md](results/local-brain.md), Phase B). Using Claude's answers as training data needs Duc's decision first (Anthropic Commercial Terms D.4); the default plan distils the best local model into a fast 9B talker, 3 to 4 h of exclusive GPU or a cloud GPU.
