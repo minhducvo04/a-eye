@@ -130,3 +130,34 @@ def test_camera_requires_token(monkeypatch):
         with client.websocket_connect('/ws2?token=test-token') as camera:
             assert join(camera, code)['state'] == 'joined'
             assert receive(call)['state'] == 'joined'
+
+
+def test_phone_mic_audio_becomes_the_calls_turn(registry):
+    """Phone camera + mic: audio_in and barge_in on the camera socket are the call's speech (server STT)."""
+    import httpx
+    from server.box_client import BoxClient
+    stt = []
+    def handler(request):
+        stt.append(json.loads(request.content))
+        return httpx.Response(200, json=dict(text='point here', ms=1))
+    application = app()
+    application.state.box_v2 = BoxClient(httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    with TestClient(application) as client, client.websocket_connect('/ws2') as call:
+        code = request(call)  # browser STT on the laptop; the phone's audio still goes to server STT
+        with client.websocket_connect('/ws2') as camera:
+            assert join(camera, code)['state'] == 'joined'
+            assert receive(call)['state'] == 'joined'
+            phone(camera, 'barge_in', utterance_id='phone', at_ms=0)
+            assert receive(call) == dict(v=2, type='agent_state', agent='helper', state='listening')
+            phone(camera, 'audio_in', seq=1, sample_rate=16000, pcm16_b64='AAA=', final=False)
+            phone(camera, 'audio_in', seq=2, sample_rate=16000, pcm16_b64='AQA=', final=True)
+            stages, msg = [], call.receive_json()
+            while msg['type'] != 'say':
+                if msg['type'] == 'turn':
+                    stages.append(msg['stage'])
+                msg = call.receive_json()
+            assert stages[:3] == ['received', 'transcribing', 'thinking']
+            assert stt == [dict(pcm16_b64='AAABAA==', language='en')]
+            assert registry  # the code stays single use
+            phone(camera, 'user_text', text='hi', final=True)
+            assert receive(camera)['code'] == 'bad_message'

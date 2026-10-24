@@ -1,10 +1,10 @@
-import { bootPairCamera, setupPairCall } from './pair.js';
+import { bootPairCamera, phoneMicRoute, setupPairCall } from './pair.js';
 // Agent call page. Speaks the v2 WebSocket contract on /ws2.
 // Frames exist only as the JPEG about to be sent. Nothing is written to storage.
 
 import { paintDraw, applyDraw, pruneDraw, viewTransform, visibleOps } from "./draw.js";
 import { writeFrame } from "./live.js";
-import { fetchRecap, renderHit, renderRecap } from "./rewind.js";
+import { fetchRecap, initialRewind, nextRewind, NOTICE as REWIND_NOTICE, PROMPTS as REWIND_PROMPTS, renderHit, renderRecap, showsRewindChip } from "./rewind.js";
 import { sharpCanvasSize } from "./overlay.js";
 import {
   AUDIO_FALLBACK_MS,
@@ -195,6 +195,12 @@ function boot() {
   let seq = 0;
   let cameraOn = false;
   let rewindOn = false; // off by default; the switch sends clips to TwelveLabs
+  let rewind = initialRewind(); // one state for the bottom-bar button and the Settings switch
+  let rewindNoticeTimer = 0;
+  const rewindBtn = document.getElementById("rewind-btn");
+  const rewindAsk = document.getElementById("rewind-ask");
+  const rewindChip = document.getElementById("rewind-chip");
+  const rewindPrompts = document.getElementById("rewind-prompts");
   let starting = false;
   let frameTimer = 0;
   let photoUrl = "";
@@ -218,6 +224,8 @@ function boot() {
   let levelPool = null;
   // CallState.wait: set while an agent works on an answer (wait.js).
   let wait = null;
+  // A paired phone is the camera and the mic: the laptop mic is off meanwhile (pair.js phoneMicRoute).
+  let micRoute = { phone: false, resume: false };
   let waitShown = "";
   let lastUiTick = 0;
   const tracker = createTracker();
@@ -368,6 +376,7 @@ function boot() {
 
   function setLink(next) {
     link = next;
+    if (next === "reconnecting") wait = null; // CallState: .disconnected ends the wait
     renderLink();
   }
 
@@ -468,6 +477,9 @@ function boot() {
       drawState = applyDraw(null, null, 0);
       agents = { helper: "idle", shopper: "idle" };
       wait = null;
+      // The old session's phone left with it: the laptop mic comes back if it was on.
+      if (micRoute.phone) routeMic({ type: "pair_status", role: "call", state: "left" });
+      rewind = nextRewind(rewind, { type: "reset" });
       ui.dispatch({ type: "error", message: "" });
       setLink("live");
       renderPresence();
@@ -490,7 +502,6 @@ function boot() {
       socket = null;
       window.clearTimeout(retryTimer);
       setLink("reconnecting");
-      wait = null;
       turnEvent({ type: "closed" });
       if (event?.code === 4401) {
         ended = true;
@@ -517,12 +528,13 @@ function boot() {
   function onServer(message) {
     if (!message || typeof message !== "object") return;
     onPair(message);
+    if (message.type === "pair_status") routeMic(message);
     const now = Date.now();
     if (message.type === "turn") {
       wait = waitAfterTurn(wait, message, now);
       if (message.stage === "failed" && message.detail) ui.dispatch({ type: "error", message: String(message.detail) });
       if (message.stage === "received") pendingText = null;
-      if (message.text && stt === "server" && !turn.text) {
+      if (message.text && (stt === "server" || micRoute.phone) && !turn.text) {
         ui.dispatch({ type: "final", text: message.text, now });
       }
       turnEvent(message);
@@ -555,6 +567,8 @@ function boot() {
       return;
     }
     if (message.type === "agent_state") {
+      // Phone speech barged in on the server: stop this laptop's playback as its own VAD would.
+      if (micRoute.phone && message.state === "listening") stopLocalPlayback();
       wait = waitAfterAgentState(wait, message.agent, message.state, now);
       applyAgentState(message.agent, message.state);
       ui.dispatch({ type: "agent_state", agent: message.agent, state: message.state });
@@ -612,6 +626,7 @@ function boot() {
       return;
     }
     if (message.type === "rewind_state") {
+      rewind = nextRewind(rewind, { type: "server", on: message.on, clips: message.clips });
       showRewind(Boolean(message.on));
       return;
     }
@@ -711,6 +726,33 @@ function boot() {
     rewindOn = on;
     if (rewindToggle) rewindToggle.checked = on;
     if (rewindBadge) rewindBadge.classList.toggle("hidden", !on);
+    if (rewindBtn) {
+      rewindBtn.setAttribute("aria-pressed", on ? "true" : "false");
+      rewindBtn.setAttribute("aria-label", on ? "Rewind on" : "Rewind off");
+    }
+    const chip = showsRewindChip(rewind);
+    rewindAsk.classList.toggle("hidden", !chip);
+    if (!chip) togglePrompts(false);
+    renderCall();
+  }
+
+  // Either control: the same state, the same message, and the upload notice on the first enable.
+  function setRewind(on) {
+    rewind = nextRewind(rewind, { type: "switch", on });
+    if (rewind.notice) {
+      window.clearTimeout(rewindNoticeTimer);
+      rewindNoticeTimer = window.setTimeout(() => {
+        rewind = nextRewind(rewind, { type: "notice_seen" });
+        renderCall();
+      }, 8000);
+    }
+    showRewind(on);
+    if (socket && socket.readyState === WebSocket.OPEN) send({ v: 2, type: "rewind", session_id: sessionId, on: rewindOn });
+  }
+
+  function togglePrompts(open) {
+    rewindPrompts.classList.toggle("hidden", !open);
+    rewindChip.setAttribute("aria-expanded", open ? "true" : "false");
   }
 
   // Recap over HTTP: the Recap chip during a call, and the end-of-call sheet when Rewind was on.
@@ -1197,7 +1239,7 @@ function boot() {
   // CallScreen.micButton: mic when listening, struck-through mic in the warn colour when muted.
   function renderMic() {
     const ready = Boolean(voice && voice.supported && voice.supported.stt);
-    micBtn.disabled = !ready;
+    micBtn.disabled = !ready || micRoute.phone;
     const on = ui.getState().micOn;
     micBtn.setAttribute("aria-pressed", on ? "true" : "false");
     micBtn.setAttribute("data-muted", ready && !on ? "true" : "false");
@@ -1396,6 +1438,7 @@ function boot() {
     drawState = applyDraw(null, null, 0);
     agents = { helper: "idle", shopper: "idle" };
     wait = null;
+    micRoute = { phone: false, resume: false };
     renderWait(Date.now());
     hideStill();
     closeSheets();
@@ -1481,7 +1524,7 @@ function boot() {
     errorEl.classList.toggle("hidden", !st.error);
     powerGate.classList.toggle("hidden", pack !== "pc_build" || powerConfirmed);
     renderLink();
-    const notes = [sttForMic ? "" : st.sttNotice, st.voiceNotice, deviceNotice].filter(Boolean);
+    const notes = [sttForMic ? "" : st.sttNotice, st.voiceNotice, deviceNotice, rewind.notice ? REWIND_NOTICE : ""].filter(Boolean);
     noticeEl.textContent = notes.join(" ");
     noticeEl.classList.toggle("hidden", notes.length === 0);
     renderReplies(st);
@@ -1514,7 +1557,7 @@ function boot() {
 
   // ListeningStrip.swift: waveform and heard line while voice input is available; "MIC OFF" while the mic is off.
   function renderListen(st) {
-    const ready = Boolean(voice && voice.supported && voice.supported.stt);
+    const ready = Boolean(voice && voice.supported && voice.supported.stt) && !micRoute.phone;
     listenEl.classList.toggle("hidden", !ready);
     if (!ready) return;
     if (!st.micOn && waveLevels.length) {
@@ -1675,10 +1718,21 @@ function boot() {
   const recapBtn = document.getElementById("rewind-recap");
   if (recapBtn) recapBtn.addEventListener("click", () => void showRecap(sessionId));
   if (rewindToggle) {
-    rewindToggle.addEventListener("change", () => {
-      showRewind(rewindToggle.checked);
-      if (socket && socket.readyState === WebSocket.OPEN) send({ v: 2, type: "rewind", session_id: sessionId, on: rewindOn });
+    rewindToggle.addEventListener("change", () => setRewind(rewindToggle.checked));
+  }
+  rewindBtn.addEventListener("click", () => setRewind(!rewindOn));
+  rewindChip.addEventListener("click", () => togglePrompts(rewindPrompts.classList.contains("hidden")));
+  for (const prompt of REWIND_PROMPTS) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = prompt.label;
+    button.addEventListener("click", () => {
+      togglePrompts(false);
+      typedEl.value = prompt.text;
+      typedEl.focus();
+      typedEl.setSelectionRange(prompt.text.length, prompt.text.length);
     });
+    rewindPrompts.append(button);
   }
   if (backdropEl) backdropEl.addEventListener("click", closeSheets);
   window.addEventListener("keydown", (event) => {
@@ -1888,9 +1942,31 @@ function boot() {
     return deviceLabel(mediaDevices, "audioinput", micChoice);
   }
 
+  function routeMic(message) {
+    const { route, action } = phoneMicRoute(micRoute, message, ui.getState().micOn);
+    micRoute = route;
+    if (action === "stop_local" && voice) {
+      voice.stopListening();
+      ui.dispatch({ type: "mic_stop" });
+      turnEvent({ type: "mic_stop" });
+    } else if (action === "start_local" && voice && voice.supported && voice.supported.stt) {
+      void startMic();
+    }
+    renderCall();
+  }
+
+  function stopLocalPlayback() {
+    speech = bargeSpeech(speech);
+    talkQueue.length = 0;
+    talkBusy = false;
+    clearAllFallbacks();
+    if (voice && typeof voice.cancel === "function") voice.cancel();
+    ui.dispatch({ type: "audio_ended", utteranceId: "", now: Date.now() });
+  }
+
   function renderMicLine() {
     if (!micLineEl) return;
-    const text = micLine(currentMicLabel(), listening);
+    const text = micRoute.phone ? "Mic: phone" : micLine(currentMicLabel(), listening);
     if (micLineEl.textContent !== text) micLineEl.textContent = text;
   }
 

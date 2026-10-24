@@ -477,10 +477,30 @@ async def websocket(ws: WebSocket):
             if yolo_task is None and os.environ.get('YOLO_REFRESH') == '1':
                 yolo_task = asyncio.create_task(yolo_loop(session, box, send))
 
+    ws_read = phone_read = None
+
+    async def next_message():
+        """The call socket's next message, or phone mic audio from the paired camera socket (pairing.Call.inbox)."""
+        nonlocal ws_read, phone_read, stt_mode
+        if ws_read is None:
+            ws_read = asyncio.ensure_future(ws.receive_json())
+        if paired_call and (phone_read is None or phone_read.inbox is not paired_call.inbox):
+            if phone_read is not None:
+                phone_read.cancel()
+            phone_read = asyncio.ensure_future(paired_call.inbox.get())
+            phone_read.inbox = paired_call.inbox
+        await asyncio.wait({ws_read} | ({phone_read} if phone_read else set()), return_when=asyncio.FIRST_COMPLETED)
+        if phone_read is not None and phone_read.done():
+            done, phone_read = phone_read, None
+            stt_mode = 'server'  # phone speech is always streamed PCM for server STT
+            return done.result()
+        done, ws_read = ws_read, None
+        return done.result()
+
     try:
         while True:
             try:
-                incoming = await ws.receive_json()
+                incoming = await next_message()
                 validate('client_message_v2', incoming)
             except (json.JSONDecodeError, ValidationError, KeyError):
                 await send(message('error', code='bad_message', message='Invalid client message.'))
@@ -645,22 +665,27 @@ async def websocket(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
-        if paired_call:
-            with CancelScope(shield=True):
-                await paired_call.close()
-        await cancel_stt()
-        reset_audio()
-        await cancel_yolo()
-        await cancel_turn()
-        await cancel_audio()
-        await cancel_scene()
-        await close_voice()
-        await end_rewind()
-        await box.aclose()
-        if session:
-            session.scene = None
-            session.frame = None
-            session.history.clear()
+        # Shielded: a closing socket can cancel this task mid-cleanup (seen with the extra phone-mic read).
+        with CancelScope(shield=True):
+            for pending in (ws_read, phone_read):
+                if pending is not None:
+                    pending.cancel()
+            if paired_call:
+                with CancelScope(shield=True):
+                    await paired_call.close()
+            await cancel_stt()
+            reset_audio()
+            await cancel_yolo()
+            await cancel_turn()
+            await cancel_audio()
+            await cancel_scene()
+            await close_voice()
+            await end_rewind()
+            await box.aclose()
+            if session:
+                session.scene = None
+                session.frame = None
+                session.history.clear()
 
 
 def small_jpeg(encoded):

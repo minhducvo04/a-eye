@@ -89,3 +89,39 @@ export async function fetchRecap(sessionId, search = globalThis.location ? globa
   if (!reply.ok) throw new Error(`recap ${reply.status}`);
   return reply.json();
 }
+
+// Call-screen Rewind: one state behind both the bottom-bar button and the Settings switch.
+// Starter questions the server's Rewind matcher knows (server/rewind.py _QUESTION); each fills the typed bar.
+export const PROMPTS = Object.freeze([
+  { label: "When did I…", text: "When did I " },
+  { label: "Where did I put…", text: "Where did I put " },
+]);
+
+export function initialRewind() {
+  return { on: false, clips: 0, noticed: false, notice: false };
+}
+
+// switch: the user flipped either control. server: a rewind_state message. The upload notice shows on the
+// first switch on in this page, whichever control did it.
+export function nextRewind(state, event) {
+  const s = state || initialRewind();
+  if (!event) return s;
+  if (event.type === "switch") {
+    const on = Boolean(event.on);
+    const first = on && !s.noticed;
+    return { ...s, on, clips: on ? s.clips : 0, noticed: s.noticed || on, notice: first };
+  }
+  if (event.type === "server") {
+    const on = Boolean(event.on);
+    const clips = Number.isInteger(event.clips) ? event.clips : on ? s.clips : 0;
+    return { ...s, on, clips: on ? clips : 0 };
+  }
+  if (event.type === "notice_seen") return { ...s, notice: false };
+  if (event.type === "reset") return { ...s, clips: 0 };
+  return s;
+}
+
+// The "Rewind" chip above the typed bar: only while Rewind is on and has kept at least one clip.
+export function showsRewindChip(state) {
+  return Boolean(state && state.on && state.clips > 0);
+}

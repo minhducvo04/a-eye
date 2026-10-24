@@ -720,6 +720,7 @@ svg .fill {
   opacity: 0.5;
 }
 
+#rewind-btn[aria-pressed="true"],
 #hold[aria-pressed="true"] {
   background: var(--helper);
   color: #000;
@@ -1072,6 +1073,61 @@ svg .fill {
   width: 0;
   background: var(--helper);
   transition: width 60ms linear;
+}
+
+/* Rewind on the call screen: a chip above the typed bar and its starter questions. */
+.rewind-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.rewind-ask-chip,
+.rewind-prompts button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: var(--fs-subhead);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.rewind-ask-chip {
+  color: var(--helper);
+}
+
+.rewind-ask-chip svg {
+  width: 18px;
+  height: 18px;
+}
+
+.rewind-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rewind-prompts button {
+  background: var(--glass-tint);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: inset 0 0 0 1px var(--glass-edge);
+}
+
+/* Six round buttons fit a 390 px phone only a little smaller. */
+@media (max-width: 420px) {
+  .bottom {
+    gap: 8px;
+  }
+
+  .bottom .r56 {
+    width: 48px;
+    height: 48px;
+  }
 }
 
 /* Rewind: on-screen badge while clips are uploaded, and the answer frame with boxes. */

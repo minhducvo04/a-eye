@@ -45,3 +45,27 @@ test("recap request carries the page token", async () => {
   assert.equal(seen[0][1].headers.Authorization, "Bearer abc");
   assert.equal(JSON.parse(seen[0][1].body).session_id, "s1");
 });
+
+test("one Rewind state for the button and the switch; notice only on the first enable", async () => {
+  const { initialRewind, nextRewind, showsRewindChip } = await import("./rewind.js");
+  let s = nextRewind(initialRewind(), { type: "switch", on: true });
+  assert.equal(s.on, true);
+  assert.equal(s.notice, true);
+  s = nextRewind(s, { type: "notice_seen" });
+  s = nextRewind(s, { type: "switch", on: false });
+  s = nextRewind(s, { type: "switch", on: true });
+  assert.equal(s.notice, false);
+  assert.equal(showsRewindChip(s), false); // on, but no clips yet
+  s = nextRewind(s, { type: "server", on: true, clips: 2 });
+  assert.equal(showsRewindChip(s), true);
+  s = nextRewind(s, { type: "server", on: true });
+  assert.equal(s.clips, 2); // a state without clips keeps the count
+  s = nextRewind(s, { type: "switch", on: false });
+  assert.equal(showsRewindChip(s), false);
+  assert.equal(s.clips, 0);
+});
+
+test("prompts are questions the server treats as Rewind", async () => {
+  const { PROMPTS } = await import("./rewind.js");
+  assert.deepEqual(PROMPTS.map((p) => p.text), ["When did I ", "Where did I put "]);
+});
