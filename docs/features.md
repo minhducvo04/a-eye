@@ -15,7 +15,7 @@ Last updated 2026-10-24 (UI polish, `pkg/ui-polish`).
 | Mode ring (General, PC Build, Cooking, Assembly, Memory, 3 coming soon) | built | browser smoke; screenshots | yes | yes (no Memory yet) | yes (no Memory yet) | Start screen, bottom |
 | All modes in one row on desktop, ring on phones | built | Chromium and Brave, Playwright 1280 and 390 (8/8 modes in view at 1280) | yes | n/a | n/a | Start screen, bottom |
 | Ring by wheel, drag and arrow keys | built | Playwright wheel and keys in Chromium and Brave; real trackpad not tried | yes | swipe | gaze/pinch | Start screen |
-| `?mode=memory` opens with Memory centred | built | Chromium | yes | no | no | URL |
+| Memory centred at launch (web); `?mode=<id>` picks another | built | Playwright Chromium and Brave 390 and 1280 (177d209) | yes | no (PC Build) | no | Start screen |
 
 ## Call screen
 
@@ -24,6 +24,7 @@ Last updated 2026-10-24 (UI polish, `pkg/ui-polish`).
 | Live camera, 1 fps frames to our own vision host | built | browser smoke (frames sent) | yes | yes | photo only | Full screen |
 | Drawings on the picture (box, arrow, circle, path, label, pin) with tracking | built | browser smoke; node tests | yes | yes | yes (on the photo) | Over the camera |
 | Voice in (browser speech or server STT), voice out (Cartesia or Kokoro), barge-in | built | node tests; real mic not checked in this pass | yes | yes | typed in simulator only | Mic button; listening strip |
+| Tap to start turns the mic on; Mic on shows filled blue with "Hearing you" | built | Playwright Chromium 390 and 1280: on after start, off after the first press (b4e1855) | yes | n/a | n/a | Call bar mic |
 | Hold to talk (button and Space) | built | browser smoke | yes | no | no | Call bar, hand icon (hidden in Memory mode) |
 | Typed message | built | browser smoke | yes | when voice is off | yes | Above the call bar |
 | Caption card (helper, shopper) and wait card with percent | built | screenshots; node tests | yes | yes | yes | Lower middle |
@@ -52,7 +53,7 @@ Last updated 2026-10-24 (UI polish, `pkg/ui-polish`).
 | Feature | Status | Verified how | Web | iPhone | Vision Pro | Where in the UI |
 |---|---|---|---|---|---|---|
 | Private mode (local brain, Kokoro, our STT, Rewind locked off) | built | server tests | yes | no | no | Settings, Privacy (first group after Phone camera); Private badge |
-| Rewind: clips to TwelveLabs, ask about earlier moments, recap at the end | built | demo rehearsal with stand-in; real upload not run here | yes | no | no | Call bar Rewind button; Settings, Rewind; Rewind on badge |
+| Rewind: clips to TwelveLabs, ask about earlier moments, recap at the end | built | demo rehearsal with stand-in; real upload not run here | yes | no | no | Call bar Rewind button (not in Memory mode); Settings, Rewind; Rewind on badge |
 | Spoken "forget that" deletes this call's clips | built | server tests | yes | yes (voice) | yes (voice) | Voice |
 
 ## Settings (web)
