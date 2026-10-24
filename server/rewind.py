@@ -77,9 +77,9 @@ async def confirm(vision, jpeg, target, min_conf=0.5):
 
 
 def local_only():
-    """LOCAL_ONLY=1 or this call's Private mode (server/privacy.py)."""
-    from server.privacy import local_only as private_or_local
-    return private_or_local()
+    """TwelveLabs is off for this call: its switch is off, Private mode, or LOCAL_ONLY=1 (server/privacy.py)."""
+    from server.privacy import twelvelabs_allowed
+    return not twelvelabs_allowed()
 
 
 def identity(connection):
@@ -780,7 +780,8 @@ async def memory_turn(session, text, kind, speak, emit, turn_id, vision=None):
 def state_message(rewind):
     from server.agent import message
     extra = {'notice': NOTICE} if rewind.on else {}
-    if local_only():
+    from server.privacy import local_only as private_or_local
+    if private_or_local():  # locked = Private mode or LOCAL_ONLY=1; a switch that is merely off is not a lock
         extra['locked'] = True
     return message('rewind_state', **rewind.status(), **extra)
 

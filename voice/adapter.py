@@ -96,10 +96,10 @@ def make_adapter(voice: str | None = None, **kwargs: Any) -> VoiceAdapter:
 
     voice is hello.voice: 'cartesia:<id>' asks for Cartesia, a Kokoro id asks for Kokoro.
     """
-    from server.privacy import local_only
+    from server.privacy import cartesia_allowed
     mode = os.environ.get('VOICE', 'auto')
-    if local_only():
-        # Private mode or LOCAL_ONLY=1: our own box only, never Cartesia (AGENTS.md privacy rules).
+    if not cartesia_allowed():
+        # Natural voice switch off (or Private mode, LOCAL_ONLY=1): our own box only, never Cartesia.
         if _kokoro_available():
             from voice.kokoro import KokoroAdapter
             return KokoroAdapter(**kwargs)

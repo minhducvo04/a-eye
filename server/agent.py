@@ -16,7 +16,7 @@ from server import rewind_tools
 from server.routing import forget_request, past_tool, rewind_callback, route_turn
 
 from server.crops import crop_b64, pick_target
-from server.privacy import local_only
+from server.privacy import claude_allowed
 
 from contracts import schema, validate
 from market.search import search
@@ -299,7 +299,7 @@ def planner_crop(session, scene, seq, text):
     """Escalation to the cloud planner sees a CROP of the object in question, never the full frame (AGENTS.md).
     Only when the camera is on, the scene belongs to the newest frame, and PLANNER_CROP is not 0."""
     frame = getattr(session, 'frame', None)
-    if (os.environ.get('PLANNER_CROP', '1') == '0' or local_only() or not session.camera
+    if (os.environ.get('PLANNER_CROP', '1') == '0' or not claude_allowed() or not session.camera
             or not frame or frame.get('seq') != seq or not scene.get('objects')):
         return {}
     target = pick_target(scene['objects'], text)

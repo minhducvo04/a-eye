@@ -214,8 +214,13 @@
     <p class="group-title">Privacy</p>
     <div class="group">
       <label class="row">Private mode <input id="private-toggle" type="checkbox" role="switch" aria-describedby="private-notice"></label>
+      <label class="row"><span>Smarter answers (Claude)<span class="leak">Sends your question and a written scene note, sometimes one small close-up</span></span><input id="cloud-claude" type="checkbox" role="switch"></label>
+      <label class="row"><span>Natural voice (Cartesia)<span class="leak">Sends only A-eye's reply sentence</span></span><input id="cloud-cartesia" type="checkbox" role="switch"></label>
+      <label class="row"><span>Video memory search (TwelveLabs)<span class="leak">Uploads short silent clips; deleted at call end</span></span><input id="cloud-twelvelabs" type="checkbox" role="switch"></label>
     </div>
-    <p id="private-notice" class="group-foot">Nothing leaves our own machines: the local brain answers, Kokoro speaks, speech is recognized on our GPU box, and Rewind stays off.</p>
+    <p id="private-notice" class="group-foot">Private mode turns all three off: the local brain answers, Kokoro speaks, speech is recognized on our GPU box, and Rewind stays off.</p>
+    <p class="group-title">What leaves your home</p>
+    <div class="group"><ul id="leaves-list" class="leaves" aria-live="polite"></ul></div>
     <p class="group-title">Rewind</p>
     <div class="group">
       <label class="row">Rewind <input id="rewind-toggle" type="checkbox" role="switch" aria-describedby="rewind-notice"></label>
