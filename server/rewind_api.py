@@ -53,3 +53,27 @@ async def flush(request: Request):
     except Exception:
         return JSONResponse({'error': 'dependency_unavailable'}, status_code=503)
     return dict(rewind.status(), uploaded=len(sent))
+
+
+@router.post('/recap')
+async def recap(request: Request):
+    """Recap of a call (also after it ended). Waits for the end-of-call upload, then asks Pegasus."""
+    import asyncio
+    from server.rewind import recap as make_recap, recap_line
+    value = await body(request)
+    rewind = registry(request.app).get(value.get('session_id')) if value else None
+    if rewind is None:
+        return JSONResponse({'error': 'unknown_session'}, status_code=404)
+    if rewind.end_task is not None:
+        try:
+            await asyncio.wait_for(asyncio.shield(rewind.end_task), 60)
+        except Exception:
+            pass
+    elif rewind.on and any(c.status == 'pending' for c in rewind.clips):
+        await rewind.flush()
+    try:
+        result = await make_recap(rewind)
+    except Exception:
+        return JSONResponse({'error': 'dependency_unavailable'}, status_code=503)
+    return dict(steps=result['steps'], skipped=result['skipped'], say=recap_line(result), ms=result['ms'],
+                mode=result['mode'])

@@ -156,3 +156,6 @@ export interface V2PairStatus { v: V2; type: "pair_status"; state: "joined" | "l
 export interface V2Rewind { v: V2; type: "rewind"; session_id: string; on: boolean }
 export interface V2RewindState { v: V2; type: "rewind_state"; on: boolean; clips?: number; ready?: number; indexing?: number; pending?: number; notice?: string }
 export interface V2RewindHit { v: V2; type: "rewind_hit"; turn_id?: string; query: string; t_s: number; start_s: number; end_s: number; sure: boolean; alternatives?: number[]; frame_b64?: string; objects?: SceneObject[] }
+
+// v2.6 (additive): Rewind recap. V2RewindRecap joins the server v2 union.
+export interface V2RewindRecap { v: V2; type: "rewind_recap"; turn_id?: string; steps: { t_s: number; text: string }[]; skipped: string[] }

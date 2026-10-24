@@ -6,6 +6,10 @@
 
 From now on, changes may only add optional fields or new message types. Do not remove or rename fields, make optional fields required, or change existing meanings. Add an entry here for every addition; update schema, TypeScript mirror and examples together through the contract PR process and run `make test-py`. Clients must ignore unknown response fields and unknown message types (and skip unknown draw kinds). Current server request validation remains strict; do not send speculative fields. A breaking change requires a separately negotiated major protocol, outside this freeze.
 
+## v2.6: Rewind recap
+
+- New `v2_rewind_recap` (server): required `v`, `type:rewind_recap`, `steps` (up to 12 of `{t_s, text}`), `skipped` (typical step names for the mode); optional `turn_id`. Added to `server_message_v2`.
+
 ## v2.5: Rewind (call memory through TwelveLabs)
 
 - Optional `v2_hello.rewind` (boolean, default off).

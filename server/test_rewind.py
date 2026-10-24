@@ -30,6 +30,14 @@ class FakeTL:
     async def task(self, task_id):
         return {'status': 'ready'}
 
+    analyzed = None
+
+    async def analyze(self, mp4, prompt, schema=None, model=None, max_tokens=800):
+        self.analyzed = (mp4, prompt, schema)
+        return json.dumps({'steps': [{'t': 5.0, 'text': 'Plugged in the CPU fan cable'},
+                                     {'t': 0.1, 'text': 'Installed the CPU'}],
+                           'skipped': ['install the RAM', 'juggle the case']}), {'output_tokens': 40}
+
     async def search(self, index_id, query, video_ids=None, limit=5):
         self.searches.append((index_id, query, list(video_ids or [])))
         return [r for r in self.rows if not video_ids or r['video_id'] in video_ids]
@@ -93,7 +101,8 @@ def test_flush_uploads_deletes_temp_and_thins_frames():
     clip = rewind.clips[0]
     _, path, metadata = rewind.client.uploads[0]
     assert not os.path.exists(path)                        # no video stays on disk
-    assert clip.status == 'ready' and clip.video_id == 'vid-1' and len(clip.frames) == 6
+    assert clip.status == 'ready' and clip.video_id == 'vid-1' and len(clip.frames) in (6, 7)
+    assert any(f[0] == clip.key_s for f in clip.frames)   # the change frame itself is kept
     assert metadata['start_s'] == 1.0 and metadata['end_s'] == 6.0
     assert rewind.status() == dict(on=True, clips=1, ready=1, indexing=0, pending=0)
 
@@ -292,3 +301,90 @@ def test_follow_samples_any_frame_source():
         return len(rewind.ring)
 
     assert asyncio.run(go()) == 2
+
+
+
+def test_recap_orders_steps_maps_times_and_filters_skipped():
+    from server.rewind import recap
+    rewind = ready_rewind([])                                # clips at 1..6 s and 18..23 s, 6 kept frames each
+    result = asyncio.run(recap(rewind, mode='pc_build', encoder=lambda frames, path: len(frames) * 0.5))
+    mp4, prompt, schema = rewind.client.analyzed
+    assert 'install the RAM' in prompt and 'never describe or identify people' in prompt and schema
+    assert [s['text'] for s in result['steps']] == ['Installed the CPU', 'Plugged in the CPU fan cable']
+    assert result['steps'][0]['t_s'] < 7 <= 18 <= result['steps'][1]['t_s']     # t mapped back to call time
+    assert result['skipped'] == ['install the RAM']           # free text from the model is dropped
+    assert result['frames'] in range(12, 15)
+
+
+def test_recap_uses_only_uploaded_clips():
+    from server.rewind import recap
+    rewind, clock = make([])
+    rewind.set_on(True)
+    feed(rewind, clock, 0, 12, keyframes=[3])                # finished but never uploaded
+    result = asyncio.run(recap(rewind, mode='cooking'))
+    assert result['steps'] == [] and rewind.client.analyzed is None and 'Nothing to recap' in result['note']
+
+
+def test_tool_interface():
+    from server import rewind_tools
+    rows = [dict(video_id='vid-2', start=0, end=5, rank=1), dict(video_id='vid-1', start=0, end=5, rank=2)]
+
+    class Session:
+        session_id = 's1'
+        pack = type('P', (), {'id': 'pc_build'})()
+
+    session = Session()
+    assert rewind_tools.tools_for(session) == []
+    session.rewind = ready_rewind(rows)
+    names = [t['name'] for t in rewind_tools.tools_for(session)]
+    assert names == ['search_past', 'recap_call']
+    assert all(set(t) == {'name', 'description', 'input_schema'} for t in rewind_tools.TOOLS)
+    fan = dict(id='o1', label='CPU fan', bbox=[0.4, 0.3, 0.2, 0.2], conf=0.8)
+    result, cards = asyncio.run(rewind_tools.run_tool('search_past', {'query': 'plug in the CPU fan'}, session,
+                                                      vision=FakeVision([fan]), turn_id='t1'))
+    assert {k: result[k] for k in ('sure', 'call_time_s', 'label', 'box', 'clip_id', 'alternatives')} == dict(
+        sure=True, call_time_s=20.0, label='CPU fan', box=[0.4, 0.3, 0.2, 0.2], clip_id='vid-2', alternatives=[3.0])
+    json.dumps(result)                                        # JSON-safe tool_result, no image bytes
+    assert 'frame_b64' not in result and cards[0]['type'] == 'rewind_hit' and cards[0]['turn_id'] == 't1'
+    session.rewind.encoder = lambda frames, path: len(frames) * 0.5
+    result, cards = asyncio.run(rewind_tools.run_tool('recap_call', {}, session, turn_id='t2'))
+    assert result['skipped'] == ['install the RAM'] and result['say'].startswith("Here's what you did: Installed")
+    assert cards[0]['type'] == 'rewind_recap'
+
+
+def test_recap_route_and_typed_recap_over_ws2():
+    from contracts import validate
+    from server.app import create_app
+    from server.test_agent import FRAME, LLM, Vision
+
+    app = create_app(static_dir='/nonexistent')
+    app.state.vision_v2 = Vision()
+    app.state.llm_v2 = LLM()
+    app.state.rewind = Registry(FakeTL([]), encoder=fake_encoder)
+
+    def until(ws, kind):
+        while True:
+            msg = ws.receive_json()
+            validate('server_message_v2', msg)
+            if msg['type'] == kind:
+                return msg
+
+    with TestClient(app) as client:
+        assert client.post('/api/rewind/recap', json={'session_id': 'nope'}).status_code == 404
+        with client.websocket_connect('/ws2') as ws:
+            ws.send_json(dict(v=2, type='hello', session_id='s', pack='pc_build', rewind=True))
+            until(ws, 'rewind_state')
+            ws.send_json(dict(v=2, type='confirm', session_id='s', what='power_off', value=True))
+            ws.send_json(FRAME)
+            until(ws, 'track')
+            rewind = app.state.rewind.get('s')
+            rewind.clips[0].status = 'pending'
+            ws.send_json(dict(v=2, type='user_text', session_id='s', text='Recap please, did I skip anything?',
+                              final=True))
+            first = until(ws, 'say')
+            card = until(ws, 'rewind_recap')
+            last = until(ws, 'say')
+            assert first['text'] == 'Let me look back over the call.' and not first['final']
+            assert card['skipped'] == ['install the RAM'] and last['final']
+        body = client.post('/api/rewind/recap', json={'session_id': 's'}).json()
+        assert body['mode'] == 'pc_build' and body['steps'][0]['text'] == 'Installed the CPU'
