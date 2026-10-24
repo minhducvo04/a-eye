@@ -1,4 +1,5 @@
 import { triggerClient } from './trigger.js';
+import { setupFamily } from './family-note.js';
 import { isHeadset, requestLocalMedia } from './headset.js';
 import { bootPairCamera, phoneMicRoute, setupPairCall } from './pair.js';
 import { callOwner, ownerHeaders, ownerQuery, resetCallOwner } from './call-owner.js';
@@ -159,6 +160,12 @@ function boot() {
   }
 
   let sessionId = randomId();
+  const family = setupFamily({ session: () => sessionId, request: async (path, data) => {
+    const result = await apiFetch(path, data);
+    const body = await result.json();
+    if (!result.ok) throw new Error(body.detail || 'Family note unavailable.');
+    return body;
+  } });
   const params = new URLSearchParams(location.search);
   // Server voice (Cartesia when keyed, else Kokoro on the box) by default; the browser voice is the last resort.
   // ?tts=cartesia means server TTS with a Cartesia voice from /api/voices.
@@ -506,6 +513,7 @@ function boot() {
   function sendUser(text, source) {
     const clean = String(text || "").trim();
     if (!clean) return false;
+    if (family.consume(clean, source)) return true;
     pendingText = {
       v: 2,
       type: "user_text",
@@ -2529,11 +2537,12 @@ function safeStorage() {
 
 // Same-origin API calls carry the page token when there is one (LAN, quick tunnel). Behind Cloudflare Access the
 // cookie rides along by itself. Seen live: /api/voices returned 401 on a token server because no token was sent.
-async function apiFetch(path) {
+async function apiFetch(path, data) {
   const token = new URLSearchParams(location.search).get("token");
   const headers = await ownerHeaders();
   if (token) headers.Authorization = `Bearer ${token}`;
-  return fetch(path, { headers });
+  if (data !== undefined) headers['Content-Type'] = 'application/json';
+  return fetch(path, { headers, ...(data !== undefined ? { method: 'POST', body: JSON.stringify(data) } : {}) });
 }
 
 if (typeof document !== "undefined") boot();

@@ -459,6 +459,12 @@ async def websocket(ws: WebSocket):
                 partial.update(task=None, upto=0, text='')
             if text is None:
                 text = await box.stt(pcm)
+            from server.family_note import store as family_store
+            family_owner = rewind_mod.identity(ws) + ':' + session.session_id
+            if family_store(ws).consume_spoken(family_owner, text):
+                session.voice_pending = False
+                await lifecycle.stage('done')
+                return
             if not meaningful(text):
                 # Silent: no "Didn't catch that", and the reply that is speaking is left alone.
                 event('stt_noise', session.session_id, ms=len(pcm) / 32)
@@ -475,6 +481,8 @@ async def websocket(ws: WebSocket):
             raise
         except Exception:
             session.voice_pending = False
+            from server.family_note import store as family_store
+            family_store(ws).consume_spoken(rewind_mod.identity(ws) + ':' + session.session_id, '')
             await lifecycle.stage('failed', detail="Didn't catch that")
             stt_mode = 'browser'
             event('fallback_used', session.session_id, dependency='stt', to='browser')

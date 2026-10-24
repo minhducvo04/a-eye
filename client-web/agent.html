@@ -110,6 +110,28 @@
           <span id="proof-brain">Brain: awaiting answer</span>
           <span id="proof-safety" class="hidden"> · Stopped by code</span>
         </p>
+        <p id="family-proof" class="pipeline"><span id="family-pictures">Pictures sent to family: 0</span>
+          <span id="family-reply" role="status"></span> <button id="family-replay" hidden>Read reply aloud</button></p>
+        <details id="family-panel">
+          <summary>Task finished · Tell Dad?</summary>
+          <p>Choose a parent, relative or mentor. Contacts last for this call; there is no default person.</p>
+          <label>Name <input id="family-name" maxlength="60" autocomplete="off"></label>
+          <label>Relation <input id="family-relation" maxlength="40" autocomplete="off"></label>
+          <label><input id="family-consent" type="checkbox"> This person agreed to receive my notes.</label>
+          <button id="family-add" type="button">Add contact</button>
+          <label>Send to <select id="family-contact"><option value="">Choose a person</option></select></label>
+          <button id="family-remove" type="button">Never contact this person</button>
+          <label>What I fixed <select id="family-task"></select></label>
+          <label>One detail <select id="family-detail"></select></label>
+          <label><input id="family-complete" type="checkbox"> These facts describe the task I just completed.</label>
+          <button id="family-draft" type="button">Tell Dad?</button>
+          <p id="family-preview"></p><p id="family-status" role="status"></p>
+          <button id="family-read" type="button" disabled>Read aloud</button>
+          <button id="family-send" type="button" disabled>Send</button>
+          <button id="family-cancel" type="button">Cancel</button>
+          <a id="family-link" hidden target="_blank" rel="noopener noreferrer">Open private delivery link</a>
+        </details>
+        <link rel="stylesheet" href="/family-note.css">
         <!-- Memory aid: what is remembered today, and the two Forget buttons. -->
         <div id="memory" class="memory hidden">
           <button type="button" id="memory-count" class="chip glass soft" aria-expanded="false" aria-controls="memory-actions">Nothing remembered today</button>
