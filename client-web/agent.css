@@ -1984,3 +1984,34 @@ body:not(.dev) .top:has(#expert-badge:not(.hidden)) #pipeline {
     color: var(--text-2);
   }
 }
+
+/* Headset: stable panels and explicit controls for gaze and pinch. */
+body.headset {
+  --fs-caption2: 16px; --fs-footnote: 18px; --fs-subhead: 20px;
+  --fs-body: 22px; --fs-title3: 26px;
+  background: #0c1016;
+}
+.headset *, .headset *::before, .headset *::after {
+  animation: none !important; transition: none !important; scroll-behavior: auto !important;
+}
+.headset button, .headset select, .headset input:not([type=checkbox]), .headset summary, .headset .link-row {
+  min-height: 56px; min-width: 56px; font-size: 20px;
+}
+.headset input[type=checkbox] { min-width: 32px; min-height: 32px; }
+.headset .sheet { width: min(720px, 94vw); }
+.headset #start-camera, .headset #camera-pick, .headset .scan-band { display: none; }
+.headset .ring-name { opacity: 1; }
+.headset-panel {
+  position: absolute; top: 24%; left: 50%; transform: translateX(-50%);
+  width: min(620px, 88%); padding: 28px; text-align: center;
+  border-radius: 24px; background: #151d29; pointer-events: auto;
+}
+.headset-panel h1 { font-size: 30px; margin: 0 0 18px; }
+.headset-panel p { font-size: 20px; line-height: 1.5; }
+.headset-panel button { padding: 16px 28px; border-radius: 16px; }
+.headset-panel.connected { top: 18%; padding: 12px; background: transparent; pointer-events: none; }
+.headset-panel.connected h1 { font-size: 22px; color: #aec4df; }
+.works-with { padding: 4px 20px; }
+.works-with p { line-height: 1.5; }
+
+.headset-panel.connected button { pointer-events: auto; }

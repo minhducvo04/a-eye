@@ -1,3 +1,4 @@
+import { isHeadset, requestLocalMedia } from './headset.js';
 import { bootPairCamera, phoneMicRoute, setupPairCall } from './pair.js';
 // Agent call page. Speaks the v2 WebSocket contract on /ws2.
 // Frames exist only as the JPEG about to be sent. Nothing is written to storage.
@@ -75,7 +76,12 @@ const BOARD_ID = "demo-b650";
 const TRACK_W = 320;
 
 function boot() {
-  if (bootPairCamera()) return;
+  const headset = isHeadset(location.search, navigator.userAgent);
+  if (!headset && bootPairCamera()) return;
+  document.body?.classList.toggle("headset", headset);
+  const headsetPanel = document.getElementById("headset-panel");
+  const headsetStatus = document.getElementById("headset-status");
+  headsetPanel?.classList.toggle("hidden", !headset);
   const picker = document.getElementById("picker");
   const stage = document.getElementById("stage");
   const video = document.getElementById("camera");
@@ -403,7 +409,7 @@ function boot() {
   }
 
   function reducedMotion() {
-    return Boolean(reducedQuery && reducedQuery.matches);
+    return headset || Boolean(reducedQuery && reducedQuery.matches);
   }
 
   function send(message) {
@@ -1247,7 +1253,7 @@ function boot() {
   }
 
   async function startCamera() {
-    if (starting || cameraOn) return;
+    if (headset || starting || cameraOn) return;
     if (!window.isSecureContext) {
       ui.dispatch({ type: "https" });
       renderCall();
@@ -1261,7 +1267,7 @@ function boot() {
     starting = true;
     let retryDefault = false;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const stream = await requestLocalMedia(navigator.mediaDevices, headset, {
         video: videoConstraints(cameraChoice),
         audio: false,
       });
@@ -1387,8 +1393,10 @@ function boot() {
   }
 
   async function startMic() {
+    if (micRoute.phone) return;
     micPreview.stop();
     await voice.startListening();
+    if (micRoute.phone) { voice.stopListening(); return; }
     if (voice.isListening()) {
       ui.dispatch({ type: "mic_start" });
       turnEvent({ type: "mic_start" });
@@ -1573,6 +1581,12 @@ function boot() {
     agents = { helper: "idle", shopper: "idle" };
     wait = null;
     micRoute = { phone: false, resume: false };
+    if (headset) {
+      headsetPanel.classList.remove("connected");
+      document.getElementById("headset-sound").textContent = "Enable sound";
+      headsetStatus.textContent = "Waiting for your phone camera";
+      document.getElementById("headset-help").classList.remove("hidden");
+    }
     document.getElementById("phone-chip")?.classList.add("hidden");
     renderWait(Date.now());
     hideStill();
@@ -1740,7 +1754,7 @@ function boot() {
     muteBtn.setAttribute("aria-pressed", st.muted ? "true" : "false");
     muteBtn.textContent = st.muted ? "Unmute" : "Mute";
     if (document.activeElement !== volumeEl) volumeEl.value = String(st.volume);
-    overlayEl.classList.toggle("hidden", !st.showStart);
+    overlayEl.classList.toggle("hidden", headset || !st.showStart);
     if (sttLabel) sttLabel.textContent = stt === "server" ? "Whisper" : "Browser";
     renderMic();
   }
@@ -1923,6 +1937,21 @@ function boot() {
     settingsEl.scrollTop = 0;
     document.getElementById("pair-request")?.click?.();
   });
+  document.getElementById("headset-sound")?.addEventListener("click", () => {
+    if (!voice) return;
+    voice.primeSpeech();
+    void voice.unlockAudio();
+    ui.dispatch({ type: "tap_start" });
+    applyAudioPrefs();
+    document.getElementById("headset-sound").textContent = "Sound enabled";
+  });
+  document.getElementById("headset-pair")?.addEventListener("click", () => {
+    document.getElementById("pair-call").click();
+  });
+  if (headset) {
+    startBtn.disabled = true;
+    cameraPick.disabled = true;
+  }
   // Wheel and trackpad: if the browser did not scroll natively (seen in Brave), scroll it ourselves next frame.
   // Passive listeners only, no preventDefault; deltaX and deltaY both count. The ring turns a vertical wheel sideways.
   function wheelScroll(el, horizontal) {
@@ -2219,10 +2248,11 @@ function boot() {
 
   // Labels appear only after the browser grants access: one tap asks, then the lists fill in.
   async function allowDevices() {
+    if (micRoute.phone) return;
     const md = navigator.mediaDevices;
-    for (const ask of [{ audio: true, video: true }, { audio: true }, { video: true }]) {
+    for (const ask of (headset ? [{ audio: true }] : [{ audio: true, video: true }, { audio: true }, { video: true }])) {
       try {
-        const stream = await md.getUserMedia(ask);
+        const stream = await requestLocalMedia(md, headset, ask);
         for (const track of stream.getTracks()) track.stop();
         break;
       } catch (err) {
@@ -2246,6 +2276,15 @@ function boot() {
   function routeMic(message) {
     const { route, action } = phoneMicRoute(micRoute, message, ui.getState().micOn);
     micRoute = route;
+    if (micRoute.phone) micPreview.stop();
+    if (headset) {
+      headsetPanel.classList.toggle("connected", micRoute.phone);
+      headsetStatus.textContent = micRoute.phone
+        ? (message.state === "camera" && !message.camera_on ? "Phone camera paused" : "Phone camera connected")
+        : "Waiting for your phone camera";
+      document.getElementById("headset-help").classList.toggle("hidden", micRoute.phone);
+      if (message.state === "left") document.getElementById("pair-status").textContent = "Phone disconnected. Waiting for your phone camera.";
+    }
     const phoneChip = document.getElementById("phone-chip");
     if (phoneChip) phoneChip.classList.toggle("hidden", !micRoute.phone);
     if (action === "stop_local" && voice) {
@@ -2299,10 +2338,11 @@ function boot() {
 
   // The Settings meter: the call mic feeds it while listening; otherwise a short preview of the chosen mic.
   async function startPreviewIfIdle() {
-    if (listening || !settingsEl || settingsEl.classList.contains("hidden")) return;
+    if (micRoute.phone || listening || !settingsEl || settingsEl.classList.contains("hidden")) return;
     if (devicesLocked(mediaDevices, "audioinput")) return;
     try {
       await micPreview.start(micChoice);
+      if (micRoute.phone) micPreview.stop();
       renderMicLine();
     } catch (err) {
       micPreview.stop();
@@ -2365,10 +2405,10 @@ function boot() {
 
   // Live camera switch: open the new device, then stop the old tracks. The call and frames keep going.
   async function swapCamera() {
-    if (!cameraOn || starting) return;
+    if (headset || !cameraOn || starting) return;
     starting = true;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints(cameraChoice), audio: false });
+      const stream = await requestLocalMedia(navigator.mediaDevices, headset, { video: videoConstraints(cameraChoice), audio: false });
       if (!cameraOn || !pack) {
         for (const track of stream.getTracks()) track.stop();
         return;
