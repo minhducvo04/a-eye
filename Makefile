@@ -39,3 +39,9 @@ phone:            ## print the HTTPS command for iPhone testing (Safari needs HT
 
 smoke:            ## end to end: photo -> server -> fake vision -> box + step
 	VISION_BACKEND=fake $(PY) scripts/smoke.py
+
+llm-probe:        ## one router call with .env loaded: make llm-probe Q="your question"
+	$(PY) -m server.llm_probe "$(Q)"
+
+keys:             ## which keys are set (length only, never the value)
+	@for k in ANTHROPIC_API_KEY CARTESIA_API_KEY APIFY_TOKEN BRIGHTDATA_API_KEY; do v=$$(printenv $$k); echo "$$k: $${#v} chars"; done
