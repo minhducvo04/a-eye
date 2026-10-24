@@ -8,6 +8,16 @@ import time
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
+
+
+class NoCacheStatic(StaticFiles):
+    """Client modules must always be revalidated. Seen live: after an update the browser mixed cached and new ES
+    modules of the call page (some 304, some 200), which can break imports and leave buttons dead."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers['Cache-Control'] = 'no-cache'
+        return response
 from fastapi.responses import JSONResponse
 from server.auth import authorized, accept_socket
 from server.logs import event, protect_transport_logs
@@ -139,7 +149,7 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
     app.include_router(api.router)
     # Routes must precede the catch-all static mount. The client package owns this directory.
     if Path(static_dir).is_dir():
-        app.mount('/', StaticFiles(directory=static_dir, html=True, check_dir=False), name='client')
+        app.mount('/', NoCacheStatic(directory=static_dir, html=True, check_dir=False), name='client')
     return app
 
 

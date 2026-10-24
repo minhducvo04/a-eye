@@ -50,3 +50,6 @@ llm-probe:        ## one router call with .env loaded: make llm-probe Q="your qu
 
 keys:             ## which keys are set (length only, never the value)
 	@for k in ANTHROPIC_API_KEY CARTESIA_API_KEY APIFY_TOKEN BRIGHTDATA_API_KEY; do v=$$(printenv $$k); echo "$$k: $${#v} chars"; done
+
+browser-smoke:    ## real Chromium with fake camera and mic against a running server: make browser-smoke URL=http://127.0.0.1:8010
+	uv run --no-project --with playwright python scripts/browser_smoke.py $(or $(URL),http://127.0.0.1:$(SERVER_PORT))

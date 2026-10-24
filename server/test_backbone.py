@@ -179,3 +179,13 @@ def test_immediate_frame_then_text():
             if msg['type'] == 'draw':
                 assert {'box', 'arrow'} <= {op['kind'] for op in msg['ops']}
                 break
+
+
+def test_client_files_are_never_served_stale():
+    """Mixed cached and fresh ES modules broke the call page after an update."""
+    from fastapi.testclient import TestClient
+    from server.app import create_app
+    client = TestClient(create_app())
+    response = client.get('/agent.js')
+    assert response.status_code == 200
+    assert response.headers['cache-control'] == 'no-cache'
