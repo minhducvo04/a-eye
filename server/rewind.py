@@ -86,13 +86,14 @@ def local_only():
 def identity(connection):
     """Who is calling, for binding Rewind and local memory to their owner. Only the Access email that
     server.auth.authorized() verified on this request or socket counts (connection.state.access_email); an
-    unverified cookie or header never does. A token caller is the shared "token"; no auth configured is "local"."""
+    unverified cookie or header never does. Token owners are random per-call capabilities verified by auth."""
     import hashlib
     email = getattr(getattr(connection, 'state', None), 'access_email', '')
     if isinstance(email, str) and email:
         return 'access:' + hashlib.sha256(email.lower().encode()).hexdigest()[:16]
-    if os.environ.get('A_EYE_TOKEN'):
-        return 'token'
+    owner = getattr(getattr(connection, 'state', None), 'token_owner', '')
+    if owner:
+        return owner
     return 'local'
 
 
@@ -334,7 +335,14 @@ class Rewind:
             if not ready:
                 return []
             if self.index_id is None:
-                self.index_id = await self.client.ensure_index(self.index_name)
+                try:
+                    self.index_id = await self.client.ensure_index(self.index_name)
+                except Exception as exc:
+                    for clip in ready:
+                        clip.status = 'failed'
+                    event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
+                          error=type(exc).__name__)
+                    return []
             for clip in ready:
                 clip.status = 'uploading'
                 started = monotonic()
@@ -382,7 +390,8 @@ class Rewind:
             try:
                 status = (await self.client.task(clip.task_id)).get('status')
             except Exception:
-                status = None
+                clip.status = 'failed'
+                return False
             if status == 'ready':
                 clip.status = 'ready'
                 return True
@@ -390,6 +399,7 @@ class Rewind:
                 clip.status = 'failed'
                 return False
             await asyncio.sleep(every)
+        clip.status = 'failed'
         return False
 
     def call_tag(self):
@@ -448,8 +458,10 @@ class Rewind:
         except Exception as exc:
             event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
                   error=type(exc).__name__)
-            return "I couldn't reach Rewind just now.", None
+            return "Recording search is not available right now. Please try again later.", None
         if not hits:
+            if any(c.status == 'failed' for c in self.clips):
+                return "Recording search is not available right now. Some clips could not be saved or indexed.", None
             busy = self.status()
             if busy['indexing'] or busy['pending']:
                 return "I'm still indexing the latest clips. Ask me again in a minute.", None

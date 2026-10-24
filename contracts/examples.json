@@ -582,7 +582,7 @@
    "session_id": "phone-1",
    "pack": "general",
    "role": "camera",
-   "pair_code": "4821",
+   "pair_code": "ABCD2345",
    "camera": true
   }
  ],
@@ -979,9 +979,9 @@
   {
    "v": 2,
    "type": "pair",
-   "code": "4821",
+   "code": "ABCD2345",
    "expires_in_s": 300,
-   "path": "/agent.html?pair=4821"
+   "path": "/agent.html?pair=ABCD2345"
   }
  ],
  "v2_pair_status": [

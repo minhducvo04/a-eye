@@ -83,6 +83,7 @@ function fakeFetch(routes) {
 test("api uses /api/memory when the server has it", async () => {
   const fetch = fakeFetch({
     "GET /api/status": () => ({ ok: true, features: { memory: true } }),
+    "POST /api/call-owner": () => ({ owner: "synthetic-owner" }),
     "GET /api/memory/status": () => ({ on: true, count: 12, bytes: 5e6 }),
     "POST /api/memory/forget": (b) => ({ count: b.scope === "today" ? 0 : 11 }),
   });
@@ -90,8 +91,9 @@ test("api uses /api/memory when the server has it", async () => {
   assert.equal((await api.status("s1")).count, 12);
   assert.equal((await api.forget("s1", "last")).count, 11);
   assert.equal((await api.forget("s1", "today")).count, 0);
-  assert.equal(fetch.calls[1][0], "/api/memory/status?session_id=s1");
-  assert.equal(fetch.calls[1][3].Authorization, "Bearer t");
+  assert.equal(fetch.calls[2][0], "/api/memory/status?session_id=s1");
+  assert.equal(fetch.calls[2][3].Authorization, "Bearer t");
+  assert.equal(fetch.calls[2][3]["X-Aeye-Owner"], "synthetic-owner");
 });
 
 test("without memory routes: Rewind count and forget, settings only previewed", async () => {

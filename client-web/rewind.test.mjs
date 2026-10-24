@@ -39,11 +39,12 @@ test("recap renders ordered steps and the skipped line", async () => {
 test("recap request carries the page token", async () => {
   const { fetchRecap } = await import("./rewind.js");
   const seen = [];
-  globalThis.fetch = async (url, init) => { seen.push([url, init]); return { ok: true, json: async () => ({ steps: [] }) }; };
+  globalThis.fetch = async (url, init) => { seen.push([url, init]); return { ok: true, json: async () => (url === "/api/call-owner" ? { owner: "synthetic-owner" } : { steps: [] }) }; };
   await fetchRecap("s1", "?token=abc");
-  assert.equal(seen[0][0], "/api/rewind/recap");
-  assert.equal(seen[0][1].headers.Authorization, "Bearer abc");
-  assert.equal(JSON.parse(seen[0][1].body).session_id, "s1");
+  assert.equal(seen[1][0], "/api/rewind/recap");
+  assert.equal(seen[1][1].headers.Authorization, "Bearer abc");
+  assert.equal(seen[1][1].headers["X-Aeye-Owner"], "synthetic-owner");
+  assert.equal(JSON.parse(seen[1][1].body).session_id, "s1");
 });
 
 test("one Rewind state for the button and the switch; notice only on the first enable", async () => {

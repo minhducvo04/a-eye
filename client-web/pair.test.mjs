@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import { pairMode, pairUrl, pairStatus } from './pair.js';
 import { qrMatrix } from './qr.js';
 
-test('pair URL preserves token and mode is explicit', () => {
-  assert.deepEqual(pairMode('?pair=0123&token=a%26b'), { camera: true, code: '0123', token: 'a&b', mine: false });
+test('pair URL never displays the master token and mode is explicit', () => {
+  assert.deepEqual(pairMode('?pair=0123&token=a%26b'), { camera: true, code: '0123', token: 'a&b', join: '', mine: false });
   assert.equal(pairMode('?phone=mine').camera, true);
   assert.equal(pairMode('?phone=mine').mine, true);
   assert.equal(pairMode('').camera, false);
   assert.equal(pairMode('?pair=').camera, true);
-  assert.equal(pairUrl('https://demo.test', '/agent.html?pair=0123', '?token=a%26b'), 'https://demo.test/agent.html?pair=0123&token=a%26b');
+  assert.equal(pairUrl('https://demo.test', '/agent.html?pair=ABCDEFGH&join=single-use', '?token=a%26b'), 'https://demo.test/agent.html?pair=ABCDEFGH&join=single-use');
   assert.equal(pairUrl('https://demo.test', '/agent.html?pair=0123', ''), 'https://demo.test/agent.html?pair=0123');
 });
 test('status distinguishes call and camera', () => {
@@ -31,7 +31,14 @@ test('QR dimensions, finder patterns and bounded capacity', () => {
       }
     }
   }
-  assert.throws(() => qrMatrix('x'.repeat(107)), /too long/);
+  assert.equal(qrMatrix('x'.repeat(134)).length, 41);
+  assert.throws(() => qrMatrix('x'.repeat(135)), /too long/);
+});
+
+test('the QR supports a long tunnel hostname with the complete single-use join URL', () => {
+  const url = pairUrl('https://example-camera-demonstration-session.trycloudflare.com',
+    '/agent.html?pair=ABCD2345&join=abcdefghijklmnopqrstuv', '?token=master');
+  assert.equal(qrMatrix(url).length, 41);
 });
 
 test('phone entry: camera frames and mic utterances after joined, stops on disconnect', async () => {

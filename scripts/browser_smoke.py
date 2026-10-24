@@ -12,7 +12,7 @@ caption; Settings shows Use my phone first and scrolls with the wheel; no long t
 import json
 import os
 import re
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit, parse_qs, unquote_plus
 import sys
 
 from playwright.sync_api import sync_playwright
@@ -22,7 +22,12 @@ IGNORED = ("favicon.ico",)
 
 
 def redact(text):
-    text = re.sub(r'([?&]token=)[^&\s"\']*', r'\1[redacted]', text)
+    # Keep this runner standalone: it is launched directly from scripts/ with optional dependencies.
+    def replace(match):
+        if unquote_plus(match[2]).lower() in {'token', 'pair', 'join', 'owner'}:
+            return match[1] + match[2] + '=[redacted]'
+        return match[0]
+    text = re.sub(r'([?&])([^=&\s]+)=([^&\s"\']*)', replace, text)
     token = os.environ.get("A_EYE_TOKEN", "")
     return text.replace(token, "[redacted]") if token else text
 
@@ -108,6 +113,30 @@ def main():
         pair = page.locator("#pair-request").bounding_box()
         if not pair or pair["y"] + pair["height"] > page.viewport_size["height"]:
             problems.append("Use my phone is not visible when Settings opens")
+        # The actual displayed QR/link must join a camera without the master token.
+        page.click('#pair-request')
+        page.wait_for_function("document.getElementById('pair-link').href.includes('join=')")
+        pair_url = page.locator('#pair-link').get_attribute('href')
+        pair_query = parse_qs(urlsplit(pair_url).query)
+        if 'token' in pair_query or not pair_query.get('join'):
+            problems.append('pair link did not use a scoped join secret')
+        if not page.locator('#pair-qr').is_visible():
+            problems.append('pair QR is hidden')
+        phone = context.new_page()
+        phone.goto(pair_url)
+        phone.get_by_role('button', name='Start', exact=True).click()
+        phone.get_by_text('Camera + mic connected', exact=True).wait_for()
+        phone.close()
+        page.get_by_text('Phone disconnected; using this device’s camera.', exact=True).wait_for()
+        if os.environ.get('A_EYE_TOKEN'):
+            if page.locator('#caregiver-link').get_attribute('aria-disabled') != 'true':
+                problems.append('token call offered unsupported caregiver controls')
+            caregiver = context.new_page()
+            caregiver.goto(BASE + '/caregiver.html?' + urlencode({'token': os.environ['A_EYE_TOKEN']}))
+            caregiver.get_by_text('Caregiver settings require personal sign-in.', exact=False).wait_for()
+            if not caregiver.locator('#save').is_disabled():
+                problems.append('token caregiver page allowed saving to a different owner')
+            caregiver.close()
         sheet = page.locator("#settings").bounding_box()
         page.mouse.move(sheet["x"] + sheet["width"] / 2, sheet["y"] + sheet["height"] / 2)
         page.mouse.wheel(0, 400)

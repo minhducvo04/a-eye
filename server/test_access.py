@@ -152,6 +152,7 @@ def test_browser_socket_url():
     function = source[start:source.index('\n  }', start) + 4]
     subprocess.run(['node', '--input-type=module', '-e', '''
 import assert from 'node:assert/strict';
+import { ownerQuery } from './client-web/call-owner.js';
 globalThis.location = {protocol: 'https:', host: 'demo.test', search: ''};
 ''' + function + '''
 assert.equal(wsUrl(), 'wss://demo.test/ws2');
@@ -240,3 +241,5 @@ def test_browser_smoke_url_redaction(monkeypatch):
     output = namespace['redact'](url + ' synthetic & secret')
     assert 'synthetic' not in output
     assert '[redacted]' in output
+    assert namespace['redact']('?pair=ABCD2345&j%6fin=private&owner=capability') == (
+        '?pair=[redacted]&j%6fin=[redacted]&owner=[redacted]')

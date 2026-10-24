@@ -203,13 +203,16 @@ def test_routes_reject_other_callers(monkeypatch):
     app = create_app(static_dir='/nonexistent')
     registry = Registry(FakeTL([dict(video_id='vid-1', start=0, end=5, rank=1)]), encoder=fake_encoder)
     app.state.rewind = registry
-    rewind = registry.open('a', on=True, owner='token')
+    from server.auth import mint_owner
+    import hashlib
+    capability = mint_owner()
+    rewind = registry.open('a', on=True, owner='token:' + hashlib.sha256(capability.encode()).hexdigest())
     rewind.add_frame(JPEG)
     rewind.keyframe('first')
     rewind.close()
     monkeypatch.setenv('A_EYE_TOKEN', 'secret-test-token')
     with TestClient(app) as client:
-        good = {'authorization': 'Bearer secret-test-token'}
+        good = {'authorization': 'Bearer secret-test-token', 'x-aeye-owner': capability}
         assert client.post('/api/rewind/flush', json={'session_id': 'a'}, headers=good).json()['uploaded'] == 1
         rewind.owner = 'access:alice'                                    # now someone else's call
         for path in ('/api/rewind/flush', '/api/rewind/recap', '/api/rewind/forget'):

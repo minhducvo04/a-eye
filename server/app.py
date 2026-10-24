@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import time
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 
 
@@ -19,7 +19,7 @@ class NoCacheStatic(StaticFiles):
         response.headers['Cache-Control'] = 'no-cache'
         return response
 from fastapi.responses import JSONResponse
-from server.auth import authorized, accept_socket
+from server.auth import authorized, accept_socket, mint_owner, warn_unconfigured
 from server.logs import event, protect_transport_logs
 from server import api, mock, rewind_api
 from jsonschema import ValidationError
@@ -41,8 +41,7 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
     @asynccontextmanager
     async def lifespan(app):
         protect_transport_logs()
-        if not os.environ.get("A_EYE_TOKEN"):
-            event("auth_disabled", level="warning")
+        warn_unconfigured()
         warmup = None if app.state.mock else asyncio.create_task(ws2.warm_brain(app))
         if not app.state.mock:
             # Off the event loop: warn once at startup if the local expert model tag is missing on the box.
@@ -82,6 +81,12 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
     @app.get('/health')
     async def health():
         return {'ok': True}
+
+    @app.post('/api/call-owner')
+    async def call_owner(request: Request):
+        # Access users keep their verified identity. Only token callers need a call capability.
+        owner = mint_owner() if getattr(request.state, 'token_owner', '') else ''
+        return JSONResponse({'owner': owner}, headers={'Cache-Control': 'no-store'})
 
     @app.websocket('/ws')
     async def websocket(ws: WebSocket):

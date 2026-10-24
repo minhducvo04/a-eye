@@ -10,6 +10,11 @@ From now on, changes may only add optional fields or new message types. Do not r
 
 ## v2.9: remember this phone
 
+- Security update: pair codes now issue eight uppercase letters/digits without I/O/0/1. The schema also
+  accepts legacy numeric code syntax; expired/unknown codes still cannot join. `pair.path` carries a bound,
+  single-use `join` secret instead of the master token. Send `pair` and `join` in the camera WebSocket query;
+  its first hello must be `role:camera` with the matching `pair_code`. Wire `v:2` is unchanged.
+
 - Optional `v2_pair_request.kick` (boolean): disconnect the phone paired to this call. A remembered phone then waits for the next call.
 - Optional `v2_pair_status.retry_s` (integer): a camera socket may try again after this many seconds (no call yet for the signed-in identity, the call already has a phone, or it ended or disconnected the phone).
 - `v2_hello.pair_code` stays optional with role camera: without it, the camera joins the latest live call of the same verified Cloudflare Access identity. A shared token or an open server never qualifies.

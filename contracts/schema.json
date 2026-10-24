@@ -1982,7 +1982,7 @@
     },
     "pair_code": {
      "type": "string",
-     "pattern": "^[0-9]{4,8}$",
+     "pattern": "^(?:[0-9]{4,8}|[A-HJ-NP-Z2-9]{8,12})$",
      "description": "With role camera: the single-use code the call device got in v2_pair. Without it, the camera joins the latest live call of the same signed-in Cloudflare Access identity (remember this phone); a shared token or an open server never qualifies."
     },
     "rewind": {
@@ -2877,7 +2877,7 @@
     },
     "code": {
      "type": "string",
-     "pattern": "^[0-9]{4,8}$"
+     "pattern": "^(?:[0-9]{4,8}|[A-HJ-NP-Z2-9]{8,12})$"
     },
     "expires_in_s": {
      "type": "integer",
@@ -2885,7 +2885,7 @@
     },
     "path": {
      "type": "string",
-     "description": "Relative link for the phone, for example /agent.html?pair=4821"
+     "description": "Relative link for the phone, for example /agent.html?pair=ABCD2345&join=<single-use-secret>"
     }
    }
   },

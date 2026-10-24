@@ -1,5 +1,6 @@
 import { isHeadset, requestLocalMedia } from './headset.js';
 import { bootPairCamera, phoneMicRoute, setupPairCall } from './pair.js';
+import { callOwner, ownerQuery, resetCallOwner } from './call-owner.js';
 // Agent call page. Speaks the v2 WebSocket contract on /ws2.
 // Frames exist only as the JPEG about to be sent. Nothing is written to storage.
 
@@ -256,9 +257,13 @@ function boot() {
   const memoryActions = document.getElementById("memory-actions");
   let powerConfirmed = false;
   // ?mode=memory centres a mode at launch (demo and caregiver links); otherwise PC Build, as iOS.
-  // Page links keep the access token (hosted demo).
+  // Shared-token calls have private, temporary owners; cross-call caregiver settings need personal sign-in.
   const caregiverLink = document.getElementById("caregiver-link");
-  if (caregiverLink && params.get("token")) caregiverLink.href = `caregiver.html?token=${encodeURIComponent(params.get("token"))}`;
+  if (caregiverLink && params.get("token")) {
+    caregiverLink.removeAttribute('href');
+    caregiverLink.setAttribute('aria-disabled', 'true');
+    caregiverLink.textContent = 'Caregiver settings require personal sign-in';
+  }
   const askedMode = MODES.findIndex((m) => m.id === params.get("mode"));
   let ringIndex = askedMode >= 0 ? askedMode : DEFAULT_MODE;
   let voice = null;
@@ -405,7 +410,7 @@ function boot() {
   function wsUrl() {
     const scheme = location.protocol === "https:" ? "wss:" : "ws:";
     const token = new URLSearchParams(location.search).get("token");
-    return `${scheme}//${location.host}/ws2${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+    return `${scheme}//${location.host}/ws2${token ? `?token=${encodeURIComponent(token)}${ownerQuery()}` : ""}`;
   }
 
   function reducedMotion() {
@@ -1507,6 +1512,9 @@ function boot() {
     pack = next;
     ended = false;
     sessionId = randomId();
+    resetCallOwner();
+    try { await callOwner(); }
+    catch { pack = null; showProblem('Could not create a private call. Please try again.'); return; }
     ui = createCallUi({ storage: safeStorage() });
     turn = nextTurnState(null, {}, Date.now());
     speech = emptySpeech();

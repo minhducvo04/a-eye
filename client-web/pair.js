@@ -5,7 +5,8 @@ import { createVoice } from './voice.js';
 export function pairMode(search) {
   const query = new URLSearchParams(search);
   const mine = query.get('phone') === 'mine';
-  return { camera: query.has('pair') || mine, code: query.get('pair') || '', token: query.get('token') || '', mine };
+  return { camera: query.has('pair') || mine, code: query.get('pair') || '', token: query.get('token') || '',
+    join: query.get('join') || '', mine };
 }
 
 export const REMEMBER_KEY = 'aeye.phone.remember';
@@ -27,10 +28,9 @@ export function rememberStep(msg, remember) {
   }
   return { action: 'stop', text: pairStatus(msg, true) };
 }
-export function pairUrl(origin, path, search) {
+export function pairUrl(origin, path) {
   const url = new URL(path, origin);
-  const token = pairMode(search).token;
-  if (token) url.searchParams.set('token', token);
+  url.searchParams.delete('token');
   return url.href;
 }
 export function pairStatus(message, camera = false) {
@@ -177,7 +177,10 @@ export function bootPairCamera({ makeVoice = createVoice, storage = globalThis.l
   function connect() {
     clearTimeout(retry);
     const url = new URL('/ws2', location.href); url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    if (mode.token) url.searchParams.set('token', mode.token);
+    if (mode.join && !usedCode) {
+      url.searchParams.set('pair', mode.code);
+      url.searchParams.set('join', mode.join);
+    } else if (mode.token) url.searchParams.set('token', mode.token);
     const ws = new WebSocket(url);
     socket = ws;
     sessionId = globalThis.crypto.randomUUID();

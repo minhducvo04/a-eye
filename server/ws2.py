@@ -227,6 +227,9 @@ async def scene_loop(session, vision, send, gate=None):
 
 @router.websocket('/ws2')
 async def websocket(ws: WebSocket):
+    if 'join' in ws.query_params:
+        await pairing.join_socket(ws)
+        return
     if not await accept_socket(ws):
         return
     session = None

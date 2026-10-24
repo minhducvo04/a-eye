@@ -81,9 +81,11 @@ export function renderRecap(doc, body, recap) {
 }
 
 // POST /api/rewind/recap with the page token when there is one (same rule as the other /api calls).
+import { ownerHeaders } from './call-owner.js';
+
 export async function fetchRecap(sessionId, search = globalThis.location ? globalThis.location.search : "") {
   const token = new URLSearchParams(search).get("token");
-  const headers = { "Content-Type": "application/json" };
+  const headers = { "Content-Type": "application/json", ...await ownerHeaders(search) };
   if (token) headers.Authorization = `Bearer ${token}`;
   const reply = await fetch("/api/rewind/recap", { method: "POST", headers, body: JSON.stringify({ session_id: sessionId }) });
   if (!reply.ok) throw new Error(`recap ${reply.status}`);
@@ -129,7 +131,7 @@ export function showsRewindChip(state) {
 // POST /api/rewind/forget: delete this call's TwelveLabs videos and its local clips.
 export async function forgetRewind(sessionId, search = globalThis.location ? globalThis.location.search : "") {
   const token = new URLSearchParams(search).get("token");
-  const headers = { "Content-Type": "application/json" };
+  const headers = { "Content-Type": "application/json", ...await ownerHeaders(search) };
   if (token) headers.Authorization = `Bearer ${token}`;
   const reply = await fetch("/api/rewind/forget", { method: "POST", headers, body: JSON.stringify({ session_id: sessionId }) });
   if (!reply.ok) throw new Error(`forget ${reply.status}`);

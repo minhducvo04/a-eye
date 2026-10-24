@@ -117,13 +117,15 @@ export function cleanSettings(s) {
 // /api/memory route is called (a 404 would also be a console error): the count is this call's Rewind clips,
 // Forget is this call's Rewind forget, and settings live in an in-page preview store (`preview: true`).
 // TODO(rewind builder): add `features: { memory: true }` to /api/status when the routes above exist.
+import { ownerHeaders } from './call-owner.js';
+
 export function createMemoryApi({ fetch: doFetch = globalThis.fetch, search = globalThis.location ? globalThis.location.search : "" } = {}) {
   const token = new URLSearchParams(search).get("token");
   const headers = { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
   let preview = null;
   let present = null;
   let rewindOn = false;
-  const call = (path, init = {}) => doFetch(path, { ...init, headers });
+  const call = async (path, init = {}) => doFetch(path, { ...init, headers: { ...headers, ...await ownerHeaders(search, doFetch) } });
   async function json(reply) {
     if (!reply.ok) throw Object.assign(new Error(`memory ${reply.status}`), { status: reply.status });
     return reply.json();

@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import os
 import re
+import secrets
 from threading import Lock
 from time import monotonic
 
@@ -56,6 +57,36 @@ class AccessKeys:
 
 
 _access_keys = AccessKeys()
+_owner_key = secrets.token_bytes(32)
+
+
+def mint_owner():
+    """An unguessable per-call capability; knowing the shared token cannot recreate another owner."""
+    nonce = secrets.token_hex(24)
+    return nonce + '.' + hmac.new(_owner_key, nonce.encode(), 'sha256').hexdigest()
+
+
+def token_owner(connection):
+    capability = connection.headers.get('x-aeye-owner', '') or connection.query_params.get('owner', '')
+    nonce, _, signature = capability.partition('.')
+    if (re.fullmatch(r'[0-9a-f]{48}', nonce)
+            and re.fullmatch(r'[0-9a-f]{64}', signature)
+            and hmac.compare_digest(signature, hmac.new(_owner_key, nonce.encode(), 'sha256').hexdigest())):
+        return 'token:' + hashlib.sha256(capability.encode()).hexdigest()
+    # Legacy clients still work, but never share a memory namespace with another connection/request.
+    return 'token:' + secrets.token_hex(24)
+
+
+def configured():
+    return any(os.environ.get(k) for k in ('A_EYE_TOKEN', 'CF_ACCESS_TEAM_DOMAIN', 'CF_ACCESS_AUD'))
+
+
+def warn_unconfigured():
+    if not configured():
+        opened = os.environ.get('A_EYE_OPEN') == '1'
+        event('auth_explicitly_open' if opened else 'auth_loopback_only', level='warning',
+              reason='No credentials: all clients allowed by A_EYE_OPEN=1' if opened
+              else 'No credentials: non-loopback clients refused; configure authentication or A_EYE_OPEN=1')
 
 
 def rejected(reason):
@@ -68,12 +99,15 @@ def authorized(connection):
     team = os.environ.get('CF_ACCESS_TEAM_DOMAIN', '')
     audience = os.environ.get('CF_ACCESS_AUD', '')
     if not (expected or team or audience):
-        return True
+        peer = connection.client.host if connection.client else ''
+        return (os.environ.get('A_EYE_OPEN') == '1' or peer in ('127.0.0.1', '::1')
+                or rejected('unconfigured_remote'))
     header = connection.headers.get('authorization', '')
     bearer = header[7:] if header.lower().startswith('bearer ') else ''
     query = connection.query_params.get('token', '')
     if expected and any(hmac.compare_digest(value.encode(), expected.encode())
                         for value in (bearer, query)):
+        connection.state.token_owner = token_owner(connection)
         return True
     encoded = (connection.headers.get('cf-access-jwt-assertion')
                or connection.cookies.get('CF_Authorization'))

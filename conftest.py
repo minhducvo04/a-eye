@@ -2,6 +2,7 @@
 import pytest
 
 RUNTIME_ENV = [
+    "A_EYE_TOKEN", "CF_ACCESS_TEAM_DOMAIN", "CF_ACCESS_AUD", "A_EYE_OPEN",
     "VISION_BACKEND", "VISION_URL", "VISION_MODEL", "OLLAMA_URL", "FAKE_SCENARIO",
     "LLM_PROVIDER", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "LOCAL_LLM_MODEL", "LOCAL_ONLY",
     "VOICE", "CARTESIA_API_KEY", "CARTESIA_VOICE_ID", "FAKE_TRANSCRIPT",
@@ -17,6 +18,13 @@ def _hermetic_env(monkeypatch):
     for name in RUNTIME_ENV:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("BOX_URL", UNREACHABLE_BOX)
+    # TestClient is an in-process local caller. Tests of remote access pass an explicit client address.
+    from fastapi.testclient import TestClient
+    original = TestClient.__init__
+    def local_client(self, *args, **kwargs):
+        kwargs.setdefault('client', ('127.0.0.1', 50000))
+        original(self, *args, **kwargs)
+    monkeypatch.setattr(TestClient, '__init__', local_client)
 
 
 # Some modules pick a backend at import time, so also clear the switches before any test module loads.
