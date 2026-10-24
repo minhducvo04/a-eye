@@ -88,7 +88,7 @@ class ExpertDesk:
         self.busy = False
         self.finished = float('-inf')
 
-    def start(self, session, question, system, scene, seq, llm, send, turn_id, planner=None):
+    def start(self, session, question, system, scene, seq, llm, send, turn_id, planner=None, *, vision=None, app=None):
         from server.agent import planner_crop
         if not should_escalate(session, question, True):
             return None
@@ -102,12 +102,12 @@ class ExpertDesk:
                                transcript=session.history[-10:], question=question))
         crops = planner_crop(session, scene, seq, question)
         session.expert_task = asyncio.create_task(self._run(
-            session, system, user, model, crops, llm, send, turn_id, planner, scene, seq))
+            session, system, user, model, crops, llm, send, turn_id, planner, scene, seq, vision, app))
         # Consume the two-failure backstop only after admission.
         session.expert_failures.clear()
         return None
 
-    async def _run(self, session, system, user, model, crops, llm, send, turn_id, planner, scene, seq):
+    async def _run(self, session, system, user, model, crops, llm, send, turn_id, planner, scene, seq, vision=None, app=None):
         from server.agent import message, say, safe_speech, plan_scene
         expert_id = 'expert-' + uuid4().hex
 
@@ -130,7 +130,12 @@ class ExpertDesk:
         try:
             await stage('expert', model)
             try:
-                result = await self.wait_for(llm.expert(system + EXPERT_RULES, user, model=model, **crops),
+                from server import rewind_tools
+                from server.routing import rewind_callback
+                tools = rewind_tools.tools_for(session)
+                options = dict(tools=tools, on_tool=rewind_callback(
+                    session, send, vision=vision, app=app, turn_id=turn_id)) if tools else {}
+                result = await self.wait_for(llm.expert(system + EXPERT_RULES, user, model=model, **crops, **options),
                                              float(os.environ.get('EXPERT_TIMEOUT_S', '45')))
                 event('expert_call', session.session_id, turn_id=turn_id, **result['metrics'])
                 logged = True

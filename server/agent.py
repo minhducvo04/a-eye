@@ -12,6 +12,8 @@ from uuid import uuid4
 
 from server.expert import RULES as EXPERT_RULES, should_escalate, mark_failed
 from server.llm import TURN_USAGE
+from server import rewind_tools
+from server.routing import rewind_callback, route_turn
 
 from server.crops import crop_b64, pick_target
 
@@ -382,7 +384,8 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         conversation=session.history[-10:], text=text))
     planner_task = None
 
-    if duo:
+    route = await route_turn(session, text)
+    if duo and route not in ('past', 'expert'):
         planner_task = asyncio.create_task(plan_scene(session, planner, base_system, user, scene, seq, text, emit))
     queue = asyncio.Queue()
     first_audio = None
@@ -421,6 +424,24 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         if worker:
             await queue.put(msg)
 
+    async def tool_first_line(value):
+        await speech(value)
+        if worker:
+            # Wait for this first line on the same ordered audio path as normal speech.
+            drained = asyncio.create_task(queue.join())
+            try:
+                await asyncio.wait((drained, worker), return_when=asyncio.FIRST_COMPLETED)
+                if worker.done():
+                    await worker
+                await drained
+            finally:
+                drained.cancel()
+                await asyncio.gather(drained, return_exceptions=True)
+
+    offered_tools = rewind_tools.tools_for(session)
+    on_tool = rewind_callback(session, emit, vision=vision, turn_id=turn_id, speak=tool_first_line)
+    tool_options = dict(tools=offered_tools, on_tool=on_tool) if offered_tools else {}
+
     turn = dict(agent='helper', draw=[])
     buffer = ''
     header = duo
@@ -447,7 +468,21 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
             delta_at = monotonic()
 
     try:
-        async with aclosing(llm.stream(system, user)) as stream:
+        if route == 'past' or (route == 'expert' and session.expert_start):
+            if route == 'past':
+                result = await on_tool('search_past', {'query': text})
+                await speech(result['say'], final=True)
+            else:
+                await tool_first_line('Let me get the expert on this, one moment.')
+                notice = session.expert_start(text, base_system, scene, seq, turn_id, planner)
+                if notice:
+                    await speech(notice, final=True)
+            if worker:
+                await queue.put(None)
+                await worker
+            remember()
+            return messages
+        async with aclosing(llm.stream(system, user, **tool_options)) as stream:
             async for delta in stream:
                 if first_token is None:
                     first_token = (monotonic() - brain_started) * 1000

@@ -84,6 +84,32 @@ def _content(user, images):
     return [{'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/jpeg', 'data': data}}
             for data in images] + [{'type': 'text', 'text': user}]
 
+TOOL_ERROR = "I couldn't check the recording just now."
+
+
+async def tool_results(content, on_tool):
+    """Keep every client tool result, including failures, in one user message."""
+    results = []
+    for block in content:
+        if getattr(block, 'type', '') != 'tool_use':
+            continue
+        failed = False
+        try:
+            if on_tool is None:
+                raise ValueError('No tool handler')
+            result = await on_tool(block.name, block.input)
+            failed = isinstance(result, dict) and result.get('is_error') is True
+            encoded = json.dumps(result)
+        except Exception:
+            failed = True
+            encoded = json.dumps({'is_error': True, 'say': TOOL_ERROR})
+        item = dict(type='tool_result', tool_use_id=block.id, content=encoded)
+        if failed:
+            item['is_error'] = True
+        results.append(item)
+    return {'role': 'user', 'content': results}
+
+
 @dataclass
 class LLMResult:
     text: str
@@ -159,7 +185,7 @@ class LLMClient:
         return result(text, 'canned', 'canned')
 
     async def stream(self, system: str, user: str, *, max_tokens: int = 512, on_backup=None, model=None,
-                     images: list[str] | None = None):
+                     images: list[str] | None = None, tools=None, on_tool=None):
         """Cancellable text stream; fall back only before committing provider text.
 
         Voice turns default to the Haiku-class talker with thinking off (docs/voice-options.md).
@@ -176,20 +202,36 @@ class LLMClient:
                 async with asyncio.timeout(timeout) as deadline, AsyncExitStack() as stack:
                     client = self._anthropic_client or _shared_anthropic()
                     name = model or turn_model()
-                    async with client.messages.stream(
-                        model=name, max_tokens=max_tokens, system=cached_system(system),
-                        messages=[{'role': 'user', 'content': _content(user, images)}], **fast_options(name),
-                    ) as response:
-                        async for delta in response.text_stream:
-                            if delta:
-                                deadline.reschedule(None)
-                                emitted = True
-                                yield delta
-                        if hasattr(response, 'get_final_message'):
-                            final = await response.get_final_message()
-                            counts = TURN_USAGE.get()
-                            if counts is not None:
-                                counts.append(usage_counts(final))
+                    messages = [{'role': 'user', 'content': _content(user, images)}]
+                    for round_index in range(3):
+                        options = dict(model=name, max_tokens=max_tokens, system=cached_system(system),
+                                       messages=list(messages), **fast_options(name))
+                        if tools:
+                            options['tools'] = tools
+                            if round_index == 2:
+                                options['tool_choice'] = {'type': 'none'}
+                        final = None
+                        async with client.messages.stream(**options) as response:
+                            async for delta in response.text_stream:
+                                if delta:
+                                    deadline.reschedule(None)
+                                    emitted = True
+                                    yield delta
+                            if hasattr(response, 'get_final_message'):
+                                final = await response.get_final_message()
+                                counts = TURN_USAGE.get()
+                                if counts is not None:
+                                    counts.append(usage_counts(final))
+                        if getattr(final, 'stop_reason', None) != 'tool_use':
+                            break
+                        # Tool work can take tens of seconds; it is not first-token latency.
+                        deadline.reschedule(None)
+                        emitted = True  # Never switch providers after executing a side effect.
+                        if round_index == 2:
+                            yield TOOL_ERROR
+                            break
+                        messages.append({'role': 'assistant', 'content': final.content})
+                        messages.append(await tool_results(final.content, on_tool))
                 if emitted:
                     return
             except Exception as exc:
@@ -235,7 +277,7 @@ class LLMClient:
         else:
             yield '{"agent":"helper","draw":[]}\nSAY: The brain is unavailable. Please try again.'
 
-    async def expert(self, system, user, *, model, images=None):
+    async def expert(self, system, user, *, model, images=None, tools=None, on_tool=None):
         from server.expert import OPUS, FABLE, LOCAL, cost
         started = perf_counter()
         first = None
@@ -271,14 +313,20 @@ class LLMClient:
             client = self._anthropic_client or _shared_anthropic()
             use_tools = True
             retried_tool = retried_model = False
+            messages = [{'role': 'user', 'content': _content(user, images)}]
+            tool_rounds = 0
             while True:
                 try:
                     options = dict(model=model, max_tokens=2048, system=cached_system(system),
-                                   messages=[{'role': 'user', 'content': _content(user, images)}],
+                                   messages=list(messages),
                                    output_config={'effort': 'high' if model == FABLE else 'medium'})
                     if use_tools:
                         options.update(tools=[{'type': 'web_search_20260209', 'name': 'web_search', 'max_uses': 3}],
                                        tool_choice={'type': 'auto'})
+                    if tools:
+                        options['tools'] = options.get('tools', []) + list(tools)
+                    if tool_rounds == 2:
+                        options['tool_choice'] = {'type': 'none'}
                     text = ''
                     async with client.messages.stream(**options) as response:
                         async for delta in response.text_stream:
@@ -286,7 +334,8 @@ class LLMClient:
                                 first = (perf_counter() - started) * 1000
                             text += delta
                         final = await response.get_final_message()
-                    counts = usage_counts(final)
+                    for key, value in usage_counts(final).items():
+                        counts[key] += value
                     if final.stop_reason == 'refusal':
                         text = "I can't help with that request."
                     else:
@@ -296,6 +345,14 @@ class LLMClient:
                                 if getattr(content, 'type', '') == 'web_search_tool_result_error' or (
                                         isinstance(content, dict) and content.get('type') == 'web_search_tool_result_error'):
                                     search_errors += 1
+                    if final.stop_reason == 'tool_use':
+                        if tool_rounds == 2:
+                            text = TOOL_ERROR
+                            break
+                        messages.append({'role': 'assistant', 'content': final.content})
+                        messages.append(await tool_results(final.content, on_tool))
+                        tool_rounds += 1
+                        continue
                     break
                 except anthropic.APIStatusError as exc:
                     if exc.status_code != 400 or model != FABLE:

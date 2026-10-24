@@ -378,7 +378,7 @@ async def websocket(ws: WebSocket):
         if re.fullmatch(r'\s*stop[.!]?\s*', text, re.I):
             await cancel_expert(session)
         session.expert_start = lambda question, system, scene, seq, turn_id, planner: expert_desk.start(
-            session, question, system, scene, seq, llm, send, turn_id, planner)
+            session, question, system, scene, seq, llm, send, turn_id, planner, vision=vision, app=ws.app)
         session.voice_pending = True
         turn_task = asyncio.create_task(turn(text, lifecycle))
 
