@@ -32,6 +32,9 @@ class Session:
     scene_time: float = 0
     scene_task: object = field(default=None, repr=False)
     speak: object = field(default=None, repr=False)
+    refresh_requested: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
+    voice_pending: bool = False
+    user_speaking: bool = False
     board: dict = field(init=False)
 
     def __post_init__(self):
@@ -117,15 +120,28 @@ def shopping_category(text):
     return None
 
 
-def sanitize_header(turn):
+def sanitize_header(turn, scene_ids=None):
     """Small models bend the format (seen live: role "highlight" or "label", missing draw).
     Keep what is usable instead of throwing the whole turn away."""
     draws = []
-    for item in turn.get('draw') or []:
-        if not isinstance(item, dict) or item.get('kind') not in _DRAW_KINDS:
+    def items(value):
+        if isinstance(value, list):
+            for item in value:
+                yield from items(item)
+        elif isinstance(value, dict):
+            yield value
+            yield from items(value.get('items'))
+
+    for item in items(turn.get('draw')):
+        item = dict(item, kind=item.get('kind', item.get('type')))
+        if item['kind'] not in _DRAW_KINDS:
             continue
         clean = {k: item[k] for k in ('kind', 'target', 'from_target', 'text') if isinstance(item.get(k), str)}
         clean['kind'] = item['kind']
+        if not clean.get('text'):
+            clean.pop('text', None)
+        if scene_ids is not None and clean.get('from_target') not in scene_ids:
+            clean.pop('from_target', None)
         if item.get('role') in _ROLES:
             clean['role'] = item['role']
         draws.append(clean)
@@ -146,7 +162,54 @@ def parse_turn(text):
     return turn
 
 
-async def run_turn(session, text, *, vision, llm):
+_SAY = re.compile(r'\bSAY\s*:', re.I)
+
+
+def stream_header(value):
+    """First balanced object, or a recoverable header before a bent SAY field."""
+    start = value.find('{')
+    if start < 0:
+        return None
+    depth, quoted, escaped = 0, False, False
+    end = None
+    for i in range(start, len(value)):
+        char = value[i]
+        if escaped:
+            escaped = False
+        elif char == '\\' and quoted:
+            escaped = True
+        elif char == '"':
+            quoted = not quoted
+        elif not quoted:
+            depth += (char == '{') - (char == '}')
+            if depth == 0:
+                end = i + 1
+                break
+    marker = _SAY.search(value)
+    if marker and (end is None or marker.start() < end):
+        raw = value[start:marker.start()].rstrip(' \n\t",') + '}'
+        rest = value[marker.end():]
+    elif end is not None:
+        raw, rest = value[start:end], value[end:]
+    else:
+        return None
+    try:
+        turn = json.loads(raw)
+    except ValueError:
+        turn = {}
+    return turn, rest
+
+
+def safe_speech(value):
+    value = _SAY.sub('', value).strip().strip('"` \n\t')
+    # Wrapper punctuation from a quoted SAY field is not spoken.
+    value = re.sub(r'["}\]\s]+$', '', value).strip()
+    if any(c in value for c in '{}[]') or re.search(r'"\s*:', value):
+        return ''
+    return value
+
+
+async def run_turn(session, text, *, vision, llm, started_at=None):
     messages = []
     owner = asyncio.current_task()
 
@@ -168,28 +231,28 @@ async def run_turn(session, text, *, vision, llm):
         remember()
         return messages
     await emit(state('thinking'))
-    started = monotonic()
+    started = started_at if started_at is not None else monotonic()
     turn_id = uuid4().hex
     vlm_ms = 0
     scene = dict(caption='I do not have a camera view yet.', objects=[], ms=0)
     seq = 0
     if session.scene is None and session.scene_task is not None:
+        wait_started = monotonic()
         try:
-            await asyncio.wait_for(asyncio.shield(session.scene_task), timeout=3)
+            await asyncio.wait_for(asyncio.shield(session.scene_task), timeout=0.3)
         except Exception:
             pass
         finally:
-            vlm_ms = (monotonic() - started) * 1000
-    frame = getattr(session, 'frame', None)
-    same_frame = frame is not None and frame.get('seq') == session.scene_seq
-    # Fresh scene, or the scene of the newest frame (a still photo does not go stale).
-    if session.scene is not None and (monotonic() - session.scene_time < 2 or same_frame):
+            vlm_ms = (monotonic() - wait_started) * 1000
+    # Cached grounding avoids putting a slow refresh on the voice critical path.
+    if session.scene is not None:
         scene, seq = session.scene, session.scene_seq
     system = session.pack.system_prompt
     if session.pack.id == 'pc_build':
         system += board_prompt(session.board)
     system += (' Line 1: one JSON object with agent, draw and optional market_category. '
                'Do not include say in that object. Next line: SAY: then spoken text. '
+               'Start speech with a short first clause of 4 to 8 words, ending in a comma or period. '
                'Draw targets and from_target must be scene object IDs, never coordinates. '
                'Include market_category only when asked about buying, prices or cheaper options. '
                'Draw item schema: ' + json.dumps(schema()['$defs']['brain_turn']['properties']['draw'])
@@ -219,6 +282,9 @@ async def run_turn(session, text, *, vision, llm):
 
     async def speech(value, final=False, agent='helper'):
         nonlocal part
+        value = safe_speech(value)
+        if not value:
+            return
         msg = say(value, agent)
         msg.update(turn_id=turn_id, part=part, final=final)
         part += 1
@@ -230,7 +296,6 @@ async def run_turn(session, text, *, vision, llm):
     buffer = ''
     header = False
     marker = False
-    invalid = False
     pending = None
     first_token = None
     brain_started = monotonic()
@@ -241,37 +306,35 @@ async def run_turn(session, text, *, vision, llm):
                     first_token = (monotonic() - brain_started) * 1000
                 buffer += delta
                 if not header:
-                    if '\n' not in buffer:
+                    parsed = stream_header(buffer)
+                    if parsed is None:
                         continue
-                    line, buffer = buffer.split('\n', 1)
-                    try:
-                        turn = json.loads(line.strip().strip('`'))
-                        if not isinstance(turn, dict):
-                            raise ValueError('header is not an object')
-                        # Small local models often omit fields; fill defaults, keep only known keys.
-                        turn = sanitize_header(turn)
-                        validate('brain_turn', dict(turn, say='stream'))
-                    except Exception:
-                        turn = dict(agent='helper', draw=[])
-                        invalid = True
-                        buffer = line + '\n' + buffer
+                    raw, buffer = parsed
+                    turn = sanitize_header(raw, {obj['id'] for obj in scene['objects']})
+                    validate('brain_turn', dict(turn, say='stream'))
                     drawing, focus = resolve(turn, scene, seq)
                     await emit(drawing)
                     await emit(state('speaking', turn['agent'], **({'focus': focus} if focus else {})))
                     header = True
-                if not marker and not invalid:
-                    buffer = buffer.lstrip()
+                if not marker:
+                    buffer = buffer.lstrip(' \n\t"')
                     if len(buffer) < 4:
                         continue
-                    if buffer.startswith('SAY:'):
-                        buffer = buffer[4:].lstrip()
+                    match = _SAY.search(buffer)
+                    if match:
+                        buffer = buffer[match.end():].lstrip(' \n\t"')
                     marker = True
                 while True:
                     match = re.search(r'[.!?\n]', buffer)
+                    if part == 0:
+                        clause = next((m for m in re.finditer(r'[,;]', buffer)
+                                       if len(buffer[:m.end()].split()) >= 4), None)
+                        if clause and (match is None or clause.end() < match.end()):
+                            match = clause
                     end = match.end() if match and match.end() <= 120 else (120 if len(buffer) >= 120 else 0)
                     if not end:
                         break
-                    sentence, buffer = buffer[:end].strip(), buffer[end:]
+                    sentence, buffer = safe_speech(buffer[:end]), buffer[end:]
                     if sentence.startswith('SAY:'):
                         sentence = sentence[4:].strip()
                     if sentence.startswith(('{', '[', '"')) or '"kind"' in sentence:
@@ -280,7 +343,11 @@ async def run_turn(session, text, *, vision, llm):
                     if sentence:
                         if pending:
                             await speech(pending, agent=turn['agent'])
-                        pending = sentence
+                        if part == 0 and len(sentence.split()) >= 4:
+                            await speech(sentence, agent=turn['agent'])
+                            pending = None
+                        else:
+                            pending = sentence
                 # Once more spoken text exists, the preceding sentence cannot be final.
                 if pending and buffer.strip():
                     await speech(pending, agent=turn['agent'])
@@ -289,7 +356,7 @@ async def run_turn(session, text, *, vision, llm):
             turn = dict(agent='helper', draw=[])
             await emit(resolve(turn, scene, seq)[0])
             await emit(state('speaking'))
-        tail = buffer.strip()
+        tail = safe_speech(buffer)
         if tail:
             if pending:
                 await speech(pending, agent=turn['agent'])
@@ -299,8 +366,9 @@ async def run_turn(session, text, *, vision, llm):
             category = shopping_category(text)
             if category:
                 turn['market_category'] = category
-        await speech(pending or scene['caption'] or 'Please tell me what you need.',
-                     final=not bool(turn.get('market_category')), agent=turn['agent'])
+        if pending or part == 0:
+            await speech(pending or 'Please tell me what you need.',
+                         final=not bool(turn.get('market_category')), agent=turn['agent'])
         if turn.get('market_category'):
             await emit(state('thinking', 'shopper'))
             await speech('Let me check prices that fit.', agent='shopper')

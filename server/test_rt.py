@@ -15,7 +15,7 @@ def test_turn_priority_and_exclusion():
             scene = asyncio.create_task(work('scene', False))
             turn = asyncio.create_task(work('turn', True))
             await asyncio.sleep(0)
-            assert not order
+            assert order == ['turn']
         await asyncio.gather(scene, turn)
         assert order == ['turn', 'scene']
     asyncio.run(check())
@@ -45,13 +45,13 @@ def offline_warmup(monkeypatch):
     monkeypatch.setattr(ws2, 'warm_brain', noop)
 
 
-def test_scene_and_turn_never_overlap(monkeypatch):
+def test_existing_scene_does_not_block_turn(monkeypatch):
     monkeypatch.setenv('SCENE_INTERVAL_MS', '1')
     async def check():
         gate = GPUGate()
         started, release, brain_started, brain_release = [asyncio.Event() for _ in range(4)]
         calls = []
-        session = Session('s', frame=FRAME)
+        session = Session('s', frame=FRAME, scene=SCENE)
         class Vision:
             async def call(self, operation, payload):
                 assert len(payload['queries']) <= 2
@@ -61,7 +61,6 @@ def test_scene_and_turn_never_overlap(monkeypatch):
                 return SCENE
         class Brain:
             async def stream(self, *args):
-                assert session.scene == SCENE
                 calls.append('brain')
                 brain_started.set()
                 await brain_release.wait()
@@ -74,10 +73,8 @@ def test_scene_and_turn_never_overlap(monkeypatch):
         loop = asyncio.create_task(ws2.scene_loop(session, Vision(), emit, gate))
         await asyncio.wait_for(started.wait(), 1)
         task = asyncio.create_task(turn())
-        await asyncio.sleep(.02)
-        assert calls == ['scene']
+        await asyncio.wait_for(brain_started.wait(), .05)
         release.set()
-        await asyncio.wait_for(brain_started.wait(), 1)
         session.frame = dict(FRAME, seq=2)
         await asyncio.sleep(.03)
         assert calls == ['scene', 'brain']

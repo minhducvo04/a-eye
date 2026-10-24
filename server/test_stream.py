@@ -144,10 +144,10 @@ def test_cold_scene_wait_is_bounded_and_does_not_cancel_refresh():
         start = monotonic()
         result = await run_turn(session, 'point', vision=Vision(), llm=Brain())
         elapsed = monotonic() - start
-        assert 3 <= elapsed < 3.5
+        assert .3 <= elapsed < .5
         assert not session.scene_task.done()
         assert next(m for m in result if m['type'] == 'draw')['ops'] == [dict(kind='clear', id='*')]
-        assert result[-1]['vlm_ms'] >= 3000
+        assert result[-1]['vlm_ms'] >= 300
         session.scene_task.cancel()
         await asyncio.gather(session.scene_task, return_exceptions=True)
     asyncio.run(check())
@@ -158,7 +158,7 @@ def test_stale_scene_does_not_wait_for_refresh():
         session = Session('s', scene=SCENE, scene_time=monotonic() - 3)
         session.scene_task = asyncio.create_task(asyncio.Event().wait())
         result = await asyncio.wait_for(run_turn(session, 'point', vision=Vision(), llm=Brain()), 0.2)
-        assert next(m for m in result if m['type'] == 'draw')['ops'] == [dict(kind='clear', id='*')]
+        assert len(next(m for m in result if m['type'] == 'draw')['ops']) > 1
         assert not session.scene_task.done()
         session.scene_task.cancel()
         await asyncio.gather(session.scene_task, return_exceptions=True)
