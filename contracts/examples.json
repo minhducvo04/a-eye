@@ -913,6 +913,14 @@
    "at_ms": 1761275004200,
    "detail": "brain slow, trying backup",
    "typical_ms": 1100
+  },
+  {
+   "v": 2,
+   "type": "turn",
+   "turn_id": "t12",
+   "stage": "expert",
+   "at_ms": 1761290000000,
+   "detail": "claude-opus-5-5"
   }
  ],
  "v2_reply_delta": [

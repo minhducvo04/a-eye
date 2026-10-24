@@ -142,7 +142,7 @@ export interface V2Track { v: V2; type: "track"; seq: number; objects: SceneObje
 export interface V2AudioIn { v: V2; type: "audio_in"; session_id: string; seq: number; sample_rate?: 16000; pcm16_b64: string; final?: boolean }
 
 // v2.3 (additive): turn stages (ack), streamed reply text, camera on/off. V2Hello may carry camera?: boolean.
-export interface V2Turn { v: V2; type: "turn"; turn_id: string; stage: "received" | "transcribing" | "thinking" | "backup" | "speaking" | "done" | "failed" | "cancelled"; at_ms: number; text?: string; detail?: string; typical_ms?: number }
+export interface V2Turn { v: V2; type: "turn"; turn_id: string; stage: "received" | "transcribing" | "thinking" | "backup" | "speaking" | "done" | "failed" | "cancelled" | "expert" | "expert_done"; at_ms: number; text?: string; detail?: string; typical_ms?: number }
 export interface V2ReplyDelta { v: V2; type: "reply_delta"; agent: AgentId; turn_id: string; text: string }
 export interface V2Camera { v: V2; type: "camera"; session_id: string; on: boolean }
 

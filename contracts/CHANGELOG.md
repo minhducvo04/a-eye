@@ -18,6 +18,10 @@ From now on, changes may only add optional fields or new message types. Do not r
 - New `v2_rewind_hit` (server): required `v`, `type:rewind_hit`, `query`, `t_s`, `start_s`, `end_s`, `sure`; optional `turn_id`, `alternatives` (other call times, seconds), `frame_b64` (the kept frame nearest the hit), `objects` (boxes on that frame, not on the live picture). Times are seconds since the call started.
 - Added rewind_state and rewind_hit to `server_message_v2`.
 
+## v2.5: call the expert
+
+- `v2_turn.stage` gains `expert` (the talker escalated; `detail` names the model) and `expert_done` (answer arrived, timed out or cancelled; `detail` says which). Additive: clients ignore unknown stages.
+
 ## v2.4: phone as camera
 
 - Optional `v2_hello.role` (`call` default, `camera`) and `v2_hello.pair_code` (4 to 8 digits). A camera socket only streams frames and camera on/off into the call's session; speech and audio stay on the call device.
