@@ -337,6 +337,8 @@ async def run_turn(session, text, *, vision, llm, started_at=None):
                     sentence, buffer = safe_speech(buffer[:end]), buffer[end:]
                     if sentence.startswith('SAY:'):
                         sentence = sentence[4:].strip()
+                    # Seen live: '}, SAY: ...' left a leading ', ' on the first spoken chunk.
+                    sentence = sentence.lstrip(' ,;:').strip()
                     if sentence.startswith(('{', '[', '"')) or '"kind"' in sentence:
                         continue  # never speak JSON
 

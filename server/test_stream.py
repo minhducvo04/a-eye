@@ -269,3 +269,20 @@ def test_shopping_question_brings_in_shopper_even_if_model_forgets():
         assert any(m['type'] == 'market_results' for m in messages)
         assert any(m['type'] == 'say' and m['agent'] == 'shopper' for m in messages)
     asyncio.run(check())
+
+
+def test_leading_punctuation_after_header_is_not_spoken():
+    """Seen live with qwen3.5:9b: '{...}, SAY: Since we have no view yet, ...' spoke ', Since'."""
+    class CommaBrain:
+        async def stream(self, system, user, **kwargs):
+            yield '{"agent": "helper", "draw": [{"type": "clear", "target": null}]}, SAY: Since we have no view yet, '
+            yield 'safety relies on stance and grip.'
+
+    async def check():
+        session = Session('s')
+        session.scene = SCENE
+        session.scene_time = monotonic()
+        messages = await run_turn(session, 'knife tips', vision=Vision(), llm=CommaBrain())
+        says = [m['text'] for m in messages if m['type'] == 'say']
+        assert says and not says[0].startswith((',', ';', ':'))
+    asyncio.run(check())
