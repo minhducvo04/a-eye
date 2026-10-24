@@ -1,0 +1,82 @@
+{
+ "pc_ram": {
+  "title": "Lenovo ThinkPad X220 Motherboard (FRU 04W3286) with empty RAM slots.jpg",
+  "licence": "CC BY-SA 4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Lenovo_ThinkPad_X220_Motherboard_%28FRU_04W3286%29_with_empty_RAM_slots.jpg"
+ },
+ "pc_socket": {
+  "title": "LGA 775 CPU Socket.jpg",
+  "licence": "CC BY 2.0",
+  "page": "https://commons.wikimedia.org/wiki/File:LGA_775_CPU_Socket.jpg"
+ },
+ "pc_sata": {
+  "title": "ASUS SATA cable 14G000130223.jpg",
+  "licence": "CC BY-SA 3.0",
+  "page": "https://commons.wikimedia.org/wiki/File:ASUS_SATA_cable_14G000130223.jpg"
+ },
+ "pc_psu": {
+  "title": "ATX Computer power supply unit.jpg",
+  "licence": "CC BY-SA 4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:ATX_Computer_power_supply_unit.jpg"
+ },
+ "pc_gpu": {
+  "title": "PNY GeForce 210 (512 MiB DDR3, PCIe 2.0) 20240807 HOF4752 RAW-Export.png",
+  "licence": "CC BY 4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:PNY_GeForce_210_%28512_MiB_DDR3%2C_PCIe_2.0%29_20240807_HOF4752_RAW-Export.png"
+ },
+ "pc_fan": {
+  "title": "CPU socket + fan in Dell Inspiron 3880.jpg",
+  "licence": "CC BY-SA 4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:CPU_socket_%2B_fan_in_Dell_Inspiron_3880.jpg"
+ },
+ "cook_onion": {
+  "title": "Red onion on a cutting board.jpg",
+  "licence": "CC BY-SA 4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Red_onion_on_a_cutting_board.jpg"
+ },
+ "cook_egg": {
+  "title": "HK 煎蛋 pan fried egg October 2025 N13P 01.jpg",
+  "licence": "CC0",
+  "page": "https://commons.wikimedia.org/wiki/File:HK_%E7%85%8E%E8%9B%8B_pan_fried_egg_October_2025_N13P_01.jpg"
+ },
+ "cook_knife": {
+  "title": "Chefs knifes on a wooden cutting board.jpg",
+  "licence": "CC BY-SA 4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Chefs_knifes_on_a_wooden_cutting_board.jpg"
+ },
+ "cook_pot": {
+  "title": "Water boiling in a pot on a stove.jpg",
+  "licence": "CC0",
+  "page": "https://commons.wikimedia.org/wiki/File:Water_boiling_in_a_pot_on_a_stove.jpg"
+ },
+ "cook_cucumber": {
+  "title": "Board, knife and cucumbers.JPG",
+  "licence": "CC BY-SA 3.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Board%2C_knife_and_cucumbers.JPG"
+ },
+ "desk_mug": {
+  "title": "Coffee Mug on Desk.jpg",
+  "licence": "CC BY-SA 4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Coffee_Mug_on_Desk.jpg"
+ },
+ "desk_setup": {
+  "title": "Brown and beige, Computer desk, Rostov-on-Don, Russia.jpg",
+  "licence": "CC BY 4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Brown_and_beige%2C_Computer_desk%2C_Rostov-on-Don%2C_Russia.jpg"
+ },
+ "asm_screwdriver": {
+  "title": "Black screwdriver.png",
+  "licence": "CC BY 4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Black_screwdriver.png"
+ },
+ "asm_hexkeys": {
+  "title": "Allen long arm hex key set.jpg",
+  "licence": "CC BY-SA 3.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Allen_long_arm_hex_key_set.jpg"
+ },
+ "asm_drill": {
+  "title": "Cordless electric (screw) drill.jpg",
+  "licence": "CC0",
+  "page": "https://commons.wikimedia.org/wiki/File:Cordless_electric_%28screw%29_drill.jpg"
+ }
+}
