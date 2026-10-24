@@ -94,6 +94,9 @@ class TwelveLabsClient:
         self.base = base
 
     def _headers(self):
+        from server.privacy import local_only
+        if local_only():
+            raise RuntimeError('Private mode: Rewind cloud indexing is off')
         key = self.key or os.environ.get('TWELVELABS_API_KEY', '')
         if not key:
             raise RuntimeError('TWELVELABS_API_KEY is not set')

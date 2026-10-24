@@ -198,6 +198,11 @@ function boot() {
   let rewind = initialRewind(); // one state for the bottom-bar button and the Settings switch
   let rewindNoticeTimer = 0;
   const rewindBtn = document.getElementById("rewind-btn");
+  const privateToggle = document.getElementById("private-toggle");
+  const privateBadge = document.getElementById("private-badge");
+  // Private mode: hello.private makes the server keep everything local; the page uses server STT (browser
+  // recognition can send audio to Google), the server voice (Kokoro) and keeps Rewind off.
+  let privateMode = (() => { try { return safeStorage()?.getItem("aeye.private") === "1"; } catch { return false; } })();
   const rewindAsk = document.getElementById("rewind-ask");
   const rewindChip = document.getElementById("rewind-chip");
   const rewindPrompts = document.getElementById("rewind-prompts");
@@ -458,7 +463,8 @@ function boot() {
     };
     if (tts === "server" && ttsVoice) hello.voice = ttsVoice;
     if (pack === "pc_build") hello.board_id = BOARD_ID;
-    if (rewindOn) hello.rewind = true;
+    if (rewindOn && !privateMode) hello.rewind = true;
+    if (privateMode) hello.private = true;
     const ok = send(hello);
     if (ok) ui.dispatch({ type: "hello_sent" });
     return ok;
@@ -738,6 +744,7 @@ function boot() {
 
   // Either control: the same state, the same message, and the upload notice on the first enable.
   function setRewind(on) {
+    if (on && privateMode) on = false; // Rewind uploads clips to TwelveLabs: never in private mode
     rewind = nextRewind(rewind, { type: "switch", on });
     if (rewind.notice) {
       window.clearTimeout(rewindNoticeTimer);
@@ -1505,6 +1512,30 @@ function boot() {
     renderHold();
   }
 
+  function renderPrivate() {
+    if (privateToggle) privateToggle.checked = privateMode;
+    if (privateBadge) privateBadge.classList.toggle("hidden", !privateMode);
+  }
+
+  async function setPrivate(on) {
+    privateMode = Boolean(on);
+    try {
+      safeStorage()?.setItem("aeye.private", privateMode ? "1" : "0");
+    } catch {
+      // per-viewer convenience only
+    }
+    renderPrivate();
+    if (privateMode) {
+      if (rewindOn) setRewind(false);
+      tts = "server";
+      if (stt !== "server") {
+        await switchToServerStt(); // sends the new hello
+        return;
+      }
+    }
+    sendHello();
+  }
+
   async function switchToServerStt() {
     if (stt === "server") return;
     const micWasOn = ui.getState().micOn;
@@ -1714,6 +1745,12 @@ function boot() {
   for (const opener of openers) opener.addEventListener("click", () => void onSettingsOpen());
   wireDevices();
   document.getElementById("settings-done").addEventListener("click", closeSheets);
+  if (privateToggle) privateToggle.addEventListener("change", () => { void setPrivate(privateToggle.checked); });
+  renderPrivate();
+  if (privateMode) {
+    stt = "server";
+    tts = "server";
+  }
   if (rewindEl) document.getElementById("rewind-dismiss").addEventListener("click", closeSheets);
   const recapBtn = document.getElementById("rewind-recap");
   if (recapBtn) recapBtn.addEventListener("click", () => void showRecap(sessionId));

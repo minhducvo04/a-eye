@@ -26,6 +26,7 @@ from server import packs, pairing
 from server import rewind as rewind_mod
 from server.agent import Session, Turn, message, run_turn, say, state
 from server.llm import LLMClient, TURN_USAGE
+from server.privacy import PRIVATE, local_only
 from server.expert import DESK as expert_desk, cancel as cancel_expert
 from voice import adapter
 from voice.fake import FakeAdapter
@@ -70,7 +71,7 @@ def slow_part(metrics):
 
 
 def cloud_brain():
-    return (bool(os.environ.get('ANTHROPIC_API_KEY')) and os.environ.get('LOCAL_ONLY') != '1'
+    return (bool(os.environ.get('ANTHROPIC_API_KEY')) and not local_only()
             and os.environ.get('LLM_PROVIDER', 'auto') in ('auto', 'claude'))
 
 
@@ -338,7 +339,7 @@ async def websocket(ws: WebSocket):
             await lifecycle.stage('thinking', text=text)
             # Talker + thinker: a Haiku-class talker speaks while the planner (no GPU gate) draws in parallel.
             duo = (isinstance(llm, LLMClient) and os.environ.get('BRAIN_MODE', 'duo') == 'duo'
-                   and bool(os.environ.get('ANTHROPIC_API_KEY')) and os.environ.get('LOCAL_ONLY') != '1')
+                   and bool(os.environ.get('ANTHROPIC_API_KEY')) and not local_only())
             if rewind_mod.wants_rewind(session, text):
                 await rewind_mod.rewind_turn(session, text, session.rewind, vision=vision, turn_id=lifecycle.id)
             else:
@@ -536,7 +537,13 @@ async def websocket(ws: WebSocket):
                 await close_voice()
                 await end_rewind()
                 reset_audio()
-                stt_mode = incoming.get('stt', 'browser')
+                # Private mode (hello.private): local brain, Kokoro, server STT (browser STT may send audio to
+                # Google), no crops, no Rewind cloud. Every task started from here on inherits it.
+                private = bool(incoming.get('private', False))
+                PRIVATE.set(private)
+                stt_mode = 'server' if private else incoming.get('stt', 'browser')
+                if private:
+                    new_session.tts = 'server'
                 stt_failed = False
                 if paired_call:
                     await paired_call.close()

@@ -1131,6 +1131,20 @@ svg .fill {
 }
 
 /* Rewind: on-screen badge while clips are uploaded, and the answer frame with boxes. */
+.private-badge {
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #1f6f4a;
+  color: #fff;
+  font-size: var(--fs-footnote);
+  font-weight: 650;
+}
+
+.private-badge.hidden {
+  display: none;
+}
+
 .rewind-badge {
   position: fixed;
   z-index: 9;

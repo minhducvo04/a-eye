@@ -64,7 +64,7 @@
       <div class="top">
         <div class="pill glass">
           <span id="presence-dot" class="presence-dot" role="img" aria-label=""></span>
-          <b>A-eye</b><span class="sep" aria-hidden="true">·</span><span id="pack-label">General</span><span class="sep" aria-hidden="true">·</span><span id="elapsed" class="digits">0:00</span>
+          <b>A-eye</b><span id="private-badge" class="private-badge hidden">Private</span><span class="sep" aria-hidden="true">·</span><span id="pack-label">General</span><span class="sep" aria-hidden="true">·</span><span id="elapsed" class="digits">0:00</span>
         </div>
         <p id="link" class="chip glass warn" role="status">Connecting…</p>
         <p id="notice" class="chip glass soft hidden" role="status"></p>
@@ -185,6 +185,11 @@
       <p class="row"><span>Recognition</span><span id="stt-mode" class="mono dim">Browser</span></p>
       <p class="row"><span>Room noise</span><span id="ambient" class="mono dim" aria-live="off">Noise --</span></p>
     </div>
+    <p class="group-title">Privacy</p>
+    <div class="group">
+      <label class="row">Private mode <input id="private-toggle" type="checkbox" role="switch" aria-describedby="private-notice"></label>
+    </div>
+    <p id="private-notice" class="group-foot">Nothing leaves our own machines: the local brain answers, Kokoro speaks, speech is recognized on our GPU box, and Rewind stays off.</p>
     <p class="group-title">Rewind</p>
     <div class="group">
       <label class="row">Rewind <input id="rewind-toggle" type="checkbox" role="switch" aria-describedby="rewind-notice"></label>

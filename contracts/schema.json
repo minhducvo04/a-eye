@@ -1987,6 +1987,10 @@
     "rewind": {
      "type": "boolean",
      "description": "true: Rewind on from the start (clips of this call go to TwelveLabs). Default off."
+    },
+    "private": {
+     "type": "boolean",
+     "description": "Private mode for this call: nothing leaves our own machines (local brain, Kokoro voice, server STT, no crops, no Rewind cloud)."
     }
    }
   },
