@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "AEyeCore",
-    platforms: [.iOS(.v17), .macOS(.v14)],
+    platforms: [.iOS(.v17), .macOS(.v14), .visionOS(.v1)],
     products: [
         .library(name: "AEyeCore", targets: ["AEyeCore"]),
     ],
