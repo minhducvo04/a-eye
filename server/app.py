@@ -30,7 +30,7 @@ from server import ws2
 from server.expert import check_local_model
 from server.routing import warm_router
 from server.boards import load_board
-from server.llm import LLMClient
+from server.brain_local import make_llm
 from server.steps import Session, error
 from server.vision_client import VisionClient, VisionUnavailable
 
@@ -57,7 +57,8 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
 
     app = FastAPI(lifespan=lifespan)
     app.state.vision = vision if vision is not None else VisionClient()
-    app.state.llm = llm if llm is not None else LLMClient()
+    app.state.llm = llm if llm is not None else make_llm()
+    app.state.llm_v2 = app.state.llm
     app.state.mock = os.environ.get('A_EYE_MOCK') == '1'
     if os.environ.get('REWIND_FAKE_TL') == '1':
         # Rehearsals: Rewind runs end to end with an in-process TwelveLabs stand-in (nothing uploaded).
