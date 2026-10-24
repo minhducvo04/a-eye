@@ -66,6 +66,11 @@
           <span id="presence-dot" class="presence-dot" role="img" aria-label=""></span>
           <b>A-eye</b><span id="private-badge" class="private-badge hidden">Private</span><span class="sep" aria-hidden="true">·</span><span id="pack-label">General</span><span class="sep" aria-hidden="true">·</span><span id="elapsed" class="digits">0:00</span>
         </div>
+        <!-- Rewind on: under the pill, so it never covers it on a phone. -->
+        <div id="rewind-badge" class="rewind-badge hidden">
+          <p class="rewind-chip glass" title="Clips of this call are uploaded to TwelveLabs">Rewind on</p>
+          <button type="button" id="rewind-recap" class="rewind-chip glass" aria-label="Recap this call">Recap</button>
+        </div>
         <p id="link" class="chip glass warn" role="status">Connecting…</p>
         <p id="notice" class="chip glass soft hidden" role="status"></p>
         <p id="pipeline" class="pipeline" role="status">Ready</p>
@@ -142,10 +147,6 @@
     </div>
     <div id="rewind-body"></div>
   </section>
-  <div id="rewind-badge" class="rewind-badge hidden">
-    <p class="rewind-chip glass" title="Clips of this call are uploaded to TwelveLabs">Rewind on</p>
-    <button type="button" id="rewind-recap" class="rewind-chip glass" aria-label="Recap this call">Recap</button>
-  </div>
 
   <!-- MarketSheet.swift -->
   <section id="market" class="sheet hidden" aria-live="polite" aria-labelledby="market-title">
