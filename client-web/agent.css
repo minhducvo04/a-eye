@@ -474,21 +474,147 @@ svg .fill {
   color: var(--warn);
 }
 
-/* What the recogniser has heard so far, faint, until the utterance is final. */
-.interim {
-  padding: 0 6px;
+/* ListeningStrip.swift: waveform 96x28 and the heard line, glass, radius 18. */
+.listen {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 18px;
+}
+
+.wave {
+  flex: 0 0 auto;
+  width: 96px;
+  height: 28px;
+}
+
+.listen-text {
+  flex: 1;
+  min-width: 0;
   font-size: var(--fs-subhead);
-  color: rgba(255, 255, 255, 0.6);
-  text-shadow: 0 0 3px rgba(0, 0, 0, 0.6);
+  color: var(--text);
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  transition: color 0.15s ease-out;
+}
+
+.listen-text.mono {
+  font-family: var(--mono);
+  font-size: var(--fs-footnote);
+  font-weight: 600;
+}
+
+.listen-text[data-tone="idle"] { color: rgba(255, 255, 255, 0.55); }
+.listen-text[data-tone="talking"] { color: var(--helper); }
+.listen-text[data-tone="muted"] { color: var(--warn); }
+
+/* WaitCard.swift: 44 px ring, eyebrow and line, glass, radius 20. */
+.wait-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: 20px;
+  --accent: var(--helper);
+  animation: wait-in 0.25s ease-out;
+}
+
+.wait-card[data-agent="shopper"] {
+  --accent: var(--shopper);
+}
+
+@keyframes wait-in {
+  from { opacity: 0; transform: scale(0.96); }
+}
+
+.wait-ring {
+  position: relative;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+}
+
+.wait-ring svg {
+  position: absolute;
+  inset: 0;
+  width: 44px;
+  height: 44px;
+  overflow: visible;
+  transform: rotate(-90deg);
+  fill: none;
+  stroke-width: 3;
+}
+
+.wait-ring .track { stroke: rgba(255, 255, 255, 0.15); }
+.wait-ring .arc { stroke: var(--accent); stroke-linecap: round; }
+
+#wait-pct {
+  position: relative;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.wait-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.wait-eyebrow {
+  font-family: var(--mono);
+  font-size: var(--fs-caption2);
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  color: var(--accent);
+}
+
+.wait-line {
+  font-size: var(--fs-subhead);
+  font-weight: 500;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
 }
 
-.interim:empty,
-.interim.is-gone {
-  display: none;
+/* ScanSweep.swift: brackets and a band over the camera; the page sets the region and band from the clock. */
+.scan {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  --scan: var(--helper);
+  animation: wait-in 0.25s ease-out;
+}
+
+.scan-band {
+  position: absolute;
+  background: linear-gradient(to bottom, rgb(142 182 255 / 0), rgb(142 182 255 / 0.22), rgb(142 182 255 / 0.55));
+  border-bottom: 1.5px solid var(--scan);
+}
+
+.scan-brackets {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: var(--scan);
+  stroke-opacity: 0.85;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.35));
 }
 
 .caret {
@@ -907,11 +1033,17 @@ svg .fill {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .scan-band {
+    display: none;
+  }
+
   .ring .disc {
     transition: none;
   }
 
   .caret,
+  .wait-card,
+  .scan,
   .ring > button.shake .disc,
   .presence-dot::before,
   .presence-dot::after {

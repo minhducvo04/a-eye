@@ -36,6 +36,8 @@ import {
 import { applyAnchors, createTracker, toGray } from "./track.js";
 
 import { nextTurnState, statusLine } from "./turn.js";
+import { appendingLevel, LEVEL_HISTORY_COUNT, listeningLine, normalizedLevel, poolLevel, smoothedLevel, waveBars } from "./listen.js";
+import { capitalized, visibleWait, waitAfterAgentState, waitAfterTurn, waitCopy, waitPercent, waitProgress } from "./wait.js";
 import {
   chooseDevice,
   createLevelPreview,
@@ -108,6 +110,15 @@ function boot() {
   const rewindBadge = document.getElementById("rewind-badge");
   const repliesEl = document.getElementById("replies");
   const interimEl = document.getElementById("interim");
+  const listenEl = document.getElementById("listen");
+  const waitEl = document.getElementById("wait-card");
+  const waitArc = document.getElementById("wait-arc");
+  const waitPct = document.getElementById("wait-pct");
+  const waitEyebrow = document.getElementById("wait-eyebrow");
+  const waitLine = document.getElementById("wait-line");
+  const scanEl = document.getElementById("scan");
+  const scanBand = scanEl.querySelector(".scan-band");
+  const scanPath = document.getElementById("scan-path");
   const typedEl = document.getElementById("typed");
   const micBtn = document.getElementById("mic");
   const holdBtn = document.getElementById("hold");
@@ -202,7 +213,12 @@ function boot() {
   const talkQueue = [];
   let talkBusy = false;
   const fallbackTimers = new Map();
-  const waveLevels = [];
+  // ListeningStrip: smoothed 0..1 levels, oldest first (SpeechIn.levels). Cleared when the mic stops.
+  let waveLevels = [];
+  let levelPool = null;
+  // CallState.wait: set while an agent works on an answer (wait.js).
+  let wait = null;
+  let waitShown = "";
   let lastUiTick = 0;
   const tracker = createTracker();
   let tracks = new Map();
@@ -240,6 +256,8 @@ function boot() {
           turnEvent({ type: "mic_start" });
         } else if (state === "idle" || state === "stopped") {
           listening = false;
+          waveLevels = [];
+          levelPool = null;
           ui.dispatch({ type: "mic_stop" });
           turnEvent({ type: "mic_stop" });
         }
@@ -261,13 +279,17 @@ function boot() {
         });
         renderCall();
       },
-      onLevel: (level) => {
+      onLevel: (level, rms) => {
         const n = Number(level);
         const value = Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0;
-        waveLevels.push(value);
         showMicLevel(value);
-        while (waveLevels.length > 28) waveLevels.shift();
-        drawWave();
+        // The waveform uses the raw RMS on the phone's decibel scale, one value per 20 ms window.
+        const pooled = poolLevel(levelPool, rms, performance.now());
+        levelPool = pooled.pool;
+        if (pooled.rms == null) return;
+        const next = smoothedLevel(waveLevels.length ? waveLevels[waveLevels.length - 1] : 0, normalizedLevel(pooled.rms));
+        waveLevels = appendingLevel(waveLevels, next, LEVEL_HISTORY_COUNT);
+        renderListen(ui.getState());
       },
       onMicError: (kind) => {
         if (kind === "missing") {
@@ -445,6 +467,7 @@ function boot() {
       powerConfirmed = false;
       drawState = applyDraw(null, null, 0);
       agents = { helper: "idle", shopper: "idle" };
+      wait = null;
       ui.dispatch({ type: "error", message: "" });
       setLink("live");
       renderPresence();
@@ -467,6 +490,7 @@ function boot() {
       socket = null;
       window.clearTimeout(retryTimer);
       setLink("reconnecting");
+      wait = null;
       turnEvent({ type: "closed" });
       if (event?.code === 4401) {
         ended = true;
@@ -495,6 +519,8 @@ function boot() {
     onPair(message);
     const now = Date.now();
     if (message.type === "turn") {
+      wait = waitAfterTurn(wait, message, now);
+      if (message.stage === "failed" && message.detail) ui.dispatch({ type: "error", message: String(message.detail) });
       if (message.stage === "received") pendingText = null;
       if (message.text && stt === "server" && !turn.text) {
         ui.dispatch({ type: "final", text: message.text, now });
@@ -529,6 +555,7 @@ function boot() {
       return;
     }
     if (message.type === "agent_state") {
+      wait = waitAfterAgentState(wait, message.agent, message.state, now);
       applyAgentState(message.agent, message.state);
       ui.dispatch({ type: "agent_state", agent: message.agent, state: message.state });
       renderCall();
@@ -594,6 +621,7 @@ function boot() {
       return;
     }
     if (message.type === "error") {
+      wait = null;
       showProblem(message.message || "Something went wrong.");
     }
   }
@@ -978,10 +1006,11 @@ function boot() {
       lastUiTick = now;
       const before = ui.getState().caption;
       ui.dispatch({ type: "tick", now });
-      if (ui.getState().caption !== before) renderUserCaption(ui.getState());
+      if (ui.getState().caption !== before) renderListen(ui.getState());
       renderElapsed(now);
     }
     paint(now);
+    renderWait(now);
     raf = window.requestAnimationFrame(loop);
   }
 
@@ -1159,6 +1188,7 @@ function boot() {
     micIcon.setAttribute("href", on ? "#i-mic" : "#i-mic-off");
     micBtn.setAttribute("aria-label", on ? "Stop microphone" : "Start microphone");
     renderMicLine();
+    renderListen(ui.getState());
   }
 
   function applyAudioPrefs() {
@@ -1349,6 +1379,8 @@ function boot() {
     callStartedAt = 0;
     drawState = applyDraw(null, null, 0);
     agents = { helper: "idle", shopper: "idle" };
+    wait = null;
+    renderWait(Date.now());
     hideStill();
     closeSheets();
     permissionEl.classList.add("hidden");
@@ -1436,7 +1468,7 @@ function boot() {
     noticeEl.textContent = notes.join(" ");
     noticeEl.classList.toggle("hidden", notes.length === 0);
     renderReplies(st);
-    renderUserCaption(st);
+    renderListen(st);
     renderTranscript(st);
     muteBtn.setAttribute("aria-pressed", st.muted ? "true" : "false");
     muteBtn.textContent = st.muted ? "Unmute" : "Mute";
@@ -1463,19 +1495,84 @@ function boot() {
     captionEl.classList.toggle("hidden", !lines.length && !st.error);
   }
 
-  function renderUserCaption(st) {
+  // ListeningStrip.swift: waveform and heard line while voice input is available; "MIC OFF" while the mic is off.
+  function renderListen(st) {
+    const ready = Boolean(voice && voice.supported && voice.supported.stt);
+    listenEl.classList.toggle("hidden", !ready);
+    if (!ready) return;
+    if (!st.micOn && waveLevels.length) {
+      waveLevels = [];
+      levelPool = null;
+    }
+    // Only what the recogniser hears now, as SpeechIn.interim; sent and typed words live in the transcript.
     const cap = st.caption || {};
-    interimEl.replaceChildren();
-    interimEl.classList.toggle("is-interim", cap.kind === "interim" && cap.visible);
-    interimEl.classList.toggle("is-gone", !cap.visible);
-    if (!cap.visible || !cap.text) return;
-    interimEl.append(document.createTextNode(cap.text));
-    if (cap.kind === "interim") {
+    const heard = cap.kind === "interim" && cap.visible ? String(cap.text || "") : "";
+    const line = listeningLine({ muted: !st.micOn, heard, levels: waveLevels });
+    interimEl.replaceChildren(document.createTextNode(line.text));
+    if (line.tone === "heard") {
       const caret = document.createElement("span");
       caret.className = "caret";
       caret.setAttribute("aria-hidden", "true");
       interimEl.append(caret);
     }
+    interimEl.classList.toggle("mono", line.mono);
+    interimEl.setAttribute("data-tone", line.tone);
+    if (listenEl.getAttribute("aria-label") !== line.label) listenEl.setAttribute("aria-label", line.label);
+    drawWave(line.active && st.micOn);
+  }
+
+  // WaitCard.swift and ScanSweep.swift, every frame while a wait is visible.
+  function renderWait(now) {
+    const shown = pack ? visibleWait(wait, now) : null;
+    waitEl.classList.toggle("hidden", !shown);
+    scanEl.classList.toggle("hidden", !shown || shown.agent !== "helper");
+    if (!shown) {
+      waitShown = "";
+      return;
+    }
+    const elapsed = now - shown.startedAtMs;
+    const progress = waitProgress(elapsed, shown.typicalMs);
+    const pct = waitPercent(progress);
+    const copy = waitCopy(shown, elapsed);
+    const key = `${shown.agent}|${pct}|${copy.eyebrow}|${copy.line}`;
+    if (key !== waitShown) {
+      waitShown = key;
+      waitEl.setAttribute("data-agent", shown.agent);
+      waitArc.setAttribute("stroke-dasharray", `${(progress * 100).toFixed(2)} 100`);
+      waitPct.textContent = `${pct}%`;
+      waitEyebrow.textContent = copy.eyebrow;
+      waitLine.textContent = copy.line;
+      waitEl.setAttribute("aria-label", `${capitalized(copy.eyebrow)}. ${copy.line}`);
+      waitEl.setAttribute("aria-valuenow", String(pct));
+      waitEl.setAttribute("aria-valuetext", `${pct} percent`);
+    } else {
+      waitArc.setAttribute("stroke-dasharray", `${(progress * 100).toFixed(2)} 100`);
+    }
+    if (shown.agent === "helper") renderScan(now);
+  }
+
+  // ScanSweep: region inset 28 px from the sides, 16% to 58% of the height; band 90 px, 1.8 s per sweep.
+  function renderScan(now) {
+    const w = scanEl.clientWidth;
+    const h = scanEl.clientHeight;
+    const x = 28;
+    const top = h * 0.16;
+    const rw = Math.max(0, w - 56);
+    const rh = h * (0.58 - 0.16);
+    const len = Math.min(26, rw / 3, rh / 3);
+    const d = `M${x},${top + len}L${x},${top}L${x + len},${top}` +
+      `M${x + rw},${top + len}L${x + rw},${top}L${x + rw - len},${top}` +
+      `M${x},${top + rh - len}L${x},${top + rh}L${x + len},${top + rh}` +
+      `M${x + rw},${top + rh - len}L${x + rw},${top + rh}L${x + rw - len},${top + rh}`;
+    if (scanPath.getAttribute("d") !== d) scanPath.setAttribute("d", d);
+    if (reducedMotion()) return;
+    const phase = ((now / 1000) % 1.8) / 1.8;
+    const edge = top + rh * phase;
+    const bandTop = Math.max(top, edge - 90);
+    scanBand.style.left = `${x}px`;
+    scanBand.style.width = `${rw}px`;
+    scanBand.style.top = `${bandTop}px`;
+    scanBand.style.height = `${Math.max(0, edge - bandTop)}px`;
   }
 
   function renderTranscript(st) {
@@ -1502,21 +1599,17 @@ function boot() {
     }
   }
 
-  function drawWave() {
+  // WaveformBars: 28 bars 2 px wide, at least 2 px tall, helper blue while the user talks, else white 0.4.
+  function drawWave(active) {
     if (!waveEl) return;
-    const ctx = waveEl.getContext("2d");
-    if (!ctx) return;
-    const w = waveEl.width;
-    const h = waveEl.height;
-    ctx.clearRect(0, 0, w, h);
-    const levels = waveLevels.length ? waveLevels : [0];
-    const gap = 2;
-    const bw = Math.max(2, (w - gap * (levels.length - 1)) / levels.length);
-    ctx.fillStyle = "#8eb6ff";
-    for (let i = 0; i < levels.length; i += 1) {
-      const amp = Math.max(0, Math.min(1, levels[i] || 0));
-      const bh = Math.max(2, amp * (h - 2));
-      ctx.fillRect(i * (bw + gap), (h - bh) / 2, bw, bh);
+    const ctx = fitCanvas(waveEl, 96, 28);
+    ctx.clearRect(0, 0, 96, 28);
+    ctx.fillStyle = active ? "#8EB6FF" : "rgba(255, 255, 255, 0.4)";
+    for (const bar of waveBars(waveLevels, LEVEL_HISTORY_COUNT, 96, 28)) {
+      ctx.beginPath();
+      if (typeof ctx.roundRect === "function") ctx.roundRect(bar.x, bar.y, bar.w, bar.h, bar.w / 2);
+      else ctx.rect(bar.x, bar.y, bar.w, bar.h);
+      ctx.fill();
     }
   }
 
@@ -1679,7 +1772,6 @@ function boot() {
   scrollRingTo(ringIndex, false);
   renderPresence();
   renderCamera();
-  drawWave();
   renderCall();
   raf = window.requestAnimationFrame(loop);
   void raf;

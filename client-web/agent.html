@@ -33,6 +33,8 @@
     <video id="camera" playsinline webkit-playsinline muted autoplay></video>
     <img id="still" class="hidden" alt="">
     <canvas id="draw" aria-hidden="true"></canvas>
+    <!-- ScanSweep.swift: viewfinder brackets and a sweep while the helper reads the picture. -->
+    <div id="scan" class="scan hidden" aria-hidden="true"><div class="scan-band"></div><svg class="scan-brackets"><path id="scan-path"/></svg></div>
 
     <!-- Camera screen: gear top left, mode ring at the bottom (RootView.cameraChrome + ModeRing.swift). -->
     <section id="picker" class="ring-screen" aria-label="Choose a mode">
@@ -69,12 +71,21 @@
         <p id="mic-line" class="pipeline mic-line" aria-live="off">Mic off · Default</p>
       </div>
       <div class="lower">
+        <!-- WaitCard.swift: progress ring with a percentage while an agent works on an answer. -->
+        <div id="wait-card" class="wait-card glass hidden" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <span class="wait-ring" aria-hidden="true"><svg viewBox="0 0 44 44"><circle class="track" cx="22" cy="22" r="22"/><circle id="wait-arc" class="arc" cx="22" cy="22" r="22" pathLength="100" stroke-dasharray="0 100"/></svg><span id="wait-pct">0%</span></span>
+          <span class="wait-text" aria-hidden="true"><span id="wait-eyebrow" class="wait-eyebrow">SCANNING</span><span id="wait-line" class="wait-line">Hold the camera steady…</span></span>
+        </div>
         <div id="caption" class="caption glass hidden" aria-live="polite">
           <p class="eyebrow"><span id="caption-eyebrow" aria-hidden="true">A-EYE</span><span id="caption-speaker" class="sr-only">Helper</span></p>
           <p id="replies" class="caption-text"></p>
           <p id="error" class="caption-error hidden" role="alert"></p>
         </div>
-        <p id="interim" class="interim" aria-live="polite"></p>
+        <!-- ListeningStrip.swift: live mic waveform and what the recogniser has heard so far. -->
+        <div id="listen" class="listen glass hidden" role="status">
+          <canvas id="wave" class="wave" aria-hidden="true"></canvas>
+          <p id="interim" class="listen-text" aria-hidden="true">LISTENING</p>
+        </div>
         <div id="power-gate" class="power-gate hidden">
           <button type="button" id="power-off" class="power-btn"><svg aria-hidden="true"><use href="#i-bolt-off"/></svg>Power is off</button>
           <p>Switch the PSU off and unplug it first.</p>

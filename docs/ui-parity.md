@@ -4,6 +4,9 @@ The web call page (`client-web/agent.html`, `agent.css`, `agent.js`) follows the
 modes, words, colours and layout, so an idea tried on one client reads the same on the other. Both speak the v2
 contract on `/ws2`; this change touched no protocol.
 
+Wait and listening states (web, Chromium 390x844, fake camera and mic): `docs/ui-parity/wait-web-listening.png`,
+`docs/ui-parity/wait-web-scanning.png`, `docs/ui-parity/wait-web-speaking.png`.
+
 Screenshots (iOS Simulator, iPhone 17, left; Chromium at 390x844 with a fake camera, right):
 `docs/ui-parity/ring-ios-vs-web.png`, `docs/ui-parity/call-ios-vs-web.png`, and desktop
 `docs/ui-parity/call-web-desktop.png`.
@@ -33,7 +36,9 @@ Screenshots (iOS Simulator, iPhone 17, left; Chromium at 390x844 with a fake cam
 | "Connecting…" / "Reconnecting…" warn chip | `#link` | Same words. |
 | `PresenceDot`: shopper wins; speaking pulses 0.9 s with halo, thinking spins a 70% ring 1 s, listening steady ring, idle empty | `#presence-dot` CSS, `applyAgentState` uses the `CallState.reduce` rule | Accessible label "Helper is thinking" etc. The old web floating orbs (`presence.js`) are no longer drawn. |
 | `CaptionCard`: eyebrow A-EYE / SHOPPER, text up to 8 lines, error in warn under it; a new `say` clears the error | `#caption`, `#replies`, `#error` | Web holds the whole current turn (it streams `reply_delta` and sentence `say`s), clamped to 8 lines; iOS shows the last `say`. Screen readers hear "Helper"/"Shopper" before the text. |
-| interim line, faint, 2 lines | `#interim` | |
+| `ListeningStrip`: 28 mirrored bars (2 px, 96x28) and the heard line in glass radius 18; helper blue and "HEARING YOU…" while the level is at or over 0.3 or words are heard, grey "LISTENING" on room noise, warn "MIC OFF" when the mic is off | `#listen` (`listen.js`, port of `AudioLevel.swift`: -55 to -10 dB, release 0.82, threshold 0.3) | Web pools mic readings into 20 ms windows (the iOS tap buffer) because browser callbacks come every 3 to 50 ms. Shown whenever the browser can do speech input, since the web also has the typed bar. The heard line is the interim only; sent and typed words stay in the transcript. |
+| `WaitCard`: 44 px ring with floor percent, eyebrow GOT IT / LISTENING / SCANNING / LOOKING CLOSER / SHOPPER and its line; 90% at `typical_ms` (3 s default), creeps to 99%; hidden after 30 s | `#wait-card` (`wait.js`, port of `Wait.swift` and the wait part of `CallState.reduce`) | Same copy, timings and colours. A failed turn's `detail` shows in the caption error, as iOS. Fades in like iOS; it hides without a fade. |
+| `ScanSweep`: helper brackets (3 px, 26 px arms) over 16% to 58% of the screen, inset 28 px, 90 px band sweeping every 1.8 s; Reduce Motion keeps the brackets | `#scan` | Helper waits only, as iOS. |
 | PC Build "Power is off" button + "Switch the PSU off and unplug it first."; hides after tap; returns after reconnect | `#power-gate` | Same behaviour (hidden after a sent `confirm`, reset on a new socket). |
 | typed bar (only when voice input is off) | `#composer` | Web always shows it (keyboard on desktop, noisy hall). Placeholder stays "Type a message" (the smoke test types into it). |
 | bottom bar: mic 56 glass (struck through in warn when muted), end call 68 red | `#mic`, `#end-call` same sizes and colours | Web adds camera on/off, hold to talk (also Space) and a settings gear. |
@@ -49,7 +54,7 @@ Screenshots (iOS Simulator, iPhone 17, left; Chromium at 390x844 with a fake cam
 | Direction | iOS | Web |
 |---|---|---|
 | client to server | `hello` (`client:"ios"`, `tts:"browser"`), `frame`, `user_text` (always final, no `source`), `barge_in`, `confirm` | all of those, plus `camera`, `audio_in` (server STT), `hello.stt`, `hello.camera`, `hello.voice` |
-| server to client | uses `draw`, `say`, `agent_state`, `market_results`, `error`; ignores the rest | also `turn`, `reply_delta`, `audio`, `track`, `metrics` |
+| server to client | uses `draw`, `say`, `agent_state`, `turn` (stage, `typical_ms`, `detail`), `market_results`, `error`; ignores the rest | also `reply_delta`, `audio`, `track`, `metrics` |
 
 The iOS app sends nothing the web lacks, so nothing new was needed on the web.
 
