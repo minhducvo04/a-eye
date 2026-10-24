@@ -53,3 +53,13 @@ xcrun simctl launch booted ai.aeye.vision -serverURL ws://127.0.0.1:8437/ws2 \
   `turn_start` .. `turn_done`; a second run shows `hello` (`pack:pc_build, tts:server`). Screenshots in
   `screenshots/`: no photo, ring with photo, General call with box, arrow and caption, PC Build call with the power
   gate.
+
+## Pair phone camera (pair-vision)
+
+Added app-local `Call/Pairing.swift` and `Views/PairSheet.swift`, with hooks in CallController, CallScreen, RootView and DebugHooks. The call requests a code, shows a local Core Image QR and token-bearing link, hides the code on join, and shows connected/off/left status. Photo sending pauses throughout the phone join and resumes after leave.
+
+There is no phone frame preview or frame-size metadata: draw ops appear on a neutral canvas labelled “Phone camera”. Existing photo selection remains the fallback. See `../RESULT.md` for changed files, iPhone follow-up and verification details.
+
+Test: `xcodebuild -project visionos/AEyeVision/AEyeVision.xcodeproj -scheme AEyeVision -destination 'generic/platform=visionOS Simulator' -derivedDataPath /tmp/a-eye-pair-vision-build CODE_SIGNING_ALLOWED=NO build` - FAIL (exit 74; sandbox cache/CoreSimulator access blocked before compilation).
+
+Exact result: `xcodebuild: error: Could not resolve package dependencies:`. Escalation retry failed with `Rejected("approval request failed")`. Swift syntax parsing and `git diff --check` pass; debug decode/state/QR checks are added but have not run. No simulator or integration success is claimed for this addition.

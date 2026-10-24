@@ -24,7 +24,9 @@ struct RootView: View {
         ZStack {
             Color.black.opacity(0.55)
 
-            if let image = photo.image {
+            if controller.pairing.joined {
+                Color(white: 0.12)
+            } else if let image = photo.image {
                 // Aspect-fill, the same mapping `OverlayView` uses, so boxes land on what they mark.
                 Color.clear
                     .overlay(Image(uiImage: image).resizable().scaledToFill())
