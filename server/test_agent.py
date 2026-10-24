@@ -84,7 +84,10 @@ def test_fallback(output):
 def test_refusal_and_power_gate(pack, text):
     llm, vision = LLM(), Vision()
     messages = run(Session('s', pack=packs.get(pack), frame=FRAME), llm, text, vision)
-    assert [m['type'] for m in messages] == ['reply_delta', 'say']
+    expected = ['turn', 'reply_delta', 'say'] if text == 'repair gas lines' else ['reply_delta', 'say']
+    assert [m['type'] for m in messages] == expected
+    if text == 'repair gas lines':
+        assert messages[0]['detail'] == 'Stopped by code'
     assert llm.calls == vision.calls == []
 
 

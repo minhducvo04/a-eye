@@ -38,6 +38,6 @@ def with_safety(pack):
 
 
 def get(pack_id):
-    from . import general, pc_build, cooking, assemble, memory
+    from . import general, pc_build, cooking, assemble, memory, home
     return with_safety({p.id: p for p in (general.PACK, pc_build.PACK, cooking.PACK, assemble.PACK,
-                                          memory.PACK)}[pack_id])
+                                          memory.PACK, home.PACK)}[pack_id])
