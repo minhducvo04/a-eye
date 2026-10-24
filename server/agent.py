@@ -473,9 +473,10 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
 
     worker = asyncio.create_task(audio_worker()) if session.speak else None
     part = 0
+    reported_brain = False
 
     async def speech(value, final=False, agent='helper'):
-        nonlocal part, first_say_at
+        nonlocal part, first_say_at, reported_brain
         value = safe_speech(value)
         if value and session.pack.guard is not None:
             value = session.pack.guard(value, text, part == 0)  # pack post-condition (memory: pill line, no certainty)
@@ -484,6 +485,10 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
             await proof('Stopped by code')
         if not value:
             return
+        if 'provider' in brain and not reported_brain:
+            # A first token may only contain drawing metadata. Announce speech when a line is ready.
+            await proof('Brain: ' + brain['provider'] + ' / ' + brain['model'])
+            reported_brain = True
         msg = say(value, agent)
         msg.update(turn_id=turn_id, part=part, final=final)
         if first_say_at is None:
@@ -576,12 +581,8 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
             return messages
         if private_expert:
             await speech('Private mode: I will answer with the local model.')
-        reported_brain = False
         async with aclosing(llm.stream(system, user, **tool_options)) as stream:
             async for delta in stream:
-                if 'provider' in brain and not reported_brain:
-                    await proof('Brain: ' + brain['provider'] + ' / ' + brain['model'])
-                    reported_brain = True
                 if first_token is None:
                     first_token = (monotonic() - brain_started) * 1000
                     if duo:

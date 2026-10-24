@@ -125,6 +125,12 @@ def test_timeout_backup_same_turn(monkeypatch):
             send(ws, 'user_text', text='help', final=True)
             messages = finish(ws)
             assert [m['stage'] for m in messages if m['type'] == 'turn'] == ['received', 'thinking', 'backup', 'speaking', 'done']
+            speaking = next(m for m in messages if m.get('stage') == 'speaking')
+            assert speaking['detail'].startswith('Brain: local / ')
+            # Model metadata must not announce speech before reply text is ready.
+            delta = next(m for m in messages if m['type'] == 'reply_delta')
+            reply = next(m for m in messages if m['type'] == 'say')
+            assert messages.index(delta) < messages.index(speaking) < messages.index(reply)
             assert len({m['turn_id'] for m in messages if 'turn_id' in m}) == 1
             assert next(m['text'] for m in messages if m['type'] == 'say') == 'This is the backup reply.'
             assert calls == ['cloud', 'closed', 'local']
