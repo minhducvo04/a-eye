@@ -43,3 +43,16 @@ def test_router_puts_crops_before_text_and_drops_oversized_images():
     blocks = _content('what is this?', ['AAAA'])
     assert blocks[0]['type'] == 'image' and blocks[-1] == {'type': 'text', 'text': 'what is this?'}
     assert _content('hi', None) == 'hi'
+
+
+def test_planner_gets_no_crop_in_private_mode():
+    """Private mode (hello.private) must block crops like LOCAL_ONLY does."""
+    from server.privacy import PRIVATE
+    scene = {'objects': [{'id': 'o1', 'label': 'tomato', 'bbox': [.4, .4, .1, .1]}]}
+    session = SimpleNamespace(camera=True, frame={'seq': 7, 'jpeg_b64': frame_b64()})
+    token = PRIVATE.set(True)
+    try:
+        assert planner_crop(session, scene, 7, 'the tomato') == {}
+    finally:
+        PRIVATE.reset(token)
+    assert planner_crop(session, scene, 7, 'the tomato') != {}
