@@ -2,45 +2,14 @@ import AEyeCore
 import AVFoundation
 import Foundation
 
-/// The two wire pieces `AEyeCore` does not have yet, kept here so `ios/` stays untouched:
-/// a `hello` that asks for server speech (`tts:"server"` + `voice`), and decoding of the `audio` message.
+/// Decoding of the `audio` message, which `AEyeCore` does not have yet (the `hello` that asks for server speech
+/// is `Wire.hello` in `CallExtras.swift`).
 enum ServerVoiceMessage {
-    static func hello(sessionId: String, pack: String, voice: String) -> Data {
-        let payload = HelloPayload(
-            v: 2,
-            type: "hello",
-            sessionId: sessionId,
-            pack: pack,
-            boardId: pack == "pc_build" ? Tuning.demoBoardId : nil,
-            client: "ios",
-            tts: "server",
-            voice: voice
-        )
-        return (try? JSONEncoder().encode(payload)) ?? Data()
-    }
-
     /// One `audio` message: raw 16 kHz mono PCM16 little-endian for `utteranceId`. nil for anything else.
     static func audio(_ data: Data) -> AudioChunk? {
         guard let p = try? JSONDecoder().decode(AudioPayload.self, from: data), p.type == "audio",
               let pcm = Data(base64Encoded: p.pcm16B64) else { return nil }
         return AudioChunk(utteranceId: p.utteranceId, pcm: pcm, isFinal: p.final ?? false)
-    }
-
-    private struct HelloPayload: Encodable {
-        let v: Int
-        let type: String
-        let sessionId: String
-        let pack: String
-        let boardId: String?
-        let client: String
-        let tts: String
-        let voice: String
-
-        enum CodingKeys: String, CodingKey {
-            case v, type, pack, client, tts, voice
-            case sessionId = "session_id"
-            case boardId = "board_id"
-        }
     }
 
     private struct AudioPayload: Decodable {
