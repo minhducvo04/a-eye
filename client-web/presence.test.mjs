@@ -47,6 +47,11 @@ test("presence moves through each state and idle returns to the corner", () => {
   const listening = nextPresence(null, stateMsg("helper", "listening"), 0);
   assert.equal(presenceLook(listening.helper, 0, null, false).ripple, 0.45);
   assert.equal(presenceLook(listening.helper, 0, 0.25, false).ripple, 0.25);
+  const idleSlot = nextPresence(null, null, 0).helper;
+  const hearing = presenceLook(idleSlot, 0, 0.4, false, true);
+  assert.equal(hearing.hearing, true);
+  assert.equal(hearing.ripple, 0.4);
+  assert.equal(presenceLook(idleSlot, 0, 0, true, true).ripple, 0);
   assert.equal(presenceLook(listening.helper, 0, null, false).dim, 1);
   const idle = presence.helper;
   assert.equal(presenceLook(idle, 0, null, false).dim, 0.62);

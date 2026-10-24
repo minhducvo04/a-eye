@@ -103,20 +103,22 @@ export function agentOpacity(id, agentSlot, now) {
   return 1 - t;
 }
 
-export function presenceLook(agentSlot, now, level, reduced) {
+export function presenceLook(agentSlot, now, level, reduced, hearing) {
   const state = agentSlot && agentSlot.state ? agentSlot.state : "idle";
   const t = Number(now) || 0;
   const calm = Boolean(reduced);
+  const mic = Boolean(hearing);
   let ripple = 0;
-  if (state === "listening") {
+  if (state === "listening" || mic) {
     ripple = Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 0.45;
   }
   return {
     state,
     dim: state === "idle" ? 0.62 : 1,
-    breathe: state === "idle" && !calm ? Math.sin(t / 900) : 0,
+    breathe: state === "idle" && !calm && !mic ? Math.sin(t / 900) : 0,
     pulse: state === "speaking" && !calm ? Math.sin(t / 160) : 0,
     ripple,
+    hearing: mic,
     orbit: state === "thinking" && !calm ? t / 900 : -Math.PI / 2,
     reduced: calm,
   };
@@ -264,17 +266,26 @@ function paintOrb(ctx, agent, pose, look, now) {
   ctx.beginPath();
   ctx.arc(cx, cy, radius, 0, Math.PI * 2);
   ctx.fill();
-  if (look.state === "listening") {
-    const rings = 2;
-    for (let i = 0; i < rings; i += 1) {
-      const phase = look.reduced ? 0.45 + i * 0.2 : ((now / 1400 + i / rings) % 1);
-      const ringR = radius * 0.7 + phase * radius * (0.7 + look.ripple);
-      ctx.beginPath();
-      ctx.strokeStyle = spec.glow;
-      ctx.globalAlpha = pose.opacity * (1 - phase) * 0.55 * look.dim;
-      ctx.lineWidth = 1.5;
-      ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
-      ctx.stroke();
+  if (look.state === "listening" || look.hearing) {
+    const swell = radius * (1.15 + look.ripple * 0.95);
+    ctx.beginPath();
+    ctx.strokeStyle = spec.glow;
+    ctx.globalAlpha = pose.opacity * (0.28 + look.ripple * 0.5) * look.dim;
+    ctx.lineWidth = 2 + look.ripple * 6;
+    ctx.arc(cx, cy, swell, 0, Math.PI * 2);
+    ctx.stroke();
+    if (look.state === "listening" && !look.reduced) {
+      const rings = 2;
+      for (let i = 0; i < rings; i += 1) {
+        const phase = (now / 1400 + i / rings) % 1;
+        const ringR = radius * 0.7 + phase * radius * (0.7 + look.ripple);
+        ctx.beginPath();
+        ctx.strokeStyle = spec.glow;
+        ctx.globalAlpha = pose.opacity * (1 - phase) * 0.45 * look.dim;
+        ctx.lineWidth = 1.5;
+        ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
   }
   if (look.state === "thinking") {
@@ -295,12 +306,12 @@ function paintOrb(ctx, agent, pose, look, now) {
   ctx.restore();
 }
 
-export function paintPresence(ctx, presence, poses, view, now, reduced) {
+export function paintPresence(ctx, presence, poses, view, now, reduced, hearing) {
   if (!ctx || !view) return;
   ctx.clearRect(0, 0, view.w, view.h);
   const src = presence || initialPresence(now);
   for (const id of ["helper", "shopper"]) {
-    const look = presenceLook(src[id], now, src.level, reduced);
+    const look = presenceLook(src[id], now, src.level, reduced, id === "helper" && hearing);
     paintOrb(ctx, id, poses && poses[id], look, Number(now) || 0);
   }
 }

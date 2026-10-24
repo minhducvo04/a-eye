@@ -24,13 +24,15 @@
     <img id="still" class="hidden" alt="">
     <canvas id="draw" aria-hidden="true"></canvas>
     <canvas id="presence" aria-hidden="true"></canvas>
+    <p id="call-state" class="call-state" role="status">Tap the mic to talk</p>
     <div class="hud">
       <div class="top">
         <p id="pack-label" class="pack-label">General</p>
         <span id="status" class="status off" role="status" aria-label="socket disconnected"></span>
       </div>
       <p id="error" class="banner hidden" role="alert"></p>
-      <div class="spacer"></div>
+      <p id="notice" class="notice hidden" role="status"></p>
+      <div class="sheet">
       <section id="market" class="market hidden" aria-live="polite">
         <div class="market-head">
           <p class="market-kicker">Shopper</p>
@@ -38,13 +40,29 @@
         </div>
         <div id="market-body"></div>
       </section>
-      <p id="caption" class="caption" aria-live="polite"></p>
-      <p id="interim" class="interim" aria-live="polite"></p>
+      <div id="replies" class="replies" aria-live="polite"></div>
+      <p id="interim" class="user-caption" aria-live="polite"></p>
+      <section class="transcript">
+        <button type="button" id="transcript-toggle" aria-expanded="false" aria-controls="transcript-list">Transcript</button>
+        <ol id="transcript-list" class="transcript-list hidden"></ol>
+      </section>
+      <div class="speaker">
+        <button type="button" id="mute" aria-pressed="false">Mute</button>
+        <label class="vol">Volume
+          <input id="volume" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume">
+        </label>
+        <button type="button" id="test-voice">Test voice</button>
+        <span id="stt-mode" class="stt-mode">Browser</span>
+      </div>
       <form id="composer" class="composer">
         <input id="typed" type="text" enterkeyhint="send" autocomplete="off" placeholder="Type a message" aria-label="Message">
         <button type="submit">Send</button>
-        <button type="button" id="mic" aria-pressed="false">Mic</button>
       </form>
+      </div>
+      <div class="mic-wrap">
+        <canvas id="wave" class="wave" width="168" height="36" aria-hidden="true"></canvas>
+        <button type="button" id="mic" aria-pressed="false" aria-label="Start microphone">Mic</button>
+      </div>
       <div class="controls">
         <button type="button" id="start-camera">Start camera</button>
         <button type="button" id="power-off" class="hidden">Power is off</button>
@@ -53,6 +71,7 @@
         </label>
       </div>
     </div>
+    <button type="button" id="start-overlay" class="start-overlay hidden">Tap to start</button>
   </main>
   <script type="module" src="agent.js"></script>
 </body>

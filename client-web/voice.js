@@ -149,6 +149,10 @@ export function createVoice(options = {}) {
   const onState = options.onState || noop;
   const onBargeIn = options.onBargeIn || noop;
   const onAudioChunk = options.onAudioChunk || noop;
+  const onLevel = options.onLevel || noop;
+  const onMicError = options.onMicError || noop;
+  const onSpeakEnd = options.onSpeakEnd || noop;
+  const onAudioError = options.onAudioError || noop;
   const serverMode = options.sttMode === "server";
   const lang = options.lang || "en-US";
   const now = options.now || defaultNow;
@@ -197,6 +201,15 @@ export function createVoice(options = {}) {
   let utteranceOpen = false;
   let serverHold = false;
   let audioSeq = 0;
+  let volume = 1;
+  let muted = false;
+  let currentUtter = null;
+  let outputGain = null;
+  let meterGen = 0;
+  let meterStream = null;
+  let meterTimer = 0;
+  let meterSmooth = 0;
+  const meterNodes = [];
 
   if (rec) {
     rec.onresult = handleResult;
@@ -216,8 +229,37 @@ export function createVoice(options = {}) {
 
   function maybeIdle() {
     if (synthActive || audioActive) return;
+    const was = speaking;
+    const ended = utteranceId;
     speaking = false;
+    currentUtter = null;
     setState(listening ? "listening" : "idle");
+    if (was) onSpeakEnd(ended);
+  }
+
+  function effectiveVolume() {
+    if (muted) return 0;
+    return clamp01(volume);
+  }
+
+  function applyOutput() {
+    const level = effectiveVolume();
+    if (outputGain && outputGain.gain) outputGain.gain.value = level;
+    if (currentUtter) currentUtter.volume = level;
+  }
+
+  function setVolume(next) {
+    const n = Number(next);
+    if (!Number.isFinite(n)) return effectiveVolume();
+    volume = clamp01(n);
+    applyOutput();
+    return volume;
+  }
+
+  function setMuted(next) {
+    muted = Boolean(next);
+    applyOutput();
+    return muted;
   }
 
   function haltPlayback() {
@@ -262,10 +304,12 @@ export function createVoice(options = {}) {
       }
     }
     if (!speaking) setState("listening");
+    startBrowserMeter();
   }
 
   function stopListening() {
     listening = false;
+    stopBrowserMeter();
     if (serverMode) {
       captureGen += 1;
       if (utteranceOpen) drain(true);
@@ -300,7 +344,10 @@ export function createVoice(options = {}) {
     const code = event && event.error;
     if (code === "not-allowed" || code === "service-not-allowed" || code === "audio-capture") {
       listening = false;
+      stopBrowserMeter();
       if (!speaking) setState("idle");
+      if (code === "service-not-allowed") onMicError("unsupported");
+      else onMicError("denied");
     }
   }
 
@@ -359,6 +406,8 @@ export function createVoice(options = {}) {
     }
     const utter = makeUtterance(spokenText);
     utter.lang = lang;
+    utter.volume = effectiveVolume();
+    currentUtter = utter;
     const token = ++synthGen;
     synthActive = true;
     const done = () => {
@@ -437,7 +486,7 @@ export function createVoice(options = {}) {
       channel.set(samples);
       src = ctx.createBufferSource();
       src.buffer = buffer;
-      if (typeof src.connect === "function") src.connect(ctx.destination);
+      if (typeof src.connect === "function") src.connect(outputNode(ctx));
       const current = typeof ctx.currentTime === "number" ? ctx.currentTime : 0;
       const startAt = nextTime == null || nextTime < current ? current : nextTime;
       nextTime = startAt + samples.length / PCM_RATE;
@@ -454,7 +503,8 @@ export function createVoice(options = {}) {
         }
       };
       src.start(startAt);
-    } catch {
+    } catch (err) {
+      onAudioError(id, err);
       if (src) {
         const idx = sources.indexOf(src);
         if (idx >= 0) sources.splice(idx, 1);
@@ -510,11 +560,12 @@ export function createVoice(options = {}) {
         return;
       }
       if (!speaking) setState("listening");
-    } catch {
+    } catch (err) {
       if (token !== captureGen) return;
       listening = false;
       releaseCapture();
       if (!speaking) setState("idle");
+      onMicError(deniedKind(err));
     }
   }
 
@@ -564,7 +615,9 @@ export function createVoice(options = {}) {
     if (token !== captureGen || !listening) return;
     const down = downsample(samples, sampleRate, PCM_RATE);
     if (down.length === 0) return;
-    const verdict = vad.push(rms(down), now());
+    const energy = rms(down);
+    emitLevel(energy);
+    const verdict = vad.push(energy, now());
     if (serverHold) {
       if (verdict === "end" || verdict === "silence") serverHold = false;
       return;
@@ -685,6 +738,128 @@ export function createVoice(options = {}) {
     if (ctx.destination) node.connect(ctx.destination);
   }
 
+  function outputNode(ctx) {
+    if (!ctx || typeof ctx.createGain !== "function") return ctx ? ctx.destination : null;
+    if (!outputGain) {
+      outputGain = ctx.createGain();
+      if (outputGain.gain) outputGain.gain.value = effectiveVolume();
+      if (ctx.destination && typeof outputGain.connect === "function") outputGain.connect(ctx.destination);
+    } else if (outputGain.gain) {
+      outputGain.gain.value = effectiveVolume();
+    }
+    return outputGain;
+  }
+
+  function emitLevel(energy) {
+    const e = Number.isFinite(energy) ? Math.max(0, energy) : 0;
+    meterSmooth = meterSmooth * 0.72 + e * 0.28;
+    const level = Math.min(1, meterSmooth / 0.12);
+    try {
+      onLevel(level);
+    } catch {
+      // the page owns the meter
+    }
+  }
+
+  function requestLevelMic() {
+    const constraints = { audio: true };
+    if (typeof options.getUserMedia === "function") return Promise.resolve(options.getUserMedia(constraints));
+    const md = globalThis.navigator && globalThis.navigator.mediaDevices;
+    if (!md || typeof md.getUserMedia !== "function") return Promise.reject(new Error("no mic"));
+    return md.getUserMedia(constraints);
+  }
+
+  function startBrowserMeter() {
+    if (serverMode || !listening) return;
+    const token = ++meterGen;
+    let pending;
+    try {
+      pending = requestLevelMic();
+    } catch (err) {
+      onMicError(deniedKind(err));
+      return;
+    }
+    Promise.resolve(pending).then(
+      (stream) => {
+        if (token !== meterGen || !listening) {
+          stopTracks(stream);
+          return;
+        }
+        meterStream = stream;
+        const ctx = ensureAudio();
+        if (!ctx || typeof ctx.createAnalyser !== "function" || typeof ctx.createMediaStreamSource !== "function") {
+          stopBrowserMeter();
+          return;
+        }
+        const source = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 1024;
+        if (typeof source.connect === "function") source.connect(analyser);
+        const silent = zeroGain(ctx);
+        if (silent && typeof analyser.connect === "function") analyser.connect(silent);
+        else if (ctx.destination && typeof analyser.connect === "function") analyser.connect(ctx.destination);
+        meterNodes.push(source, analyser);
+        const size = analyser.fftSize || 1024;
+        const bins = new Float32Array(size);
+        const tick = () => {
+          if (token !== meterGen || !listening) return;
+          if (typeof analyser.getFloatTimeDomainData === "function") analyser.getFloatTimeDomainData(bins);
+          let sum = 0;
+          for (let i = 0; i < bins.length; i += 1) sum += bins[i] * bins[i];
+          emitLevel(Math.sqrt(sum / bins.length) || 0);
+          meterTimer = setTimeout(tick, 50);
+        };
+        tick();
+      },
+      (err) => {
+        if (token !== meterGen) return;
+        onMicError(deniedKind(err));
+      },
+    );
+  }
+
+  function stopBrowserMeter() {
+    meterGen += 1;
+    if (meterTimer) {
+      clearTimeout(meterTimer);
+      meterTimer = 0;
+    }
+    const stream = meterStream;
+    meterStream = null;
+    stopTracks(stream);
+    const nodes = meterNodes.splice(0, meterNodes.length);
+    for (const node of nodes) {
+      try {
+        if (node && typeof node.disconnect === "function") node.disconnect();
+      } catch {
+        // already disconnected
+      }
+    }
+    meterSmooth = 0;
+  }
+
+  function zeroGain(ctx) {
+    if (!ctx || typeof ctx.createGain !== "function") return null;
+    const gain = ctx.createGain();
+    if (gain.gain) gain.gain.value = 0;
+    if (ctx.destination && typeof gain.connect === "function") gain.connect(ctx.destination);
+    meterNodes.push(gain);
+    return gain;
+  }
+
+  function primeSpeech() {
+    if (!synth || typeof synth.speak !== "function") return false;
+    const utter = makeUtterance(" ");
+    utter.volume = 0;
+    utter.lang = lang;
+    try {
+      synth.speak(utter);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function ensureAudio() {
     if (audioCtx) return audioCtx;
     try {
@@ -720,6 +895,15 @@ export function createVoice(options = {}) {
     cancel,
     isSpeaking,
     unlockAudio,
+    setVolume,
+    setMuted,
+    getVolume() {
+      return volume;
+    },
+    getMuted() {
+      return muted;
+    },
+    primeSpeech,
   };
 }
 
@@ -846,6 +1030,28 @@ registerProcessor("pcm-capture", PcmCapture);
 `;
   const blob = new Blob([source], { type: "application/javascript" });
   return URL.createObjectURL(blob);
+}
+
+function clamp01(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  if (n > 1) return 1;
+  return n;
+}
+
+function deniedKind(err) {
+  const name = err && (err.name || err.code || err.message);
+  const text = String(name || "");
+  if (
+    text === "NotAllowedError" ||
+    text === "PermissionDeniedError" ||
+    text === "SecurityError" ||
+    text === "not-allowed" ||
+    text === "audio-capture"
+  ) {
+    return "denied";
+  }
+  return "failed";
 }
 
 function stopTracks(stream) {

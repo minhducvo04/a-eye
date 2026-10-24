@@ -4,7 +4,14 @@
 import { paintDraw, applyDraw, pruneDraw, viewTransform, visibleOps } from "./draw.js";
 import { writeFrame } from "./live.js";
 import { sharpCanvasSize } from "./overlay.js";
-import { AGENTS, layoutOrbs, nextPresence, paintPresence } from "./presence.js";
+import { ORB_SIZE, layoutOrbs, nextPresence, paintPresence } from "./presence.js";
+import {
+  AUDIO_FALLBACK_MS,
+  ERROR_HTTPS,
+  TEST_LINE,
+  createCallUi,
+  fallbackDecision,
+} from "./ui.js";
 import {
   bargeSpeech,
   devHudPosition,
@@ -46,14 +53,22 @@ function boot() {
   const packLabel = document.getElementById("pack-label");
   const statusDot = document.getElementById("status");
   const errorEl = document.getElementById("error");
+  const noticeEl = document.getElementById("notice");
   const marketEl = document.getElementById("market");
   const marketBody = document.getElementById("market-body");
-  const captionEl = document.getElementById("caption");
+  const repliesEl = document.getElementById("replies");
   const interimEl = document.getElementById("interim");
+  const callStateEl = document.getElementById("call-state");
   const typedEl = document.getElementById("typed");
   const micBtn = document.getElementById("mic");
   const startBtn = document.getElementById("start-camera");
   const powerBtn = document.getElementById("power-off");
+  const overlayEl = document.getElementById("start-overlay");
+  const transcriptBtn = document.getElementById("transcript-toggle");
+  const transcriptList = document.getElementById("transcript-list");
+  const muteBtn = document.getElementById("mute");
+  const volumeEl = document.getElementById("volume");
+  const waveEl = document.getElementById("wave");
   const grab = document.createElement("canvas");
   const grayCanvas = document.createElement("canvas");
   const devOn = new URLSearchParams(location.search).get("dev") === "1";
@@ -68,12 +83,10 @@ function boot() {
   const sessionId = randomId();
   const params = new URLSearchParams(location.search);
   const tts = params.get("tts") === "server" ? "server" : "browser";
-  const stt = params.get("stt") === "server" ? "server" : "browser";
-  const sttLabel = document.createElement("span");
-  sttLabel.className = "stt-mode";
-  sttLabel.textContent = stt === "server" ? "Whisper" : "Browser";
-  micBtn.insertAdjacentElement("afterend", sttLabel);
+  let stt = params.get("stt") === "server" ? "server" : "browser";
+  const sttLabel = document.getElementById("stt-mode");
   const reducedQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const ui = createCallUi({ storage: safeStorage() });
 
   let pack = "";
   let socket = null;
@@ -90,8 +103,11 @@ function boot() {
   let listening = false;
   let raf = 0;
   let speech = emptySpeech();
-  let speakQueue = [];
-  let voicedTurn = null;
+  const talkQueue = [];
+  let talkBusy = false;
+  const fallbackTimers = new Map();
+  const waveLevels = [];
+  let lastUiTick = 0;
   const tracker = createTracker();
   let tracks = new Map();
   let book = initialTrackerBook();
@@ -100,46 +116,87 @@ function boot() {
   let lastTrackAt = null;
   let hud = initialHud();
 
-  const voiceReady = loadVoice({
-    onFinal: (text) => {
-      const clean = String(text || "").trim();
-      if (!clean) return;
-      setInterim(clean);
-      sendUser(clean, "browser_stt");
-    },
-    onInterim: (text) => {
-      setInterim(String(text || "").trim());
-    },
-    onState: (state) => {
-      if (state === "listening") listening = true;
-      if (state === "idle" || state === "stopped") listening = false;
-      renderMic();
-    },
-    onBargeIn: (id, ms) => {
-      speech = bargeSpeech(speech);
-      speakQueue = [];
-      voicedTurn = null;
-      send({
-        v: 2,
-        type: "barge_in",
-        session_id: sessionId,
-        utterance_id: id,
-        at_ms: Math.max(0, Math.round(Number(ms) || 0)),
-      });
-    },
-    sttMode: stt,
-    onAudioChunk: (pcm16Base64, seq, final) => {
-      send({
-        v: 2,
-        type: "audio_in",
-        session_id: sessionId,
-        seq,
-        sample_rate: 16000,
-        pcm16_b64: pcm16Base64,
-        final: Boolean(final),
-      });
-    },
-  });
+  function voiceOptions() {
+    return {
+      onFinal: (text) => {
+        const clean = String(text || "").trim();
+        if (!clean) return;
+        ui.dispatch({ type: "final", text: clean, now: Date.now() });
+        renderCall();
+        sendUser(clean, stt === "server" ? "server_stt" : "browser_stt");
+      },
+      onInterim: (text) => {
+        ui.dispatch({ type: "interim", text: String(text || "").trim(), now: Date.now() });
+        renderCall();
+      },
+      onState: (state) => {
+        if (state === "listening") {
+          listening = true;
+          ui.dispatch({ type: "mic_start" });
+        } else if (state === "idle" || state === "stopped") {
+          listening = false;
+          ui.dispatch({ type: "mic_stop" });
+          presence = nextPresence(presence, { type: "level", level: null }, Date.now());
+        }
+        renderMic();
+        renderCall();
+      },
+      onBargeIn: (id, ms) => {
+        speech = bargeSpeech(speech);
+        talkQueue.length = 0;
+        talkBusy = false;
+        clearAllFallbacks();
+        ui.dispatch({ type: "audio_ended", utteranceId: "", now: Date.now() });
+        send({
+          v: 2,
+          type: "barge_in",
+          session_id: sessionId,
+          utterance_id: id,
+          at_ms: Math.max(0, Math.round(Number(ms) || 0)),
+        });
+        renderCall();
+      },
+      onLevel: (level) => {
+        const n = Number(level);
+        const value = Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0;
+        presence = nextPresence(presence, { type: "level", level: value }, Date.now());
+        waveLevels.push(value);
+        while (waveLevels.length > 28) waveLevels.shift();
+        drawWave();
+      },
+      onMicError: (kind) => {
+        if (kind === "unsupported") {
+          void switchToServerStt();
+          return;
+        }
+        if (kind === "denied") {
+          ui.dispatch({ type: "permission_denied" });
+          renderCall();
+        }
+      },
+      onSpeakEnd: () => {
+        talkBusy = false;
+        ui.dispatch({ type: "audio_ended", utteranceId: "", now: Date.now() });
+        renderCall();
+        pumpTalk();
+      },
+      onAudioError: (id) => {
+        failAudio(typeof id === "string" ? id : "");
+      },
+      sttMode: stt,
+      onAudioChunk: (pcm16Base64, audioSeq, final) => {
+        send({
+          v: 2,
+          type: "audio_in",
+          session_id: sessionId,
+          seq: audioSeq,
+          sample_rate: 16000,
+          pcm16_b64: pcm16Base64,
+          final: Boolean(final),
+        });
+      },
+    };
+  }
 
   function randomId() {
     if (globalThis.crypto && typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -172,18 +229,9 @@ function boot() {
     statusDot.setAttribute("aria-label", on ? "socket connected" : "socket disconnected");
   }
 
-  function setInterim(text) {
-    interimEl.textContent = text || "";
-  }
-
-  function setSpeaker(agent, text) {
-    const spec = AGENTS[agent] || AGENTS.helper;
-    captionEl.replaceChildren();
-    const who = document.createElement("span");
-    who.className = "who";
-    who.textContent = spec.name;
-    who.style.color = spec.caption;
-    captionEl.append(who, document.createTextNode(text || ""));
+  function showProblem(text) {
+    ui.dispatch({ type: "error", message: text || "" });
+    renderCall();
   }
 
   function sendUser(text, source) {
@@ -198,7 +246,24 @@ function boot() {
       source,
     });
     if (ok) hud = noteFinalWords(hud, Date.now());
-    if (!ok) setSpeaker("helper", "Not connected.");
+    if (!ok) showProblem("Not connected.");
+    return ok;
+  }
+
+  function sendHello() {
+    if (!pack) return false;
+    const hello = {
+      v: 2,
+      type: "hello",
+      session_id: sessionId,
+      pack,
+      client: "web",
+      tts,
+      stt,
+    };
+    if (pack === "pc_build") hello.board_id = BOARD_ID;
+    const ok = send(hello);
+    if (ok) ui.dispatch({ type: "hello_sent" });
     return ok;
   }
 
@@ -208,17 +273,7 @@ function boot() {
     socket = new WebSocket(wsUrl());
     socket.addEventListener("open", () => {
       setStatus(true);
-      const hello = {
-        v: 2,
-        type: "hello",
-        session_id: sessionId,
-        pack,
-        client: "web",
-        tts,
-        stt,
-      };
-      if (pack === "pc_build") hello.board_id = BOARD_ID;
-      send(hello);
+      sendHello();
     });
     socket.addEventListener("message", (event) => {
       if (typeof event.data !== "string") return;
@@ -265,29 +320,46 @@ function boot() {
     }
     if (message.type === "agent_state") {
       presence = nextPresence(presence, message, now);
+      ui.dispatch({ type: "agent_state", agent: message.agent, state: message.state });
+      renderCall();
       return;
     }
     if (message.type === "say") {
-      errorEl.classList.add("hidden");
       const result = pushSay(speech, message);
       speech = result.state;
-      if (!result.ignored) setSpeaker(result.agent, result.caption);
       if (result.reset) {
-        speakQueue = [];
-        voicedTurn = null;
+        talkQueue.length = 0;
+        talkBusy = false;
+        clearAllFallbacks();
         if (voice) voice.cancel();
       }
-      if (tts === "browser" && result.speak.length) {
-        speakQueue.push(...result.speak);
-        flushSpeech();
+      for (const line of result.speak) {
+        ui.dispatch({
+          type: "say",
+          agent: line.agent,
+          utteranceId: line.utteranceId,
+          text: line.text,
+          part: line.part,
+          turnId: speech.turnId,
+          now,
+        });
+        if (tts === "server") armFallback(line.utteranceId);
       }
+      if (tts === "browser" && result.speak.length) enqueueTalk(result.speak);
+      renderCall();
       return;
     }
     if (message.type === "audio" && voice) {
+      const id = typeof message.utterance_id === "string" ? message.utterance_id : "";
+      clearFallback(id);
+      ui.dispatch({ type: "audio_started", utteranceId: id, now });
       markSound();
-      Promise.resolve()
-        .then(() => voice.playPcm(message.utterance_id, message.pcm16_b64, Boolean(message.final)))
-        .catch(() => {});
+      renderCall();
+      try {
+        voice.playPcm(message.utterance_id, message.pcm16_b64, Boolean(message.final));
+      } catch {
+        failAudio(id);
+      }
       return;
     }
     if (message.type === "market_results") {
@@ -295,8 +367,7 @@ function boot() {
       return;
     }
     if (message.type === "error") {
-      errorEl.textContent = message.message || "Something went wrong.";
-      errorEl.classList.remove("hidden");
+      showProblem(message.message || "Something went wrong.");
     }
   }
 
@@ -499,31 +570,65 @@ function boot() {
     hud = noteFirstSound(hud, Date.now());
   }
 
-  function flushSpeech() {
-    if (!voice || tts !== "browser" || !speakQueue.length) return;
-    const lines = speakQueue.splice(0, speakQueue.length);
-    for (const line of lines) {
-      if (voicedTurn !== speech.turnId) {
-        voice.speak(line.utteranceId, line.text);
-        voicedTurn = speech.turnId;
-        markSound();
-      } else {
-        queueUtterance(line.text);
-      }
-    }
+  function enqueueTalk(lines) {
+    for (const line of lines) talkQueue.push(line);
+    pumpTalk();
   }
 
-  function queueUtterance(text) {
-    const synth = globalThis.speechSynthesis;
-    if (!synth || typeof synth.speak !== "function") return;
-    const Ctor = globalThis.SpeechSynthesisUtterance;
-    const utter = typeof Ctor === "function" ? new Ctor(text) : { text };
-    utter.lang = "en-US";
-    try {
-      synth.speak(utter);
-    } catch {
-      /* caption still shows the sentence */
+  function pumpTalk() {
+    if (talkBusy || tts === "server" || !voice || !talkQueue.length) return;
+    const line = talkQueue.shift();
+    talkBusy = true;
+    ui.dispatch({ type: "audio_started", utteranceId: line.utteranceId, now: Date.now() });
+    voice.speak(line.utteranceId, line.text);
+    markSound();
+    renderCall();
+  }
+
+  function clearFallback(id) {
+    const timer = fallbackTimers.get(id);
+    if (timer) window.clearTimeout(timer);
+    fallbackTimers.delete(id);
+  }
+
+  function clearAllFallbacks() {
+    for (const timer of fallbackTimers.values()) window.clearTimeout(timer);
+    fallbackTimers.clear();
+  }
+
+  function armFallback(id) {
+    if (tts !== "server") return;
+    clearFallback(id);
+    const wait = ui.getState().waits[id];
+    if (!wait || wait.audioSeenMs != null || wait.fellBack) return;
+    const delay = Math.max(0, AUDIO_FALLBACK_MS - (Date.now() - wait.sayTimeMs));
+    const timer = window.setTimeout(() => runFallback(id), delay);
+    fallbackTimers.set(id, timer);
+  }
+
+  function runFallback(id) {
+    fallbackTimers.delete(id);
+    const wait = ui.getState().waits[id];
+    if (!wait || wait.fellBack) return;
+    const now = Date.now();
+    if (!fallbackDecision(wait.sayTimeMs, wait.audioSeenMs, now).fallback) {
+      armFallback(id);
+      return;
     }
+    ui.dispatch({ type: "audio_timeout", utteranceId: id, now });
+    const next = ui.getState().waits[id];
+    if (voice && next && next.text) voice.speak(id, next.text);
+    renderCall();
+  }
+
+  function failAudio(id) {
+    const wait = ui.getState().waits[id];
+    if (!wait || wait.fellBack) return;
+    clearFallback(id);
+    ui.dispatch({ type: "audio_error", utteranceId: id, now: Date.now() });
+    const next = ui.getState().waits[id];
+    if (voice && next && next.text) voice.speak(id, next.text);
+    renderCall();
   }
 
   function placeDevHud(view, poses) {
@@ -580,13 +685,33 @@ function boot() {
     const presenceCtx = fitCanvas(presenceCanvas, view.w, view.h);
     const frameState = cameraOn ? anchoredState(drawState, tracks, now) : drawState;
     paintDraw(drawCtx, frameState, view, now, reduced);
-    paintPresence(presenceCtx, presence, laid.poses, view, now, reduced);
+    paintPresence(presenceCtx, presence, laid.poses, view, now, reduced, ui.getState().micOn);
+    placeCallState(laid.poses);
     placeDevHud(view, laid.poses);
+  }
+
+  function placeCallState(poses) {
+    const pose = poses && poses.helper;
+    if (!callStateEl || !pose) return;
+    const width = stage.clientWidth || 0;
+    const beside = pose.x + ORB_SIZE + 10;
+    const maxLeft = Math.max(8, width - 200);
+    const home = pose.y < 70 && pose.x < 80;
+    const left = Math.min(maxLeft, Math.max(8, beside));
+    const top = home ? Math.max(56, pose.y + 8) : pose.y + 8;
+    callStateEl.style.left = `${left}px`;
+    callStateEl.style.top = `${Math.max(8, top)}px`;
   }
 
   function loop() {
     const now = Date.now();
     stepTracker(now);
+    if (now - lastUiTick > 200) {
+      lastUiTick = now;
+      const before = ui.getState().caption;
+      ui.dispatch({ type: "tick", now });
+      if (ui.getState().caption !== before) renderUserCaption(ui.getState());
+    }
     paint(now);
     raf = window.requestAnimationFrame(loop);
   }
@@ -640,11 +765,12 @@ function boot() {
   async function startCamera() {
     if (starting || cameraOn) return;
     if (!window.isSecureContext) {
-      setSpeaker("helper", "Camera needs HTTPS or localhost. Use Upload photo.");
+      ui.dispatch({ type: "https" });
+      renderCall();
       return;
     }
     if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
-      setSpeaker("helper", "No camera in this browser. Use Upload photo.");
+      showProblem("No camera in this browser. Use Upload photo.");
       return;
     }
     starting = true;
@@ -667,9 +793,9 @@ function boot() {
       stopCamera();
       const name = err && err.name;
       if (name === "NotAllowedError" || name === "PermissionDeniedError" || name === "SecurityError") {
-        setSpeaker("helper", "Camera blocked. Allow camera access, or use Upload photo.");
+        showProblem("Camera blocked. Allow camera access, or use Upload photo.");
       } else {
-        setSpeaker("helper", "Camera unavailable. Use Upload photo.");
+        showProblem("Camera unavailable. Use Upload photo.");
       }
     } finally {
       starting = false;
@@ -695,7 +821,7 @@ function boot() {
       const shot = writeFrame(grab, image, image.naturalWidth, image.naturalHeight);
       if (!shot || !shot.jpeg_b64) {
         URL.revokeObjectURL(url);
-        setSpeaker("helper", "Could not read that photo.");
+        showProblem("Could not read that photo.");
         return;
       }
       if (cameraOn) {
@@ -719,37 +845,67 @@ function boot() {
         jpeg_b64: shot.jpeg_b64,
       });
       if (ok) hud = noteFrameSent(hud, frameSeq, sentAt);
-      if (!ok) setSpeaker("helper", "Not connected.");
+      if (!ok) showProblem("Not connected.");
     } catch {
       if (photoUrl !== url) URL.revokeObjectURL(url);
-      setSpeaker("helper", "Could not read that photo.");
+      showProblem("Could not read that photo.");
     }
   }
 
   function renderMic() {
     const ready = Boolean(voice && voice.supported && voice.supported.stt);
     micBtn.disabled = !ready;
-    micBtn.setAttribute("aria-pressed", listening ? "true" : "false");
-    micBtn.textContent = listening ? "Stop mic" : "Mic";
+    const on = ui.getState().micOn;
+    micBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    micBtn.textContent = on ? "Stop" : "Mic";
+    micBtn.setAttribute("aria-label", on ? "Stop microphone" : "Start microphone");
+  }
+
+  function applyAudioPrefs() {
+    const st = ui.getState();
+    if (!voice) return;
+    if (typeof voice.setMuted === "function") voice.setMuted(st.muted);
+    if (typeof voice.setVolume === "function") voice.setVolume(st.volume);
+  }
+
+  function securePage() {
+    return Boolean(window.isSecureContext);
   }
 
   async function onMic() {
-    voice = voice || (await voiceReady);
-    flushSpeech();
+    voice = voice || (await rebuildVoice());
     if (!voice || !voice.supported || !voice.supported.stt) return;
-    try {
-      await voice.unlockAudio();
-    } catch {
-      /* typed input still works */
+    if (!securePage()) {
+      ui.dispatch({ type: "https" });
+      renderCall();
+      return;
     }
-    if (listening) {
-      voice.stopListening();
-      listening = false;
-    } else {
-      voice.startListening();
-      listening = true;
+    void voice.unlockAudio();
+    if (ui.getState().micOn) voice.stopListening();
+    else void voice.startListening();
+    pumpTalk();
+  }
+
+  function onStartTap() {
+    ui.dispatch({ type: "tap_start" });
+    renderCall();
+    if (!voice) return;
+    voice.primeSpeech();
+    void voice.unlockAudio();
+    applyAudioPrefs();
+    if (!securePage()) {
+      ui.dispatch({ type: "https" });
+      renderCall();
+      return;
     }
-    renderMic();
+    if (voice.supported && voice.supported.stt) void voice.startListening();
+  }
+
+  function onTestVoice() {
+    if (!voice) return;
+    void voice.unlockAudio();
+    applyAudioPrefs();
+    voice.speak("test-voice", TEST_LINE);
   }
 
   async function choosePack(next) {
@@ -757,20 +913,114 @@ function boot() {
     pack = next;
     packLabel.textContent = PACK_LABEL[next];
     if (next === "pc_build") powerBtn.classList.remove("hidden");
+    ui.dispatch({ type: "pack", pack: next });
     picker.classList.add("hidden");
     stage.classList.remove("hidden");
-    voice = voice || (await voiceReady);
-    flushSpeech();
-    if (voice) {
-      try {
-        await voice.unlockAudio();
-      } catch {
-        /* typed input still works */
-      }
+    voice = await rebuildVoice();
+    if (voice && !voice.supported.stt && stt !== "server") {
+      stt = "server";
+      ui.dispatch({ type: "stt_unsupported" });
+      voice = await rebuildVoice();
     }
-    renderMic();
+    applyAudioPrefs();
+    renderCall();
     connect();
     paint(Date.now());
+  }
+
+  async function switchToServerStt() {
+    if (stt === "server") return;
+    stt = "server";
+    ui.dispatch({ type: "stt_unsupported" });
+    voice = await rebuildVoice();
+    applyAudioPrefs();
+    sendHello();
+    renderCall();
+  }
+
+  function renderCall() {
+    const st = ui.getState();
+    if (callStateEl) callStateEl.textContent = st.label;
+    errorEl.textContent = st.error || "";
+    errorEl.classList.toggle("hidden", !st.error);
+    const notes = [st.sttNotice, st.voiceNotice].filter(Boolean);
+    noticeEl.textContent = notes.join(" ");
+    noticeEl.classList.toggle("hidden", notes.length === 0);
+    renderReplies(st);
+    renderUserCaption(st);
+    renderTranscript(st);
+    muteBtn.setAttribute("aria-pressed", st.muted ? "true" : "false");
+    muteBtn.textContent = st.muted ? "Unmute" : "Mute";
+    if (document.activeElement !== volumeEl) volumeEl.value = String(st.volume);
+    overlayEl.classList.toggle("hidden", !st.showStart);
+    if (sttLabel) sttLabel.textContent = stt === "server" ? "Whisper" : "Browser";
+    renderMic();
+  }
+
+  function renderReplies(st) {
+    repliesEl.replaceChildren();
+    for (const line of st.replies) {
+      const row = document.createElement("p");
+      row.className = "reply";
+      const who = document.createElement("span");
+      who.className = "who";
+      who.textContent = line.speaker || "Helper";
+      who.style.color = line.color || "#8eb6ff";
+      const body = document.createElement("span");
+      body.className = line.active ? "line active" : "line";
+      body.textContent = line.text;
+      row.append(who, document.createTextNode(" "), body);
+      repliesEl.append(row);
+    }
+  }
+
+  function renderUserCaption(st) {
+    const cap = st.caption || {};
+    interimEl.replaceChildren();
+    interimEl.classList.toggle("is-interim", cap.kind === "interim" && cap.visible);
+    interimEl.classList.toggle("is-gone", !cap.visible);
+    if (!cap.visible || !cap.text) return;
+    interimEl.append(document.createTextNode(cap.text));
+    if (cap.kind === "interim") {
+      const caret = document.createElement("span");
+      caret.className = "caret";
+      caret.setAttribute("aria-hidden", "true");
+      interimEl.append(caret);
+    }
+  }
+
+  function renderTranscript(st) {
+    transcriptList.replaceChildren();
+    for (const line of st.transcript) {
+      const item = document.createElement("li");
+      const who = document.createElement("span");
+      who.className = "who";
+      who.style.color = line.color || "#f4f7fb";
+      who.textContent = line.speaker;
+      item.append(who, document.createTextNode(line.text));
+      transcriptList.append(item);
+    }
+    if (transcriptBtn.getAttribute("aria-expanded") === "true") {
+      transcriptList.scrollTop = transcriptList.scrollHeight;
+    }
+  }
+
+  function drawWave() {
+    if (!waveEl) return;
+    const ctx = waveEl.getContext("2d");
+    if (!ctx) return;
+    const w = waveEl.width;
+    const h = waveEl.height;
+    ctx.clearRect(0, 0, w, h);
+    const levels = waveLevels.length ? waveLevels : [0];
+    const gap = 2;
+    const bw = Math.max(2, (w - gap * (levels.length - 1)) / levels.length);
+    ctx.fillStyle = "#8eb6ff";
+    for (let i = 0; i < levels.length; i += 1) {
+      const amp = Math.max(0, Math.min(1, levels[i] || 0));
+      const bh = Math.max(2, amp * (h - 2));
+      ctx.fillRect(i * (bw + gap), (h - bh) / 2, bw, bh);
+    }
   }
 
   picker.addEventListener("click", (event) => {
@@ -789,7 +1039,7 @@ function boot() {
       what: "power_off",
       value: true,
     });
-    if (!ok) setSpeaker("helper", "Not connected.");
+    if (!ok) showProblem("Not connected.");
   });
   document.getElementById("upload").addEventListener("change", (event) => {
     onUpload(event);
@@ -798,12 +1048,37 @@ function boot() {
     event.preventDefault();
     const text = typedEl.value;
     typedEl.value = "";
-    if (!String(text || "").trim()) return;
-    setInterim(String(text).trim());
-    sendUser(text, "typed");
+    const clean = String(text || "").trim();
+    if (!clean) return;
+    ui.dispatch({ type: "final", text: clean, now: Date.now() });
+    renderCall();
+    sendUser(clean, "typed");
   });
   micBtn.addEventListener("click", () => {
     onMic();
+  });
+  overlayEl.addEventListener("click", () => {
+    onStartTap();
+  });
+  muteBtn.addEventListener("click", () => {
+    ui.dispatch({ type: "mute", muted: !ui.getState().muted });
+    applyAudioPrefs();
+    renderCall();
+  });
+  volumeEl.addEventListener("input", () => {
+    ui.dispatch({ type: "volume", volume: Number(volumeEl.value) });
+    applyAudioPrefs();
+  });
+  document.getElementById("test-voice").addEventListener("click", () => {
+    onTestVoice();
+  });
+  transcriptBtn.addEventListener("click", () => {
+    const open = transcriptBtn.getAttribute("aria-expanded") === "true";
+    const next = !open;
+    transcriptBtn.setAttribute("aria-expanded", next ? "true" : "false");
+    transcriptList.classList.toggle("hidden", !next);
+    transcriptBtn.textContent = next ? "Hide transcript" : "Transcript";
+    if (next) transcriptList.scrollTop = transcriptList.scrollHeight;
   });
   document.getElementById("market-dismiss").addEventListener("click", () => {
     marketEl.classList.add("hidden");
@@ -815,16 +1090,28 @@ function boot() {
     reducedQuery.addEventListener("change", () => paint(Date.now()));
   }
 
-  renderMic();
+  volumeEl.value = String(ui.getState().volume);
+  drawWave();
+  renderCall();
   raf = window.requestAnimationFrame(loop);
   void raf;
+
+  async function rebuildVoice() {
+    try {
+      const mod = await import("./voice.js");
+      if (voice && typeof voice.stopListening === "function") voice.stopListening();
+      if (!mod || typeof mod.createVoice !== "function") return null;
+      const next = mod.createVoice(voiceOptions());
+      return next;
+    } catch {
+      return null;
+    }
+  }
 }
 
-async function loadVoice(handlers) {
+function safeStorage() {
   try {
-    const mod = await import("./voice.js");
-    if (!mod || typeof mod.createVoice !== "function") return null;
-    return mod.createVoice(handlers);
+    return globalThis.localStorage;
   } catch {
     return null;
   }
