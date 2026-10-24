@@ -215,9 +215,10 @@ function paint() {
   }
   const ctx = canvas.getContext("2d");
   ctx.setTransform(bitmap.ratio, 0, 0, bitmap.ratio, 0, 0);
-  const srcW = video.videoWidth;
-  const srcH = video.videoHeight;
-  const overlay = visibleOverlay(overlayState, Date.now());
+  const srcW = video.videoWidth || (lastPhotoSize && lastPhotoSize.w);
+  const srcH = video.videoHeight || (lastPhotoSize && lastPhotoSize.h);
+  // Stale boxes are cleared only in live mode; a photo's boxes stay until the next result.
+  const overlay = cameraOn ? visibleOverlay(overlayState, Date.now()) : overlayState && overlayState.overlay;
   if (!srcW || !srcH) {
     ctx.clearRect(0, 0, cssW, cssH);
     return;
@@ -262,7 +263,11 @@ function captureAndSend(now) {
   return { seq: sentSeq, tsMs: now };
 }
 
+// Size of the last photo sent, so its overlay can be drawn when no camera is running.
+let lastPhotoSize = null;
+
 function sendPhoto(shot) {
+  lastPhotoSize = { w: shot.w, h: shot.h };
   const ok = send({
     v: 1,
     type: "photo",
