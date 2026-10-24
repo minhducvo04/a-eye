@@ -1,4 +1,5 @@
 import { createEarlyFinal } from "./turn.js";
+import { audioConstraints, isMissingDevice } from "./devices.js";
 import { BARGE_VAD, DEFAULT_SENSITIVITY, NOISY_AMBIENT, initialBarge, nextBarge, vadSettings } from "./realtime.js";
 
 // Browser mic, speech-to-text, and talk-back for the call page.
@@ -202,6 +203,7 @@ export function createVoice(options = {}) {
   let holdMode = Boolean(options.holdToTalk);
   let holding = false;
   let micSettings = null;
+  let micDeviceId = String(options.micDeviceId || "");
 
   const early = createEarlyFinal(onFinal, clock);
   let recGeneration = 0;
@@ -632,6 +634,48 @@ export function createVoice(options = {}) {
     setState(listening ? "listening" : "idle");
   }
 
+  // A chosen mic that was unplugged: the page falls back to the default and says so.
+  function micErrorKind(err) {
+    return micDeviceId && isMissingDevice(err) ? "missing" : deniedKind(err);
+  }
+
+  // Switch the input device; a live mic restarts only its own capture (old tracks stopped first).
+  function setMicDevice(id) {
+    const next = String(id || "");
+    if (next === micDeviceId) return false;
+    micDeviceId = next;
+    if (!listening) return true;
+    if (serverMode) {
+      void startServerListening();
+    } else {
+      stopBrowserMeter();
+      startBrowserMeter();
+    }
+    if (neural) {
+      stopNeural();
+      void startNeural();
+    }
+    return true;
+  }
+
+  function micLabel() {
+    const stream = mediaStream || meterStream;
+    try {
+      const track = stream && typeof stream.getAudioTracks === "function" ? stream.getAudioTracks()[0] : null;
+      return track && track.readyState !== "ended" ? String(track.label || "") : "";
+    } catch {
+      return "";
+    }
+  }
+
+  // Speaker output for server voice (AudioContext.setSinkId, Chrome and Brave). Browser speech can't be routed.
+  async function setSinkId(id) {
+    const ctx = ensureAudio();
+    if (!ctx || typeof ctx.setSinkId !== "function") return false;
+    await ctx.setSinkId(String(id || ""));
+    return true;
+  }
+
   function micAvailable() {
     if (typeof options.getUserMedia === "function") return true;
     const md = globalThis.navigator && globalThis.navigator.mediaDevices;
@@ -661,7 +705,7 @@ export function createVoice(options = {}) {
   }
 
   function requestMic() {
-    const constraints = { audio: { ...MIC_CONSTRAINTS } };
+    const constraints = audioConstraints(MIC_CONSTRAINTS, micDeviceId);
     if (typeof options.getUserMedia === "function") return Promise.resolve(options.getUserMedia(constraints));
     const md = globalThis.navigator && globalThis.navigator.mediaDevices;
     if (!md || typeof md.getUserMedia !== "function") return Promise.reject(new Error("no mic"));
@@ -697,7 +741,7 @@ export function createVoice(options = {}) {
       listening = false;
       releaseCapture();
       if (!speaking) setState("idle");
-      onMicError(deniedKind(err));
+      onMicError(micErrorKind(err));
     }
   }
 
@@ -938,7 +982,7 @@ export function createVoice(options = {}) {
   }
 
   function requestLevelMic() {
-    const constraints = { audio: { ...MIC_CONSTRAINTS } };
+    const constraints = audioConstraints(MIC_CONSTRAINTS, micDeviceId);
     if (typeof options.getUserMedia === "function") return Promise.resolve(options.getUserMedia(constraints));
     const md = globalThis.navigator && globalThis.navigator.mediaDevices;
     if (!md || typeof md.getUserMedia !== "function") return Promise.reject(new Error("no mic"));
@@ -990,7 +1034,7 @@ export function createVoice(options = {}) {
       },
       (err) => {
         if (token !== meterGen) return;
-        onMicError(deniedKind(err));
+        onMicError(micErrorKind(err));
       },
     );
   }
@@ -1186,6 +1230,10 @@ export function createVoice(options = {}) {
     getSensitivity() { return sensitivity; },
     ambient() { return ambient; },
     micSettings() { return micSettings; },
+    setMicDevice,
+    micDeviceId() { return micDeviceId; },
+    micLabel,
+    setSinkId,
     setHoldMode(on) {
       holdMode = Boolean(on);
       if (!holdMode && holding) this.holdEnd();
