@@ -2357,6 +2357,10 @@
      "type": "integer",
      "minimum": 1,
      "maximum": 20
+    },
+    "caption": {
+     "type": "boolean",
+     "description": "true: always return a caption, also when queries are given (keyframe scans)."
     }
    }
   },
