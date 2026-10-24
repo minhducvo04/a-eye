@@ -134,3 +134,18 @@ median of 3.
 The talker prompt now writes for the ear: contractions, short sentences, no lists or symbols, and a
 filler ("One sec, looking.") only when it truly waits. Typed final words to first Kokoro audio with
 af_kore and the new prompt: 1440 ms median [1030-1527], n=4 (`BENCH_TTS=server voice/bench_ws.py`).
+
+## Cartesia is live (2026-10-24)
+
+`CARTESIA_API_KEY` is set, so Cartesia Sonic 3.6 over the TTS WebSocket is the default server voice,
+with Kokoro as the fallback (`voice/cartesia_ws.py`). One context per turn carries prosody across the
+talker's clauses, and barge-in cancels the context. Picker voices: Katie (friendly, default), Cathy
+(coworker), Parker (supportive pal).
+
+| Server STT turn, from the final chunk (6 turns each, synthetic speech) | Transcribed | First say | First audio |
+|---|---|---|---|
+| Before partial STT, Kokoro af_heart | 838 ms | 1733 ms | 2062 ms |
+| Partial STT, Kokoro af_kore | 41 ms | 883 ms | 1117 ms [958-1639] |
+| Partial STT, Cartesia Katie | 37 ms | 857 ms | **1008 ms** [853-1158] |
+
+Cartesia clause latency alone: 284 ms cold (TLS handshake, now paid at hello) and 118 ms warm.
