@@ -38,3 +38,13 @@ test('new turns, cancellation and hazards remove stale success; old results cann
   card.event(turn('Stopped by code', 'b'));
   assert.equal(element.textContent, 'Show me again');
 });
+
+test('presenter pass is visibly synthetic and never claims water is off', () => {
+  const { element, card } = fixture();
+  card.event(turn('Valve: checking'));
+  card.event(turn('Valve: test closed'));
+  assert.match(element.textContent, /TEST MODE/);
+  assert.doesNotMatch(element.textContent, /Water is off/);
+  card.event(turn('', 'b', 'received'));
+  assert.equal(element.textContent, 'Show me again');
+});

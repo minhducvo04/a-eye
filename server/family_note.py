@@ -196,7 +196,7 @@ class Store:
         if not pending:
             return False
         try:
-            self.send(owner, pending['id'], str(text or '').strip().lower())
+            self.send(owner, pending['id'], str(text or '').strip().lower().rstrip('.!?').strip())
         except ValueError:
             pass  # Cancellation is polled by the call UI; never forward it to a brain.
         return True

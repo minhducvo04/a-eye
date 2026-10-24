@@ -24,6 +24,8 @@ export function createValveCard(element) {
       if (message.detail === 'Valve: checking') {
         owner = message.turn_id;
         show('Checking the valve...');
+      } else if (message.detail === 'Valve: test closed' && visible) {
+        show('TEST MODE · Simulated pass, not a water-off check');
       } else if (message.detail === 'Valve: closed' && visible) {
         show('Water is off · Checked on this machine');
       } else if (message.detail === 'Valve: unsure' || (visible &&

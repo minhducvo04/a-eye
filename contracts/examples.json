@@ -564,7 +564,7 @@
    "v": 2,
    "type": "hello",
    "session_id": "s2",
-   "pack": "general",
+   "pack": "home",
    "client": "web",
    "tts": "browser"
   },

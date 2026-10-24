@@ -60,6 +60,9 @@ class Session:
     expert_step: str = ''
     home_guide: object = field(default=None, repr=False)
     step_checker: object = field(default=None, repr=False)
+    private: bool = False
+    checker_test_mode: bool = False
+    checker_test_verdict: tuple | None = field(default=None, repr=False)
     board: dict = field(init=False)
 
     def __post_init__(self):
@@ -359,11 +362,25 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         await emit(message('turn', turn_id=turn_id, stage='speaking', detail=detail,
                            at_ms=int(time() * 1000)))
 
+    # Closed-set task selection is deterministic, including the spoken single word "sink".
+    if session.pack.id == 'general' and re.fullmatch(r'(?:fix (?:the |a )?)?sink[.!]?', text.strip(), re.I):
+        from server.packs.home import HomeGuide
+        session.pack = packs.get('home')
+        session.home_guide = HomeGuide()
+        await proof('Home: sink')
+        if app is not None and getattr(app.state, 'presenter', False) and session.private:
+            await proof('Presenter available')
     refusal = session.pack.refuse(text)
     if session.home_guide is not None:
         store = None
         if app is not None and hasattr(app.state, 'memories'):
             store, _ = app.state.memories.for_call(session.session_id)
+        testing = bool(app is not None and getattr(app.state, 'presenter', False)
+                       and session.checker_test_mode)
+        fixture = session.checker_test_verdict
+        session.checker_test_verdict = None  # every turn, including hazards, consumes it
+        if testing:
+            await proof('Checker TEST MODE')
         # A previous turn's pass never authorizes this turn, even when repeating a repair.
         session.home_guide.water_off_passed = False
         refusal = session.home_guide.reply(text, store)
@@ -375,14 +392,17 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                                at_ms=int(time() * 1000)))
             result = Verdict()
             try:
-                if session.camera and session.frame:
+                if testing:
+                    if fixture and monotonic() - fixture[1] <= 15:
+                        result = Verdict(fixture[0], 1.0)
+                elif session.camera and session.frame:
                     import base64
                     checker = session.step_checker
                     if checker is None:
                         checker = session.step_checker = configured_checker()
                     result = await checker.check(base64.b64decode(session.frame['jpeg_b64'], validate=True),
                                                  *load_references(store), captured_at=session.frame_time)
-                if not session.camera:
+                if not session.camera and not testing:
                     result = Verdict()
             except Exception:
                 result = Verdict()
@@ -393,8 +413,11 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
             finally:
                 session.home_guide.water_off_passed = False
             await emit(message('turn', turn_id=turn_id, stage='thinking',
-                               detail='Valve: closed' if result.passed else 'Valve: unsure',
+                               detail=('Valve: test closed' if testing else 'Valve: closed') if result.passed else 'Valve: unsure',
                                at_ms=int(time() * 1000)))
+        from server.safety import LINES
+        if session.home_guide.completed and refusal not in LINES:
+            await proof('Home: complete')
     if refusal or (session.pack.requires_power_off and not session.power_off):
         msg = say(refusal or POWER_LINE)
         msg.update(turn_id=turn_id, part=0, final=True)

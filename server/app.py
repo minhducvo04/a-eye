@@ -37,7 +37,9 @@ from server.vision_client import VisionClient, VisionUnavailable
 CLIENT_WEB = Path(__file__).resolve().parents[1] / 'client-web'
 
 
-def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
+def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None, *, presenter=False):
+    if presenter and os.environ.get("LOCAL_ONLY") != "1":
+        raise ValueError("Presenter requires LOCAL_ONLY=1")
     @asynccontextmanager
     async def lifespan(app):
         protect_transport_logs()
@@ -58,6 +60,7 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
     app.state.vision = vision if vision is not None else VisionClient()
     app.state.llm = llm if llm is not None else make_llm()
     app.state.llm_v2 = app.state.llm
+    app.state.presenter = presenter
     app.state.mock = os.environ.get('A_EYE_MOCK') == '1'
     if os.environ.get('REWIND_FAKE_TL') == '1':
         # Rehearsals: Rewind runs end to end with an in-process TwelveLabs stand-in (nothing uploaded).
@@ -175,6 +178,9 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None):
     app.include_router(__import__('server.trigger', fromlist=['router']).router)
     app.include_router(ws2.router)
     app.include_router(api.router)
+    if presenter:
+        from server.dad_demo import router as presenter_router
+        app.include_router(presenter_router)
     app.include_router(proof_wall.router)
     app.include_router(step_check_api.router)
     from server.family_note import router as family_router

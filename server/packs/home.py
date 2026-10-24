@@ -46,23 +46,29 @@ class HomeGuide:
     index: int = 0
     introduced: bool = False
     water_off_passed: bool = False
+    completed: bool = False
 
     def reply(self, text, store=None):
         stop = safety.before(text) or refuse(text)
         if stop:
             # A new hazard invalidates any earlier water check.
             self.water_off_passed = False
+            self.completed = False
             return stop
         chosen = ('hinge' if re.search(r'\b(hinge|cabinet door)\b', text, re.I) else
                   'breaker' if re.search(r'\b(breaker|tripped)\b', text, re.I) else
                   'sink' if re.search(r'\b(sink|tap|supply line)\b', text, re.I) else None)
         if chosen and chosen != self.task:
             self.task, self.index, self.water_off_passed = chosen, 0, False
+            self.completed = False
         elif self.introduced and _NEXT.search(text):
             if self.task == 'sink' and self.index >= 2:
                 stop = safety.plumbing_stop(self.water_off_passed)
                 if stop:
                     return stop
+            if self.task == 'sink' and self.index == len(TASKS[self.task]) - 1:
+                self.completed = True
+                return 'The guide is finished; confirm only what you actually did. Tell Dad?'
             self.index = min(self.index + 1, len(TASKS[self.task]) - 1)
         if self.task == 'sink' and self.index >= 3:
             stop = safety.plumbing_stop(self.water_off_passed)

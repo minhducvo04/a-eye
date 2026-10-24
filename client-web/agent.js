@@ -67,7 +67,7 @@ const MODES = [
   { id: "assemble", title: "Assembly", pack: "assemble" },
   { id: "memory", title: "Memory", pack: "memory" },
   { id: "mechanic", title: "Mechanic", pack: null },
-  { id: "plumbing", title: "Plumbing", pack: null },
+  { id: "plumbing", title: "Sink", pack: "home" },
   { id: "engineering", title: "Engineering", pack: null },
 ];
 const DEFAULT_MODE = MODES.findIndex((m) => m.id === "memory");
@@ -208,6 +208,7 @@ function boot() {
   let ui = createCallUi({ storage: safeStorage() });
 
   let pack = "";
+  let homeStartPending = false;
   let socket = null;
   let retryTimer = 0;
   let reconnectDelay = 500;
@@ -623,8 +624,32 @@ function boot() {
   const onPair = setupPairCall(send, () => sessionId);
   const valveCard = createValveCard(document.getElementById('valve-check'));
 
+  async function presenter(action) {
+    const response = await apiFetch('/api/dad-demo?session_id=' + encodeURIComponent(sessionId) + (action?.state ? '&action=verdict' : ''),
+      action);
+    if (!response.ok) throw new Error('Presenter controls unavailable.');
+    const data = await response.json();
+    document.getElementById('dad-presenter')?.classList.remove('hidden');
+    const toggle = document.getElementById('dad-test');
+    if (toggle) toggle.checked = data.enabled;
+    document.getElementById('dad-test-label')?.classList.toggle('hidden', !data.enabled);
+    const pass = document.getElementById('dad-pass');
+    if (pass) pass.disabled = !data.enabled;
+    return true;
+  }
+  document.getElementById('dad-test')?.addEventListener('change', async event => {
+    try { await presenter({ enabled: event.target.checked }); }
+    catch { showProblem('Presenter controls unavailable.'); }
+  });
+  document.getElementById('dad-pass')?.addEventListener('click', async () => {
+    try { if (await presenter({ state: 'closed' })) sendUser('next', 'typed'); }
+    catch { showProblem('Presenter check unavailable.'); }
+  });
+  document.getElementById('dad-stop')?.addEventListener('click', () => sendUser('water near the outlet', 'typed'));
+
   function onServer(message) {
     if (!message || typeof message !== "object") return;
+    if (message.detail === 'Presenter available') void presenter().catch(() => {});
     valveCard.event(message);
     onPair(message);
     if (message.type === "pair_status") routeMic(message);
@@ -632,6 +657,8 @@ function boot() {
     if (message.type === "turn") {
       if (message.stage === 'received') document.getElementById('proof-safety')?.classList.add('hidden');
       if (message.detail === 'Stopped by code') document.getElementById('proof-safety')?.classList.remove('hidden');
+      if (message.detail === 'Home: complete') family.complete('sink');
+      if (message.detail === 'Home: sink') { pack = 'home'; packLabel.textContent = 'Sink'; }
       if (message.detail?.startsWith('Brain: ')) document.getElementById('proof-brain').textContent = message.detail;
       wait = waitAfterTurn(wait, message, now);
       if (message.stage === "failed" && message.detail) ui.dispatch({ type: "error", message: String(message.detail) });
@@ -671,6 +698,10 @@ function boot() {
       return;
     }
     if (message.type === "agent_state") {
+      if (homeStartPending && message.state === 'listening') {
+        homeStartPending = false;
+        sendUser('sink', 'typed');
+      }
       // Phone speech barged in on the server: stop this laptop's playback as its own VAD would.
       if (micRoute.phone && message.state === "listening") stopLocalPlayback();
       wait = waitAfterAgentState(wait, message.agent, message.state, now);
@@ -1577,6 +1608,8 @@ function boot() {
   async function choosePack(next) {
     if (!PACK_LABEL[next] || pack) return;
     pack = next;
+    homeStartPending = next === 'home';
+    document.getElementById('dad-presenter')?.classList.add('hidden');
     ended = false;
     sessionId = randomId();
     resetCallOwner();

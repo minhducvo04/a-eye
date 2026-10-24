@@ -158,7 +158,7 @@ def test_routes_auth_limits_and_media(monkeypatch):
     assert 429 in codes
 
 
-@pytest.mark.parametrize('words,expected', [('send', 'sent'), ('no', 'cancelled'), ('', 'cancelled')])
+@pytest.mark.parametrize('words,expected', [('send', 'sent'), ('Send.', 'sent'), ('Zend.', 'cancelled'), ('no', 'cancelled'), ('', 'cancelled')])
 def test_server_stt_confirmation_precedes_brain(monkeypatch, words, expected):
     from server.app import create_app
     from server.family_note import Store

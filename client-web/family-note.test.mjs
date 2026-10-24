@@ -4,7 +4,8 @@ import { confirmation, createApproval } from './family-note.js';
 
 test('only exact spoken send or Send tap confirms; anything else cancels', () => {
   assert.equal(confirmation(' SEND '), 'send');
-  for (const text of ['yes', 'send it', 'no', '', 'do not send']) assert.equal(confirmation(text), 'cancel');
+  assert.equal(confirmation('Send.'), 'send');
+  for (const text of ['yes', 'send it', 'no', '', 'do not send', 'Zend.', 'Send? no']) assert.equal(confirmation(text), 'cancel');
 });
 test('approval waits for completed read aloud; cancelled drafts cannot send', async () => {
   const calls = [];
