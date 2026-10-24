@@ -6,6 +6,13 @@
 
 From now on, changes may only add optional fields or new message types. Do not remove or rename fields, make optional fields required, or change existing meanings. Add an entry here for every addition; update schema, TypeScript mirror and examples together through the contract PR process and run `make test-py`. Clients must ignore unknown response fields and unknown message types (and skip unknown draw kinds). Current server request validation remains strict; do not send speculative fields. A breaking change requires a separately negotiated major protocol, outside this freeze.
 
+## v2.4: phone as camera
+
+- Optional `v2_hello.role` (`call` default, `camera`) and `v2_hello.pair_code` (4 to 8 digits). A camera socket only streams frames and camera on/off into the call's session; speech and audio stay on the call device.
+- New `v2_pair_request` (client, call device) and `v2_pair` (server: `code`, `expires_in_s`, optional `path`). Codes are single-use, expire, and need the same token as the call when token auth is on.
+- New `v2_pair_status` (server, both devices): `state` joined, left, camera, rejected or expired; optional `role`, `camera_on`, `source`, `detail`.
+- Added pair_request to `client_message_v2`; pair and pair_status to `server_message_v2`.
+
 ## v2.3: turn stages, streamed reply text, camera switch
 
 - New `v2_turn` (server): required `v`, `type:turn`, `turn_id`, `stage`, `at_ms`; optional `text`, `detail`, `typical_ms`. Stages: received (the ack, sent at once), transcribing, thinking, backup, speaking, done, failed, cancelled. Every turn ends with exactly one of done, failed or cancelled.

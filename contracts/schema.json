@@ -1971,6 +1971,18 @@
      "type": "string",
      "pattern": "^[a-z0-9_:-]{1,64}$",
      "description": "Optional server TTS voice: a Kokoro voice id (af_kore) or cartesia:<voice id>. Unknown ids fall back to the server default."
+    },
+    "role": {
+     "enum": [
+      "call",
+      "camera"
+     ],
+     "description": "call (default): the device that talks. camera: a second device that only streams frames into the call named by pair_code."
+    },
+    "pair_code": {
+     "type": "string",
+     "pattern": "^[0-9]{4,8}$",
+     "description": "Required with role camera: the single-use code the call device got in v2_pair."
     }
    }
   },
@@ -2480,6 +2492,9 @@
     },
     {
      "$ref": "#/$defs/v2_camera"
+    },
+    {
+     "$ref": "#/$defs/v2_pair_request"
     }
    ]
   },
@@ -2514,6 +2529,12 @@
     },
     {
      "$ref": "#/$defs/v2_reply_delta"
+    },
+    {
+     "$ref": "#/$defs/v2_pair"
+    },
+    {
+     "$ref": "#/$defs/v2_pair_status"
     }
    ]
   },
@@ -2746,6 +2767,105 @@
     },
     "on": {
      "type": "boolean"
+    }
+   }
+  },
+  "v2_pair_request": {
+   "description": "Client (call device) to server: ask for a pair code so a phone can join this session as its camera.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "v",
+    "type",
+    "session_id"
+   ],
+   "properties": {
+    "v": {
+     "$ref": "#/$defs/v2"
+    },
+    "type": {
+     "const": "pair_request"
+    },
+    "session_id": {
+     "type": "string"
+    }
+   }
+  },
+  "v2_pair": {
+   "description": "Server to the call device: a single-use pair code. Open /agent.html?pair=<code> on the phone, or send hello{role:camera, pair_code} from an app.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "v",
+    "type",
+    "code",
+    "expires_in_s"
+   ],
+   "properties": {
+    "v": {
+     "$ref": "#/$defs/v2"
+    },
+    "type": {
+     "const": "pair"
+    },
+    "code": {
+     "type": "string",
+     "pattern": "^[0-9]{4,8}$"
+    },
+    "expires_in_s": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "path": {
+     "type": "string",
+     "description": "Relative link for the phone, for example /agent.html?pair=4821"
+    }
+   }
+  },
+  "v2_pair_status": {
+   "description": "Server to both devices: pairing and camera state. joined and left describe the camera device; rejected and expired go to a camera socket whose code failed.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "v",
+    "type",
+    "state"
+   ],
+   "properties": {
+    "v": {
+     "$ref": "#/$defs/v2"
+    },
+    "type": {
+     "const": "pair_status"
+    },
+    "state": {
+     "enum": [
+      "joined",
+      "left",
+      "camera",
+      "rejected",
+      "expired"
+     ]
+    },
+    "role": {
+     "enum": [
+      "call",
+      "camera"
+     ],
+     "description": "Which device this message is sent to."
+    },
+    "camera_on": {
+     "type": "boolean"
+    },
+    "source": {
+     "enum": [
+      "call",
+      "camera"
+     ],
+     "description": "Which device the frames come from now."
+    },
+    "detail": {
+     "type": "string"
     }
    }
   }

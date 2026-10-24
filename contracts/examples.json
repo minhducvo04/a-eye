@@ -575,6 +575,15 @@
    "pack": "general",
    "tts": "server",
    "stt": "server"
+  },
+  {
+   "v": 2,
+   "type": "hello",
+   "session_id": "phone-1",
+   "pack": "general",
+   "role": "camera",
+   "pair_code": "4821",
+   "camera": true
   }
  ],
  "v2_frame": [
@@ -921,6 +930,39 @@
    "type": "camera",
    "session_id": "s2",
    "on": false
+  }
+ ],
+ "v2_pair_request": [
+  {
+   "v": 2,
+   "type": "pair_request",
+   "session_id": "s2"
+  }
+ ],
+ "v2_pair": [
+  {
+   "v": 2,
+   "type": "pair",
+   "code": "4821",
+   "expires_in_s": 300,
+   "path": "/agent.html?pair=4821"
+  }
+ ],
+ "v2_pair_status": [
+  {
+   "v": 2,
+   "type": "pair_status",
+   "state": "joined",
+   "role": "call",
+   "camera_on": true,
+   "source": "camera"
+  },
+  {
+   "v": 2,
+   "type": "pair_status",
+   "state": "rejected",
+   "role": "camera",
+   "detail": "Unknown or expired code."
   }
  ]
 }
