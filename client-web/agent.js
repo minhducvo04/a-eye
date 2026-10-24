@@ -1947,9 +1947,9 @@ function boot() {
     const w = scanEl.clientWidth;
     const h = scanEl.clientHeight;
     const x = 28;
-    const top = h * 0.16;
+    const top = h * 0.08;
     const rw = Math.max(0, w - 56);
-    const rh = h * (0.58 - 0.16);
+    const rh = h * (0.88 - 0.08);
     const len = Math.min(26, rw / 3, rh / 3);
     const d = `M${x},${top + len}L${x},${top}L${x + len},${top}` +
       `M${x + rw},${top + len}L${x + rw},${top}L${x + rw - len},${top}` +
