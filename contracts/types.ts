@@ -122,7 +122,7 @@ export interface V2Draw { v: V2; type: "draw"; agent: AgentId; seq: number; ops:
 export interface V2Say { v: V2; type: "say"; agent: AgentId; utterance_id: string; text: string; turn_id?: string; part?: number; final?: boolean }
 export interface V2Audio { v: V2; type: "audio"; agent: AgentId; utterance_id: string; sample_rate?: 16000; pcm16_b64: string; final?: boolean }
 export interface V2AgentState { v: V2; type: "agent_state"; agent: AgentId; state: PresenceState; focus?: Point }
-export interface V2MarketResults { v: V2; type: "market_results"; agent: "shopper"; result: MarketResponse }
+export interface V2MarketResults { v: V2; type: "market_results"; agent: "shopper"; result: MarketResponse | ShoppingResponse }
 export interface V2Error { v: V2; type: "error"; code: "bad_message" | "power_off_required" | "refused" | "vision_unavailable" | "brain_unavailable" | "internal"; message: string }
 export type ServerMessageV2 = V2Draw | V2Say | V2Audio | V2AgentState | V2MarketResults | V2Error | V2Metrics | V2Track;
 
@@ -165,3 +165,10 @@ export interface V2RewindRecap { v: V2; type: "rewind_recap"; turn_id?: string; 
 // v2.8 (additive): local memory across calls. Both join the server v2 union.
 export interface V2FindItem { v: V2; type: "find_item"; turn_id?: string; item: string; found: boolean; at_ms?: number; when?: string; place?: string; home?: string; say?: string; t_s?: number; start_s?: number; end_s?: number; sure?: boolean; alternatives?: number[]; frame_b64?: string; objects?: SceneObject[]; live?: { object_id: string; bbox: BBox }; count: number; count_item?: number }
 export interface V2MemoryState { v: V2; type: "memory_state"; on: boolean; memory_id?: string; count: number; crops?: number; bytes?: number; encrypted?: boolean; retention_days?: number; item?: string; count_item?: number }
+
+// Voice-first general product shopping; prices include known shipping, before tax.
+export interface ShoppingOffer {
+  store: string; price: number; currency: string; delivery_days: number | null;
+  pickup_today: boolean; url: string; in_stock: boolean; notes: string; selected: boolean;
+}
+export interface ShoppingResponse { v: V; product: string; items: ShoppingOffer[]; note?: string }

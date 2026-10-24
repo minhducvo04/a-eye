@@ -26,6 +26,9 @@ def selected():
 
 def make_llm(**kwargs):
     """The one switch for the lead: llm = make_llm() wherever LLMClient() is built today."""
+    if os.environ.get('BRAIN', '').strip().lower() == 'openai_compat':
+        from server.brain_openai_compat import OpenAICompatBrain
+        return OpenAICompatBrain(**kwargs)
     return LocalBrain(**kwargs) if selected() else LLMClient(**kwargs)
 
 

@@ -786,6 +786,28 @@
     "category": "ram",
     "items": []
    }
+  },
+  {
+   "v": 2,
+   "type": "market_results",
+   "agent": "shopper",
+   "result": {
+    "v": 1,
+    "product": "Demo mug",
+    "items": [
+     {
+      "store": "Fixture Store",
+      "price": 26,
+      "currency": "USD",
+      "delivery_days": 1,
+      "pickup_today": false,
+      "url": "https://example.com/product",
+      "in_stock": true,
+      "notes": "Synthetic test offer",
+      "selected": true
+     }
+    ]
+   }
   }
  ],
  "v2_error": [
@@ -1124,6 +1146,38 @@
    "bytes": 96,
    "encrypted": true,
    "retention_days": 7
+  }
+ ],
+ "shopping_offer": [
+  {
+   "store": "Fixture Store",
+   "price": 26,
+   "currency": "USD",
+   "delivery_days": 1,
+   "pickup_today": false,
+   "url": "https://example.com/product",
+   "in_stock": true,
+   "notes": "Synthetic test offer",
+   "selected": true
+  }
+ ],
+ "shopping_response": [
+  {
+   "v": 1,
+   "product": "Demo mug",
+   "items": [
+    {
+     "store": "Fixture Store",
+     "price": 26,
+     "currency": "USD",
+     "delivery_days": 1,
+     "pickup_today": false,
+     "url": "https://example.com/product",
+     "in_stock": true,
+     "notes": "Synthetic test offer",
+     "selected": true
+    }
+   ]
   }
  ]
 }

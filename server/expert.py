@@ -58,6 +58,10 @@ def check_local_model(fetch=None):
 
 def choose_model(question):
     from server.privacy import claude_allowed
+    if claude_allowed() and os.environ.get('BRAIN', '').strip().lower() == 'openai_compat':
+        from server.brain_openai_compat import configured
+        if configured('EXPERT'):
+            return os.environ['OPENAI_COMPAT_EXPERT_MODEL']
     if not claude_allowed() or not os.environ.get('ANTHROPIC_API_KEY'):
         return local_expert()
     return os.environ.get('EXPERT_MODEL') or (FABLE if len(question) > 300 or RESEARCH.search(question) else OPUS)

@@ -20,7 +20,7 @@ from server.privacy import claude_allowed
 
 from contracts import schema, validate
 from market.search import search
-from server import packs
+from server import packs, shopping
 from server.logs import event
 from server.keyframes import KeyframeGate, SceneMemory
 from server.boards import load_board
@@ -359,6 +359,40 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                 await emit(audio)
         remember()
         return messages
+    if shopping.INTENT.search(text):
+        await emit(state('thinking', 'shopper'))
+        shopping_started = monotonic()
+        source = getattr(app.state, 'offer_source', None) if app is not None else None
+        lookup = asyncio.create_task(shopping.shopping_turn(session, text, vision, source))
+        part = 0
+        try:
+            if claude_allowed() and session.camera and session.frame:
+                ack = say('Let me compare the offers.', 'shopper')
+                ack.update(turn_id=turn_id, part=0, final=False)
+                await emit(ack)
+                part = 1
+                if session.speak:
+                    async for audio in session.speak(ack):
+                        await emit(audio)
+            result, answer = await lookup
+        finally:
+            if not lookup.done():
+                lookup.cancel()
+                await asyncio.gather(lookup, return_exceptions=True)
+        if result is not None:
+            await emit(message('market_results', agent='shopper', result=result))
+        if session.pack.guard:
+            answer = session.pack.guard(answer, text, True)
+        await emit(state('speaking', 'shopper'))
+        msg = say(answer, 'shopper')
+        msg.update(turn_id=turn_id, part=part, final=True)
+        await emit(msg)
+        if session.speak:
+            async for audio in session.speak(msg):
+                await emit(audio)
+        remember()
+        await emit(message('metrics', turn_id=turn_id, turn_ms=(monotonic() - shopping_started) * 1000))
+        return messages
     await emit(state('thinking'))
     started = started_at if started_at is not None else monotonic()
     vlm_ms = 0
@@ -633,7 +667,9 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
             if note and (speak_note or stalled) and not repeats(note, reply_text):
                 session.history.append(f'planner: {note}')
                 await speech(note, final=not bool(turn.get('market_category')))
-        if turn.get('market_category'):
+        if turn.get('market_category') and not claude_allowed():
+            await speech('Shopping needs the Claude cloud switch enabled.', final=True, agent='shopper')
+        elif turn.get('market_category'):
             await emit(state('thinking', 'shopper'))
             await speech('Let me check prices that fit.', agent='shopper')
             query = dict(v=1, category=turn['market_category'], owned_parts=[dict(

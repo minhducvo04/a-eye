@@ -56,3 +56,7 @@ browser-smoke:    ## real Chromium with fake camera and mic against a running se
 
 demo-rehearsal:   ## stage demo rehearsal (Where are my keys?) in Chromium with a synthetic camera and a say mic
 	uv run --no-project --with playwright --with pillow python scripts/demo_rehearsal.py
+
+.PHONY: ready
+ready:            ## morning connection and device checks (no settings changed)
+	$(PY) scripts/ready.py

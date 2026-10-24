@@ -24,7 +24,7 @@ class MockVision:
 
 
 class MockBrain:
-    async def stream(self, system, user):
+    async def stream(self, system, user, **kwargs):
         objects = json.loads(user)['objects']
         draw = ([dict(kind=kind, target=objects[0]['id']) for kind in ('box', 'arrow')]
                 if objects else [])
