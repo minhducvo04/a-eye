@@ -188,6 +188,7 @@ export function renderSplit(doc, body, { hit, line, stream }) {
   then.append(thenLabel);
   if (hit.frame_b64) {
     const img = doc.createElement("img");
+    img.decoding = "async"; // decode the kept frame off the paint path
     img.alt = `Frame at ${fmtCallTime(hit.t_s)} into the call`;
     img.src = `data:image/jpeg;base64,${hit.frame_b64}`;
     then.append(img);
