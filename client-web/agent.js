@@ -34,6 +34,19 @@ import {
 import { applyAnchors, createTracker, toGray } from "./track.js";
 
 import { nextTurnState, statusLine } from "./turn.js";
+import {
+  chooseDevice,
+  createLevelPreview,
+  deviceLabel,
+  deviceOptions,
+  devicesLocked,
+  isMissingDevice,
+  loadChoice,
+  micLine,
+  saveChoice,
+  sinkSupported,
+  videoConstraints,
+} from "./devices.js";
 
 // Same names and order as ios/AEyeCore Modes.all; pack null means "coming soon". PC Build is centred at launch.
 const MODES = [
@@ -125,6 +138,32 @@ function boot() {
   let ttsVoice = storedVoice && storedVoice !== "browser" ? storedVoice : "";
   const voicePick = document.getElementById("voice-pick");
   let stt = params.get("stt") === "server" ? "server" : "browser";
+  // Device choice (Settings > Devices), remembered per browser. "" means the browser default.
+  const micLineEl = document.getElementById("mic-line");
+  const micLevelEl = document.getElementById("mic-level");
+  const micPick = document.getElementById("mic-pick");
+  const cameraPick = document.getElementById("camera-pick");
+  const speakerPick = document.getElementById("speaker-pick");
+  const speakerRow = document.getElementById("speaker-row");
+  const devicesAllow = document.getElementById("devices-allow");
+  let mediaDevices = [];
+  let micChoice = loadChoice(safeStorage(), "audioinput");
+  let cameraChoice = loadChoice(safeStorage(), "videoinput");
+  let speakerChoice = loadChoice(safeStorage(), "audiooutput");
+  let deviceNotice = "";
+  let deviceNoticeTimer = 0;
+  // Browser recognition always hears the system default mic, so a chosen mic is heard through Whisper.
+  let sttForMic = false;
+  const micPreview = createLevelPreview({
+    getUserMedia: (c) => navigator.mediaDevices.getUserMedia(c),
+    makeContext: () => new (window.AudioContext || window.webkitAudioContext)(),
+    onLevel: (level) => showMicLevel(level),
+    base: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  });
+  if (micChoice && stt === "browser" && !params.get("stt")) {
+    stt = "server";
+    sttForMic = true;
+  }
   const sttLabel = document.getElementById("stt-mode");
   const reducedQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   let ui = createCallUi({ storage: safeStorage() });
@@ -167,6 +206,7 @@ function boot() {
 
   function voiceOptions() {
     return {
+      micDeviceId: micChoice,
       holdToTalk: holdMode,
       sensitivity: Number(sensEl && sensEl.value) || 5,
       onAmbient: (reading) => {
@@ -217,10 +257,15 @@ function boot() {
         const n = Number(level);
         const value = Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0;
         waveLevels.push(value);
+        showMicLevel(value);
         while (waveLevels.length > 28) waveLevels.shift();
         drawWave();
       },
       onMicError: (kind) => {
+        if (kind === "missing") {
+          void micMissing();
+          return;
+        }
         if (kind === "unsupported") {
           turnEvent({ type: "cause", detail: "Browser can't do speech recognition: using server" });
           void switchToServerStt();
@@ -604,6 +649,8 @@ function boot() {
     marketBody.replaceChildren();
     if (settingsEl) settingsEl.classList.add("hidden");
     if (backdropEl) backdropEl.classList.add("hidden");
+    micPreview.stop();
+    showMicLevel(0);
   }
 
   function showPermission(title, text) {
@@ -958,9 +1005,10 @@ function boot() {
       return;
     }
     starting = true;
+    let retryDefault = false;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: videoConstraints(cameraChoice),
         audio: false,
       });
       if (!pack) {
@@ -983,6 +1031,12 @@ function boot() {
       startFrames();
     } catch (err) {
       stopCamera();
+      if (cameraChoice && isMissingDevice(err)) {
+        // The chosen camera is gone: forget it and open the default one.
+        retryDefault = true;
+        dropCameraChoice();
+        return;
+      }
       const name = err && err.name;
       if (name === "NotAllowedError" || name === "PermissionDeniedError" || name === "SecurityError") {
         showPermission("Camera access is off",
@@ -992,6 +1046,7 @@ function boot() {
       }
     } finally {
       starting = false;
+      if (retryDefault) void startCamera();
     }
   }
 
@@ -1060,6 +1115,7 @@ function boot() {
     micBtn.setAttribute("data-muted", ready && !on ? "true" : "false");
     micIcon.setAttribute("href", on ? "#i-mic" : "#i-mic-off");
     micBtn.setAttribute("aria-label", on ? "Stop microphone" : "Start microphone");
+    renderMicLine();
   }
 
   function applyAudioPrefs() {
@@ -1067,6 +1123,7 @@ function boot() {
     if (!voice) return;
     if (typeof voice.setMuted === "function") voice.setMuted(st.muted);
     if (typeof voice.setVolume === "function") voice.setVolume(st.volume);
+    applySpeaker();
   }
 
   function securePage() {
@@ -1074,6 +1131,7 @@ function boot() {
   }
 
   async function startMic() {
+    micPreview.stop();
     await voice.startListening();
     if (voice.isListening()) {
       ui.dispatch({ type: "mic_start" });
@@ -1331,7 +1389,7 @@ function boot() {
     errorEl.classList.toggle("hidden", !st.error);
     powerGate.classList.toggle("hidden", pack !== "pc_build" || powerConfirmed);
     renderLink();
-    const notes = [st.sttNotice, st.voiceNotice].filter(Boolean);
+    const notes = [sttForMic ? "" : st.sttNotice, st.voiceNotice, deviceNotice].filter(Boolean);
     noticeEl.textContent = notes.join(" ");
     noticeEl.classList.toggle("hidden", notes.length === 0);
     renderReplies(st);
@@ -1457,6 +1515,8 @@ function boot() {
   document.getElementById("end-call").addEventListener("click", endCall);
   const openers = typeof document.querySelectorAll === "function" ? document.querySelectorAll(".open-settings") : [];
   for (const opener of openers) opener.addEventListener("click", () => openSheet(settingsEl));
+  for (const opener of openers) opener.addEventListener("click", () => void onSettingsOpen());
+  wireDevices();
   document.getElementById("settings-done").addEventListener("click", closeSheets);
   if (backdropEl) backdropEl.addEventListener("click", closeSheets);
   window.addEventListener("keydown", (event) => {
@@ -1573,6 +1633,239 @@ function boot() {
   renderCall();
   raf = window.requestAnimationFrame(loop);
   void raf;
+
+  // ---- Device choice: lists, live mic line, level meter, hot swap, unplug fallback. ----
+
+  function wireDevices() {
+    const md = navigator.mediaDevices;
+    if (!md || typeof md.enumerateDevices !== "function") {
+      for (const pick of [micPick, cameraPick]) if (pick) pick.disabled = true;
+      return;
+    }
+    if (speakerRow) speakerRow.classList.toggle("hidden", !sinkSupported(window));
+    if (micPick) micPick.addEventListener("change", () => void onMicPick(micPick.value));
+    if (cameraPick) cameraPick.addEventListener("change", () => void onCameraPick(cameraPick.value));
+    if (speakerPick) speakerPick.addEventListener("change", () => onSpeakerPick(speakerPick.value));
+    if (devicesAllow) devicesAllow.addEventListener("click", () => void allowDevices());
+    if (typeof md.addEventListener === "function") md.addEventListener("devicechange", () => void refreshDevices());
+    void refreshDevices();
+  }
+
+  async function refreshDevices() {
+    try {
+      mediaDevices = await navigator.mediaDevices.enumerateDevices();
+    } catch {
+      mediaDevices = [];
+    }
+    const mic = chooseDevice(mediaDevices, "audioinput", micChoice);
+    if (mic.gone) await micMissing();
+    const cam = chooseDevice(mediaDevices, "videoinput", cameraChoice);
+    if (cam.gone) {
+      dropCameraChoice();
+      if (cameraOn) void swapCamera();
+    }
+    const spk = chooseDevice(mediaDevices, "audiooutput", speakerChoice);
+    if (spk.gone) {
+      speakerChoice = "";
+      saveChoice(safeStorage(), "audiooutput", "");
+      setDeviceNotice("Chosen speaker is gone. Using the default.");
+      applySpeaker();
+    }
+    renderDeviceLists();
+  }
+
+  function fillPick(pick, kind, chosen) {
+    if (!pick) return;
+    const options = deviceOptions(mediaDevices, kind);
+    pick.replaceChildren(...options.map((o) => {
+      const opt = document.createElement("option");
+      opt.value = o.id;
+      opt.textContent = o.label;
+      return opt;
+    }));
+    pick.value = options.some((o) => o.id === chosen) ? chosen : "";
+  }
+
+  function renderDeviceLists() {
+    const locked = devicesLocked(mediaDevices, "audioinput") || devicesLocked(mediaDevices, "videoinput");
+    if (devicesAllow) devicesAllow.classList.toggle("hidden", !locked);
+    fillPick(micPick, "audioinput", micChoice);
+    fillPick(cameraPick, "videoinput", cameraChoice);
+    fillPick(speakerPick, "audiooutput", speakerChoice);
+    const foot = document.getElementById("devices-foot");
+    if (foot) {
+      foot.textContent = sttForMic
+        ? "Speak and watch the level bar. A chosen mic is heard through Whisper on this server, since browser recognition only hears the system default."
+        : "Speak and watch the level bar to see which mic hears you.";
+    }
+    renderMicLine();
+  }
+
+  // Labels appear only after the browser grants access: one tap asks, then the lists fill in.
+  async function allowDevices() {
+    const md = navigator.mediaDevices;
+    for (const ask of [{ audio: true, video: true }, { audio: true }, { video: true }]) {
+      try {
+        const stream = await md.getUserMedia(ask);
+        for (const track of stream.getTracks()) track.stop();
+        break;
+      } catch (err) {
+        if (err && err.name === "NotAllowedError") {
+          setDeviceNotice("Device access is blocked. Allow the mic and camera for this site.");
+          break;
+        }
+      }
+    }
+    await refreshDevices();
+    if (settingsEl && !settingsEl.classList.contains("hidden")) void startPreviewIfIdle();
+  }
+
+  function currentMicLabel() {
+    const live = voice && listening && typeof voice.micLabel === "function" ? voice.micLabel() : "";
+    if (live) return live;
+    if (micPreview.active() && micPreview.label()) return micPreview.label();
+    return deviceLabel(mediaDevices, "audioinput", micChoice);
+  }
+
+  function renderMicLine() {
+    if (!micLineEl) return;
+    const text = micLine(currentMicLabel(), listening);
+    if (micLineEl.textContent !== text) micLineEl.textContent = text;
+  }
+
+  function showMicLevel(level) {
+    if (!micLevelEl) return;
+    const pct = Math.round(Math.max(0, Math.min(1, Number(level) || 0)) * 100);
+    micLevelEl.style.width = `${pct}%`;
+    const meter = micLevelEl.parentElement;
+    if (meter) meter.setAttribute("aria-valuenow", String(pct));
+    if (listening) renderMicLine();
+  }
+
+  function setDeviceNotice(text) {
+    deviceNotice = text;
+    window.clearTimeout(deviceNoticeTimer);
+    deviceNoticeTimer = window.setTimeout(() => {
+      deviceNotice = "";
+      renderCall();
+    }, 6000);
+    renderCall();
+  }
+
+  async function onSettingsOpen() {
+    await refreshDevices();
+    await startPreviewIfIdle();
+  }
+
+  // The Settings meter: the call mic feeds it while listening; otherwise a short preview of the chosen mic.
+  async function startPreviewIfIdle() {
+    if (listening || !settingsEl || settingsEl.classList.contains("hidden")) return;
+    if (devicesLocked(mediaDevices, "audioinput")) return;
+    try {
+      await micPreview.start(micChoice);
+      renderMicLine();
+    } catch (err) {
+      micPreview.stop();
+      if (micChoice && isMissingDevice(err)) await micMissing();
+    }
+  }
+
+  async function onMicPick(id) {
+    micChoice = String(id || "");
+    saveChoice(safeStorage(), "audioinput", micChoice);
+    await syncSttToMic();
+    if (voice && typeof voice.setMicDevice === "function") voice.setMicDevice(micChoice);
+    if (micPreview.active() || !listening) await startPreviewIfIdle();
+    renderMicLine();
+    // the new track's label shows once it opens
+    window.setTimeout(renderMicLine, 800);
+  }
+
+  async function micMissing() {
+    if (!micChoice) return;
+    micChoice = "";
+    saveChoice(safeStorage(), "audioinput", "");
+    setDeviceNotice("Chosen mic is gone. Using the default mic.");
+    await syncSttToMic();
+    if (voice && typeof voice.setMicDevice === "function") voice.setMicDevice("");
+    if (voice && ui.getState().micOn && !voice.isListening()) void startMic();
+    renderDeviceLists();
+  }
+
+  // Whisper for a chosen mic; back to browser recognition when the default is picked again.
+  async function syncSttToMic() {
+    const want = micChoice && stt === "browser" ? "server" : !micChoice && sttForMic ? "browser" : stt;
+    if (want === stt) return;
+    sttForMic = want === "server";
+    const micWasOn = ui.getState().micOn;
+    stt = want;
+    if (!voice) {
+      renderCall();
+      return;
+    }
+    voice = await rebuildVoice();
+    applyAudioPrefs();
+    sendHello();
+    renderCall();
+    if (voice && micWasOn && voice.supported && voice.supported.stt) void startMic();
+  }
+
+  function dropCameraChoice() {
+    cameraChoice = "";
+    saveChoice(safeStorage(), "videoinput", "");
+    setDeviceNotice("Chosen camera is gone. Using the default camera.");
+    if (cameraPick) cameraPick.value = "";
+  }
+
+  async function onCameraPick(id) {
+    cameraChoice = String(id || "");
+    saveChoice(safeStorage(), "videoinput", cameraChoice);
+    if (cameraOn) await swapCamera();
+  }
+
+  // Live camera switch: open the new device, then stop the old tracks. The call and frames keep going.
+  async function swapCamera() {
+    if (!cameraOn || starting) return;
+    starting = true;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints(cameraChoice), audio: false });
+      if (!cameraOn || !pack) {
+        for (const track of stream.getTracks()) track.stop();
+        return;
+      }
+      const old = video.srcObject;
+      video.srcObject = stream;
+      if (old && typeof old.getTracks === "function") for (const track of old.getTracks()) track.stop();
+      await video.play().catch(() => {});
+      paint(Date.now());
+    } catch (err) {
+      if (cameraChoice && isMissingDevice(err)) {
+        dropCameraChoice();
+        starting = false;
+        return swapCamera();
+      }
+      showProblem("Could not switch the camera.");
+    } finally {
+      starting = false;
+    }
+  }
+
+  function onSpeakerPick(id) {
+    speakerChoice = String(id || "");
+    saveChoice(safeStorage(), "audiooutput", speakerChoice);
+    applySpeaker();
+  }
+
+  function applySpeaker() {
+    if (!voice || typeof voice.setSinkId !== "function" || !sinkSupported(window)) return;
+    voice.setSinkId(speakerChoice).catch(() => {
+      if (!speakerChoice) return;
+      speakerChoice = "";
+      saveChoice(safeStorage(), "audiooutput", "");
+      setDeviceNotice("Could not use that speaker. Using the default.");
+      if (speakerPick) speakerPick.value = "";
+    });
+  }
 
   async function rebuildVoice() {
     try {

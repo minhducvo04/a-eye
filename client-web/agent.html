@@ -66,6 +66,7 @@
         <p id="link" class="chip glass warn" role="status">Connecting…</p>
         <p id="notice" class="chip glass soft hidden" role="status"></p>
         <p id="pipeline" class="pipeline" role="status">Ready</p>
+        <p id="mic-line" class="pipeline mic-line" aria-live="off">Mic off · Default</p>
       </div>
       <div class="lower">
         <div id="caption" class="caption glass hidden" aria-live="polite">
@@ -131,6 +132,15 @@
     <p class="group-foot">The web page always talks to the server that served it.</p>
     <p class="group-title">Connection</p>
     <div class="group"><p id="conn-status" class="row">Not in a call</p></div>
+    <p class="group-title">Devices</p>
+    <div class="group">
+      <button type="button" id="devices-allow" class="row text-btn hidden">Allow access to see devices</button>
+      <label class="row">Microphone <select id="mic-pick" class="voice-pick" aria-label="Microphone"></select></label>
+      <div class="row"><span>Level</span><span class="level" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="mic-level"></span></span></div>
+      <label class="row">Camera <select id="camera-pick" class="voice-pick" aria-label="Camera"></select></label>
+      <label id="speaker-row" class="row hidden">Speaker <select id="speaker-pick" class="voice-pick" aria-label="Speaker"></select></label>
+    </div>
+    <p id="devices-foot" class="group-foot">Speak and watch the level bar to see which mic hears you.</p>
     <p class="group-title">Voice</p>
     <div class="group">
       <label class="row">Voice <select id="voice-pick" class="voice-pick" aria-label="Voice"></select></label>

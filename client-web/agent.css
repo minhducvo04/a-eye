@@ -918,3 +918,26 @@ svg .fill {
     animation: none !important;
   }
 }
+
+/* Web only: which mic is live (under the pipeline line) and the Settings level bar. */
+.mic-line {
+  color: var(--text-3);
+}
+
+.level {
+  position: relative;
+  flex: 1;
+  max-width: 60%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.level > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--helper);
+  transition: width 60ms linear;
+}
