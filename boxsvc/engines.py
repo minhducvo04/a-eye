@@ -43,12 +43,22 @@ class SttEngine:
 
 class TtsEngine:
     def __init__(self, device):
-        from kokoro import KPipeline
+        from kokoro import KModel, KPipeline
 
         self.lock = Lock()
-        self.pipeline = KPipeline(lang_code="a", device=device)
+        # KOKORO_DIR: a local copy of hexgrad/Kokoro-82M (config.json, kokoro-v1_0.pth, voices/), so the box
+        # needs no Hub download. Checked against kokoro 0.9.4 on the GPU box.
+        self.local_dir = os.getenv("KOKORO_DIR")
+        if self.local_dir:
+            model = KModel(repo_id="hexgrad/Kokoro-82M", config=os.path.join(self.local_dir, "config.json"),
+                           model=os.path.join(self.local_dir, "kokoro-v1_0.pth")).to(device).eval()
+            self.pipeline = KPipeline(lang_code="a", repo_id="hexgrad/Kokoro-82M", model=model, device=device)
+        else:
+            self.pipeline = KPipeline(lang_code="a", device=device)
 
     def segments(self, text, voice):
+        if self.local_dir and not voice.endswith(".pt"):
+            voice = os.path.join(self.local_dir, "voices", voice + ".pt")
         with self.lock:
             for _, _, audio in self.pipeline(text, voice=voice):
                 yield audio
