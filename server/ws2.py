@@ -556,7 +556,7 @@ async def websocket(ws: WebSocket):
                 voice = None
                 if session.tts == 'server':
                     factory = getattr(ws.app.state, 'voice_factory_v2', adapter.make_adapter)
-                    picked = incoming.get('voice')
+                    picked = incoming.get('voice') or new_session.pack.voice or None
                     candidate = await asyncio.to_thread(
                         factory, **({'voice': picked} if factory is adapter.make_adapter else {}))
                     if not isinstance(candidate, FakeAdapter):

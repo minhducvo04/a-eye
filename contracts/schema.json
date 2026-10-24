@@ -1606,9 +1606,10 @@
     "general",
     "pc_build",
     "cooking",
-    "assemble"
+    "assemble",
+    "memory"
    ],
-   "description": "Skill pack. pc_build keeps the v1 safety gate."
+   "description": "Skill pack. pc_build keeps the v1 safety gate. memory is the calm memory aid (fixed pill line, no dosing)."
   },
   "agent_presence_state": {
    "enum": [

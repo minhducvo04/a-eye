@@ -58,6 +58,7 @@ const MODES = [
   { id: "pc_build", title: "PC Build", pack: "pc_build" },
   { id: "cooking", title: "Cooking", pack: "cooking" },
   { id: "assemble", title: "Assembly", pack: "assemble" },
+  { id: "memory", title: "Memory", pack: "memory" },
   { id: "mechanic", title: "Mechanic", pack: null },
   { id: "plumbing", title: "Plumbing", pack: null },
   { id: "engineering", title: "Engineering", pack: null },
