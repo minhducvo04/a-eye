@@ -1955,6 +1955,13 @@
       "browser"
      ],
      "description": "server: send audio chunks (Cartesia). browser: client speaks say text."
+    },
+    "stt": {
+     "enum": [
+      "browser",
+      "server"
+     ],
+     "description": "browser: Web Speech API sends user_text. server: client streams v2_audio_in and the server transcribes (Whisper on the GPU box)."
     }
    }
   },
@@ -2454,6 +2461,9 @@
     },
     {
      "$ref": "#/$defs/v2_confirm"
+    },
+    {
+     "$ref": "#/$defs/v2_audio_in"
     }
    ]
   },
@@ -2572,6 +2582,42 @@
      "items": {
       "$ref": "#/$defs/scene_object"
      }
+    }
+   }
+  },
+  "v2_audio_in": {
+   "description": "Client to server when stt is server: mic audio, 16 kHz mono PCM16. The client cuts utterances with a simple voice activity check; final true ends one utterance.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "v",
+    "type",
+    "session_id",
+    "seq",
+    "pcm16_b64"
+   ],
+   "properties": {
+    "v": {
+     "$ref": "#/$defs/v2"
+    },
+    "type": {
+     "const": "audio_in"
+    },
+    "session_id": {
+     "type": "string"
+    },
+    "seq": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "sample_rate": {
+     "const": 16000
+    },
+    "pcm16_b64": {
+     "type": "string"
+    },
+    "final": {
+     "type": "boolean"
     }
    }
   }

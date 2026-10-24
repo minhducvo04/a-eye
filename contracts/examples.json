@@ -567,6 +567,14 @@
    "pack": "general",
    "client": "web",
    "tts": "browser"
+  },
+  {
+   "v": 2,
+   "type": "hello",
+   "session_id": "s3",
+   "pack": "general",
+   "tts": "server",
+   "stt": "server"
   }
  ],
  "v2_frame": [
@@ -866,6 +874,17 @@
      "conf": 0.8
     }
    ]
+  }
+ ],
+ "v2_audio_in": [
+  {
+   "v": 2,
+   "type": "audio_in",
+   "session_id": "s2",
+   "seq": 3,
+   "sample_rate": 16000,
+   "pcm16_b64": "AAAA",
+   "final": true
   }
  ]
 }

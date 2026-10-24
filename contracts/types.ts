@@ -110,12 +110,12 @@ export type DrawOp =
   | (OpBase & { kind: "clear" });
 
 // client -> server
-export interface V2Hello { v: V2; type: "hello"; session_id: string; pack: PackId; board_id?: string; client?: "web" | "ios"; tts?: "server" | "browser" }
+export interface V2Hello { v: V2; type: "hello"; session_id: string; pack: PackId; board_id?: string; client?: "web" | "ios"; tts?: "server" | "browser"; stt?: "browser" | "server" }
 export interface V2Frame { v: V2; type: "frame"; session_id: string; seq: number; ts_ms: number; w: number; h: number; jpeg_b64: string }
 export interface V2UserText { v: V2; type: "user_text"; session_id: string; text: string; final: boolean; source?: "browser_stt" | "whisper" | "typed" }
 export interface V2BargeIn { v: V2; type: "barge_in"; session_id: string; utterance_id: string; at_ms: number }
 export interface V2Confirm { v: V2; type: "confirm"; session_id: string; what: "power_off" | "seated" | "check_again" | "next" | "stop"; value: boolean }
-export type ClientMessageV2 = V2Hello | V2Frame | V2UserText | V2BargeIn | V2Confirm;
+export type ClientMessageV2 = V2Hello | V2Frame | V2UserText | V2BargeIn | V2Confirm | V2AudioIn;
 
 // server -> client
 export interface V2Draw { v: V2; type: "draw"; agent: AgentId; seq: number; ops: DrawOp[] }
@@ -137,3 +137,6 @@ export interface DrawAnchor { object_id: string; bbox: BBox }
 export interface V2SayStreamFields { turn_id?: string; part?: number; final?: boolean }
 export interface V2Metrics { v: V2; type: "metrics"; turn_id?: string; seq?: number; vlm_ms?: number; brain_first_token_ms?: number; first_audio_ms?: number; turn_ms?: number; track_ms?: number }
 export interface V2Track { v: V2; type: "track"; seq: number; objects: SceneObject[] }
+
+// v2.2 (additive): server speech to text. V2Hello may carry stt?: "browser" | "server".
+export interface V2AudioIn { v: V2; type: "audio_in"; session_id: string; seq: number; sample_rate?: 16000; pcm16_b64: string; final?: boolean }
