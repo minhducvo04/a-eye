@@ -11,7 +11,18 @@ from vision.fake import FakeBackend, SCENARIOS
 
 
 app = FastAPI(title="A-eye fake vision")
-backend = FakeBackend()
+def select_backend(ollama=None):
+    mode = os.environ.get("VISION_BACKEND", "fake")
+    if mode == "fake":
+        return FakeBackend()
+    if mode not in {"ollama", "auto"}:
+        raise ValueError("VISION_BACKEND must be fake, ollama, or auto")
+    from vision.ollama import AutoBackend, OllamaBackend
+    real = ollama if ollama is not None else OllamaBackend()
+    return AutoBackend(real, FakeBackend()) if mode == "auto" else real
+
+
+backend = select_backend()
 
 
 async def run(request, operation):
