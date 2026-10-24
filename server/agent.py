@@ -3,13 +3,16 @@ import asyncio
 from dataclasses import dataclass, field
 import json
 import re
-from time import monotonic
+from time import monotonic, time
+from collections import deque
+from statistics import median
 from contextlib import aclosing
 from uuid import uuid4
 
 from contracts import schema, validate
 from market.search import search
 from server import packs
+from server.logs import event
 from server.boards import load_board
 from server.packs.pc_build import board_prompt
 
@@ -22,6 +25,8 @@ class Session:
     pack: packs.Pack = field(default_factory=lambda: packs.get('general'))
     board_id: str = 'demo-b650'
     tts: str = 'browser'
+    camera: bool = True
+    frame_time: float = field(default_factory=monotonic)
     power_off: bool = False
     frame: dict | None = field(default=None, repr=False)
     history: list = field(default_factory=list, repr=False)
@@ -45,6 +50,36 @@ def message(kind, **fields):
     result = dict(v=2, type=kind, **fields)
     validate('server_message_v2', result)
     return result
+
+
+TURN_LATENCIES = deque(maxlen=5)
+
+
+class Turn:
+    """One input, including STT, owns exactly one terminal status."""
+    def __init__(self, session, send, started=None):
+        self.session = session
+        self.send = send
+        self.id = uuid4().hex
+        self.started = monotonic() if started is None else started
+        self.terminal = False
+        self.spoken = False
+
+    async def stage(self, stage, **fields):
+        if self.terminal:
+            return
+        if stage == 'thinking' and TURN_LATENCIES:
+            fields['typical_ms'] = round(median(TURN_LATENCIES))
+        if stage == 'speaking':
+            if self.spoken:
+                return
+            self.spoken = True
+            TURN_LATENCIES.append((monotonic() - self.started) * 1000)
+        self.terminal = stage in ('done', 'cancelled', 'failed')
+        event('turn_' + stage, self.session.session_id,
+              ms=(monotonic() - self.started) * 1000)
+        await self.send(message('turn', turn_id=self.id, stage=stage,
+                                at_ms=int(time() * 1000), **fields))
 
 
 def say(text, agent='helper'):
@@ -209,7 +244,7 @@ def safe_speech(value):
     return value
 
 
-async def run_turn(session, text, *, vision, llm, started_at=None):
+async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None):
     messages = []
     owner = asyncio.current_task()
 
@@ -225,18 +260,27 @@ async def run_turn(session, text, *, vision, llm, started_at=None):
             f"{m['agent']}: {m['text']}" for m in messages if m['type'] == 'say'])
         session.history[:] = session.history[-10:]
 
+    turn_id = turn_id or uuid4().hex
     refusal = session.pack.refuse(text)
     if refusal or (session.pack.requires_power_off and not session.power_off):
-        await emit(say(refusal or POWER_LINE))
+        msg = say(refusal or POWER_LINE)
+        msg.update(turn_id=turn_id, part=0, final=True)
+        await emit(message('reply_delta', agent='helper', turn_id=turn_id, text=msg['text']))
+        await emit(msg)
+        if session.speak:
+            async for audio in session.speak(msg):
+                await emit(audio)
         remember()
         return messages
     await emit(state('thinking'))
     started = started_at if started_at is not None else monotonic()
-    turn_id = uuid4().hex
     vlm_ms = 0
     scene = dict(caption='I do not have a camera view yet.', objects=[], ms=0)
     seq = 0
-    if session.scene is None and session.scene_task is not None:
+    fresh = session.camera and monotonic() - session.frame_time <= 3
+    if not session.camera:
+        scene['caption'] = 'camera is off'
+    if fresh and session.scene is None and session.scene_task is not None:
         wait_started = monotonic()
         try:
             await asyncio.wait_for(asyncio.shield(session.scene_task), timeout=0.3)
@@ -245,9 +289,11 @@ async def run_turn(session, text, *, vision, llm, started_at=None):
         finally:
             vlm_ms = (monotonic() - wait_started) * 1000
     # Cached grounding avoids putting a slow refresh on the voice critical path.
-    if session.scene is not None:
+    if fresh and session.scene is not None:
         scene, seq = session.scene, session.scene_seq
     system = session.pack.system_prompt
+    if not session.camera:
+        system += ' The camera is off. Answer by voice only; do not draw.'
     if session.pack.id == 'pc_build':
         system += board_prompt(session.board)
     system += (' Line 1: one JSON object with agent, draw and optional market_category. '
@@ -299,6 +345,23 @@ async def run_turn(session, text, *, vision, llm, started_at=None):
     pending = None
     first_token = None
     brain_started = monotonic()
+    reply_text = ''
+    reply_sent = 0
+    delta_at = float('-inf')
+    delta_task = None
+
+    async def flush_delta():
+        nonlocal reply_sent, delta_at
+        if len(safe_speech(reply_text).lstrip(' ,;:')) <= reply_sent:
+            return
+        await asyncio.sleep(max(0, .08 - (monotonic() - delta_at)))
+        clean = safe_speech(reply_text).lstrip(' ,;:')
+        if len(clean) > reply_sent:
+            await emit(message('reply_delta', agent=turn['agent'], turn_id=turn_id,
+                               text=clean[reply_sent:]))
+            reply_sent = len(clean)
+            delta_at = monotonic()
+
     try:
         async with aclosing(llm.stream(system, user)) as stream:
             async for delta in stream:
@@ -313,9 +376,11 @@ async def run_turn(session, text, *, vision, llm, started_at=None):
                     turn = sanitize_header(raw, {obj['id'] for obj in scene['objects']})
                     validate('brain_turn', dict(turn, say='stream'))
                     drawing, focus = resolve(turn, scene, seq)
-                    await emit(drawing)
+                    if session.camera:
+                        await emit(drawing)
                     await emit(state('speaking', turn['agent'], **({'focus': focus} if focus else {})))
                     header = True
+                was_marker = marker
                 if not marker:
                     buffer = buffer.lstrip(' \n\t"')
                     if len(buffer) < 4:
@@ -324,6 +389,14 @@ async def run_turn(session, text, *, vision, llm, started_at=None):
                     if match:
                         buffer = buffer[match.end():].lstrip(' \n\t"')
                     marker = True
+                reply_text += delta if was_marker else buffer
+                if delta_task is None or delta_task.done():
+                    if delta_task is not None:
+                        await delta_task
+                    if monotonic() - delta_at >= .08:
+                        await flush_delta()
+                    else:
+                        delta_task = asyncio.create_task(flush_delta())
                 while True:
                     match = re.search(r'[.!?\n]', buffer)
                     if part == 0:
@@ -354,9 +427,13 @@ async def run_turn(session, text, *, vision, llm, started_at=None):
                 if pending and buffer.strip():
                     await speech(pending, agent=turn['agent'])
                     pending = None
+        if delta_task:
+            await delta_task
+        await flush_delta()
         if not header:
             turn = dict(agent='helper', draw=[])
-            await emit(resolve(turn, scene, seq)[0])
+            if session.camera:
+                await emit(resolve(turn, scene, seq)[0])
             await emit(state('speaking'))
         tail = safe_speech(buffer)
         if tail:
@@ -394,6 +471,9 @@ async def run_turn(session, text, *, vision, llm, started_at=None):
             await queue.put(None)
             await worker
     finally:
+        if delta_task:
+            delta_task.cancel()
+            await asyncio.gather(delta_task, return_exceptions=True)
         if worker:
             worker.cancel()
             await asyncio.gather(worker, return_exceptions=True)

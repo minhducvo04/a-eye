@@ -28,6 +28,9 @@ class MockBrain:
         objects = json.loads(user)['objects']
         draw = ([dict(kind=kind, target=objects[0]['id']) for kind in ('box', 'arrow')]
                 if objects else [])
+        if json.loads(user)['caption'] == 'camera is off':
+            yield '{"agent":"helper","draw":[]}\nSAY: The camera is off. How can I help?'
+            return
         yield json.dumps(dict(agent='helper', draw=draw)) + '\nSAY: Here is the highlighted object. '
         yield 'Follow the arrow.'
 

@@ -30,7 +30,7 @@ def receive(ws):
     while True:
         msg = ws.receive_json()
         validate('server_message_v2', msg)
-        if msg['type'] not in ('track', 'metrics'):
+        if msg['type'] not in ('track', 'metrics', 'turn', 'reply_delta'):
             return msg
 
 

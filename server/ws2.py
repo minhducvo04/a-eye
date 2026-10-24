@@ -19,7 +19,7 @@ from server.box_client import BoxClient
 from server.auth import accept_socket
 from server.logs import event
 from server import packs
-from server.agent import Session, message, run_turn, say, state
+from server.agent import Session, Turn, message, run_turn, say, state
 from server.llm import LLMClient
 from voice import adapter
 from voice.fake import FakeAdapter
@@ -90,10 +90,9 @@ async def scene_loop(session, vision, send, gate=None):
     previous_seq = None
     while True:
         frame = session.frame
-        if session.voice_pending or frame is None or (frame['seq'] == previous_seq and not session.refresh_requested.is_set()):
+        if not session.camera or session.voice_pending or frame is None or frame['seq'] == previous_seq:
             await asyncio.sleep(0.01)
             continue
-        previous_seq = frame['seq']
         started = monotonic()
 
         async def refresh():
@@ -101,6 +100,8 @@ async def scene_loop(session, vision, send, gate=None):
                 scene = await vision.call('scene', dict(image_b64=frame['jpeg_b64'],
                                                        queries=list(session.pack.default_queries)[:2]))
                 validate('scene_response', scene)
+                if not session.camera:
+                    return
                 session.scene = scene
                 session.scene_seq = frame['seq']
                 session.scene_time = monotonic()
@@ -113,7 +114,7 @@ async def scene_loop(session, vision, send, gate=None):
                     session.vision_error_sent = True
 
         async with gate.hold():
-            if session.voice_pending:
+            if not session.camera or session.voice_pending or session.frame is None:
                 continue
             session.refresh_requested.clear()
             frame = session.frame
@@ -137,6 +138,7 @@ async def websocket(ws: WebSocket):
         return
     session = None
     turn_task = None
+    current_turn = None
     audio_tasks = {}
     scene_loop_task = None
     voice = None
@@ -182,6 +184,9 @@ async def websocket(ws: WebSocket):
             audio_tasks.pop(msg['utterance_id'], None)
 
     async def emit(msg):
+        if msg['type'] == 'say' and current_turn and not current_turn.terminal:
+            msg.setdefault('turn_id', current_turn.id)
+            await current_turn.stage('speaking')
         await send(msg)
         if msg['type'] == 'say' and 'turn_id' not in msg and session.speak:
             audio_tasks[msg['utterance_id']] = asyncio.create_task(audio(msg))
@@ -199,6 +204,8 @@ async def websocket(ws: WebSocket):
             turn_task.cancel()
             await asyncio.gather(turn_task, return_exceptions=True)
             turn_task = None
+        if current_turn:
+            await current_turn.stage('cancelled')
 
     async def cancel_audio(utterance=None):
         selected = [(key, task) for key, task in list(audio_tasks.items())
@@ -213,20 +220,31 @@ async def websocket(ws: WebSocket):
         async def stream(self, *args):
             try:
                 async with gate.hold(brain=True):
-                    async with aclosing(llm.stream(*args)) as stream:
+                    options = {}
+                    if isinstance(llm, LLMClient):
+                        async def backup():
+                            await current_turn.stage('backup', detail='brain slow, trying backup')
+                        options['on_backup'] = backup
+                    async with aclosing(llm.stream(*args, **options)) as stream:
                         async for delta in stream:
                             yield delta
             finally:
                 if not asyncio.current_task().cancelling():
                     session.voice_pending = False
 
-    async def turn(text, started_at=None):
+    async def turn(text, lifecycle):
         event('turn_start', session.session_id)
         try:
-            await run_turn(session, text, vision=vision, llm=TurnBrain(), started_at=started_at)
+            await lifecycle.stage('thinking', text=text)
+            await run_turn(session, text, vision=vision, llm=TurnBrain(),
+                           started_at=lifecycle.started, turn_id=lifecycle.id)
+            await lifecycle.stage('done')
+        except asyncio.CancelledError:
+            await lifecycle.stage('cancelled')
+            raise
         except Exception:
             event('dependency_error', session.session_id, dependency='turn', level='error')
-            await send(message('error', code='internal', message='The turn could not finish.'))
+            await lifecycle.stage('failed', detail='Brain failed')
         finally:
             if not asyncio.current_task().cancelling():
                 session.voice_pending = False
@@ -238,23 +256,27 @@ async def websocket(ws: WebSocket):
             await asyncio.gather(stt_task, return_exceptions=True)
             stt_task = None
 
-    async def start_text(text, started_at=None):
+    async def start_text(text, lifecycle):
         nonlocal turn_task
-        await cancel_turn()
-        await cancel_audio()
         session.voice_pending = True
-        turn_task = asyncio.create_task(turn(text, started_at))
+        turn_task = asyncio.create_task(turn(text, lifecycle))
 
-    async def transcribe(pcm, started_at):
+    async def transcribe(pcm, lifecycle):
         nonlocal stt_failed, stt_mode
         try:
+            await lifecycle.stage('transcribing')
             text = await box.stt(pcm)
             if text.strip():
-                await start_text(text, started_at)
+                await start_text(text, lifecycle)
             else:
                 session.voice_pending = False
+                await lifecycle.stage('failed', detail="Didn't catch that")
+        except asyncio.CancelledError:
+            await lifecycle.stage('cancelled')
+            raise
         except Exception:
             session.voice_pending = False
+            await lifecycle.stage('failed', detail="Didn't catch that")
             stt_mode = 'browser'
             event('fallback_used', session.session_id, dependency='stt', to='browser')
             if not stt_failed:
@@ -300,6 +322,8 @@ async def websocket(ws: WebSocket):
                 stt_mode = incoming.get('stt', 'browser')
                 stt_failed = False
                 session = new_session
+                session.camera = incoming.get('camera', True)
+                current_turn = None
                 event('hello', session.session_id, pack=session.pack.id, tts=session.tts, stt=stt_mode)
                 session.emit = emit
                 voice = None
@@ -319,6 +343,14 @@ async def websocket(ws: WebSocket):
             if session is None or incoming['session_id'] != session.session_id:
                 await send(message('error', code='bad_message', message='Send hello with the matching session first.'))
                 continue
+            final_input = (kind == 'user_text' or (kind == 'audio_in' and stt_mode == 'server')) and incoming.get('final', False)
+            if final_input:
+                lifecycle = Turn(session, send, received_at)
+                await lifecycle.stage('received', **({'text': incoming['text']} if kind == 'user_text' else {}))
+                await cancel_stt()
+                await cancel_turn()
+                await cancel_audio()
+                current_turn = lifecycle
             speech_start = ((kind == 'audio_in' and not incoming.get('final', False)) or
                             (kind == 'user_text' and not incoming['final']))
             if speech_start and not session.user_speaking:
@@ -335,9 +367,23 @@ async def websocket(ws: WebSocket):
             if (kind == 'user_text' or (kind == 'audio_in' and stt_mode == 'server')) and incoming.get('final', False):
                 session.user_speaking = False
                 session.voice_pending = True
-            if kind == 'frame':
+            if kind == 'camera':
+                session.camera = incoming['on']
+                if not session.camera:
+                    session.frame = session.scene = None
+                    await cancel_scene()
+                    await cancel_yolo()
+                else:
+                    if scene_loop_task is None:
+                        scene_loop_task = asyncio.create_task(scene_loop(session, vision, send, gate))
+                    if yolo_task is None and os.environ.get('YOLO_REFRESH') == '1':
+                        yolo_task = asyncio.create_task(yolo_loop(session, box, send))
+            elif kind == 'frame':
+                if not session.camera:
+                    continue
                 if session.frame is None or incoming['seq'] > session.frame['seq']:
                     session.frame = incoming
+                    session.frame_time = monotonic()
                     await asyncio.sleep(0)
             elif kind == 'audio_in' and stt_mode == 'server':
                 if not incoming.get('final', False) and active_audio:
@@ -354,20 +400,19 @@ async def websocket(ws: WebSocket):
                     audio_buffer.clear()
                     session.voice_pending = False
                     session.user_speaking = False
+                    if final_input:
+                        await current_turn.stage('failed', detail="Didn't catch that")
                     await send(message('error', code='bad_message', message='Invalid audio.'))
                     continue
                 if incoming.get('final', False):
-                    await cancel_stt()
-                    await cancel_turn()
-                    await cancel_audio()
                     pcm = bytes(audio_buffer)
                     audio_buffer.clear()
                     session.voice_pending = True
-                    stt_task = asyncio.create_task(transcribe(pcm, received_at))
+                    stt_task = asyncio.create_task(transcribe(pcm, current_turn))
             elif kind == 'user_text' and incoming['final']:
                 await cancel_stt()
                 audio_buffer.clear()
-                await start_text(incoming['text'])
+                await start_text(incoming['text'], current_turn)
             elif kind == 'confirm' and incoming['what'] == 'power_off':
                 await cancel_stt()
                 audio_buffer.clear()
