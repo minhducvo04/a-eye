@@ -31,7 +31,7 @@ struct WaitCard: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-            .glass(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .callGlass(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(copy.eyebrow.capitalized). \(copy.line)")
             .accessibilityValue("\(percent(progress)) percent")
@@ -74,7 +74,7 @@ struct WaitCard: View {
             return ("LISTENING", "Catching your words…")
         case .backup:
             return ("LOOKING CLOSER", "Taking a bit longer. Keep holding.")
-        case .thinking, .speaking, .done, .failed, .cancelled:
+        case .thinking, .speaking, .done, .failed, .cancelled, .expert, .expertDone:
             return ("SCANNING", isSlow ? "Almost there. Keep holding." : "Hold the camera steady…")
         }
     }
