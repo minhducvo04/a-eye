@@ -29,6 +29,7 @@ PRE_S = 2.0           # seconds kept before a keyframe
 POST_S = 3.0          # seconds kept after it (TwelveLabs needs at least 4 s per video)
 MAX_CLIP_S = 12.0     # a busy stretch extends one clip up to this length
 SAMPLE_FPS = 4.0
+SETTLE_S = 1.0          # local memory notes a frame this long after the last local activity
 ACTIVITY_GAP_S = 2.0   # one activity clip start per this many seconds at most
 NEW_EVENT_GAP_S = 2.5  # a change after this much quiet starts a new clip instead of extending      # frames per second kept in the ring
 KEEP_FRAMES = 6       # frames per clip kept in memory after upload, for pointing
@@ -241,6 +242,7 @@ class Rewind:
         self.on_upload = None   # callback(index_id, video_id), e.g. the person's memory store
         self.memory_writer = None   # server.memory.Writer while local memory is attached to this call
         self.memories = None        # server.memory.Memories, set by the registry, for auto attach
+        self.memory_activity_at = None
         self.session = None
         self.keep = False       # True: the user keeps the TwelveLabs videos after the call
         self.deleted = []       # video ids deleted from TwelveLabs (ids only)
@@ -285,6 +287,8 @@ class Rewind:
         from server.keyframes import local_change
         moved = local_change(self.last_sig, sig)
         self.last_sig = sig
+        if moved and self.memory_writer is not None:
+            self.memory_activity_at = self.clock()      # local memory notes the view once it settles
         if reason in ('first', 'change'):
             return self.keyframe(reason)
         if moved and self.now_s() - self.last_activity >= ACTIVITY_GAP_S:
@@ -515,6 +519,7 @@ class Rewind:
         recent = {}             # seq -> jpeg_b64, so a scan's own frame is found for local memory
         noted_seq = None
         noting = None
+        self.memory_activity_at = None
         while True:
             frame = session.frame if session.camera else None
             if frame is not None and frame.get('seq') != seq:
@@ -528,6 +533,14 @@ class Rewind:
                     and scene_seq != noted_seq and scene_seq in recent and (noting is None or noting.done())):
                 noted_seq = scene_seq
                 noting = asyncio.create_task(self._note(session.scene, recent[scene_seq]))
+            settled = self.memory_activity_at is not None and self.clock() - self.memory_activity_at >= SETTLE_S
+            if (settled and self.memory_writer is not None and session.camera and frame is not None
+                    and (noting is None or noting.done())):
+                # Something moved (a hand put the keys down) and the view settled: note this frame now instead of
+                # waiting up to a heartbeat; the writer grounds the tagged things itself.
+                self.memory_activity_at = None
+                caption = (getattr(session, 'scene', None) or {}).get('caption') or 'something moved'
+                noting = asyncio.create_task(self._note(dict(caption=caption, objects=[]), frame['jpeg_b64']))
             if self.on and self.clock() >= next_flush:
                 next_flush = self.clock() + every
                 try:
@@ -751,6 +764,9 @@ async def memory_turn(session, text, kind, speak, emit, turn_id, vision=None):
                 return
             store.forget_item(item)
             line = f'Forgotten. I no longer remember your {item}.'
+        # "Forget that" also clears this call's Rewind clips, so the page's clip count drops to 0 as well.
+        await session.rewind.forget(local=True)
+        await emit(state_message(session.rewind))
         await emit(memory_state_message(store, getattr(session, 'memory_last_item', None) if 'today' not in words_
                                         and 'everything' not in words_ and 'all of it' not in words_ else None))
         await speak(line, True)

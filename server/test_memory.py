@@ -325,3 +325,86 @@ def test_memory_tool_schemas():
     assert names == ['find_item', 'tag_item', 'forget_memory']
     assert all(set(t) == {'name', 'description', 'input_schema'} for t in rewind_tools.MEMORY_TOOLS)
     json.dumps(rewind_tools.MEMORY_TOOLS)
+
+
+def test_grounds_every_scan_and_keeps_caption_sightings(store, monkeypatch):
+    monkeypatch.setattr(mem, 'GROUND_GAP_S', 0)
+    store.set_tag('keys', home='blue bowl')
+
+    class Ground:
+        def __init__(self):
+            self.calls, self.objects = 0, []
+
+        async def call(self, operation, payload):
+            self.calls += 1
+            return dict(caption='', objects=self.objects, ms=1)
+
+    vision = Ground()
+    writer = Writer(store, 'c', embedder=Words(), person_check=Person(), vision=vision)
+    scene = dict(caption='three red cups on a table', objects=[])
+    asyncio.run(writer.observe(scene, FRAME))
+    vision.objects = [dict(KEYS, label='keys')]             # same caption, but now the keys are there
+    record = asyncio.run(writer.observe(scene, FRAME))
+    assert vision.calls == 2 and record and record['tags'][0]['bbox'] == KEYS['bbox'] and record['crops']
+    vision.objects = []                                     # grounding misses, the caption names it
+    text = asyncio.run(writer.observe(dict(caption='a yellow key by the middle cup', objects=[]), FRAME))
+    assert text['tags'] == [dict(tag='keys', label='keys', bbox=None, near=None, text_only=True)]
+    result = asyncio.run(find(store, 'where are my keys?', embedder=Words()))
+    # A boxed sighting (with its crop) is preferred over a newer text-only one.
+    assert result['how'] == 'tag' and result['box'] and result['say'] == 'I last saw your keys just now. Their home is the blue bowl.'
+    only_text = Store('text', base=store.dir.parent, cipher=mem.Cipher(''))
+    only_text.set_tag('keys')
+    Writer(only_text, 'c', embedder=Words(), person_check=Person())
+    asyncio.run(Writer(only_text, 'c', embedder=Words(), person_check=Person()).observe(
+        dict(caption='a yellow key by the middle cup', objects=[]), FRAME))
+    assert asyncio.run(find(only_text, 'where are my keys?', embedder=Words()))['found']
+
+
+def test_live_item_box_guard():
+    class Detector:
+        def __init__(self, boxes=None, fail=False):
+            self.boxes, self.fail = boxes or [], fail
+
+        async def detect(self, jpeg_b64):
+            if self.fail:
+                raise RuntimeError('box down')
+            return [dict(label='cup', bbox=b, conf=0.9) for b in self.boxes]
+
+    cup = [0.42, 0.43, 0.17, 0.33]
+    keys = [0.45, 0.78, 0.1, 0.1]
+    run = lambda box, places, det: asyncio.run(mem.item_box_is_real(box, 'keys', places, FRAME, det))  # noqa: E731
+    assert run(keys, [], Detector([cup])) is True             # small, not a cup: the keys are in view
+    assert run(cup, [], Detector([cup])) is False             # the "keys" box is really the middle cup
+    assert run(cup, [cup], Detector()) is False               # it is the place box itself
+    assert run([0, 0, 0.6, 0.6], [], Detector()) is False     # too big to be a small object
+    assert run(keys, [], Detector(fail=True)) is True and run(keys, [cup], Detector(fail=True)) is False
+
+
+def test_forget_that_also_clears_this_calls_rewind_clips(tmp_path, monkeypatch):
+    from server.app import create_app
+    from server.rewind import Registry
+    from server.test_rewind import FakeTL, JPEG, fake_encoder
+    app = create_app(static_dir='/nonexistent')
+    app.state.memories = mem.Memories(base=tmp_path, embedder=Words(), person_check=Person())
+    app.state.rewind = Registry(FakeTL(), encoder=fake_encoder, memories=app.state.memories)
+    rewind = app.state.rewind.open('s', on=True)
+    rewind.add_frame(JPEG)
+    rewind.keyframe('first')
+    store = app.state.memories.for_owner('local')
+    store.set_tag('keys')
+    write(store, dict(caption='keys on the desk', objects=[KEYS]))
+    with TestClient(app) as client:
+        out = client.post('/api/memory/forget', json={'session_id': 's', 'scope': 'last', 'item': 'keys'}).json()
+    assert out['count_item'] == 0 and rewind.clips == []
+
+
+def test_hit_time_is_when_the_item_arrived_at_its_place(store):
+    store.set_tag('keys')
+    write(store, dict(caption='keys by the right cup', objects=[dict(KEYS, bbox=[0.7, 0.5, 0.1, 0.1])] + CUPS))
+    store.clock_ref[0] += 30
+    arrived_at = store.clock_ref[0]
+    for _ in range(3):                                   # put down by the left cup, then seen there again and again
+        write(store, dict(caption=f'keys by the left cup {_}', objects=[KEYS] + CUPS))
+        store.clock_ref[0] += 10
+    result = asyncio.run(find(store, 'where are my keys?', embedder=Words()))
+    assert result['t'] == arrived_at and result['place'] == 'under the left red cup'
