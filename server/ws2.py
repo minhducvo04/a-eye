@@ -15,7 +15,7 @@ from time import monotonic, time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import httpx
-from server import cloud_meter
+from server import cloud_meter, cloud_vision
 from jsonschema import ValidationError
 
 from contracts import validate
@@ -140,8 +140,11 @@ class SceneClient:
 
     async def call(self, operation, payload):
         validate('scene_request', payload)
+        if cloud_vision.enabled():
+            return await cloud_vision.call(operation, payload, getattr(self, 'gate', None))
         async with httpx.AsyncClient(base_url=self.url, timeout=25, transport=self.transport) as client:
-            response = await client.post('/scene', json=payload)
+            response = await client.post('/scene', json=payload, headers=cloud_vision.request_headers())
+            cloud_vision.record_usage(response)
             response.raise_for_status()
             scene = response.json()
         validate('scene_response', scene)
@@ -160,7 +163,7 @@ async def scene_loop(session, vision, send, gate=None):
                 or (frame['seq'] == previous_seq and not requested)):
             await asyncio.sleep(0.01)
             continue
-        async with gate.hold():
+        async with nullcontext() if cloud_vision.enabled() else gate.hold():
             if not session.camera or session.voice_pending or session.frame is None:
                 continue
             frame = session.frame
@@ -178,7 +181,7 @@ async def scene_loop(session, vision, send, gate=None):
                 session.scene_skips += 1
                 continue
             # A turn or camera change can arrive during the Pillow worker.
-            if not session.camera or session.voice_pending or gate.brains:
+            if not session.camera or session.voice_pending or (gate.brains and not cloud_vision.enabled()):
                 previous_seq = None
                 continue
             scan, reason = keyframes.should_scan(sig, monotonic())
@@ -254,6 +257,8 @@ async def websocket(ws: WebSocket):
     box = getattr(ws.app.state, 'box_v2', None) or BoxClient()
     gate = gpu_gate(ws.app)
     vision = getattr(ws.app.state, 'vision_v2', None) or SceneClient()
+    if isinstance(vision, SceneClient):
+        vision.gate = gate
     llm = getattr(ws.app.state, 'llm_v2', None) or LLMClient()
     send_lock = asyncio.Lock()
 

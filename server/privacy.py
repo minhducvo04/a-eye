@@ -1,11 +1,12 @@
-"""Home first: three named cloud switches, enforced on every server path. Everything else stays home.
+"""Home first: four named cloud switches, enforced on every server path. Everything else stays home.
 
 - claude:     "Smarter answers (Claude)": your question and a written scene note, sometimes one small close-up.
 - cartesia:   "Natural voice (Cartesia)": only A-eye's reply sentence.
+- google:     "Cloud vision (Google)": downscaled camera frames, no local storage.
 - twelvelabs: "Video memory search (TwelveLabs)": short silent clips, deleted at call end.
 
-LOCAL_ONLY=1 (whole server) or hello.private (one call) turns all three off. Defaults: Claude on, Cartesia on,
-TwelveLabs off. The switches live in a context variable set at hello, so every task the socket starts
+LOCAL_ONLY=1 (whole server) or hello.private (one call) turns all four off. Defaults: Claude on, Cartesia on,
+TwelveLabs and Google off. The switches live in a context variable set at hello, so every task the socket starts
 afterwards (turns, planner, expert, scene feed, Rewind, voice) inherits them without a server restart. The
 value is one dict per call, updated in place, so tasks that are already running see a later change.
 """
@@ -13,8 +14,10 @@ import contextvars
 import os
 
 CLAUDE, CARTESIA, TWELVELABS = 'claude', 'cartesia', 'twelvelabs'
-DEFAULTS = {CLAUDE: True, CARTESIA: True, TWELVELABS: False}
+GOOGLE = 'google'
+DEFAULTS = {CLAUDE: True, CARTESIA: True, TWELVELABS: False, GOOGLE: False}
 WHAT_LEAVES = {
+    GOOGLE: 'Cloud vision (Google): sends downscaled camera frames to Gemini; no local storage',
     CLAUDE: 'Smarter answers (Claude): sends your question and a written scene note, sometimes one small close-up',
     CARTESIA: "Natural voice (Cartesia): sends only A-eye's reply sentence",
     TWELVELABS: 'Video memory search (TwelveLabs): uploads short silent clips; deleted at call end',
@@ -77,3 +80,9 @@ def twelvelabs_allowed():
 def local_only():
     """Private mode or LOCAL_ONLY=1: nothing leaves our own machines."""
     return server_local_only() or PRIVATE.get()
+
+
+def google_allowed():
+    # Cloud frames require explicit consent, even outside a WebSocket call.
+    switches = SWITCHES.get()
+    return not local_only() and switches is not None and switches.get(GOOGLE) is True
