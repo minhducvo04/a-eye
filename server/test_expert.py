@@ -8,6 +8,7 @@ import pytest
 
 from server.agent import Session, run_turn
 from server import packs
+import server.expert as expert_mod
 from server.expert import ExpertDesk, OPUS, FABLE, LOCAL, TIMEOUT_LINE, cancel, choose_model, cost, mark_failed, should_escalate
 from server.llm import LLMClient
 from server.test_agent import Vision
@@ -84,10 +85,12 @@ def test_two_failures_and_models(monkeypatch):
     monkeypatch.setenv('EXPERT_MODEL', OPUS)
     assert choose_model('look up specs') == OPUS
     monkeypatch.setenv('LOCAL_ONLY', '1')
-    assert choose_model('look up specs') == LOCAL
+    assert choose_model('look up specs') is None          # no local expert configured by default
+    monkeypatch.setattr(expert_mod, 'LOCAL', 'gemma4:12b-it-q4_K_M')
+    assert choose_model('look up specs') == 'gemma4:12b-it-q4_K_M'
     monkeypatch.delenv('LOCAL_ONLY')
     monkeypatch.delenv('ANTHROPIC_API_KEY')
-    assert choose_model('help') == LOCAL
+    assert choose_model('help') == 'gemma4:12b-it-q4_K_M'
 
 
 @pytest.mark.parametrize('split', range(1, 9))
@@ -154,16 +157,17 @@ def test_refusal_and_search_errors():
 
 def test_local_guard_and_no_tools(monkeypatch):
     monkeypatch.setenv('LOCAL_ONLY', '1')
+    monkeypatch.setattr(expert_mod, 'LOCAL', 'gemma4:12b-it-q4_K_M')
     async def check():
         fake = FakeClient()
         def handler(request):
             payload = json.loads(request.content)
-            assert payload['model'] == LOCAL
+            assert payload['model'] == 'gemma4:12b-it-q4_K_M'
             assert 'tools' not in payload and 'images' not in str(payload)
             return httpx.Response(200, text=json.dumps({'message': {'content': 'Local answer.'}, 'done': True}) + '\n')
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
             result = await LLMClient(anthropic_client=fake, httpx_client=http).expert('system', 'question', model=OPUS, images=['PRIVATE'])
-        assert not fake.calls and result['metrics']['model'] == LOCAL
+        assert not fake.calls and result['metrics']['model'] == 'gemma4:12b-it-q4_K_M'
     asyncio.run(check())
 
 
@@ -328,10 +332,23 @@ def test_expert_crop_and_planner_draw(monkeypatch):
     asyncio.run(check())
 
 
-def test_local_expert_uses_the_real_ollama_tag_and_checks_it():
+def test_local_expert_uses_the_real_ollama_tag_and_checks_it(monkeypatch):
     """Seen by the local-brain builder: 'qwen3.5:9b' does not exist on the box; the tag is qwen3.5:9b-q4_K_M."""
     from server.expert import check_local_model
-    assert LOCAL == 'qwen3.5:9b-q4_K_M'
+    monkeypatch.setattr(expert_mod, 'LOCAL', 'qwen3.5:9b-q4_K_M')
+    monkeypatch.setattr(expert_mod, 'VISION_MODELS', set())
     assert check_local_model(lambda url: {'models': [{'name': 'qwen3.5:9b-q4_K_M'}]}) is True
     assert check_local_model(lambda url: {'models': [{'name': 'qwen3.5:9b'}]}) is False
     assert check_local_model(lambda url: (_ for _ in ()).throw(OSError('down'))) is None
+
+
+def test_local_expert_is_never_the_vision_model(monkeypatch):
+    """Seen live: the local expert on qwen3.5:9b slowed vision grounding from 0.73 s to 11 to 24 s for minutes."""
+    from server.expert import local_expert, OFFLINE_LINE
+    monkeypatch.setattr(expert_mod, 'LOCAL', 'qwen3.5:9b-q4_K_M')
+    assert local_expert() is None                      # the default ground model is a vision model
+    monkeypatch.setattr(expert_mod, 'LOCAL', '')
+    assert local_expert() is None                      # unset means no local expert
+    monkeypatch.setattr(expert_mod, 'LOCAL', 'gemma4:12b-it-q4_K_M')
+    assert local_expert() == 'gemma4:12b-it-q4_K_M'
+    assert 'cloud' in OFFLINE_LINE

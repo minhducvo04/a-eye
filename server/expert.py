@@ -16,7 +16,18 @@ EXPERT_RULES = (' You are the expert helping a live assistant. Resolve the quest
 OPUS = 'claude-opus-5-5'
 FABLE = 'claude-fable-5-1'
 # The exact Ollama tag on the GPU box (a bare 'qwen3.5:9b' 404s there). EXPERT_LOCAL_MODEL overrides.
-LOCAL = os.environ.get('EXPERT_LOCAL_MODEL', 'qwen3.5:9b-q4_K_M')
+LOCAL = os.environ.get('EXPERT_LOCAL_MODEL', '')
+# Models the vision service runs. Seen live: a local expert on the vision model (qwen3.5:9b) made grounding go from
+# 0.73 s to 11 to 24 s for minutes, because Ollama serves one request at a time per model.
+VISION_MODELS = {os.environ.get('VISION_GROUND_MODEL', 'qwen3.5:9b-q4_K_M'),
+                 os.environ.get('VISION_CAPTION_MODEL', 'qwen2.5vl:7b-q4_K_M'),
+                 os.environ.get('VISION_FALLBACK_MODEL', 'qwen2.5vl:7b-q4_K_M')}
+OFFLINE_LINE = "The expert needs the cloud right now, so I'll answer as best I can."
+
+
+def local_expert():
+    """The local expert model, or None when unset or when it is one of the app's vision models."""
+    return LOCAL if LOCAL and LOCAL not in VISION_MODELS else None
 # List prices checked 2026-10-23, USD per million tokens. Search price is unverified.
 PRICES = {'claude-haiku-5-5': (0.10, 0.50, None), OPUS: (4, 20, .20), FABLE: (10, 50, .25)}
 EXPLICIT = re.compile(r'\b(think hard|are you sure|double[ -]check)\b', re.I)
@@ -37,6 +48,8 @@ def check_local_model(fetch=None):
     except Exception:
         event('dependency_error', level='error', dependency='expert_local_model')
         return None
+    if not local_expert():
+        return None
     ok = LOCAL in names
     if not ok:
         event('dependency_error', level='warning', dependency='expert_local_model')
@@ -45,7 +58,7 @@ def check_local_model(fetch=None):
 
 def choose_model(question):
     if os.environ.get('LOCAL_ONLY') == '1' or not os.environ.get('ANTHROPIC_API_KEY'):
-        return LOCAL
+        return local_expert()
     return os.environ.get('EXPERT_MODEL') or (FABLE if len(question) > 300 or RESEARCH.search(question) else OPUS)
 
 
@@ -98,6 +111,9 @@ class ExpertDesk:
             return 'Give the expert a moment before the next question.'
         self.busy = True  # reserve synchronously before scheduling
         model = choose_model(question)
+        if model is None:
+            self.busy = False
+            return OFFLINE_LINE
         user = json.dumps(dict(scene=scene, memory=session.scene_memory.snapshot(self.clock(), current=session.camera),
                                transcript=session.history[-10:], question=question))
         crops = planner_crop(session, scene, seq, question)
