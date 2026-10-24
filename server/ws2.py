@@ -563,7 +563,8 @@ async def websocket(ws: WebSocket):
                 scene_loop_task = asyncio.create_task(scene_loop(session, vision, send, gate))
                 if os.environ.get('YOLO_REFRESH') == '1':
                     yolo_task = asyncio.create_task(yolo_loop(session, box, send))
-                session.rewind = rewind_mod.registry(ws.app).open(session.session_id, on=incoming.get('rewind', False))
+                session.rewind = rewind_mod.registry(ws.app).open(
+                    session.session_id, on=incoming.get('rewind', False), owner=rewind_mod.identity(ws))
                 rewind_task = asyncio.create_task(session.rewind.follow(session))
                 if session.rewind.on:
                     await send(rewind_mod.state_message(session.rewind))
@@ -661,6 +662,7 @@ async def websocket(ws: WebSocket):
                     await emit(say('Thanks. What are we working on?'))
             elif kind == 'rewind':
                 session.rewind.set_on(incoming['on'])
+                session.rewind.keep = incoming.get('keep', session.rewind.keep)
                 await send(rewind_mod.state_message(session.rewind))
             elif kind == 'barge_in':
                 await cancel_expert(session)

@@ -2920,6 +2920,10 @@
     },
     "on": {
      "type": "boolean"
+    },
+    "keep": {
+     "type": "boolean",
+     "description": "true: keep this call's TwelveLabs videos after the call. Default false: they are deleted when the call ends."
     }
    }
   },
@@ -2960,6 +2964,10 @@
     },
     "notice": {
      "type": "string"
+    },
+    "locked": {
+     "type": "boolean",
+     "description": "true: LOCAL_ONLY=1 on the server, Rewind cloud cannot be turned on."
     }
    }
   },
