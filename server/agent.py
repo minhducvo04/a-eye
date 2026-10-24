@@ -262,8 +262,24 @@ TALKER_RULES = (' You are the TALKER: you speak first and fast, out loud, like a
 PLANNER_RULES = (' You are the PLANNER behind a fast talker who is already answering out loud. Output only one JSON '
                  'object: agent, draw, optional market_category, note, speak. draw targets and from_target must be '
                  'scene object IDs. note: at most 15 words the talker should say next (the concrete fact, for example '
-                 'which header the cable goes in). speak: true only when the note adds a fact the caption alone does '
-                 'not give. Include market_category only when asked about buying, prices or cheaper options.')
+                 'which header the cable goes in). speak: true only when the note adds a new concrete fact the caption '
+                 'alone does not give; false when it would repeat the obvious (for example that the camera is off or '
+                 'the view is unclear), and then just draw. Include market_category only when asked about buying, '
+                 'prices or cheaper options.')
+_STOP = {'the', 'a', 'an', 'it', 'its', "it's", 'is', 'to', 'and', 'so', 'i', 'you', 'me', 'on', 'in', 'of', 'that',
+         'this', 'can', "can't", 'cant', 'and', 'or', 'show', 'see', 'be', 'your', 'my', 'turn', 'just', 'now'}
+
+
+def repeats(note, said):
+    """True when most of the note's content words were already spoken this turn (e.g. 'camera is off' twice)."""
+    def bag(text):
+        return {re.sub(r"'s$", '', w).strip("'") for w in re.findall(r"[a-z0-9']+", text.lower())}
+    words = bag(note) - _STOP
+    if not words:
+        return True
+    return len(words & bag(said)) / len(words) >= 0.5
+
+
 _FILLER = re.compile(r"\b(let me (look|check|see)|one (sec|second|moment)|hang on|looking)\b", re.I)  # filler means the note is spoken
 
 
@@ -532,7 +548,8 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
             event('planner', session.session_id, ms=(monotonic() - planned_at) * 1000)
             if planned and planned.get('market_category') and not turn.get('market_category'):
                 turn['market_category'] = planned['market_category']
-            if note and (speak_note or stalled):
+            # Repeating the talker is worse than silence: then the planner only draws.
+            if note and (speak_note or stalled) and not repeats(note, reply_text):
                 session.history.append(f'planner: {note}')
                 await speech(note, final=not bool(turn.get('market_category')))
         if turn.get('market_category'):
