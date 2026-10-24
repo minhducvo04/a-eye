@@ -323,8 +323,12 @@ class Rewind:
                     self.uploads.append((clip.task_id, (monotonic() - started) * 1000))
                 except Exception as exc:
                     clip.status = 'failed'
+                    tb = exc.__traceback__
+                    while tb and tb.tb_next:
+                        tb = tb.tb_next
                     event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
-                          error=type(exc).__name__)
+                          error=type(exc).__name__,
+                          where=f'{tb.tb_frame.f_code.co_filename.rsplit("/", 1)[-1]}:{tb.tb_lineno}' if tb else '')
                 finally:
                     os.unlink(path)
                 # Keep a few frames for pointing at the answer; the rest leave memory now.

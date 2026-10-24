@@ -53,3 +53,6 @@ keys:             ## which keys are set (length only, never the value)
 
 browser-smoke:    ## real Chromium with fake camera and mic against a running server: make browser-smoke URL=http://127.0.0.1:8010
 	uv run --no-project --with playwright python scripts/browser_smoke.py $(or $(URL),http://127.0.0.1:$(SERVER_PORT))
+
+demo-rehearsal:   ## stage demo rehearsal (Where are my keys?) in Chromium with a synthetic camera and a say mic
+	uv run --no-project --with playwright --with pillow python scripts/demo_rehearsal.py
