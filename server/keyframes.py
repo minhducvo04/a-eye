@@ -18,6 +18,15 @@ def difference(a, b):
     return sum(abs(x - y) for x, y in zip(a, b)) / 1024
 
 
+
+def local_change(a, b, cell_threshold=40, min_cells=12):
+    """Something moved in part of the view: at least min_cells of the 32x32 cells changed by more than
+    cell_threshold (0 to 255). The whole-frame mean (difference) misses a hand putting keys down; this does not,
+    and camera jitter or sensor noise stays under it."""
+    if a is None or b is None or len(a) != len(b):
+        return False
+    return sum(1 for x, y in zip(a, b) if abs(x - y) > cell_threshold) >= min_cells
+
 class KeyframeGate:
     def __init__(self, threshold=34.5, heartbeat_s=10.0, min_gap_s=0.5):
         self.threshold = float(os.environ.get('KEYFRAME_THRESHOLD', threshold))

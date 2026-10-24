@@ -28,7 +28,9 @@ NOTICE = 'Rewind on: short video clips of this call are uploaded to TwelveLabs s
 PRE_S = 2.0           # seconds kept before a keyframe
 POST_S = 3.0          # seconds kept after it (TwelveLabs needs at least 4 s per video)
 MAX_CLIP_S = 12.0     # a busy stretch extends one clip up to this length
-SAMPLE_FPS = 4.0      # frames per second kept in the ring
+SAMPLE_FPS = 4.0
+ACTIVITY_GAP_S = 2.0   # one activity clip start per this many seconds at most
+NEW_EVENT_GAP_S = 2.5  # a change after this much quiet starts a new clip instead of extending      # frames per second kept in the ring
 KEEP_FRAMES = 6       # frames per clip kept in memory after upload, for pointing
 MAX_CLIPS = 60        # per call
 
@@ -242,6 +244,8 @@ class Rewind:
         self.owner = 'local'    # identity() of the caller that opened this call
         self.keep = False       # True: the user keeps the TwelveLabs videos after the call
         self.deleted = []       # video ids deleted from TwelveLabs (ids only)
+        self.last_sig = None    # newest frame signature (32x32 gray), for local activity
+        self.last_activity = float('-inf')
 
     def now_s(self):
         return self.clock() - self.started
@@ -274,15 +278,33 @@ class Rewind:
                 else:
                     clip.status = 'pending'
 
+    def observe(self, sig, reason=None):
+        """Every new frame's signature from the scene loop. A scene-gate change or a local change (part of the
+        view moved, see keyframes.local_change) opens or extends a clip; at most one activity clip start every
+        ACTIVITY_GAP_S so a long motion extends one clip instead of making many."""
+        from server.keyframes import local_change
+        moved = local_change(self.last_sig, sig)
+        self.last_sig = sig
+        if reason in ('first', 'change'):
+            return self.keyframe(reason)
+        if moved and self.now_s() - self.last_activity >= ACTIVITY_GAP_S:
+            self.last_activity = self.now_s()
+            return self.keyframe('change')
+        return None
+
     def keyframe(self, reason):
         """Called by the scene loop after the keyframe gate selects a frame."""
         if not self.on or reason not in ('first', 'change'):
             return None
         t = self.now_s()
         open_clip = next((c for c in self.clips if c.status == 'open'), None)
-        if open_clip and t - open_clip.start_s + POST_S <= MAX_CLIP_S:
+        # Continuous motion extends the open clip; a new event after a quiet gap starts its own clip, so it gets
+        # its own moment (seen in the rehearsal: keys put down inside the first clip pointed at the clip start).
+        quiet = t - getattr(open_clip, 'last_change_s', open_clip.key_s if open_clip else t) >= NEW_EVENT_GAP_S
+        if open_clip and not quiet and t - open_clip.start_s + POST_S <= MAX_CLIP_S:
             open_clip.end_s = max(open_clip.end_s, t + POST_S)
             open_clip.reasons.append(reason)
+            open_clip.last_change_s = t
             return open_clip
         if open_clip:
             open_clip.status = 'pending'
@@ -392,8 +414,15 @@ class Rewind:
             # The first kept frame at or after the moment: a frame just before a change shows the old scene.
             after = [f for f in clip.frames if f[0] >= at - 1e-6]
             frame = (after[0] if after else clip.frames[-1])[1] if clip.frames else None
+            # Candidates for the frame check: the moment of the change, the middle of what follows, then the
+            # settled view at the end of the clip (a hand often covers the object at the moment itself).
+            picks = [after[0], after[len(after) // 2], after[-1]] if after else clip.frames[-1:]
+            candidates = []
+            for t_f, jpeg in picks:
+                if all(t_f != c[0] for c in candidates):
+                    candidates.append((t_f, jpeg))
             hits.append(dict(t_s=round(at, 1), start_s=round(start, 1), end_s=round(end, 1), rank=row.get('rank'),
-                             video_id=clip.video_id, frame=frame))
+                             video_id=clip.video_id, frame=frame, candidates=candidates))
         return hits
 
     async def answer(self, text, vision=None):
@@ -421,8 +450,12 @@ class Rewind:
             return "I didn't find that moment in this call.", None
         hit = dict(hits[0], query=query, target=target_from(query), objects=[], sure=False)
         if vision is not None and hit['frame']:
-            hit['objects'] = await confirm(vision, hit['frame'], hit['target'])
-            hit['sure'] = bool(hit['objects'])
+            for t_f, jpeg in hit.pop('candidates', None) or [(hit['t_s'], hit['frame'])]:
+                objects = await confirm(vision, jpeg, hit['target'])
+                if objects:
+                    hit.update(objects=objects, sure=True, frame=jpeg)
+                    break
+        hit.pop('candidates', None)
         hit['alternatives'] = [h['t_s'] for h in hits[1:2]]
         if hit['sure']:
             return f"That was {fmt_offset(hit['t_s'])}. Here's the clip.", hit
@@ -741,16 +774,38 @@ def rewind_for(session, app=None):
     return getattr(session, 'rewind', None)
 
 
+def memory_sighting(session, query):
+    """The newest scene-memory entry (captions and labels from this call's keyframes) that mentions the object:
+    {say, label, memory_age_s}, or None. Works without Rewind and never leaves the server."""
+    memory = getattr(session, 'scene_memory', None)
+    if memory is None:
+        return None
+    target = target_from(query_from(query))
+    now = monotonic()
+    for entry in memory.snapshot(now, current=bool(getattr(session, 'camera', False))):
+        text = ' '.join([entry['caption'], *entry['labels']])
+        if label_matches(text, target):
+            label = next((l for l in entry['labels'] if label_matches(l, target)), target)
+            age = entry['age_s']
+            when = ('just now' if age < 5 else f'about {age} seconds ago' if age < 90
+                    else f'about {round(age / 60)} minutes ago')
+            where = f' {entry["caption"].rstrip(".")}.' if entry['caption'] else ''
+            return dict(say=f"I last saw your {target} {when}.{where}", label=label, memory_age_s=age)
+    return None
+
+
 async def search_past(session, query, vision=None, app=None):
     """Find a past moment of this call. Returns a JSON-safe dict for a tool_result:
     {sure, call_time_s, label, box, clip_id, alternatives, say} (plus frame_b64 for the client card)."""
     rewind = rewind_for(session, app)
     empty = dict(sure=False, call_time_s=None, label=None, box=None, clip_id=None, alternatives=[])
+    seen = memory_sighting(session, query)
     if rewind is None or (not rewind.on and not rewind.clips):
-        return dict(empty, say="Rewind is off, so there's no recording to check.")
+        # No recording: the live scene memory (recent sightings) still answers; mention Rewind only if not seen.
+        return dict(empty, **seen) if seen else dict(empty, say="Rewind is off, so there's no recording to check.")
     spoken, hit = await rewind.answer(query, vision=vision)
-    if hit is None:
-        return dict(empty, say=spoken)
+    if hit is None or (not hit['sure'] and seen):
+        return dict(empty, **seen) if seen else dict(empty, say=spoken)
     best = hit['objects'][0] if hit['objects'] else None
     result = dict(sure=hit['sure'], call_time_s=hit['t_s'], label=best['label'] if best else hit['target'],
                   box=best['bbox'] if best else None, clip_id=hit['video_id'], alternatives=hit['alternatives'],

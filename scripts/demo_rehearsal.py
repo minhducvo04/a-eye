@@ -26,8 +26,8 @@ ROOT = Path(__file__).resolve().parent.parent
 PY = str(ROOT / ".venv" / "bin" / "python")
 OUT_DIR = ROOT / "docs" / "results" / "demo-rehearsal"
 REPORT = ROOT / "docs" / "results" / "demo-rehearsal.md"
-W, H, FPS, SECONDS, KEYS_AT = 480, 360, 5, 85, 22.0   # keys after the first 12 s clip closes
-ASK_AT, FORGET_GAP = 36.0, 18.0
+W, H, FPS, SECONDS, KEYS_AT = 480, 360, 5, 75, 10.0
+ASK_AT, FORGET_GAP = 24.0, 18.0
 
 
 def free_port():
@@ -198,7 +198,7 @@ def main():
             if page.get_attribute("#mic", "aria-pressed") != "true":   # the first tap may already start the mic
                 page.click("#mic")
             mark(f"mic {'on' if page.get_attribute('#mic', 'aria-pressed') == 'true' else 'OFF'} "
-                 "(fake mic: question at about 36 s)")
+                 "(fake mic: question at about 24 s)")
             cam_t0 = time.time() - t0
             page.wait_for_timeout(5000)
             shot("1-cups")
