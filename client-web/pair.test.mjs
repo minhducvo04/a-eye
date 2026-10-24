@@ -92,3 +92,18 @@ test('phone entry asks only for camera, streams after joined and stops on discon
     for (const [key, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; }
   }
 });
+
+test("pair request uses the current session id, not the one at setup time", async () => {
+  // Seen in the two-page run: agent.js starts a new session id per call, so a captured id was stale.
+  const { setupPairCall } = await import("./pair.js");
+  const sent = [];
+  const listeners = {};
+  globalThis.document = { getElementById: (id) => id === "pair-request"
+    ? { addEventListener: (_e, fn) => { listeners.click = fn; } } : { textContent: "" } };
+  let current = "old";
+  setupPairCall((m) => { sent.push(m); return true; }, () => current);
+  current = "new";
+  listeners.click();
+  assert.equal(sent[0].session_id, "new");
+  delete globalThis.document;
+});

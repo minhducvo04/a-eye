@@ -421,7 +421,8 @@ function boot() {
     });
   }
 
-  const onPair = setupPairCall(send, sessionId);
+  // A getter: sessionId changes when a new call starts, and a captured value sent stale ids (seen in the two-page run).
+  const onPair = setupPairCall(send, () => sessionId);
 
   function onServer(message) {
     if (!message || typeof message !== "object") return;

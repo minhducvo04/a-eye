@@ -22,7 +22,8 @@ export function setupPairCall(send, sessionId) {
   const button = document.getElementById('pair-request');
   const status = document.getElementById('pair-status');
   button?.addEventListener('click', () => {
-    if (!send({ v: 2, type: 'pair_request', session_id: sessionId })) status.textContent = 'Start a call first.';
+    const id = typeof sessionId === 'function' ? sessionId() : sessionId;
+    if (!send({ v: 2, type: 'pair_request', session_id: id })) status.textContent = 'Start a call first.';
   });
   return message => {
     if (message.type === 'pair_status') status.textContent = pairStatus(message);
