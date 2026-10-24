@@ -149,3 +149,17 @@ talker's clauses, and barge-in cancels the context. Picker voices: Katie (friend
 | Partial STT, Cartesia Katie | 37 ms | 857 ms | **1008 ms** [853-1158] |
 
 Cartesia clause latency alone: 284 ms cold (TLS handshake, now paid at hello) and 118 ms warm.
+
+## Whisper noise settings on the box (deployed 2026-10-24)
+
+The box now runs `boxsvc/engines.py` from 68278de: VAD filter on, no_speech threshold 0.8, beam 3,
+and a PC-parts prompt. Test: `voice/noise_bench.py`, 5 synthetic questions mixed with synthetic crowd
+babble, soft speech.
+
+| SNR | Before (beam 1, no VAD filter) | After |
+|---|---|---|
+| 5 dB | 27/29 words | **29/29** ("CPU van Hennep" is now "CPU fan header") |
+| 0 dB | 19/29 | 19/29 (one clip now repeats a wrong phrase three times) |
+
+Turn latency did not move: server STT with Cartesia, 6 turns, first audio 1124 ms median
+[839-2368], against 1008 ms before. One slow outlier.
