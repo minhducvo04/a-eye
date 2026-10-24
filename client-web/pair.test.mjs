@@ -4,7 +4,9 @@ import { pairMode, pairUrl, pairStatus } from './pair.js';
 import { qrMatrix } from './qr.js';
 
 test('pair URL preserves token and mode is explicit', () => {
-  assert.deepEqual(pairMode('?pair=0123&token=a%26b'), { camera: true, code: '0123', token: 'a&b' });
+  assert.deepEqual(pairMode('?pair=0123&token=a%26b'), { camera: true, code: '0123', token: 'a&b', mine: false });
+  assert.equal(pairMode('?phone=mine').camera, true);
+  assert.equal(pairMode('?phone=mine').mine, true);
   assert.equal(pairMode('').camera, false);
   assert.equal(pairMode('?pair=').camera, true);
   assert.equal(pairUrl('https://demo.test', '/agent.html?pair=0123', '?token=a%26b'), 'https://demo.test/agent.html?pair=0123&token=a%26b');
@@ -65,13 +67,13 @@ test('phone entry: camera frames and mic utterances after joined, stops on disco
       startListening: async () => { listening++; }, stopListening: () => { listening--; } };
   };
   try {
-    assert.equal(bootPairCamera({ makeVoice }), true);
+    assert.equal(bootPairCamera({ makeVoice, storage: null }), true);
     const [video, button, meter, status] = children;
     assert.equal(button.textContent, 'Start');
     await button.handlers.click();
     assert.equal(requested.audio, false); // the camera stream; voice.js opens the mic itself
     assert.equal(unlocked, 1);
-    assert.equal(listening, 1);
+    assert.equal(listening, 0); // the mic starts once the call takes the phone
     assert.equal(voiceOptions.sttMode, 'server');
     const socket = Socket.current;
     assert.match(socket.url, /token=test/);
@@ -84,6 +86,8 @@ test('phone entry: camera frames and mic utterances after joined, stops on disco
     assert.equal(socket.messages.length, 1); // nothing before joined
     socket.message({ type: 'pair_status', state: 'joined' });
     assert.equal(status.textContent, 'Camera + mic connected');
+    await new Promise((r) => setImmediate(r));
+    assert.equal(listening, 1);
     voiceOptions.onLevel(0.5);
     assert.equal(meter.children?.[0]?.style.width ?? '50%', '50%');
     voiceOptions.onBargePoint();
@@ -159,4 +163,77 @@ test('phone audio waits for its barge point so barge_in never drops the utteranc
   a.chunk('AQA=', 4, true);
   assert.deepEqual(sent.map((m) => m.seq), [3, 4]);
   assert.ok(sent.every((m) => m.sample_rate === 16000));
+});
+
+test('remembered phone waits, joins its next call without a code, and waits again after it', async () => {
+  const { bootPairCamera, rememberStep } = await import('./pair.js');
+  assert.equal(rememberStep({ state: 'rejected', detail: 'Sign in with your own account', }, true).action, 'stop');
+  assert.equal(rememberStep({ state: 'left', retry_s: 3, detail: 'Call ended.' }, false).action, 'stop');
+  const saved = new Map();
+  const put = (key, value) => { saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { configurable: true, value }); };
+  const children = [], timeouts = [];
+  const track = { enabled: true, stop() {} };
+  function element(tag) {
+    return { tag, handlers: {}, style: {}, setAttribute() {}, addEventListener(k, fn) { this.handlers[k] = fn; },
+      append(...nodes) { (this.children ||= []).push(...nodes); }, videoWidth: 640, videoHeight: 480, play: async () => {},
+      getContext: () => ({ drawImage() {} }), toDataURL: () => 'data:image/jpeg;base64,c3ludGhldGlj' };
+  }
+  const sockets = [];
+  class Socket {
+    static OPEN = 1;
+    constructor(url) { this.url = String(url); this.handlers = {}; this.messages = []; this.readyState = 1; this.bufferedAmount = 0; sockets.push(this); }
+    addEventListener(k, fn) { this.handlers[k] = fn; }
+    send(raw) { this.messages.push(JSON.parse(raw)); }
+    close() { this.readyState = 3; this.handlers.close?.({ code: 4404 }); }
+    message(msg) { this.handlers.message({ data: JSON.stringify(msg) }); }
+  }
+  const store = new Map([['aeye.phone.remember', '1']]);
+  const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+  put('document', { hidden: false, createElement: element, body: { style: {}, replaceChildren() { children.length = 0; }, append(...nodes) { children.push(...nodes); } } });
+  put('location', { href: 'https://demo.test/agent.html?phone=mine', search: '?phone=mine', protocol: 'https:' });
+  put('window', { addEventListener() {} });
+  put('navigator', { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [track] }) } });
+  put('WebSocket', Socket);
+  put('setInterval', () => 1);
+  put('clearInterval', () => {});
+  put('setTimeout', (fn, ms) => { timeouts.push([fn, ms]); return timeouts.length; });
+  put('clearTimeout', () => {});
+  let listening = 0;
+  const makeVoice = () => ({ supported: { stt: true }, unlockAudio: async () => {}, isListening: () => listening > 0,
+    startListening: async () => { listening = 1; }, stopListening: () => { listening = 0; } });
+  try {
+    bootPairCamera({ makeVoice, storage });
+    const [, button, , status, label] = children;
+    assert.equal(label.children[0].checked, true);
+    await button.handlers.click();
+    sockets[0].handlers.open();
+    assert.equal(sockets[0].messages[0].role, 'camera');
+    assert.equal('pair_code' in sockets[0].messages[0], false);
+    sockets[0].message({ type: 'pair_status', state: 'rejected', role: 'camera', detail: 'Waiting for your next call.', retry_s: 3 });
+    assert.equal(status.textContent, 'Waiting for your next call.');
+    assert.equal(button.textContent, 'Join my call');
+    assert.equal(track.enabled, false); // nothing captured while waiting
+    assert.equal(timeouts.at(-1)[1], 3000);
+    sockets[0].close();
+    timeouts.at(-1)[0]();
+    assert.equal(sockets.length, 2);
+    sockets[1].handlers.open();
+    assert.equal('pair_code' in sockets[1].messages[0], false);
+    sockets[1].message({ type: 'pair_status', state: 'joined', role: 'camera' });
+    await new Promise((r) => setImmediate(r));
+    assert.equal(track.enabled, true);
+    assert.equal(listening, 1);
+    sockets[1].message({ type: 'pair_status', state: 'left', role: 'camera', detail: 'Call ended.', retry_s: 3 });
+    assert.equal(status.textContent, 'Call ended. Waiting for your next call.');
+    assert.equal(listening, 0);
+    sockets[1].close();
+    timeouts.at(-1)[0]();
+    assert.equal(sockets.length, 3); // tries the next call
+    // Turning the switch off is remembered for this phone.
+    label.children[0].checked = false;
+    label.children[0].handlers.change();
+    assert.equal(store.get('aeye.phone.remember'), '0');
+  } finally {
+    for (const [key, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; }
+  }
 });

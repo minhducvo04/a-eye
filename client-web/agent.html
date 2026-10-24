@@ -74,6 +74,11 @@
           <p class="rewind-chip glass" title="Clips of this call are uploaded to TwelveLabs">Rewind on</p>
           <button type="button" id="rewind-recap" class="rewind-chip glass" aria-label="Recap this call">Recap</button>
         </div>
+        <!-- A paired phone (code or remembered): shown so the person knows, with a way to drop it. -->
+        <div id="phone-chip" class="rewind-badge hidden" role="status">
+          <p class="chip glass">Phone joined</p>
+          <button type="button" id="phone-kick" class="chip glass warn-text">Disconnect</button>
+        </div>
         <p id="link" class="chip glass warn" role="status">Connecting…</p>
         <p id="notice" class="chip glass soft hidden" role="status"></p>
         <p id="pipeline" class="pipeline" role="status">Ready</p>

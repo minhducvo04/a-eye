@@ -945,6 +945,12 @@
    "v": 2,
    "type": "pair_request",
    "session_id": "s2"
+  },
+  {
+   "v": 2,
+   "type": "pair_request",
+   "session_id": "s-1",
+   "kick": true
   }
  ],
  "v2_pair": [
@@ -971,6 +977,14 @@
    "state": "rejected",
    "role": "camera",
    "detail": "Unknown or expired code."
+  },
+  {
+   "v": 2,
+   "type": "pair_status",
+   "state": "rejected",
+   "role": "camera",
+   "detail": "Waiting for your next call.",
+   "retry_s": 3
   }
  ],
  "v2_rewind": [

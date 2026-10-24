@@ -6,6 +6,12 @@
 
 From now on, changes may only add optional fields or new message types. Do not remove or rename fields, make optional fields required, or change existing meanings. Add an entry here for every addition; update schema, TypeScript mirror and examples together through the contract PR process and run `make test-py`. Clients must ignore unknown response fields and unknown message types (and skip unknown draw kinds). Current server request validation remains strict; do not send speculative fields. A breaking change requires a separately negotiated major protocol, outside this freeze.
 
+## v2.9: remember this phone
+
+- Optional `v2_pair_request.kick` (boolean): disconnect the phone paired to this call. A remembered phone then waits for the next call.
+- Optional `v2_pair_status.retry_s` (integer): a camera socket may try again after this many seconds (no call yet for the signed-in identity, the call already has a phone, or it ended or disconnected the phone).
+- `v2_hello.pair_code` stays optional with role camera: without it, the camera joins the latest live call of the same verified Cloudflare Access identity. A shared token or an open server never qualifies.
+
 ## v2.8: local memory across calls
 
 - New `v2_find_item` (server): required `v`, `type:find_item`, `item`, `found`, `count`; optional `turn_id`, `at_ms`, `when`, `place`, `home`, `say`, `live` (`object_id`, `bbox` in the current view), `count_item`, and the `rewind_hit` fields `t_s` (seconds since this call started, negative for an earlier call), `start_s`, `end_s`, `sure`, `alternatives`, `frame_b64` (a small crop of the item, never a full frame) and `objects` (the item's box on that crop).
