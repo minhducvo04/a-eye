@@ -1,4 +1,5 @@
 """Process-local, single-use camera pairing. No media or credentials are logged."""
+import asyncio
 import json
 import secrets
 from time import monotonic
@@ -59,6 +60,8 @@ class Call:
         self.local_on = session.camera
         self.camera = None
         self.closed = False
+        # Phone mic: audio_in and barge_in from the camera socket, read by the call's own message loop.
+        self.inbox = asyncio.Queue()
 
     async def status(self, state, source='camera'):
         fields = dict(state=state, camera_on=self.session.camera, source=source)
@@ -99,14 +102,18 @@ async def camera_socket(ws, hello):
             try:
                 incoming = await ws.receive_json()
                 validate('client_message_v2', incoming)
-                if incoming['type'] not in ('frame', 'camera') or incoming['session_id'] != hello['session_id']:
+                if (incoming['type'] not in ('frame', 'camera', 'audio_in', 'barge_in')
+                        or incoming['session_id'] != hello['session_id']):
                     raise ValueError()
             except (json.JSONDecodeError, ValidationError, KeyError, ValueError):
-                await ws.send_json(message('error', code='bad_message', message='Camera sockets accept only frame and camera.'))
+                await ws.send_json(message('error', code='bad_message',
+                                           message='Camera sockets accept only frame, camera, audio_in and barge_in.'))
                 continue
             if call.closed:
                 break
-            if incoming['type'] == 'camera':
+            if incoming['type'] in ('audio_in', 'barge_in'):
+                await call.inbox.put(dict(incoming, session_id=call.session.session_id))
+            elif incoming['type'] == 'camera':
                 await call.switch(incoming['on'])
                 await call.status('camera')
             elif call.session.camera:

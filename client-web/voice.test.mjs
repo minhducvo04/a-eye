@@ -697,3 +697,25 @@ test("loud room: a short noise burst sends nothing; barge-in needs 700 ms of sus
   assert.deepEqual(barges, ["u1"]);
   voice.stopListening();
 });
+
+test("speech in 2.7 ms worklet-sized frames still opens an utterance (ambient moves while talking)", async () => {
+  // Seen with the phone mic: each ambient change rebuilt the VAD mid-speech, so 400 ms was never reached.
+  const cap = serverCapture();
+  const chunks = [];
+  const clock = { t: 0 };
+  const voice = createVoice({
+    sttMode: "server",
+    audioContextFactory: () => cap.ctx,
+    getUserMedia: cap.getUserMedia,
+    now: () => clock.t,
+    onAudioChunk: (b64, seq, final) => chunks.push(final),
+  });
+  await voice.startListening();
+  let t = 0;
+  for (; t <= 1200; t += 2.7) cap.feed(128, 0.001, t, clock); // quiet room calibrates
+  for (; t <= 3200; t += 2.7) cap.feed(128, 0.3, t, clock);   // two seconds of talk
+  for (; t <= 4000; t += 2.7) cap.feed(128, 0.001, t, clock); // silence ends it
+  assert.ok(chunks.length >= 2, `chunks ${chunks.length}`);
+  assert.equal(chunks.at(-1), true);
+  voice.stopListening();
+});
