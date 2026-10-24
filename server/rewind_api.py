@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from server.rewind import NOTICE, registry
+from server.rewind import NOTICE, identity, registry
 
 router = APIRouter(prefix='/api/rewind')
 
@@ -13,7 +13,7 @@ def public(hit):
 
 @router.get('/status')
 async def status(request: Request, session_id: str = ''):
-    rewind = registry(request.app).for_question(session_id or None)
+    rewind = registry(request.app).for_question(session_id or None, identity(request))
     return dict(rewind.status() if rewind else dict(on=False, clips=0, ready=0, indexing=0, pending=0),
                 notice=NOTICE)
 
@@ -32,7 +32,7 @@ async def search(request: Request):
     query = value.get('query') if value else None
     if not isinstance(query, str) or not query.strip() or len(query) > 300:
         return JSONResponse({'error': 'invalid_body'}, status_code=422)
-    rewind = registry(request.app).for_question(value.get('session_id'))
+    rewind = registry(request.app).for_question(value.get('session_id'), identity(request))
     if rewind is None:
         return {'hits': []}
     try:
@@ -45,7 +45,7 @@ async def search(request: Request):
 @router.post('/flush')
 async def flush(request: Request):
     value = await body(request)
-    rewind = registry(request.app).get(value.get('session_id')) if value else None
+    rewind = registry(request.app).get(value.get('session_id'), identity(request)) if value else None
     if rewind is None:
         return JSONResponse({'error': 'unknown_session'}, status_code=404)
     try:
@@ -61,7 +61,7 @@ async def recap(request: Request):
     import asyncio
     from server.rewind import recap as make_recap, recap_line
     value = await body(request)
-    rewind = registry(request.app).get(value.get('session_id')) if value else None
+    rewind = registry(request.app).get(value.get('session_id'), identity(request)) if value else None
     if rewind is None:
         return JSONResponse({'error': 'unknown_session'}, status_code=404)
     for _ in range(20):         # the end-of-call recap can arrive just before the socket close is handled
@@ -81,3 +81,14 @@ async def recap(request: Request):
         return JSONResponse({'error': 'dependency_unavailable'}, status_code=503)
     return dict(steps=result['steps'], skipped=result['skipped'], say=recap_line(result), ms=result['ms'],
                 mode=result['mode'])
+
+
+@router.post('/forget')
+async def forget(request: Request):
+    """Forget this call: delete its TwelveLabs videos and every local clip and frame."""
+    value = await body(request)
+    rewind = registry(request.app).get(value.get('session_id'), identity(request)) if value else None
+    if rewind is None:
+        return JSONResponse({'error': 'unknown_session'}, status_code=404)
+    rewind.set_on(False)
+    return await rewind.forget(local=True)

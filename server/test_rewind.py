@@ -17,6 +17,7 @@ class FakeTL:
         self.rows = rows or []
         self.uploads = []
         self.searches = []
+        self.deleted = []
 
     async def ensure_index(self):
         return 'idx-1'
@@ -29,6 +30,9 @@ class FakeTL:
 
     async def task(self, task_id):
         return {'status': 'ready'}
+
+    async def delete_video(self, index_id, video_id):
+        self.deleted.append((index_id, video_id))
 
     analyzed = None
 
@@ -172,15 +176,110 @@ def test_question_and_query_words():
         'right at the start of the call', 'about 42 seconds in', 'about 1 minute in', 'about 2 minutes 10 seconds in']
 
 
-def test_registry_falls_back_to_last_call_with_clips():
-    registry = Registry(FakeTL())
-    old = registry.open('a', on=True, encoder=fake_encoder)
-    old.clips.append(object())
-    current = registry.open('b')
-    assert registry.for_question('b') is old
-    current.clips.append(object())
-    assert registry.for_question('b') is current
+def test_call_b_cannot_find_call_a_clips():
+    rows = [dict(video_id='vid-1', start=0, end=5, rank=1)]
+    registry = Registry(FakeTL(rows), encoder=fake_encoder)
+    clock = [0.0]
+    a = registry.open('a', on=True, owner='access:alice', clock=lambda: clock[0])
+    clock[0] = 3.0
+    a.add_frame(JPEG)
+    a.keyframe('first')
+    a.close()
+    asyncio.run(a.flush(wait=True))
+    assert a.clips[0].status == 'ready'
+    b = registry.open('b', on=True, owner='access:bob')
+    assert registry.for_question('b', 'access:bob') is b               # own call only, no fallback to A
+    assert registry.for_question('a', 'access:bob') is None            # another caller's id reads as unknown
+    assert registry.get('a', 'access:bob') is None
+    hits = asyncio.run(b.search('red ball'))
+    assert hits == [] and registry.client.searches == []               # B has no clips, nothing is searched
+    taken = registry.open('a', on=True, owner='access:bob')            # reusing A's session id
+    assert registry.get('a', 'access:alice') is a and taken is not a and taken.on is False
 
+
+def test_routes_reject_other_callers(monkeypatch):
+    from server.app import create_app
+    app = create_app(static_dir='/nonexistent')
+    registry = Registry(FakeTL([dict(video_id='vid-1', start=0, end=5, rank=1)]), encoder=fake_encoder)
+    app.state.rewind = registry
+    rewind = registry.open('a', on=True, owner='token')
+    rewind.add_frame(JPEG)
+    rewind.keyframe('first')
+    rewind.close()
+    monkeypatch.setenv('A_EYE_TOKEN', 'secret-test-token')
+    with TestClient(app) as client:
+        good = {'authorization': 'Bearer secret-test-token'}
+        assert client.post('/api/rewind/flush', json={'session_id': 'a'}, headers=good).json()['uploaded'] == 1
+        rewind.owner = 'access:alice'                                    # now someone else's call
+        for path in ('/api/rewind/flush', '/api/rewind/recap', '/api/rewind/forget'):
+            assert client.post(path, json={'session_id': 'a'}, headers=good).status_code == 404
+        assert client.post('/api/rewind/search', json={'query': 'x', 'session_id': 'a'},
+                           headers=good).json() == {'hits': []}
+        assert client.get('/api/rewind/status', params={'session_id': 'a'}, headers=good).json()['clips'] == 0
+
+
+def test_call_end_deletes_cloud_videos_unless_kept():
+    registry = Registry(FakeTL(), encoder=fake_encoder)
+
+    def call(name, keep):
+        rewind = registry.open(name, on=True)
+        rewind.keep = keep
+        clock = [0.0]
+        rewind.clock = lambda: clock[0]
+        rewind.started = 0.0
+        for t in (1.0, 2.0, 9.0):
+            clock[0] = t
+            rewind.add_frame(JPEG)
+            if t == 2.0:
+                rewind.keyframe('change')
+        asyncio.run(rewind.flush(wait=True))
+        return rewind
+
+    async def end(name):
+        task = registry.end(name)
+        if task:
+            return await task
+
+    kept = call('kept', True)
+    asyncio.run(end('kept'))
+    assert registry.client.deleted == [] and kept.clips[0].status == 'ready'
+    gone = call('gone', False)
+    video = gone.clips[0].video_id
+    result = asyncio.run(end('gone'))
+    assert registry.client.deleted == [('idx-1', video)] and result == dict(deleted=1, failed=0)
+    assert gone.clips[0].status == 'deleted' and gone.clips[0].frames    # frames stay for the end recap
+    assert asyncio.run(gone.forget()) == dict(deleted=1, failed=0)
+    assert gone.clips == [] and not gone.ring
+
+
+def test_local_only_locks_rewind_cloud(monkeypatch):
+    from server.rewind import state_message
+    monkeypatch.setenv('LOCAL_ONLY', '1')
+    rewind = Registry(FakeTL()).open('s', on=True)
+    assert rewind.on is False
+    rewind.set_on(True)
+    assert rewind.on is False and state_message(rewind)['locked'] is True
+    monkeypatch.setenv('TWELVELABS_API_KEY', 'tlk_test')
+    try:
+        asyncio.run(TwelveLabsClient().ensure_index())
+    except RuntimeError as exc:
+        assert 'LOCAL_ONLY' in str(exc)
+    else:
+        raise AssertionError('LOCAL_ONLY must block every TwelveLabs call')
+
+
+def test_http_client_delete_video(monkeypatch):
+    monkeypatch.setenv('TWELVELABS_API_KEY', 'tlk_test')
+    seen = []
+
+    def handler(request):
+        seen.append((request.method, request.url.path))
+        return httpx.Response(404 if request.url.path.endswith('/gone') else 204)
+
+    client = TwelveLabsClient(transport=httpx.MockTransport(handler))
+    asyncio.run(client.delete_video('idx', 'vid'))
+    asyncio.run(client.delete_video('idx', 'gone'))                     # already deleted is fine
+    assert seen == [('DELETE', '/v1.3/indexes/idx/videos/vid'), ('DELETE', '/v1.3/indexes/idx/videos/gone')]
 
 def test_http_client_creates_index_and_searches_with_filter(monkeypatch):
     monkeypatch.setenv('TWELVELABS_API_KEY', 'tlk_test')
