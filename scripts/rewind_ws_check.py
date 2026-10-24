@@ -1,11 +1,12 @@
 """Rewind end to end through a running server: /ws2 call with Rewind on -> 1 clip -> TwelveLabs -> typed question.
 
 Usage: .venv/bin/python scripts/rewind_ws_check.py --url http://127.0.0.1:8437 --question "When did I put down the red ball?"
-Uploads exactly one clip of about 5 seconds (synthetic frames, no audio). Needs TWELVELABS_API_KEY on the server.
+Uploads exactly one clip of about 5 seconds (synthetic frames, no audio). Needs TWELVELABS_API_KEY on the server; uses A_EYE_TOKEN when set.
 """
 import argparse
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 from time import monotonic
@@ -23,9 +24,11 @@ async def main():
     parser.add_argument('--url', default='http://127.0.0.1:8437')
     parser.add_argument('--question', default='When did I put down the red ball?')
     args = parser.parse_args()
-    ws_url = args.url.replace('http', 'ws', 1) + '/ws2'
+    token = os.environ.get('A_EYE_TOKEN', '')
+    ws_url = args.url.replace('http', 'ws', 1) + '/ws2' + (f'?token={token}' if token else '')
+    headers = {'authorization': f'Bearer {token}'} if token else {}
     session = f'rewind-check-{int(monotonic())}'
-    async with websockets.connect(ws_url, max_size=2 ** 24) as ws, httpx.AsyncClient(base_url=args.url, timeout=30) as http:
+    async with websockets.connect(ws_url, max_size=2 ** 24) as ws, httpx.AsyncClient(base_url=args.url, timeout=30, headers=headers) as http:
         await ws.send(json.dumps(dict(v=2, type='hello', session_id=session, pack='general', rewind=True)))
 
         async def until(kind, timeout=60):
