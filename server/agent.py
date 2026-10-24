@@ -2,6 +2,9 @@
 import asyncio
 from dataclasses import dataclass, field
 import json
+import re
+from time import monotonic
+from contextlib import aclosing
 from uuid import uuid4
 
 from contracts import schema, validate
@@ -24,6 +27,11 @@ class Session:
     history: list = field(default_factory=list, repr=False)
     vision_error_sent: bool = False
     emit: object = field(default=None, repr=False)
+    scene: dict | None = field(default=None, repr=False)
+    scene_seq: int = 0
+    scene_time: float = 0
+    scene_task: object = field(default=None, repr=False)
+    speak: object = field(default=None, repr=False)
     board: dict = field(init=False)
 
     def __post_init__(self):
@@ -62,7 +70,7 @@ def resolve(turn, scene, seq):
         if 'from_target' in draw and origin is None:
             continue
         at = center(obj)
-        op = dict(kind=kind, id=f'draw-{index}')
+        op = dict(kind=kind, id=f'draw-{index}', anchor=dict(object_id=obj['id'], bbox=obj['bbox']))
         if 'role' in draw:
             op['role'] = draw['role']
         if kind in ('box', 'highlight'):
@@ -100,8 +108,11 @@ def parse_turn(text):
 
 async def run_turn(session, text, *, vision, llm):
     messages = []
+    owner = asyncio.current_task()
 
     async def emit(msg):
+        if owner.cancelling():
+            raise asyncio.CancelledError
         messages.append(msg)
         if session.emit is not None:
             await session.emit(msg)
@@ -117,60 +128,152 @@ async def run_turn(session, text, *, vision, llm):
         remember()
         return messages
     await emit(state('thinking'))
-    frame = session.frame
+    started = monotonic()
+    turn_id = uuid4().hex
+    vlm_ms = 0
     scene = dict(caption='I do not have a camera view yet.', objects=[], ms=0)
-    if frame:
-        queries = list(session.pack.default_queries)
-        if text.strip():
-            queries.append(text.strip()[:60])
+    seq = 0
+    if session.scene is None and session.scene_task is not None:
         try:
-            scene = await vision.call('scene', dict(image_b64=frame['jpeg_b64'], queries=queries[:8]))
-            validate('scene_response', scene)
+            await asyncio.wait_for(asyncio.shield(session.scene_task), timeout=3)
         except Exception:
-            scene = dict(caption='I could not see the scene.', objects=[], ms=0)
-            if not session.vision_error_sent:
-                await emit(message('error', code='vision_unavailable', message='Vision is unavailable.'))
-                session.vision_error_sent = True
+            pass
+        finally:
+            vlm_ms = (monotonic() - started) * 1000
+    if session.scene is not None and monotonic() - session.scene_time < 2:
+        scene, seq = session.scene, session.scene_seq
     system = session.pack.system_prompt
     if session.pack.id == 'pc_build':
         system += board_prompt(session.board)
-    system += (' Reply only with JSON matching brain_turn. Use agent helper; say is your spoken text. '
-               'Draw targets and optional from_target must be scene object IDs, never coordinates. '
+    system += (' Line 1: one JSON object with agent, draw and optional market_category. '
+               'Do not include say in that object. Next line: SAY: then spoken text. '
+               'Draw targets and from_target must be scene object IDs, never coordinates. '
                'Include market_category only when asked about buying, prices or cheaper options. '
-               + json.dumps(schema()['$defs']['brain_turn'])
-               + ' agent: helper or shopper; role: target, info, warn, ok; '
-               'market_category: cpu, board, ram, ssd, gpu, psu, cooler, case, fan.')
+               'Draw item schema: ' + json.dumps(schema()['$defs']['brain_turn']['properties']['draw'])
+               + ' agent: helper or shopper; market_category: cpu, board, ram, ssd, gpu, psu, cooler, case, fan.')
     user = json.dumps(dict(caption=scene['caption'], objects=[
         {k: obj[k] for k in ('id', 'label', 'bbox')} for obj in scene['objects']],
         conversation=session.history[-10:], text=text))
+    queue = asyncio.Queue()
+    first_audio = None
+
+    async def audio_worker():
+        nonlocal first_audio
+        while True:
+            msg = await queue.get()
+            try:
+                if msg is None:
+                    return
+                async for audio in session.speak(msg):
+                    await emit(audio)
+                    if first_audio is None:
+                        first_audio = (monotonic() - started) * 1000
+            finally:
+                queue.task_done()
+
+    worker = asyncio.create_task(audio_worker()) if session.speak else None
+    part = 0
+
+    async def speech(value, final=False, agent='helper'):
+        nonlocal part
+        msg = say(value, agent)
+        msg.update(turn_id=turn_id, part=part, final=final)
+        part += 1
+        await emit(msg)
+        if worker:
+            await queue.put(msg)
+
+    turn = dict(agent='helper', draw=[])
+    buffer = ''
+    header = False
+    marker = False
+    invalid = False
+    pending = None
+    first_token = None
+    brain_started = monotonic()
     try:
-        reply = await asyncio.to_thread(llm.complete, system, user)
-        turn = parse_turn(reply.text)
-    except Exception:
-        turn = dict(agent='helper', say=scene['caption'] + ' I can point at it if you tell me what you need',
-                    draw=[dict(kind='box', target=scene['objects'][0]['id'])] if scene['objects'] else [])
-    drawing, focus = resolve(turn, scene, frame['seq'] if frame else 0)
-    await emit(drawing)
-    await emit(state('speaking', turn['agent'], **({'focus': focus} if focus else {})))
-    await emit(say(turn['say'], turn['agent']))
-    if turn.get('market_category'):
-        await emit(state('thinking', 'shopper'))
-        await emit(say('Let me check prices that fit.', 'shopper'))
-        query = dict(v=1, category=turn['market_category'], owned_parts=[dict(
-            category='board', model=session.board['model'], specs=session.board.get('specs', {}),
-            confirmed=True, source='fixture')])
-        try:
-            result = await asyncio.to_thread(search, query)
-            validate('market_response', result)
-            await emit(message('market_results', agent='shopper', result=result))
-            fits = [item for item in result['items'] if item['compat']['status'] == 'fits']
-            cheapest = min(fits, key=lambda i: i['price_usd'] + i.get('shipping_usd', 0)) if fits else None
-            answer = (f"{cheapest['title']} is the cheapest confirmed fit at "
-                      f"${cheapest['price_usd'] + cheapest.get('shipping_usd', 0):.2f} including shipping."
-                      if cheapest else "I couldn't confirm anything fits.")
-        except Exception:
-            answer = "I couldn't confirm anything fits."
-        await emit(state('speaking', 'shopper'))
-        await emit(say(answer, 'shopper'))
+        async with aclosing(llm.stream(system, user)) as stream:
+            async for delta in stream:
+                if first_token is None:
+                    first_token = (monotonic() - brain_started) * 1000
+                buffer += delta
+                if not header:
+                    if '\n' not in buffer:
+                        continue
+                    line, buffer = buffer.split('\n', 1)
+                    try:
+                        turn = json.loads(line)
+                        validate('brain_turn', dict(turn, say='stream'))
+                    except Exception:
+                        turn = dict(agent='helper', draw=[])
+                        invalid = True
+                        buffer = line + '\n' + buffer
+                    drawing, focus = resolve(turn, scene, seq)
+                    await emit(drawing)
+                    await emit(state('speaking', turn['agent'], **({'focus': focus} if focus else {})))
+                    header = True
+                if not marker and not invalid:
+                    buffer = buffer.lstrip()
+                    if len(buffer) < 4:
+                        continue
+                    if buffer.startswith('SAY:'):
+                        buffer = buffer[4:].lstrip()
+                    marker = True
+                while True:
+                    match = re.search(r'[.!?\n]', buffer)
+                    end = match.end() if match and match.end() <= 120 else (120 if len(buffer) >= 120 else 0)
+                    if not end:
+                        break
+                    sentence, buffer = buffer[:end].strip(), buffer[end:]
+                    if sentence:
+                        if pending:
+                            await speech(pending, agent=turn['agent'])
+                        pending = sentence
+                # Once more spoken text exists, the preceding sentence cannot be final.
+                if pending and buffer.strip():
+                    await speech(pending, agent=turn['agent'])
+                    pending = None
+        if not header:
+            turn = dict(agent='helper', draw=[])
+            await emit(resolve(turn, scene, seq)[0])
+            await emit(state('speaking'))
+        tail = buffer.strip()
+        if tail:
+            if pending:
+                await speech(pending, agent=turn['agent'])
+            pending = tail
+        await speech(pending or scene['caption'] or 'Please tell me what you need.',
+                     final=not bool(turn.get('market_category')), agent=turn['agent'])
+        if turn.get('market_category'):
+            await emit(state('thinking', 'shopper'))
+            await speech('Let me check prices that fit.', agent='shopper')
+            query = dict(v=1, category=turn['market_category'], owned_parts=[dict(
+                category='board', model=session.board['model'], specs=session.board.get('specs', {}),
+                confirmed=True, source='fixture')])
+            try:
+                result = await asyncio.to_thread(search, query)
+                validate('market_response', result)
+                await emit(message('market_results', agent='shopper', result=result))
+                fits = [item for item in result['items'] if item['compat']['status'] == 'fits']
+                cheapest = min(fits, key=lambda i: i['price_usd'] + i.get('shipping_usd', 0)) if fits else None
+                answer = (f"{cheapest['title']} is the cheapest confirmed fit at "
+                          f"${cheapest['price_usd'] + cheapest.get('shipping_usd', 0):.2f} including shipping."
+                          if cheapest else "I couldn't confirm anything fits.")
+            except Exception:
+                answer = "I couldn't confirm anything fits."
+            await emit(state('speaking', 'shopper'))
+            await speech(answer, final=True, agent='shopper')
+        if worker:
+            await queue.put(None)
+            await worker
+    finally:
+        if worker:
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
     remember()
+    timings = dict(turn_id=turn_id, vlm_ms=vlm_ms,
+                   brain_first_token_ms=first_token or 0, turn_ms=(monotonic() - started) * 1000)
+    if first_audio is not None:
+        timings['first_audio_ms'] = first_audio
+    await emit(message('metrics', **timings))
     return messages

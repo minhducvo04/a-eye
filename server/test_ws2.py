@@ -27,15 +27,23 @@ def send(ws, kind, **fields):
 
 
 def receive(ws):
-    msg = ws.receive_json()
-    validate('server_message_v2', msg)
-    return msg
+    while True:
+        msg = ws.receive_json()
+        validate('server_message_v2', msg)
+        if msg['type'] not in ('track', 'metrics'):
+            return msg
 
 
 def hello(ws, tts='browser'):
     send(ws, 'hello', pack='general', tts=tts)
     assert receive(ws)['state'] == 'listening'
     ws.send_json(FRAME)
+    # Wait for the first background refresh before testing a cached turn.
+    while True:
+        msg = ws.receive_json()
+        validate('server_message_v2', msg)
+        if msg['type'] == 'track':
+            break
 
 
 def test_ws2_flow_and_invalid_input():
@@ -58,30 +66,31 @@ def test_ws2_flow_and_invalid_input():
 
 
 def test_second_final_cancels_first_turn():
-    class SlowVision(Vision):
+    class SlowBrain:
         def __init__(self):
-            super().__init__()
             self.started = threading.Event()
             self.cancelled = threading.Event()
 
-        async def call(self, operation, payload):
+        async def stream(self, *args):
             if not self.started.is_set():
                 self.started.set()
                 try:
                     await asyncio.Event().wait()
                 finally:
                     self.cancelled.set()
-            return SCENE
+            yield '{"agent":"helper","draw":[]}\nSAY:\nDone.'
 
-    vision = SlowVision()
-    with TestClient(app(vision)) as client, client.websocket_connect('/ws2') as ws:
+    brain = SlowBrain()
+    application = app()
+    application.state.llm_v2 = brain
+    with TestClient(application) as client, client.websocket_connect('/ws2') as ws:
         hello(ws)
         send(ws, 'user_text', text='first', final=True)
         assert receive(ws)['state'] == 'thinking'
-        assert vision.started.wait(2)
+        assert brain.started.wait(2)
         send(ws, 'user_text', text='second', final=True)
         assert receive(ws)['state'] == 'thinking'
-        assert vision.cancelled.wait(2)
+        assert brain.cancelled.wait(0.2)
         assert [receive(ws)['type'] for _ in range(3)] == ['draw', 'agent_state', 'say']
 
 
