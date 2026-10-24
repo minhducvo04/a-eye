@@ -108,13 +108,15 @@ def test_speech_refresh_and_final_reservation(monkeypatch, input_kind):
         time.sleep(.51)
         fields = dict(seq=1, pcm16_b64='AAA=') if input_kind == 'audio_in' else dict(text='help')
         send(ws, input_kind, **fields, final=False)
+        # Speech cannot re-scan the unchanged frame; a new frame enables refresh.
+        ws.send_json(dict(FRAME, seq=2))
         assert refresh.wait(.2)
         start = monotonic()
         send(ws, input_kind, **fields, final=True)
         assert brain_started.wait(.2 if input_kind == 'audio_in' else .05)
         if input_kind == 'user_text':
             assert monotonic() - start < .05
-        ws.send_json(dict(FRAME, seq=2))
+        ws.send_json(dict(FRAME, seq=3))
         time.sleep(1.05)
         assert vision.calls == 2
         brain_release.set()

@@ -185,7 +185,7 @@ def test_draw_and_first_sentence_arrive_before_brain_finishes():
         task = asyncio.create_task(run_turn(Session('s', emit=emit), 'point', vision=Vision(), llm=PausedBrain()))
         await asyncio.wait_for(spoken.wait(), 0.2)
         assert not task.done()
-        assert [m['type'] for m in messages] == ['agent_state', 'draw', 'agent_state', 'say']
+        assert [m['type'] for m in messages] == ['agent_state', 'draw', 'agent_state', 'reply_delta', 'say']
         assert messages[-1]['text'] == 'First.'
         release.set()
         await task

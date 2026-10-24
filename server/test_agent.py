@@ -82,7 +82,7 @@ def test_fallback(output):
 def test_refusal_and_power_gate(pack, text):
     llm, vision = LLM(), Vision()
     messages = run(Session('s', pack=packs.get(pack), frame=FRAME), llm, text, vision)
-    assert len(messages) == 1 and messages[0]['type'] == 'say'
+    assert [m['type'] for m in messages] == ['reply_delta', 'say']
     assert llm.calls == vision.calls == []
 
 

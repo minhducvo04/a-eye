@@ -4,6 +4,7 @@ Images must be base64 board crops, never full camera frames. The cloud limit
 is 400,000 encoded bytes across the request; size cannot prove crop provenance.
 No prompts, images, credentials or provider exceptions are logged here.
 """
+import asyncio
 import base64
 import json
 from contextlib import AsyncExitStack
@@ -105,15 +106,16 @@ class LLMClient:
         text = re.split(r'(?<=[.!?])\s+', user.strip(), maxsplit=1)[0] or 'OK.'
         return result(text, 'canned', 'canned')
 
-    async def stream(self, system: str, user: str, *, max_tokens: int = 512):
+    async def stream(self, system: str, user: str, *, max_tokens: int = 512, on_backup=None):
         """Cancellable text stream; fall back only before committing provider text."""
         provider = os.environ.get('LLM_PROVIDER', 'auto')
         use_claude = provider == 'claude' or (
             provider == 'auto' and bool(os.environ.get('ANTHROPIC_API_KEY')))
         emitted = False
+        timeout = float(os.environ.get('BRAIN_FIRST_TOKEN_S', '3.5'))
         if use_claude and os.environ.get('LOCAL_ONLY') != '1':
             try:
-                async with AsyncExitStack() as stack:
+                async with asyncio.timeout(timeout) as deadline, AsyncExitStack() as stack:
                     client = self._anthropic_client
                     if client is None:
                         client = await stack.enter_async_context(anthropic.AsyncAnthropic())
@@ -124,16 +126,19 @@ class LLMClient:
                     ) as response:
                         async for delta in response.text_stream:
                             if delta:
+                                deadline.reschedule(None)
                                 emitted = True
                                 yield delta
                 if emitted:
                     return
-            except Exception:
+            except Exception as exc:
                 if emitted:
-                    return
+                    raise
+                if isinstance(exc, TimeoutError) and on_backup:
+                    await on_backup()
         if provider in ('auto', 'claude', 'local'):
             try:
-                async with AsyncExitStack() as stack:
+                async with asyncio.timeout(timeout) as deadline, AsyncExitStack() as stack:
                     client = self._httpx_client or _shared_async_client()
                     payload = dict(model=os.environ.get('LOCAL_LLM_MODEL', LOCAL_DEFAULT),
                                    stream=True, think=False, options={'num_predict': max_tokens, 'num_ctx': 4096}, keep_alive='30m',
@@ -150,16 +155,24 @@ class LLMClient:
                                 raise ValueError('Local stream failed')
                             delta = chunk.get('message', {}).get('content', '')
                             if isinstance(delta, str) and delta:
+                                deadline.reschedule(None)
                                 emitted = True
                                 yield delta
                             if chunk.get('done'):
                                 break
                 if emitted:
                     return
-            except Exception:
+            except Exception as exc:
                 if emitted:
-                    return
-        yield re.split(r'(?<=[.!?])\s+', user.strip(), maxsplit=1)[0] or 'OK.'
+                    raise
+                if isinstance(exc, TimeoutError) and on_backup:
+                    await on_backup()
+        try:
+            json.loads(user)
+        except ValueError:
+            yield re.split(r'(?<=[.!?])\s+', user.strip(), maxsplit=1)[0] or 'OK.'
+        else:
+            yield '{"agent":"helper","draw":[]}\nSAY: The brain is unavailable. Please try again.'
 
     @staticmethod
     def _claude(client, model, system, user, max_tokens, images):
