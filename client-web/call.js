@@ -1,11 +1,17 @@
 // Safari call page. Speaks the v1 WebSocket contract. Frames stay in memory only
 // for the JPEG we are about to send; nothing is written to storage or disk.
 
-import { drawOverlay } from "./overlay.js";
+import {
+  OVERLAY_STALE_MS,
+  drawOverlayCover,
+  reduceOverlay,
+  sharpCanvasSize,
+  visibleOverlay,
+} from "./overlay.js";
+import { buildFrameMessage, createFrameLoop, frameOrientation, writeFrame } from "./live.js";
 
 const BOARD_ID = "demo-b650";
-const MAX_FRAME_WIDTH = 640;
-const FRAME_INTERVAL_MS = 1000;
+const MAX_PHOTO_WIDTH = 640;
 
 const video = document.getElementById("camera");
 const canvas = document.getElementById("overlay");
@@ -15,14 +21,34 @@ const stepItem = document.getElementById("step-item");
 const stepHeader = document.getElementById("step-header");
 const captionEl = document.getElementById("caption");
 const verdictEl = document.getElementById("verdict");
+const liveStatsEl = document.getElementById("live-stats");
+const startBtn = document.getElementById("start-camera");
+const pauseBtn = document.getElementById("pause-live");
+const grab = document.createElement("canvas");
 
 const sessionId = randomId();
 let socket = null;
 let seq = 0;
-let frameTimer = 0;
-let lastDrawnSeq = -1;
-let latestOverlay = null;
+let overlayState = { seq: -1, overlay: null, atMs: 0 };
+let staleTimer = 0;
 let cameraOn = false;
+let starting = false;
+let shownFps = 0;
+let shownRtt = null;
+
+const loop = createFrameLoop({
+  now: () => Date.now(),
+  cameraOn: () => cameraOn,
+  hidden: () => document.hidden,
+  socketOpen: () => Boolean(socket && socket.readyState === WebSocket.OPEN),
+  bufferedAmount: () => (socket ? socket.bufferedAmount : 0),
+  captureAndSend: (now) => captureAndSend(now),
+  onStats: (stats) => {
+    shownFps = stats.fps;
+    shownRtt = stats.rttMs;
+    renderStats();
+  },
+});
 
 function randomId() {
   if (globalThis.crypto && typeof crypto.randomUUID === "function") {
@@ -44,10 +70,24 @@ export function speak(text) {
   synth.speak(utter);
 }
 
+function socketLabel() {
+  if (!socket) return "closed";
+  if (socket.readyState === WebSocket.OPEN) return "open";
+  if (socket.readyState === WebSocket.CONNECTING) return "connecting";
+  if (socket.readyState === WebSocket.CLOSING) return "closing";
+  return "closed";
+}
+
+function renderStats() {
+  const rtt = shownRtt == null ? "—" : `${shownRtt} ms`;
+  liveStatsEl.textContent = `${shownFps} fps · ${rtt} · ${socketLabel()}`;
+}
+
 function setStatus(on) {
   statusDot.classList.toggle("on", on);
   statusDot.classList.toggle("off", !on);
   statusDot.setAttribute("aria-label", on ? "socket connected" : "socket disconnected");
+  renderStats();
 }
 
 function setCaption(text, isError) {
@@ -71,6 +111,7 @@ function connect() {
     return;
   }
   socket = new WebSocket(wsUrl());
+  renderStats();
   socket.addEventListener("open", () => {
     setStatus(true);
     send({
@@ -90,6 +131,7 @@ function connect() {
     } catch {
       return;
     }
+    loop.noteServer(message);
     onServer(message);
   });
   socket.addEventListener("close", () => {
@@ -102,12 +144,25 @@ function connect() {
   });
 }
 
+function armOverlayExpiry() {
+  window.clearTimeout(staleTimer);
+  const wait = overlayState.atMs + OVERLAY_STALE_MS - Date.now();
+  staleTimer = window.setTimeout(() => {
+    if (visibleOverlay(overlayState, Date.now())) {
+      armOverlayExpiry();
+      return;
+    }
+    paint();
+  }, Math.max(0, wait));
+}
+
 function onServer(message) {
   if (!message || typeof message !== "object") return;
   if (message.type === "overlay") {
-    if (typeof message.seq === "number" && message.seq < lastDrawnSeq) return;
-    if (typeof message.seq === "number") lastDrawnSeq = message.seq;
-    latestOverlay = message;
+    const next = reduceOverlay(overlayState, message, Date.now());
+    if (next === overlayState) return;
+    overlayState = next;
+    armOverlayExpiry();
     paint();
     return;
   }
@@ -149,50 +204,30 @@ function showVerdict(message) {
   }
 }
 
-function contentRect() {
-  const elementW = video.clientWidth || canvas.clientWidth;
-  const elementH = video.clientHeight || canvas.clientHeight;
-  const frameW = video.videoWidth;
-  const frameH = video.videoHeight;
-  if (!frameW || !frameH || !elementW || !elementH) {
-    return { x: 0, y: 0, w: elementW, h: elementH };
-  }
-  const scale = Math.min(elementW / frameW, elementH / frameH);
-  const w = frameW * scale;
-  const h = frameH * scale;
-  return {
-    x: (elementW - w) / 2,
-    y: (elementH - h) / 2,
-    w,
-    h,
-  };
-}
-
 function paint() {
   const cssW = video.clientWidth || canvas.clientWidth;
   const cssH = video.clientHeight || canvas.clientHeight;
   if (!cssW || !cssH) return;
-  const dpr = window.devicePixelRatio || 1;
-  const bitmapW = Math.round(cssW * dpr);
-  const bitmapH = Math.round(cssH * dpr);
-  if (canvas.width !== bitmapW || canvas.height !== bitmapH) {
-    canvas.width = bitmapW;
-    canvas.height = bitmapH;
+  const bitmap = sharpCanvasSize(cssW, cssH, window.devicePixelRatio || 1);
+  if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
   }
   const ctx = canvas.getContext("2d");
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, cssW, cssH);
-  if (!latestOverlay) return;
-  const rect = contentRect();
-  if (!rect.w || !rect.h) return;
-  ctx.save();
-  ctx.translate(rect.x, rect.y);
-  drawOverlay(ctx, latestOverlay, rect.w, rect.h);
-  ctx.restore();
+  ctx.setTransform(bitmap.ratio, 0, 0, bitmap.ratio, 0, 0);
+  const srcW = video.videoWidth;
+  const srcH = video.videoHeight;
+  const overlay = visibleOverlay(overlayState, Date.now());
+  if (!srcW || !srcH) {
+    ctx.clearRect(0, 0, cssW, cssH);
+    return;
+  }
+  // The JPEG is a uniform scale of this frame, so 0..1 matches object-fit: cover.
+  drawOverlayCover(ctx, overlay, srcW, srcH, cssW, cssH);
 }
 
-function rasterize(source, srcW, srcH) {
-  const scale = srcW > MAX_FRAME_WIDTH ? MAX_FRAME_WIDTH / srcW : 1;
+function rasterizePhoto(source, srcW, srcH) {
+  const scale = srcW > MAX_PHOTO_WIDTH ? MAX_PHOTO_WIDTH / srcW : 1;
   const w = Math.max(1, Math.round(srcW * scale));
   const h = Math.max(1, Math.round(srcH * scale));
   const offscreen = document.createElement("canvas");
@@ -205,20 +240,26 @@ function rasterize(source, srcW, srcH) {
   return { w, h, jpeg_b64: dataUrl.slice(comma + 1) };
 }
 
-function sendFrame() {
-  if (!cameraOn || !video.videoWidth || !video.videoHeight) return;
-  if (!socket || socket.readyState !== WebSocket.OPEN) return;
-  const shot = rasterize(video, video.videoWidth, video.videoHeight);
-  send({
-    v: 1,
-    type: "frame",
-    session_id: sessionId,
-    seq: nextSeq(),
-    ts_ms: Date.now(),
+function captureAndSend(now) {
+  if (!cameraOn || loop.isPaused() || document.hidden) return null;
+  if (!socket || socket.readyState !== WebSocket.OPEN) return null;
+  if (socket.bufferedAmount > 0) return null;
+  if (!video.videoWidth || !video.videoHeight) return null;
+  const shot = writeFrame(grab, video, video.videoWidth, video.videoHeight);
+  if (!shot || !shot.jpeg_b64) return null;
+  const sentSeq = nextSeq();
+  const orientationType = globalThis.screen && screen.orientation ? screen.orientation.type : "";
+  const ok = send(buildFrameMessage({
+    sessionId,
+    seq: sentSeq,
+    tsMs: now,
     w: shot.w,
     h: shot.h,
+    orientation: frameOrientation(orientationType, window.innerWidth, window.innerHeight),
     jpeg_b64: shot.jpeg_b64,
-  });
+  }));
+  if (!ok) return null;
+  return { seq: sentSeq, tsMs: now };
 }
 
 function sendPhoto(shot) {
@@ -245,23 +286,50 @@ function confirm(what) {
   if (!ok) setCaption("Not connected.", true);
 }
 
+function stopCamera() {
+  const stream = video.srcObject;
+  if (stream && typeof stream.getTracks === "function") {
+    for (const track of stream.getTracks()) track.stop();
+  }
+  video.srcObject = null;
+  cameraOn = false;
+}
+
 async function startCamera() {
-  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
-    setCaption("No camera. Use Upload photo.", false);
+  if (starting || cameraOn) return;
+  if (!window.isSecureContext) {
+    setCaption("Camera needs HTTPS or localhost. Use Upload photo.", false);
     return;
   }
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
+    setCaption("No camera in this browser. Use Upload photo.", false);
+    return;
+  }
+  starting = true;
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment" },
+      video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false,
     });
     video.srcObject = stream;
+    video.playsInline = true;
+    video.muted = true;
     await video.play();
     cameraOn = true;
-    sendFrame();
-    frameTimer = window.setInterval(sendFrame, FRAME_INTERVAL_MS);
-  } catch {
-    cameraOn = false;
-    setCaption("Camera unavailable. Use Upload photo.", false);
+    startBtn.disabled = true;
+    pauseBtn.disabled = false;
+    loop.start();
+    setCaption("", false);
+  } catch (err) {
+    stopCamera();
+    const name = err && err.name;
+    if (name === "NotAllowedError" || name === "PermissionDeniedError" || name === "SecurityError") {
+      setCaption("Camera blocked. Allow camera access, or use Upload photo.", false);
+    } else {
+      setCaption("Camera unavailable. Use Upload photo.", false);
+    }
+  } finally {
+    starting = false;
   }
 }
 
@@ -281,7 +349,7 @@ async function onUpload(event) {
   const url = URL.createObjectURL(file);
   try {
     const image = await loadImage(url);
-    sendPhoto(rasterize(image, image.naturalWidth, image.naturalHeight));
+    sendPhoto(rasterizePhoto(image, image.naturalWidth, image.naturalHeight));
   } catch {
     setCaption("Could not read that photo.", true);
   } finally {
@@ -289,6 +357,13 @@ async function onUpload(event) {
   }
 }
 
+startBtn.addEventListener("click", () => {
+  startCamera();
+});
+pauseBtn.addEventListener("click", () => {
+  const paused = loop.togglePaused();
+  pauseBtn.textContent = paused ? "Resume" : "Pause";
+});
 document.getElementById("power-off").addEventListener("click", () => confirm("power_off"));
 document.getElementById("check-again").addEventListener("click", () => confirm("check_again"));
 document.getElementById("send-photo").addEventListener("click", () => {
@@ -296,14 +371,18 @@ document.getElementById("send-photo").addEventListener("click", () => {
     setCaption("No camera frame. Use Upload photo.", true);
     return;
   }
-  sendPhoto(rasterize(video, video.videoWidth, video.videoHeight));
+  sendPhoto(rasterizePhoto(video, video.videoWidth, video.videoHeight));
 });
 document.getElementById("upload").addEventListener("change", (event) => {
   onUpload(event);
 });
 
+document.addEventListener("visibilitychange", () => {
+  loop.setHidden(document.hidden);
+});
+
 window.addEventListener("resize", paint);
 video.addEventListener("loadedmetadata", paint);
 connect();
-startCamera();
 paint();
+renderStats();

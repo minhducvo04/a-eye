@@ -9,7 +9,7 @@
 </head>
 <body>
   <main class="stage">
-    <video id="camera" autoplay playsinline muted></video>
+    <video id="camera" autoplay playsinline webkit-playsinline muted></video>
     <canvas id="overlay" aria-hidden="true"></canvas>
     <div class="hud">
       <div class="top">
@@ -20,10 +20,13 @@
         </section>
         <span id="status" class="status off" title="socket" aria-label="socket disconnected"></span>
       </div>
+      <p id="live-stats" class="live-stats">0 fps · — · closed</p>
       <p id="verdict" class="banner hidden" aria-live="polite"></p>
       <div class="spacer"></div>
       <p id="caption" class="caption" aria-live="polite"></p>
       <div class="controls">
+        <button type="button" id="start-camera">Start camera</button>
+        <button type="button" id="pause-live" disabled>Pause</button>
         <button type="button" id="power-off">Power is off</button>
         <button type="button" id="check-again">Check again</button>
         <button type="button" id="send-photo">Send photo</button>

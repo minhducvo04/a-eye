@@ -3,7 +3,17 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { drawOverlay, roleColor, toPixels } from "./overlay.js";
+import {
+  coverTransform,
+  drawOverlay,
+  drawOverlayCover,
+  mapCoverBox,
+  reduceOverlay,
+  roleColor,
+  sharpCanvasSize,
+  toPixels,
+  visibleOverlay,
+} from "./overlay.js";
 
 const examplesPath = join(dirname(fileURLToPath(import.meta.url)), "..", "contracts", "examples.json");
 const examples = JSON.parse(readFileSync(examplesPath, "utf8"));
@@ -110,4 +120,69 @@ test("drawOverlay strokes each example box, draws the arrow, and dots only pin l
   drawOverlay(gated, headerWithPins, width, height);
   assert.equal(methods(gated, "arc").length, 0);
   assert.equal(methods(gated, "strokeRect").length, 1);
+});
+
+test("coverTransform crops a wider source on the sides and a taller source on the top", () => {
+  const wide = coverTransform(640, 360, 320, 320);
+  assert.equal(wide.scale, 320 / 360);
+  assert.equal(wide.offsetY, 0);
+  assert.ok(wide.offsetX < 0);
+  assert.equal(wide.offsetX, (320 - 640 * wide.scale) / 2);
+
+  const tall = coverTransform(360, 640, 320, 320);
+  assert.equal(tall.scale, 320 / 360);
+  assert.equal(tall.offsetX, 0);
+  assert.ok(tall.offsetY < 0);
+  assert.equal(tall.offsetY, (320 - 640 * tall.scale) / 2);
+});
+
+test("mapCoverBox places a normalized box through the cover crop", () => {
+  const box = mapCoverBox([0.25, 0.25, 0.5, 0.5], 640, 360, 320, 320);
+  assert.equal(box.y, 80);
+  assert.equal(box.h, 160);
+  assert.ok(Math.abs(box.x - 160 / 9) < 1e-9);
+  assert.ok(Math.abs(box.w - 2560 / 9) < 1e-9);
+
+  const wideCenter = mapCoverBox([0.5, 0.5, 0, 0], 640, 360, 320, 320);
+  const tallCenter = mapCoverBox([0.5, 0.5, 0, 0], 360, 640, 320, 320);
+  assert.ok(Math.abs(wideCenter.x - 160) < 1e-9);
+  assert.ok(Math.abs(wideCenter.y - 160) < 1e-9);
+  assert.ok(Math.abs(tallCenter.x - 160) < 1e-9);
+  assert.ok(Math.abs(tallCenter.y - 160) < 1e-9);
+
+  const ctx = fakeCtx();
+  drawOverlayCover(
+    ctx,
+    {
+      type: "overlay",
+      seq: 1,
+      level: "header",
+      boxes: [{ id: "a", label: "CPU_FAN", bbox: [0.25, 0.25, 0.5, 0.5], role: "target", conf: 0.86 }],
+    },
+    640,
+    360,
+    320,
+    320,
+  );
+  assert.deepEqual(methods(ctx, "strokeRect")[0].slice(1), [box.x, box.y, box.w, box.h]);
+});
+
+test("sharpCanvasSize uses devicePixelRatio", () => {
+  assert.deepEqual(sharpCanvasSize(100, 50, 2), { width: 200, height: 100, ratio: 2 });
+  assert.deepEqual(sharpCanvasSize(10, 10, 0), { width: 10, height: 10, ratio: 1 });
+});
+
+test("an older overlay is dropped and a quiet one clears after 3 s", () => {
+  let state = { seq: -1, overlay: null, atMs: 0 };
+  state = reduceOverlay(state, { type: "overlay", seq: 2, level: "header", boxes: [] }, 1000);
+  assert.equal(visibleOverlay(state, 1000).seq, 2);
+  const stale = { type: "overlay", seq: 1, level: "header", boxes: [{ id: "old" }] };
+  const kept = reduceOverlay(state, stale, 1200);
+  assert.equal(kept, state);
+  assert.equal(visibleOverlay(state, 1000 + 2999).seq, 2);
+  assert.equal(visibleOverlay(state, 1000 + 3000), null);
+  const fresh = reduceOverlay(state, { type: "overlay", seq: 3, level: "header", boxes: [] }, 2000);
+  assert.equal(fresh.seq, 3);
+  assert.equal(visibleOverlay(fresh, 4999).seq, 3);
+  assert.equal(visibleOverlay(fresh, 5000), null);
 });
