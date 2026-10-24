@@ -29,3 +29,24 @@ flowchart LR
   vision --> run
   run --> table[csv and table.md]
 ```
+
+## Brain eval
+
+Replays `eval/brain_cases.json` (31 text-only cases, no frames) through the real `server.agent.run_turn` on the single-brain path, the one a local model serves when there is no Anthropic key or `LOCAL_ONLY=1`. Each case's scene becomes the session's cached scene. Market searches are recorded, never sent.
+
+```sh
+python -m eval.brain --model local:qwen3.5:9b-q4_K_M --model local:<small model>
+python -m eval.brain --model claude:claude-haiku-5-5 --tag shop
+```
+
+Per turn:
+
+- **format**: the header line strictly matches `brain_turn` (no `say` inside it) and `SAY:` speech follows. Reported only, since the server repairs bent headers.
+- **grounded**: every draw `target` and `from_target` the model wrote is a real scene id (the server silently drops invented ones)
+- **target**: the server drew only on `expect.targets`; an empty list means draw nothing
+- **market**: the searched category equals `expect.market`, or no search when none is expected. This includes the server's keyword rule (`shopping_category`).
+- **brief**: one or two spoken sentences
+
+A pass needs speech, grounding, the right targets and the right market. Latency is first token (what the voice waits on) and full turn. Each model gets one untimed warmup call. The production first-token timeout (`BRAIN_FIRST_TOKEN_S`, 3.5 s) still applies; a timeout shows up as provider `canned` and prints a warning.
+
+Outputs (gitignored): `eval/out/brain.md`, plus `eval/out/brain-<model>.csv` with each turn's spoken text.

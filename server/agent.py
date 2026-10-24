@@ -146,6 +146,11 @@ _ROLES = {'target', 'info', 'warn', 'ok'}
 _CATEGORIES = {'cpu', 'board', 'ram', 'ssd', 'gpu', 'psu', 'cooler', 'case', 'fan'}
 
 
+def _one_of(value, allowed):
+    # Models sometimes send a list or object where a string belongs; those are unhashable.
+    return isinstance(value, str) and value in allowed
+
+
 _SHOPPING = re.compile(r"\b(cheap\w*|price\w*|cost\w*|buy\w*|deal\w*|afford\w*|budget)\b", re.I)
 _CATEGORY_WORDS = [('ram', r'\b(ram|memory|dimm|ddr\d?)\b'), ('ssd', r'\b(ssd|nvme|m\.2|drive|storage)\b'),
                    ('gpu', r'\b(gpu|graphics|video card)\b'), ('cpu', r'\b(cpu|processor)\b'),
@@ -177,7 +182,7 @@ def sanitize_header(turn, scene_ids=None):
 
     for item in items(turn.get('draw')):
         item = dict(item, kind=item.get('kind', item.get('type')))
-        if item['kind'] not in _DRAW_KINDS:
+        if not _one_of(item['kind'], _DRAW_KINDS):
             continue
         clean = {k: item[k] for k in ('kind', 'target', 'from_target', 'text') if isinstance(item.get(k), str)}
         clean['kind'] = item['kind']
@@ -185,11 +190,11 @@ def sanitize_header(turn, scene_ids=None):
             clean.pop('text', None)
         if scene_ids is not None and clean.get('from_target') not in scene_ids:
             clean.pop('from_target', None)
-        if item.get('role') in _ROLES:
+        if _one_of(item.get('role'), _ROLES):
             clean['role'] = item['role']
         draws.append(clean)
     out = {'agent': turn.get('agent') if turn.get('agent') in ('helper', 'shopper') else 'helper', 'draw': draws}
-    if turn.get('market_category') in _CATEGORIES:
+    if _one_of(turn.get('market_category'), _CATEGORIES):
         out['market_category'] = turn['market_category']
     return out
 

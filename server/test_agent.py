@@ -113,3 +113,12 @@ def test_shopper(monkeypatch):
 def test_no_frame():
     messages = run(Session('s'), llm=LLM(''))
     assert next(m for m in messages if m['type'] == 'draw')['seq'] == 0
+
+
+def test_sanitize_header_drops_non_string_fields():
+    # Seen live with qwen3.5:9b: a list where a string belongs crashed the whole turn.
+    from server.agent import sanitize_header
+    turn = sanitize_header(dict(agent=['helper'], market_category=['ram'], draw=[
+        dict(kind=['box'], target='a'), dict(kind='box', target='a', role=['target']),
+        dict(kind={'k': 'v'}, target='b')]), {'a', 'b'})
+    assert turn == dict(agent='helper', draw=[dict(kind='box', target='a')])
