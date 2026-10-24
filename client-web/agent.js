@@ -325,7 +325,8 @@ function boot() {
 
   function wsUrl() {
     const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-    return `${scheme}//${location.host}/ws2?token=${encodeURIComponent(new URLSearchParams(location.search).get("token") || "")}`;
+    const token = new URLSearchParams(location.search).get("token");
+    return `${scheme}//${location.host}/ws2${token ? `?token=${encodeURIComponent(token)}` : ""}`;
   }
 
   function reducedMotion() {
@@ -461,12 +462,25 @@ function boot() {
       }
       onServer(message);
     });
-    ws.addEventListener("close", () => {
+    ws.addEventListener("close", (event) => {
       if (socket !== ws) return;
       socket = null;
       window.clearTimeout(retryTimer);
       setLink("reconnecting");
       turnEvent({ type: "closed" });
+      if (event?.code === 4401) {
+        ended = true;
+        showProblem("Please sign in again");
+        window.clearInterval(pipelineTimer);
+        linkEl.textContent = "Please sign in again";
+        if (connStatusEl) connStatusEl.textContent = "Please sign in again";
+        document.getElementById("pipeline").textContent = "Please sign in again";
+        const reload = document.createElement("button");
+        reload.textContent = "Reload to sign in";
+        reload.addEventListener("click", () => location.reload());
+        errorEl.append(reload);
+        return;
+      }
       if (ended) return;
       retryTimer = window.setTimeout(connect, reconnectDelay);
       reconnectDelay = Math.min(10000, reconnectDelay * 2);
@@ -1209,7 +1223,7 @@ function boot() {
     applyAudioPrefs();
     if (tts === "server") {
       try {
-        const reply = await fetch(`/api/voice_sample?voice=${encodeURIComponent(ttsVoice)}`);
+        const reply = await apiFetch(`/api/voice_sample?voice=${encodeURIComponent(ttsVoice)}`);
         if (reply.ok) {
           const sample = await reply.json();
           voice.playPcm("test-voice", sample.pcm16_b64, true);
@@ -1226,7 +1240,7 @@ function boot() {
     if (!voicePick) return;
     let listed = [];
     try {
-      const reply = await fetch("/api/voices");
+      const reply = await apiFetch("/api/voices");
       if (reply.ok) listed = (await reply.json()).voices || [];
     } catch {
       listed = [];
@@ -1922,6 +1936,13 @@ function safeStorage() {
   } catch {
     return null;
   }
+}
+
+// Same-origin API calls carry the page token when there is one (LAN, quick tunnel). Behind Cloudflare Access the
+// cookie rides along by itself. Seen live: /api/voices returned 401 on a token server because no token was sent.
+function apiFetch(path) {
+  const token = new URLSearchParams(location.search).get("token");
+  return fetch(path, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
 }
 
 if (typeof document !== "undefined") boot();

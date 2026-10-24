@@ -37,7 +37,13 @@ On a physical phone, localhost is the phone, not the Mac. Prefer HTTPS/WSS with 
 
 **(new tonight)** `make phone` prints `tailscale serve --bg 8000` (same tailnet only) and `cloudflared tunnel --url http://localhost:8000` (public). It does not start the tunnel. Set `A_EYE_TOKEN` on the server before using a public tunnel. These are operator commands; this docs task does not run them or change trust settings.
 
-**(new tonight)** With server env `A_EYE_TOKEN` set, `/ws2` and `/ws` require `?token=<secret>` or `Authorization: Bearer <secret>` in the upgrade request. Prefer the header in Swift; do not log it. Missing/bad credentials close with **4401**. All `/api/*` routes require authentication too: use the bearer header; unauthorized requests return HTTP **401** with `{"error":"unauthorized"}`. With the env unset, the token gate is disabled. `/health` is public and returns `{"ok":true}`. These HTTP bodies are not the vision service's `health_response` contract.
+**(new tonight)** With server env `A_EYE_TOKEN` set, `/ws2` and `/ws` require `?token=<secret>` or `Authorization: Bearer <secret>` in the upgrade request. Prefer the header in Swift; do not log it. Missing/bad credentials close with **4401**. All `/api/*` routes require authentication too: use the bearer header; unauthorized requests return HTTP **401** with `{"error":"unauthorized"}`. With all auth env vars unset, the gate is disabled. `/health` is public and returns `{"ok":true}`. These HTTP bodies are not the vision service's `health_response` contract.
+
+### Cloudflare Access
+
+For `https://aeye.minhducvo.com`, configure email one-time PIN and an email allowlist in Access, then set `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` on the server. The shared API and socket check verifies RS256 signatures, issuer, audience and expiry using the team's cached signing keys. The Access header or `CF_Authorization` cookie authenticates same-origin requests and WebSocket upgrades; no `?token` is needed. A paired phone signs in separately. A 4401 close offers “Please sign in again” and a reload instead of automatic retries.
+
+`A_EYE_TOKEN`, if configured, remains an alternative credential. Open mode applies only when all three auth settings are empty; incomplete Access settings fail closed. `/health` remains public.
 
 ## Session lifecycle
 

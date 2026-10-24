@@ -10,12 +10,26 @@ its state and frames start; Mic flips its state; Hold to talk can be pressed; a 
 caption. Exit 0 on pass. Synthetic media only (Chromium's fake devices).
 """
 import json
+import os
+import re
+from urllib.parse import urlencode
 import sys
 
 from playwright.sync_api import sync_playwright
 
 BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8010").rstrip("/")
 IGNORED = ("favicon.ico",)
+
+
+def redact(text):
+    text = re.sub(r'([?&]token=)[^&\s"\']*', r'\1[redacted]', text)
+    token = os.environ.get("A_EYE_TOKEN", "")
+    return text.replace(token, "[redacted]") if token else text
+
+
+def page_url():
+    token = os.environ.get("A_EYE_TOKEN", "")
+    return BASE + "/agent.html" + ("?" + urlencode({"token": token}) if token else "")
 
 
 def main():
@@ -29,7 +43,7 @@ def main():
         page.on("pageerror", lambda e: problems.append(f"page error: {e}"))
         page.on("websocket", lambda ws: ws.on("framesent", lambda f: sent.append(f)))
 
-        page.goto(BASE + "/agent.html")
+        page.goto(page_url())
         page.wait_for_timeout(1200)
         page.click('button[data-pack="general"]')
         page.wait_for_timeout(600)
@@ -80,10 +94,14 @@ def main():
             problems.append("no helper reply caption after a typed question")
         browser.close()
 
-    print(json.dumps({"frames_sent": frames, "problems": problems}, indent=1))
+    print(redact(json.dumps({"frames_sent": frames, "problems": problems}, indent=1)))
     print("BROWSER SMOKE PASS" if not problems else "BROWSER SMOKE FAIL")
     sys.exit(0 if not problems else 1)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as error:
+        print(redact(str(error)))
+        sys.exit(1)

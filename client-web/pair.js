@@ -52,7 +52,7 @@ export function bootPairCamera() {
   status.textContent = 'Start camera to pair with your call.';
   document.body.append(video, button, status);
   const sessionId = globalThis.crypto.randomUUID(), grab = document.createElement('canvas');
-  let socket, stream, timer, seq = 0, paired = false, terminal = false;
+  let socket, stream, timer, seq = 0, paired = false, terminal = false, signIn = false;
   const send = msg => { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ v: 2, session_id: sessionId, ...msg })); };
   function stop() {
     clearInterval(timer);
@@ -60,6 +60,7 @@ export function bootPairCamera() {
     button.textContent = 'Start camera';
   }
   button.addEventListener('click', async () => {
+    if (signIn) { location.reload(); return; }
     if (stream) { send({ type: 'camera', on: false }); stop(); return; }
     button.disabled = true;
     try {
@@ -78,9 +79,13 @@ export function bootPairCamera() {
             if (['left', 'rejected', 'expired'].includes(msg.state)) { terminal = true; stop(); button.disabled = true; }
           } else if (msg.type === 'error') status.textContent = msg.message;
         });
-        socket.addEventListener('close', () => {
+        socket.addEventListener('close', event => {
           if (!terminal) status.textContent = 'Disconnected. Request a new code to reconnect.';
           terminal = true; paired = false; stop(); button.disabled = true;
+          if (event?.code === 4401) {
+            signIn = true; status.textContent = 'Please sign in again';
+            button.textContent = 'Reload to sign in'; button.disabled = false;
+          }
         });
       } else send({ type: 'camera', on: true });
       timer = setInterval(() => {

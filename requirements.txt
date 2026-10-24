@@ -7,3 +7,4 @@ pytest
 websockets
 pillow
 anthropic
+pyjwt[crypto]
