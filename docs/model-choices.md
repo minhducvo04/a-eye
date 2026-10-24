@@ -65,3 +65,20 @@ possible.
 
 `BRAIN=openai_compat` uses a hosted OpenAI-compatible API: set `OPENAI_COMPAT_BASE_URL` (including `/v1` where required), `OPENAI_COMPAT_API_KEY`, `OPENAI_COMPAT_TALKER_MODEL` and `OPENAI_COMPAT_EXPERT_MODEL`; the planner shares the talker model.
 This cloud option sends text only, supports streaming with bounded timeouts, follows the Claude switch and Private mode, and does not provide provider web search or tool execution.
+
+## GPU providers
+
+Same `BRAIN=openai_compat` path on a home GPU, BitDeer (Cal Hacks sponsor), or a RunPod serverless vLLM endpoint. Home-PC numbers are measured on our box. Cloud rows are wiring plus vendor list prices.
+
+Pitch: a sponsor GPU or a rented vLLM box can host the same open-model brain the home PC already runs, with no measured cloud latency yet.
+
+| Provider | GPU | Price | Speed | Status |
+|---|---|---|---|---|
+| Home PC | RTX 3090 Ti (own box) | $0/h (hardware already owned) | Qwen 3.6 35B-A3B **19 to 24 tok/s, measured**; Qwen 3.8 27B **3.5 to 4.0 tok/s, measured**; local 9B text first token **0.32 s p50, measured** | measured, [results/local-brain.md](results/local-brain.md), [voice-options.md](voice-options.md) |
+| BitDeer | hosted inference at `https://api-inference.bitdeer.ai/v1` | sponsor / vendor | not measured yet | supported, not measured yet |
+| RunPod | 4090 | **$0.89/h, list price** | not measured yet | supported, not measured yet |
+| RunPod | A40 | **$0.59/h, list price** | not measured yet | supported, not measured yet |
+| RunPod | A100 | **$1.79/h, list price** | not measured yet | supported, not measured yet |
+| RunPod | H100 | **$2.89 to $3.99/h, list price** | not measured yet | supported, not measured yet |
+
+RunPod OpenAI-compatible base URL: `https://api.runpod.ai/v2/ENDPOINT_ID/openai/v1`. Pick a non-Chinese-origin open model for `OPENAI_COMPAT_TALKER_MODEL` and `OPENAI_COMPAT_EXPERT_MODEL`. Probe with `python scripts/provider_check.py` once a key exists. List prices are vendor figures, not our runs.
