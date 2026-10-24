@@ -11,7 +11,7 @@ Last updated 2026-10-24 (UI polish, `pkg/ui-polish`).
 
 | Feature | Status | Verified how | Web | iPhone | Vision Pro | Where in the UI |
 |---|---|---|---|---|---|---|
-| First run: what A-eye is, privacy line | built | Chromium screenshots 390, 1280, 1536, 1920 (`docs/ui-polish/`) | yes | no | no | Start screen, above the modes |
+| First run: what A-eye is, privacy line ("Video and pictures are not saved unless you turn on Rewind or the memory aid.") | built | Chromium screenshots 390, 1280, 1536, 1920 (`docs/ui-polish/`) | yes | no | no | Start screen, above the modes |
 | Mode ring (General, PC Build, Cooking, Assembly, Memory, 3 coming soon) | built | browser smoke; screenshots | yes | yes (no Memory yet) | yes (no Memory yet) | Start screen, bottom |
 | All modes in one row on desktop, ring on phones | built | Chromium and Brave, Playwright 1280 and 390 (8/8 modes in view at 1280) | yes | n/a | n/a | Start screen, bottom |
 | Ring by wheel, drag and arrow keys | built | Playwright wheel and keys in Chromium and Brave; real trackpad not tried | yes | swipe | gaze/pinch | Start screen |

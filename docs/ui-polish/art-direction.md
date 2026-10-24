@@ -222,3 +222,51 @@ Not verified: motion, reduced motion, touch, Safari, real tracker "here now" sta
 4. Expert recaptured with a successful answer (the error injection now runs after it): `after-expert-*.jpg`.
 5. The listening strip is in the reading font and sentence case in every mode ("Listening", "Hearing you…").
 Privacy line for Home: "Video is not saved unless you turn on Rewind or the memory aid." The memory aid saves 224 px crops of tagged objects (`docs/results/memory-aid.md`), which are still pictures, so "video" plus "picture crops" is the honest pair; left as is for Home to confirm.
+
+### Final check of 4531e2a (independent, Sat Oct 24 02:05 PDT 2026)
+
+Reviewer: Media lead (Opus), independent. Inspected the recaptured after-picker-1280/1920, after-expert-*,
+after-private-*, after-caregiver-preview-390, after-call-*, after-memory-390 and after-camera-off-1280. Captures are
+at 4531e2a; the tip 420ca71 only merges main (client-web/memory.js, server memory and rewind files, no CSS or HTML),
+so no recapture is needed for styling, but nothing was captured on 420ca71 itself.
+
+**Verdict: SIGN-OFF WITH NOTES. Overall 8.1.** Fixes 1 to 4 from the re-review are visible in the images. Nothing
+left blocks showing Duc.
+
+| Fix | Seen? | Evidence |
+|---|---|---|
+| 1 "soon" on its own line | Yes | after-picker-1280 and -1920: name, then a small "soon" below; no collision. |
+| 2 Dev-only chips | Yes | after-expert-*: no "EXPERT 0.4 s"; after-private-*: no recognizer chip, only Private + Expert. |
+| 3 Caregiver banner | Yes | after-caregiver-preview-390: calm blue-grey banner "Preview: this server has no memory settings yet, so nothing here is saved." Not alarming. |
+| 4 Expert success | Yes | after-expert-*: Expert badge with a normal answer, no error line. |
+| 5 Sentence-case strip | Yes | "Hearing you..." in Memory (after-call-*, after-memory-390) and "Listening" in General (after-camera-off-1280). |
+
+| Row | Score | Notes |
+|---|---|---|
+| Colour | 8 | Calm; one filled button; amber only as small dots. |
+| Composition | 8 | Memory call: pill, badges, count on top; caption, strip, typed bar below. Clear order. |
+| Depth | 7 | Flat sheets; acceptable. |
+| Text legibility | 8.5 | Caption 10.5 to 11.6 p5, Recap 6.77 (builder numbers). "soon" is small and dim at 1280 (not measured). |
+| Frame 390 | 8 | Clean; ring clips edge discs as a carousel. |
+| Frame 1280 | 8 | Ring row fixed. |
+| Frame 1920 | 8.5 | Reads well at distance. |
+| Type | 8 | Reading font across Memory mode. General mode pill stays mono (deliberate). |
+| Motion | n/a | Stills only. |
+| First run | 8.5 | Clear headline, hint and privacy line; ring labels tidy. |
+| Memory mode calm | 8 | Calm. Typed bar kept on purpose. |
+| Badges consistency | 8.5 | One dot family for Private, Rewind on, Expert; Recap as a matching button. |
+| Settings structure | 8 | Simple first, Advanced last. |
+| Caregiver page | 7.5 | Banner now calm and present in the preview state. "keys -> blue bowl" remains. |
+| Projector readiness | 8 | Picker and call both fine at 1920. |
+| Overall | 8.1 | |
+
+Notes (polish, none block showing Duc):
+1. Privacy line for Home: the memory aid saves 224 px picture crops of tagged objects (builder, citing
+   docs/results/memory-aid.md). "Video is not saved unless you turn on Rewind or the memory aid" is true, but a
+   reader may think the memory aid keeps video. Suggest "Video and pictures are not saved unless you turn on Rewind or
+   the memory aid." Private mode off by default stays Duc's product call.
+2. "soon" labels under the ring are small and dim at 1280; measure contrast or lift one step.
+3. "keys -> blue bowl" input syntax and voice names ("Kokoro af_kore") are still technical (other modules).
+4. General mode pill is mono while Memory is sans; fine, but one font everywhere would be cleaner.
+
+Not verified: motion, reduced motion, touch, Safari, captures on 420ca71 itself, Recap contrast (builder's number).

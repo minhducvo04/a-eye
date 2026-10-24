@@ -1977,3 +1977,10 @@ body:not(.dev) .top:has(#expert-badge:not(.hidden)) #pipeline {
     color: var(--text-3);
   }
 }
+
+@media (min-width: 700px) and (hover: hover) and (pointer: fine) {
+  .ring > button:not([data-pack]) .ring-name::after {
+    font-size: var(--fs-footnote);
+    color: var(--text-2);
+  }
+}
