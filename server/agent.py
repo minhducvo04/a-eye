@@ -59,6 +59,7 @@ class Session:
     expert_failures: dict = field(default_factory=dict, repr=False)
     expert_step: str = ''
     home_guide: object = field(default=None, repr=False)
+    growth: object = field(default=None, repr=False)
     step_checker: object = field(default=None, repr=False)
     private: bool = False
     checker_test_mode: bool = False
@@ -109,7 +110,8 @@ class Turn:
 
 
 def say(text, agent='helper'):
-    return message('say', agent=agent, utterance_id=uuid4().hex, text=text)
+    from server.product_rules import check
+    return message('say', agent=agent, utterance_id=uuid4().hex, text=check(text))
 
 
 def state(value, agent='helper', **fields):
@@ -145,6 +147,9 @@ def resolve(turn, scene, seq):
             op['at'] = at
             if kind == 'label':
                 op['text'] = draw.get('text') or obj['label'] or 'Object'
+                from server.product_rules import allowed
+                if not allowed(op['text']):
+                    op['text'] = 'Object'
         elif kind == 'arrow':
             op.update({'from': center(origin) if origin else [0.5, 0.95], 'to': at})
         elif kind == 'path':
@@ -370,8 +375,17 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         await proof('Home: sink')
         if app is not None and getattr(app.state, 'presenter', False) and session.private:
             await proof('Presenter available')
-    refusal = session.pack.refuse(text)
-    if session.home_guide is not None:
+    forgetting = bool(re.fullmatch(r'forget my progress[.!]?', text.strip(), re.I))
+    if forgetting:
+        if session.growth:
+            session.growth.forget()
+        if session.home_guide:
+            from server.packs.home import HomeGuide
+            session.home_guide = HomeGuide(task=session.home_guide.task, growth=session.growth)
+    refusal = 'Your progress has been forgotten.' if forgetting else session.pack.refuse(text)
+    if session.home_guide is not None and not forgetting:
+        session.home_guide.growth = session.growth
+        was_completed = session.home_guide.completed
         store = None
         if app is not None and hasattr(app.state, 'memories'):
             store, _ = app.state.memories.for_call(session.session_id)
@@ -409,15 +423,23 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
             # No await between granting the gate and consuming it. Cancellation cannot leave a pass.
             try:
                 session.home_guide.water_off_passed = result.passed
-                refusal = session.home_guide.reply(text, store) if result.passed else RETRY_LINE
+                if result.passed:
+                    refusal = session.home_guide.reply(text, store)
+                else:
+                    session.home_guide.stopped(retry=True)
+                    refusal = RETRY_LINE
             finally:
                 session.home_guide.water_off_passed = False
             await emit(message('turn', turn_id=turn_id, stage='thinking',
                                detail=('Valve: test closed' if testing else 'Valve: closed') if result.passed else 'Valve: unsure',
                                at_ms=int(time() * 1000)))
         from server.safety import LINES
-        if session.home_guide.completed and refusal not in LINES:
+        if session.home_guide.completed and not was_completed and refusal not in LINES:
             await proof('Home: complete')
+    if session.home_guide is not None and not refusal:
+        # Silence is an intentional guide result, never permission to ask a model.
+        remember()
+        return messages
     if refusal or (session.pack.requires_power_off and not session.power_off):
         msg = say(refusal or POWER_LINE)
         msg.update(turn_id=turn_id, part=0, final=True)
@@ -537,9 +559,10 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
     worker = asyncio.create_task(audio_worker()) if session.speak else None
     part = 0
     reported_brain = False
+    reply_text = ''
 
     async def speech(value, final=False, agent='helper'):
-        nonlocal part, first_say_at, reported_brain
+        nonlocal part, first_say_at, reported_brain, reply_text
         value = safe_speech(value)
         if value and session.pack.guard is not None:
             value = session.pack.guard(value, text, part == 0)  # pack post-condition (memory: pill line, no certainty)
@@ -548,11 +571,14 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
             await proof('Stopped by code')
         if not value:
             return
+        msg = say(value, agent)
+        await emit(message('reply_delta', agent=agent, turn_id=turn_id,
+                           text=(' ' if reply_text else '') + msg['text']))
         if 'provider' in brain and not reported_brain:
             # A first token may only contain drawing metadata. Announce speech when a line is ready.
             await proof('Brain: ' + brain['provider'] + ' / ' + brain['model'])
             reported_brain = True
-        msg = say(value, agent)
+        reply_text += ' ' + msg['text']
         msg.update(turn_id=turn_id, part=part, final=final)
         if first_say_at is None:
             first_say_at = monotonic()
@@ -589,23 +615,6 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
     pending = None
     first_token = None
     brain_started = monotonic()
-    reply_text = ''
-    reply_sent = 0
-    delta_at = float('-inf')
-    delta_task = None
-
-    async def flush_delta():
-        nonlocal reply_sent, delta_at
-        if len(safe_speech(reply_text).lstrip(' ,;:')) <= reply_sent:
-            return
-        await asyncio.sleep(max(0, .08 - (monotonic() - delta_at)))
-        clean = safe_speech(reply_text).lstrip(' ,;:')
-        if len(clean) > reply_sent:
-            await emit(message('reply_delta', agent=turn['agent'], turn_id=turn_id,
-                               text=clean[reply_sent:]))
-            reply_sent = len(clean)
-            delta_at = monotonic()
-
     try:
         if forget_request(text) and getattr(session, 'rewind', None) is not None:
             # Spoken "forget that": the same deletion as the Forget button (TwelveLabs copies and local frames).
@@ -663,7 +672,6 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                         await emit(drawing)
                     await emit(state('speaking', turn['agent'], **({'focus': focus} if focus else {})))
                     header = True
-                was_marker = marker
                 if not marker:
                     buffer = buffer.lstrip(' \n\t"')
                     if len(buffer) < 4:
@@ -677,14 +685,6 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                     if expert_tag:
                         buffer = buffer[len('[EXPERT]'):].lstrip()
                     marker = True
-                reply_text += delta if was_marker else buffer
-                if delta_task is None or delta_task.done():
-                    if delta_task is not None:
-                        await delta_task
-                    if monotonic() - delta_at >= .08:
-                        await flush_delta()
-                    else:
-                        delta_task = asyncio.create_task(flush_delta())
                 while True:
                     match = re.search(r'[.!?\n]', buffer)
                     if part == 0:
@@ -715,9 +715,6 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                 if pending and buffer.strip():
                     await speech(pending, agent=turn['agent'])
                     pending = None
-        if delta_task:
-            await delta_task
-        await flush_delta()
         if not header:
             turn = dict(agent='helper', draw=[])
             if session.camera:
@@ -780,9 +777,6 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         if planner_task is not None and not planner_task.done():
             planner_task.cancel()
             await asyncio.gather(planner_task, return_exceptions=True)
-        if delta_task:
-            delta_task.cancel()
-            await asyncio.gather(delta_task, return_exceptions=True)
         if worker:
             worker.cancel()
             await asyncio.gather(worker, return_exceptions=True)

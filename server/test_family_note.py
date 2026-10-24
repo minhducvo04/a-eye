@@ -19,7 +19,7 @@ def test_note_rules():
 @pytest.mark.parametrize('confirmation', ['', 'yes', 'no', 'send it', 'maybe', None])
 def test_refused_without_send(confirmation):
     s = Store()
-    c = s.add_contact('owner', {'name': 'Fixture Parent', 'relation': 'parent', 'consent': True})
+    c = s.add_contact('owner', {'name': 'Fixture Friend', 'relation': 'friend', 'consent': True})
     draft = s.draft('owner', {'task': 'sink', 'detail': 0}, c['id'])
     with pytest.raises(ValueError):
         s.send('owner', draft['id'], confirmation)
@@ -33,8 +33,8 @@ def test_single_use_expiry_and_ownership():
     s = Store(clock=lambda: now[0])
     assert s.contacts == {}
     with pytest.raises(ValueError):
-        s.add_contact('owner', {'name': 'Fixture', 'relation': 'parent', 'consent': False})
-    c = s.add_contact('owner', {'name': 'Fixture', 'relation': 'parent', 'consent': True})
+        s.add_contact('owner', {'name': 'Fixture', 'relation': 'friend', 'consent': False})
+    c = s.add_contact('owner', {'name': 'Fixture', 'relation': 'friend', 'consent': True})
     d = s.draft('owner', {'task': 'sink', 'detail': 0}, c['id'])
     with pytest.raises(ValueError):
         s.send('other', d['id'], 'send')
@@ -98,7 +98,7 @@ def test_forty_note_cases():
 
 def test_spoken_confirmation_and_revoke():
     s = Store()
-    c = s.add_contact('o', {'name': 'Fixture', 'relation': 'parent', 'consent': True})
+    c = s.add_contact('o', {'name': 'Fixture', 'relation': 'friend', 'consent': True})
     d = s.draft('o', {'task': 'sink', 'detail': 0}, c['id'])
     s.heard('o', d['id'])
     assert not s.consume_spoken('other', 'send')
@@ -129,7 +129,7 @@ def test_authenticated_call_roundtrip(monkeypatch):
     assert client.get(url + query, headers=headers).json()['contacts'] == []
     assert client.get(url + query, headers={'Authorization': 'Bearer fixture-token'}).status_code == 404
     contact = client.post(url + '/contact' + query, headers=headers,
-                          json={'name': 'Fixture Parent', 'relation': 'parent', 'consent': True}).json()
+                          json={'name': 'Fixture Friend', 'relation': 'friend', 'consent': True}).json()
     draft = client.post(url + '/draft' + query, headers=headers,
                         json={'contact': contact['id'], 'log': {'task': 'sink', 'detail': 0}}).json()
     assert client.post(url + '/heard' + query, headers=headers, json={'id': draft['id']}).status_code == 200
@@ -172,7 +172,7 @@ def test_server_stt_confirmation_precedes_brain(monkeypatch, words, expected):
     app = create_app()
     app.state.box_v2 = Box()
     app.state.family_notes = s = Store()
-    c = s.add_contact('local:family-stt', {'name': 'Fixture', 'relation': 'parent', 'consent': True})
+    c = s.add_contact('local:family-stt', {'name': 'Fixture', 'relation': 'friend', 'consent': True})
     d = s.draft('local:family-stt', {'task': 'sink', 'detail': 0}, c['id'])
     s.heard('local:family-stt', d['id'])
     with TestClient(app) as client, client.websocket_connect('/ws2') as ws:

@@ -746,7 +746,7 @@ test("family local speech blocks commands and VAD until completion, then accepts
   const local = { localService: true, lang: "en-US" };
   h.synth.getVoices = () => [local];
   h.voice.startListening();
-  const done = h.voice.speak("family", "Parent replied. stop", { localOnly: true });
+  const done = h.voice.speak("family", "Friend replied. stop", { localOnly: true });
   h.rec.onresult(result("stop", true));
   h.rec.onresult(result("find a replacement part", true));
   h.voice.vadEvent("start");
@@ -771,7 +771,7 @@ test("family local speech drops server mic audio, including preroll, until compl
   });
   await voice.startListening();
   for (let t = 0; t <= 1100; t += 100) cap.feed(480, 0.001, t, clock);
-  const done = voice.speak("family", "Parent replied. stop", { localOnly: true });
+  const done = voice.speak("family", "Friend replied. stop", { localOnly: true });
   for (let t = 1200; t < 2700; t += 50) cap.feed(2400, 0.5, t, clock);
   assert.equal(chunks.length, 0);
   assert.equal(voice.holdStart(), false);

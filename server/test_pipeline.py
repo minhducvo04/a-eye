@@ -138,14 +138,17 @@ def test_timeout_backup_same_turn(monkeypatch):
         asyncio.run(local_client.aclose())
 
 
-def test_delta_coalescing():
+def test_deltas_wait_for_checked_speech_instead_of_exposing_unchecked_tokens():
     async def check():
         sent = []
+        finished = []
         class Brain:
             async def stream(self, *args):
                 yield '{"draw":[]}SAY: Hello'
                 for word in [' there', ' from', ' the', ' streaming', ' brain.']:
                     await asyncio.sleep(.01)
+                    if word.endswith('.'):
+                        finished.append(monotonic())
                     yield word
         async def emit(msg):
             validate('server_message_v2', msg)
@@ -153,8 +156,8 @@ def test_delta_coalescing():
         await run_turn(Session('s', emit=emit), 'help', vision=Vision(), llm=Brain())
         deltas = [(t, m['text']) for t, m in sent if m['type'] == 'reply_delta']
         assert ''.join(text for _, text in deltas) == 'Hello there from the streaming brain.'
-        assert len(deltas) == 2
-        assert deltas[1][0] - deltas[0][0] >= .08
+        assert len(deltas) == 1
+        assert deltas[0][0] >= finished[0], 'no unchecked prefix may reach the screen'
         assert all('{' not in text for _, text in deltas)
     asyncio.run(check())
 

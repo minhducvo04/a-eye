@@ -629,23 +629,23 @@ function boot() {
       action);
     if (!response.ok) throw new Error('Presenter controls unavailable.');
     const data = await response.json();
-    document.getElementById('dad-presenter')?.classList.remove('hidden');
-    const toggle = document.getElementById('dad-test');
+    document.getElementById('guide-presenter')?.classList.remove('hidden');
+    const toggle = document.getElementById('guide-test');
     if (toggle) toggle.checked = data.enabled;
-    document.getElementById('dad-test-label')?.classList.toggle('hidden', !data.enabled);
-    const pass = document.getElementById('dad-pass');
+    document.getElementById('guide-test-label')?.classList.toggle('hidden', !data.enabled);
+    const pass = document.getElementById('guide-pass');
     if (pass) pass.disabled = !data.enabled;
     return true;
   }
-  document.getElementById('dad-test')?.addEventListener('change', async event => {
+  document.getElementById('guide-test')?.addEventListener('change', async event => {
     try { await presenter({ enabled: event.target.checked }); }
     catch { showProblem('Presenter controls unavailable.'); }
   });
-  document.getElementById('dad-pass')?.addEventListener('click', async () => {
+  document.getElementById('guide-pass')?.addEventListener('click', async () => {
     try { if (await presenter({ state: 'closed' })) sendUser('next', 'typed'); }
     catch { showProblem('Presenter check unavailable.'); }
   });
-  document.getElementById('dad-stop')?.addEventListener('click', () => sendUser('water near the outlet', 'typed'));
+  document.getElementById('guide-stop')?.addEventListener('click', () => sendUser('water near the outlet', 'typed'));
 
   function onServer(message) {
     if (!message || typeof message !== "object") return;
@@ -1609,7 +1609,7 @@ function boot() {
     if (!PACK_LABEL[next] || pack) return;
     pack = next;
     homeStartPending = next === 'home';
-    document.getElementById('dad-presenter')?.classList.add('hidden');
+    document.getElementById('guide-presenter')?.classList.add('hidden');
     ended = false;
     sessionId = randomId();
     resetCallOwner();

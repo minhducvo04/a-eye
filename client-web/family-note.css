@@ -8,7 +8,7 @@
 #family-panel button:disabled { opacity: .5; }
 #family-preview { line-height: 1.5; }
 #family-reply { white-space: normal; }
-.family-parent { margin: 0; background: #eef3ef; color: #19372d; font: 18px/1.5 system-ui,sans-serif; }
-.family-parent main { max-width: 32rem; margin: 8vh auto; padding: 1.5rem; }
-.family-parent textarea { display: block; box-sizing: border-box; width: 100%; font: inherit; margin: .5rem 0; }
-.family-parent button { padding: .75rem 1rem; background: #225c48; color: white; border: 0; border-radius: .5rem; font: inherit; }
+.family-recipient { margin: 0; background: #eef3ef; color: #19372d; font: 18px/1.5 system-ui,sans-serif; }
+.family-recipient main { max-width: 32rem; margin: 8vh auto; padding: 1.5rem; }
+.family-recipient textarea { display: block; box-sizing: border-box; width: 100%; font: inherit; margin: .5rem 0; }
+.family-recipient button { padding: .75rem 1rem; background: #225c48; color: white; border: 0; border-radius: .5rem; font: inherit; }
