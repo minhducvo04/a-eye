@@ -16,6 +16,21 @@ import anthropic
 import httpx
 
 
+# Benchmarks (docs/pc-benchmarks.md): qwen3.5:9b with think off, about 125 tok/s, 7.3 GB, sits next to the VLM.
+LOCAL_DEFAULT = 'qwen3.5:9b-q4_K_M'
+_CLIENTS = {}
+
+
+def _shared_async_client():
+    """One keep-alive connection pool per event loop: a new connection to the box costs about 340 ms vs 100 ms."""
+    import asyncio
+    loop = asyncio.get_running_loop()
+    client = _CLIENTS.get(id(loop))
+    if client is None or client.is_closed:
+        client = _CLIENTS[id(loop)] = httpx.AsyncClient(timeout=20)
+    return client
+
+
 @dataclass
 class LLMResult:
     text: str
@@ -66,13 +81,13 @@ class LLMClient:
                 pass
 
         if provider in ('auto', 'claude', 'local'):
-            model = os.environ.get('LOCAL_LLM_MODEL', 'gemma4:12b-it-q4_K_M')
+            model = os.environ.get('LOCAL_LLM_MODEL', LOCAL_DEFAULT)
             try:
                 message = {'role': 'user', 'content': user}
                 if images:
                     message['images'] = images
                 payload = {'model': model, 'stream': False, 'think': False,
-                           'options': {'num_predict': max_tokens},
+                           'options': {'num_predict': max_tokens, 'num_ctx': 4096}, 'keep_alive': '30m',
                            'messages': [{'role': 'system', 'content': system}, message]}
                 url = os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434').rstrip('/') + '/api/chat'
                 if self._httpx_client is not None:
@@ -119,11 +134,9 @@ class LLMClient:
         if provider in ('auto', 'claude', 'local'):
             try:
                 async with AsyncExitStack() as stack:
-                    client = self._httpx_client
-                    if client is None:
-                        client = await stack.enter_async_context(httpx.AsyncClient(timeout=20))
-                    payload = dict(model=os.environ.get('LOCAL_LLM_MODEL', 'gemma4:12b-it-q4_K_M'),
-                                   stream=True, think=False, options={'num_predict': max_tokens},
+                    client = self._httpx_client or _shared_async_client()
+                    payload = dict(model=os.environ.get('LOCAL_LLM_MODEL', LOCAL_DEFAULT),
+                                   stream=True, think=False, options={'num_predict': max_tokens, 'num_ctx': 4096}, keep_alive='30m',
                                    messages=[{'role': 'system', 'content': system},
                                              {'role': 'user', 'content': user}])
                     url = os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434').rstrip('/') + '/api/chat'

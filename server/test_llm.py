@@ -60,7 +60,7 @@ def test_auto(monkeypatch, local, key, provider):
         assert not local[1]
     else:
         assert not fake.calls
-        assert result.model == 'gemma4:12b-it-q4_K_M'
+        assert result.model == 'qwen3.5:9b-q4_K_M'
 
 
 @pytest.mark.parametrize('kind', ['connection', 'rate', 'status', 'unexpected', 'refusal'])
@@ -124,7 +124,7 @@ def test_local_payload(monkeypatch, local):
     request = local[1][0]
     assert str(request.url) == 'http://localhost:11434/api/chat'
     assert json.loads(request.content) == {
-        'model': 'custom-local', 'stream': False, 'think': False, 'options': {'num_predict': 23},
+        'model': 'custom-local', 'stream': False, 'think': False, 'options': {'num_predict': 23, 'num_ctx': 4096}, 'keep_alive': '30m',
         'messages': [{'role': 'system', 'content': 'System'},
                      {'role': 'user', 'content': 'Question', 'images': ['YQ==']}]}
     assert request.extensions['timeout']['read'] == 20
