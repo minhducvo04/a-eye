@@ -23,6 +23,7 @@ from server.auth import accept_socket
 from server.logs import event
 from server.keyframes import signature
 from server import packs, pairing
+from server import rewind as rewind_mod
 from server.agent import Session, Turn, message, run_turn, say, state
 from server.llm import LLMClient
 from voice import adapter
@@ -140,6 +141,8 @@ async def scene_loop(session, vision, send, gate=None):
                 previous_seq = None
                 continue
             scan, reason = keyframes.should_scan(sig, monotonic())
+            if scan and getattr(session, 'rewind', None):
+                session.rewind.keyframe(reason)   # Rewind: cut a clip around a real change
             if not scan:
                 session.scene_skips += 1
                 continue
@@ -201,6 +204,7 @@ async def websocket(ws: WebSocket):
     # can reuse the last partial when everything after it is quiet (the VAD hang or a release pause).
     partial = dict(gen=0, task=None, upto=0, text='')
     yolo_task = None
+    rewind_task = None
     box = getattr(ws.app.state, 'box_v2', None) or BoxClient()
     gate = gpu_gate(ws.app)
     vision = getattr(ws.app.state, 'vision_v2', None) or SceneClient()
@@ -293,8 +297,11 @@ async def websocket(ws: WebSocket):
             # Talker + thinker: a Haiku-class talker speaks while the planner (no GPU gate) draws in parallel.
             duo = (isinstance(llm, LLMClient) and os.environ.get('BRAIN_MODE', 'duo') == 'duo'
                    and bool(os.environ.get('ANTHROPIC_API_KEY')) and os.environ.get('LOCAL_ONLY') != '1')
-            await run_turn(session, text, vision=vision, llm=TurnBrain(),
-                           started_at=lifecycle.started, turn_id=lifecycle.id, planner=llm if duo else None)
+            if rewind_mod.wants_rewind(session, text):
+                await rewind_mod.rewind_turn(session, text, session.rewind, vision=vision, turn_id=lifecycle.id)
+            else:
+                await run_turn(session, text, vision=vision, llm=TurnBrain(),
+                               started_at=lifecycle.started, turn_id=lifecycle.id, planner=llm if duo else None)
             await lifecycle.stage('done')
         except asyncio.CancelledError:
             await lifecycle.stage('cancelled')
@@ -389,6 +396,15 @@ async def websocket(ws: WebSocket):
         if voice is not None and hasattr(voice, 'aclose'):
             await voice.aclose()
 
+    async def end_rewind():
+        nonlocal rewind_task
+        if rewind_task:
+            rewind_task.cancel()
+            await asyncio.gather(rewind_task, return_exceptions=True)
+            rewind_task = None
+        if session is not None and getattr(session, 'rewind', None):
+            rewind_mod.registry(ws.app).end(session.session_id)   # uploads the rest after the call
+
     async def cancel_yolo():
         nonlocal yolo_task
         if yolo_task:
@@ -440,6 +456,7 @@ async def websocket(ws: WebSocket):
                 await cancel_scene()
                 await cancel_yolo()
                 await close_voice()
+                await end_rewind()
                 reset_audio()
                 stt_mode = incoming.get('stt', 'browser')
                 stt_failed = False
@@ -468,6 +485,10 @@ async def websocket(ws: WebSocket):
                 scene_loop_task = asyncio.create_task(scene_loop(session, vision, send, gate))
                 if os.environ.get('YOLO_REFRESH') == '1':
                     yolo_task = asyncio.create_task(yolo_loop(session, box, send))
+                session.rewind = rewind_mod.registry(ws.app).open(session.session_id, on=incoming.get('rewind', False))
+                rewind_task = asyncio.create_task(session.rewind.follow(session))
+                if session.rewind.on:
+                    await send(rewind_mod.state_message(session.rewind))
                 await send(state('listening'))
                 continue
             if session is None or incoming['session_id'] != session.session_id:
@@ -557,6 +578,9 @@ async def websocket(ws: WebSocket):
                 session.power_off = incoming['value']
                 if session.power_off:
                     await emit(say('Thanks. What are we working on?'))
+            elif kind == 'rewind':
+                session.rewind.set_on(incoming['on'])
+                await send(rewind_mod.state_message(session.rewind))
             elif kind == 'barge_in':
                 await cancel_stt()
                 reset_audio()
@@ -578,6 +602,7 @@ async def websocket(ws: WebSocket):
         await cancel_audio()
         await cancel_scene()
         await close_voice()
+        await end_rewind()
         await box.aclose()
         if session:
             session.scene = None

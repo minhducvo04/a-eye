@@ -150,3 +150,9 @@ export interface V2Camera { v: V2; type: "camera"; session_id: string; on: boole
 export interface V2PairRequest { v: V2; type: "pair_request"; session_id: string }
 export interface V2Pair { v: V2; type: "pair"; code: string; expires_in_s: number; path?: string }
 export interface V2PairStatus { v: V2; type: "pair_status"; state: "joined" | "left" | "camera" | "rejected" | "expired"; role?: "call" | "camera"; camera_on?: boolean; source?: "call" | "camera"; detail?: string }
+
+// v2.5 (additive): Rewind, a searchable memory of the call (TwelveLabs). V2Hello may carry rewind?: boolean.
+// V2Rewind joins the client v2 union; V2RewindState and V2RewindHit join the server v2 union.
+export interface V2Rewind { v: V2; type: "rewind"; session_id: string; on: boolean }
+export interface V2RewindState { v: V2; type: "rewind_state"; on: boolean; clips?: number; ready?: number; indexing?: number; pending?: number; notice?: string }
+export interface V2RewindHit { v: V2; type: "rewind_hit"; turn_id?: string; query: string; t_s: number; start_s: number; end_s: number; sure: boolean; alternatives?: number[]; frame_b64?: string; objects?: SceneObject[] }

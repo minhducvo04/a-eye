@@ -107,6 +107,17 @@
 
   <div id="backdrop" class="backdrop hidden"></div>
 
+  <!-- Rewind answer: the kept frame with the object boxed, and the call time. -->
+  <section id="rewind-sheet" class="sheet hidden" aria-live="polite" aria-labelledby="rewind-title">
+    <div class="grabber" aria-hidden="true"></div>
+    <div class="sheet-head">
+      <p id="rewind-title" class="sheet-title">Rewind</p>
+      <button type="button" id="rewind-dismiss" class="text-btn">Close</button>
+    </div>
+    <div id="rewind-body"></div>
+  </section>
+  <p id="rewind-badge" class="rewind-badge glass hidden" title="Clips of this call are uploaded to TwelveLabs">Rewind on</p>
+
   <!-- MarketSheet.swift -->
   <section id="market" class="sheet hidden" aria-live="polite" aria-labelledby="market-title">
     <div class="grabber" aria-hidden="true"></div>
@@ -153,6 +164,11 @@
       <p class="row"><span>Recognition</span><span id="stt-mode" class="mono dim">Browser</span></p>
       <p class="row"><span>Room noise</span><span id="ambient" class="mono dim" aria-live="off">Noise --</span></p>
     </div>
+    <p class="group-title">Rewind</p>
+    <div class="group">
+      <label class="row">Rewind <input id="rewind-toggle" type="checkbox" role="switch" aria-describedby="rewind-notice"></label>
+    </div>
+    <p id="rewind-notice" class="group-foot">When on, short video clips of this call are uploaded to TwelveLabs so you can ask about them later.</p>
     <p class="group-title">Photo</p>
     <div class="group">
       <label class="row file-btn">Upload a photo instead of the camera<input id="upload" type="file" accept="image/*"></label>
@@ -168,7 +184,7 @@
       <button type="button" id="transcript-toggle" class="row text-btn" aria-expanded="false" aria-controls="transcript-list">Transcript</button>
       <ol id="transcript-list" class="transcript-list hidden"></ol>
     </div>
-    <p class="group-foot">Camera frames go only to this server and are not saved.</p>
+    <p class="group-foot">Camera frames go only to this server and are not saved, unless Rewind is on.</p>
   </section>
 
   <script type="module" src="agent.js"></script>
