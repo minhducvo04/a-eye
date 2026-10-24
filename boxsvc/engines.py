@@ -1,0 +1,79 @@
+"""Lazy model adapters. Request media stays in memory."""
+import os
+import struct
+from threading import Lock
+
+
+def pcm16_16khz(audio):
+    """Linearly resample one mono 24 kHz segment to little-endian PCM16."""
+    if hasattr(audio, "detach"):
+        audio = audio.detach().cpu().numpy()
+    count = len(audio) * 2 // 3
+    samples = []
+    for i in range(count):
+        position = i * 1.5
+        left = int(position)
+        fraction = position - left
+        value = float(audio[left]) * (1 - fraction)
+        value += float(audio[min(left + 1, len(audio) - 1)]) * fraction
+        samples.append(round(max(-1.0, min(1.0, value)) * 32767))
+    return struct.pack(f"<{count}h", *samples)
+
+
+class SttEngine:
+    def __init__(self, device):
+        import numpy as np
+        from faster_whisper import WhisperModel
+
+        self.np = np
+        self.lock = Lock()
+        self.model = WhisperModel(
+            os.getenv("STT_MODEL", "large-v3-turbo"), device=device,
+            compute_type="float16" if device == "cuda" else "int8",
+        )
+
+    def transcribe(self, pcm, language):
+        audio = self.np.frombuffer(pcm, dtype="<i2").astype(self.np.float32) / 32768
+        with self.lock:
+            segments, _ = self.model.transcribe(
+                audio, language=language, beam_size=1, vad_filter=False,
+            )
+            return "".join(segment.text for segment in segments).strip()
+
+
+class TtsEngine:
+    def __init__(self, device):
+        from kokoro import KPipeline
+
+        self.lock = Lock()
+        self.pipeline = KPipeline(lang_code="a", device=device)
+
+    def segments(self, text, voice):
+        with self.lock:
+            for _, _, audio in self.pipeline(text, voice=voice):
+                yield audio
+
+
+class Detector:
+    def __init__(self, device):
+        from ultralytics import YOLO
+
+        self.lock = Lock()
+        self.device = device
+        self.model = YOLO(os.getenv("YOLO_WEIGHTS", "yolo11n.pt"))
+
+    def detect(self, image, imgsz, conf):
+        with self.lock:
+            results = self.model.predict(
+                source=image, imgsz=imgsz, conf=conf, device=self.device,
+                half=self.device == "cuda", verbose=False, save=False,
+            )
+            return [
+                {"label": result.names[int(cls)], "xyxy": box, "conf": score}
+                for result in results
+                for box, cls, score in zip(
+                    result.boxes.xyxy.cpu().tolist(),
+                    result.boxes.cls.cpu().tolist(),
+                    result.boxes.conf.cpu().tolist(),
+                )
+            ]
