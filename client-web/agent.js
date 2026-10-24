@@ -4,7 +4,7 @@ import { bootPairCamera, phoneMicRoute, setupPairCall } from './pair.js';
 
 import { paintDraw, applyDraw, pruneDraw, viewTransform, visibleOps } from "./draw.js";
 import { writeFrame } from "./live.js";
-import { fetchRecap, initialRewind, nextRewind, NOTICE as REWIND_NOTICE, PROMPTS as REWIND_PROMPTS, renderHit, renderRecap, showsRewindChip } from "./rewind.js";
+import { fetchRecap, forgetRewind, initialRewind, nextRewind, NOTICE as REWIND_NOTICE, PROMPTS as REWIND_PROMPTS, renderHit, renderRecap, showsRewindChip } from "./rewind.js";
 import { sharpCanvasSize } from "./overlay.js";
 import {
   AUDIO_FALLBACK_MS,
@@ -467,6 +467,8 @@ function boot() {
     if (privateMode) hello.private = true;
     const ok = send(hello);
     if (ok) ui.dispatch({ type: "hello_sent" });
+    const keepBox = document.getElementById("rewind-keep");
+    if (ok && rewindOn && keepBox && keepBox.checked) sendRewind();
     return ok;
   }
 
@@ -754,7 +756,12 @@ function boot() {
       }, 8000);
     }
     showRewind(on);
-    if (socket && socket.readyState === WebSocket.OPEN) send({ v: 2, type: "rewind", session_id: sessionId, on: rewindOn });
+    sendRewind();
+  }
+
+  function sendRewind() {
+    const keep = Boolean(document.getElementById("rewind-keep") && document.getElementById("rewind-keep").checked);
+    if (socket && socket.readyState === WebSocket.OPEN) send({ v: 2, type: "rewind", session_id: sessionId, on: rewindOn, keep });
   }
 
   function togglePrompts(open) {
@@ -1752,6 +1759,11 @@ function boot() {
     tts = "server";
   }
   if (rewindEl) document.getElementById("rewind-dismiss").addEventListener("click", closeSheets);
+  const keepBox = document.getElementById("rewind-keep");
+  if (keepBox) keepBox.addEventListener("change", sendRewind);
+  const forgetBtn = document.getElementById("rewind-forget");
+  if (forgetBtn) forgetBtn.addEventListener("click", () => void forgetRewind(sessionId).then(
+    (r) => showProblem(`Forgot ${r.deleted} clip${r.deleted === 1 ? "" : "s"}.`), () => showProblem("Nothing to forget.")));
   const recapBtn = document.getElementById("rewind-recap");
   if (recapBtn) recapBtn.addEventListener("click", () => void showRecap(sessionId));
   if (rewindToggle) {

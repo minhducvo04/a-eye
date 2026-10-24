@@ -82,7 +82,7 @@ def test_private_hello_forces_server_stt_and_rewind_cloud_off(monkeypatch):
             TwelveLabs(key='synthetic')._headers()
             raise AssertionError('Rewind cloud allowed in private mode')
         except RuntimeError as exc:
-            assert 'Private mode' in str(exc)
+            assert 'locked off' in str(exc)
     finally:
         PRIVATE.reset(token)
 

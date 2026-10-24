@@ -979,6 +979,13 @@
    "type": "rewind",
    "session_id": "s-1",
    "on": true
+  },
+  {
+   "v": 2,
+   "type": "rewind",
+   "session_id": "s-1",
+   "on": true,
+   "keep": true
   }
  ],
  "v2_rewind_state": [
@@ -991,6 +998,12 @@
    "indexing": 1,
    "pending": 0,
    "notice": "Rewind on: short video clips of this call are uploaded to TwelveLabs so you can ask about them later."
+  },
+  {
+   "v": 2,
+   "type": "rewind_state",
+   "on": false,
+   "locked": true
   }
  ],
  "v2_rewind_hit": [

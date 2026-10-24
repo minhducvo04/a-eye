@@ -193,8 +193,10 @@
     <p class="group-title">Rewind</p>
     <div class="group">
       <label class="row">Rewind <input id="rewind-toggle" type="checkbox" role="switch" aria-describedby="rewind-notice"></label>
+      <label class="row">Keep clips after the call <input id="rewind-keep" type="checkbox" role="switch"></label>
+      <button type="button" id="rewind-forget" class="row text-btn">Forget this call's clips</button>
     </div>
-    <p id="rewind-notice" class="group-foot">When on, short video clips of this call are uploaded to TwelveLabs so you can ask about them later.</p>
+    <p id="rewind-notice" class="group-foot">When on, short video clips of this call are uploaded to TwelveLabs so you can ask about them later. They are deleted from TwelveLabs when the call ends unless you keep them.</p>
     <p class="group-title">Photo</p>
     <div class="group">
       <label class="row file-btn">Upload a photo instead of the camera<input id="upload" type="file" accept="image/*"></label>

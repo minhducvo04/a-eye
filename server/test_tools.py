@@ -172,12 +172,13 @@ def test_desk_rewind_and_web(monkeypatch):
 @pytest.mark.parametrize('label', ['past', 'expert', 'now', 'unsure', 'missing', 'raises'])
 def test_router(monkeypatch, capsys, label):
     monkeypatch.setenv('ROUTER', 'on')
-    def route(text, recent):
+    async def aroute(text, recent):
         assert text == 'PRIVATE QUERY' and recent == ['earlier']
         if label == 'raises':
             raise RuntimeError(text)
         return {'label': label, 'confidence': .9}
-    monkeypatch.setitem(sys.modules, 'router', None if label == 'missing' else NS(route=route))
+    # The real interface: router.route.aroute (an async function).
+    monkeypatch.setitem(sys.modules, 'router.route', None if label == 'missing' else NS(aroute=aroute))
     async def check():
         starts, calls = [], []
         async def tool(name, args, session, **kw):
@@ -220,7 +221,7 @@ def test_router_off_and_safety_gate(monkeypatch):
     from server import packs
     def forbidden(*args):
         pytest.fail('Router should not run')
-    monkeypatch.setitem(sys.modules, 'router', NS(route=forbidden))
+    monkeypatch.setitem(sys.modules, 'router.route', NS(aroute=forbidden))
     async def check():
         client = Client(Response('{"draw":[]}\nSAY: Hello.'))
         await run_turn(Session('s', camera=False), 'hello', vision=Vision(), llm=LLMClient(anthropic_client=client))
@@ -261,3 +262,28 @@ def test_websocket_tool_turn(monkeypatch):
         assert first < card
         assert [m['text'] for m in messages if m['type'] == 'say'][-1] == 'Nothing was skipped.'
         assert len(fake.calls) == 2
+
+
+def test_router_hook_calls_aroute_and_sends_recaps_to_recap_call(monkeypatch):
+    """The hook imported the router package instead of router.route.aroute, so every call fell back silently."""
+    import asyncio
+    import sys
+    import types
+    from server import routing
+    calls = []
+
+    async def aroute(text, recent):
+        calls.append(text)
+        return {'label': 'past', 'confidence': 0.9, 'ms': 43}
+
+    module = types.ModuleType('router.route')
+    module.aroute = aroute
+    monkeypatch.setitem(sys.modules, 'router.route', module)
+    session = types.SimpleNamespace(session_id='s', history=[])
+    monkeypatch.setenv('ROUTER', 'on')
+    assert asyncio.run(routing.route_turn(session, 'where did I put the screw?')) == 'past'
+    assert calls == ['where did I put the screw?']
+    monkeypatch.setenv('ROUTER', 'off')
+    assert asyncio.run(routing.route_turn(session, 'x')) == 'unsure' and len(calls) == 1
+    assert routing.past_tool('can you recap what I did so far?') == 'recap_call'
+    assert routing.past_tool('when did I plug in the fan?') == 'search_past'

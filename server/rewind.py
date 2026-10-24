@@ -74,6 +74,31 @@ async def confirm(vision, jpeg, target, min_conf=0.5):
     return [o for o in scene.get('objects', []) if o.get('conf', 0) >= min_conf and label_matches(o['label'], target)]
 
 
+def local_only():
+    """LOCAL_ONLY=1 or this call's Private mode (server/privacy.py)."""
+    from server.privacy import local_only as private_or_local
+    return private_or_local()
+
+
+def identity(connection):
+    """Who is calling, for binding Rewind data to its owner. Call only after server.auth.authorized() passed:
+    the Access JWT was verified there, so its email claim is read here without re-verifying. A token gives one
+    shared identity; no auth configured means the single local user."""
+    import hashlib
+    encoded = connection.headers.get('cf-access-jwt-assertion') or connection.cookies.get('CF_Authorization')
+    if encoded:
+        try:
+            import jwt
+            email = jwt.decode(encoded, options={'verify_signature': False}).get('email', '')
+            if isinstance(email, str) and email:
+                return 'access:' + hashlib.sha256(email.lower().encode()).hexdigest()[:16]
+        except Exception:
+            pass
+    if os.environ.get('A_EYE_TOKEN'):
+        return 'token'
+    return 'local'
+
+
 def fmt_offset(seconds):
     seconds = max(0, int(round(seconds)))
     if seconds < 5:
@@ -94,9 +119,8 @@ class TwelveLabsClient:
         self.base = base
 
     def _headers(self):
-        from server.privacy import local_only
         if local_only():
-            raise RuntimeError('Private mode: Rewind cloud indexing is off')
+            raise RuntimeError('Private mode or LOCAL_ONLY=1: Rewind cloud is locked off')
         key = self.key or os.environ.get('TWELVELABS_API_KEY', '')
         if not key:
             raise RuntimeError('TWELVELABS_API_KEY is not set')
@@ -128,6 +152,12 @@ class TwelveLabsClient:
             response.raise_for_status()
             body = response.json()
             return body['_id'], body.get('video_id')
+
+    async def delete_video(self, index_id, video_id):
+        async with self._client() as client:
+            response = await client.delete(f'/indexes/{index_id}/videos/{video_id}')
+            if response.status_code != 404:      # already gone counts as deleted
+                response.raise_for_status()
 
     async def task(self, task_id):
         async with self._client() as client:
@@ -207,14 +237,17 @@ class Rewind:
         self.lock = asyncio.Lock()
         self.uploads = []       # (task_id, upload_ms) for the report and status
         self.waits = set()
-        self.end_task = None    # end-of-call upload, awaited by the recap route
+        self.end_task = None    # end-of-call cleanup, awaited by the recap route
         self.mode = None
+        self.owner = 'local'    # identity() of the caller that opened this call
+        self.keep = False       # True: the user keeps the TwelveLabs videos after the call
+        self.deleted = []       # video ids deleted from TwelveLabs (ids only)
 
     def now_s(self):
         return self.clock() - self.started
 
     def set_on(self, value):
-        self.on = bool(value)
+        self.on = bool(value) and not local_only()   # LOCAL_ONLY=1 keeps Rewind cloud off
         if not self.on:
             self.ring.clear()
             # Unsent clips are dropped when the user turns Rewind off.
@@ -392,6 +425,35 @@ class Rewind:
         times = ' or '.join(fmt_offset(t) for t in [hit['t_s']] + hit['alternatives'])
         return f"I'm not sure I saw it. Maybe {times}. Here's my best guess.", hit
 
+    async def forget(self, local=True):
+        """Delete this call's TwelveLabs videos (logs ids only). local=True also drops every clip and frame;
+        local=False (call end) keeps the in-memory frames so the end-of-call recap can still run."""
+        for task in list(self.waits):
+            task.cancel()
+        await asyncio.gather(*self.waits, return_exceptions=True)
+        failed = []
+        for clip in self.clips:
+            if clip.video_id and self.index_id:
+                try:
+                    await self.client.delete_video(self.index_id, clip.video_id)
+                    self.deleted.append(clip.video_id)
+                    print(json.dumps(dict(ts=datetime.now(timezone.utc).isoformat(), level='info',
+                                          event='rewind_deleted', video_id=clip.video_id)), flush=True)
+                except Exception as exc:
+                    failed.append(clip)
+                    event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
+                          error=type(exc).__name__)
+        if local:
+            self.clips = failed        # only clips whose cloud copy could not be deleted stay listed
+            for clip in failed:
+                clip.frames = []
+        else:
+            for clip in self.clips:
+                if clip not in failed and clip.video_id:
+                    clip.status, clip.video_id = 'deleted', None
+        self.ring.clear()
+        return dict(deleted=len(self.deleted), failed=len(failed))
+
     async def aclose(self):
         for task in list(self.waits):
             task.cancel()
@@ -429,10 +491,16 @@ class Registry:
         self.calls = {}
         self.background = set()
 
-    def open(self, session_id, on=False, **kwargs):
+    def open(self, session_id, on=False, owner='local', **kwargs):
         if self.encoder is not None:
             kwargs.setdefault('encoder', self.encoder)
+        old = self.calls.get(session_id)
         rewind = Rewind(session_id, client=self.client, **kwargs)
+        rewind.owner = owner
+        if old is not None and old.owner != owner:
+            # Another caller's session id: never touch that call; this one gets an unregistered, off Rewind.
+            event('auth_rejected', level='warning', reason='rewind_owner')
+            return rewind
         rewind.set_on(on)
         self.calls.pop(session_id, None)
         self.calls[session_id] = rewind
@@ -441,15 +509,16 @@ class Registry:
             self.spawn(old.aclose())
         return rewind
 
-    def get(self, session_id):
-        return self.calls.get(session_id)
+    def get(self, session_id, owner=None):
+        """The caller's own call only. With owner given, another caller's call reads as unknown."""
+        rewind = self.calls.get(session_id)
+        if rewind is None or (owner is not None and rewind.owner != owner):
+            return None
+        return rewind
 
-    def for_question(self, session_id=None):
-        """This call when it has clips, else the newest call that does."""
-        current = self.calls.get(session_id)
-        if current and current.clips:
-            return current
-        return next((r for r in reversed(self.calls.values()) if r.clips), current)
+    def for_question(self, session_id=None, owner=None):
+        """Only this call (never another call's clips)."""
+        return self.get(session_id, owner) if session_id else None
 
     def spawn(self, coroutine):
         task = asyncio.create_task(coroutine)
@@ -458,13 +527,24 @@ class Registry:
         return task
 
     def end(self, session_id):
-        """End of call: upload whatever is left. Runs after the socket closes."""
+        """End of call: delete the call's TwelveLabs videos unless the user keeps them (then upload the rest)."""
         rewind = self.calls.get(session_id)
         if rewind is None:
             return None
         rewind.close()
-        rewind.end_task = self.spawn(rewind.flush(wait=False)) if rewind.on else None
+        if rewind.keep and rewind.on:
+            rewind.end_task = self.spawn(rewind.flush(wait=False))
+        elif any(c.video_id for c in rewind.clips) or rewind.waits or rewind.lock.locked():
+            rewind.end_task = self.spawn(self._end_and_forget(rewind))
+        else:
+            rewind.clips = [c for c in rewind.clips if c.status not in ('open', 'pending')]
+            rewind.end_task = None
         return rewind.end_task
+
+    async def _end_and_forget(self, rewind):
+        async with rewind.lock:        # an upload in flight finishes first, so its video id is known
+            rewind.clips = [c for c in rewind.clips if c.status not in ('open', 'pending')]
+        return await rewind.forget(local=False)
 
 
 def registry(app):
@@ -547,7 +627,10 @@ async def rewind_turn(session, text, rewind, *, vision, turn_id):
 
 def state_message(rewind):
     from server.agent import message
-    return message('rewind_state', **rewind.status(), **({'notice': NOTICE} if rewind.on else {}))
+    extra = {'notice': NOTICE} if rewind.on else {}
+    if local_only():
+        extra['locked'] = True
+    return message('rewind_state', **rewind.status(), **extra)
 
 
 # ---- Recap: Pegasus over the frames already uploaded while Rewind was on ----
@@ -591,7 +674,7 @@ def recap_prompt(mode):
 async def recap(rewind, mode=None, encoder=None):
     """Ordered steps with call times, plus typical steps that look skipped. Uses only clips already uploaded."""
     mode = mode or getattr(rewind, 'mode', None) or 'general'
-    clips = sorted((c for c in rewind.clips if c.status in ('indexing', 'ready') and c.frames),
+    clips = sorted((c for c in rewind.clips if c.status in ('indexing', 'ready', 'deleted') and c.frames),
                    key=lambda c: c.start_s)
     frames = [f for c in clips for f in c.frames][:RECAP_MAX_FRAMES]
     if not frames:
@@ -650,13 +733,8 @@ RECAP_CHECKING_LINE = 'Let me look back over the call.'
 
 
 def rewind_for(session, app=None):
-    """This call's Rewind, or the newest recent call with clips when this one has none."""
-    current = getattr(session, 'rewind', None)
-    if current is not None and current.clips:
-        return current
-    if app is not None:
-        return registry(app).for_question(getattr(session, 'session_id', None))
-    return current
+    """This call's own Rewind only; never another call's clips."""
+    return getattr(session, 'rewind', None)
 
 
 async def search_past(session, query, vision=None, app=None):

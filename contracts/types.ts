@@ -159,3 +159,5 @@ export interface V2RewindHit { v: V2; type: "rewind_hit"; turn_id?: string; quer
 
 // v2.6 (additive): Rewind recap. V2RewindRecap joins the server v2 union.
 export interface V2RewindRecap { v: V2; type: "rewind_recap"; turn_id?: string; steps: { t_s: number; text: string }[]; skipped: string[] }
+
+// v2.7 (additive): Rewind privacy. V2Rewind may carry keep?: boolean; V2RewindState may carry locked?: boolean.
