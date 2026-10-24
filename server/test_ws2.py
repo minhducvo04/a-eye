@@ -62,7 +62,7 @@ def test_ws2_flow_and_invalid_input():
         assert messages[1]['type'] == 'draw'
         assert messages[-1]['type'] == 'say'
         assert len(vision.calls) == 1
-        assert vision.calls[0]['image_b64'] == 'synthetic'
+        assert vision.calls[0]['image_b64'] == FRAME['jpeg_b64']
 
 
 def test_second_final_cancels_first_turn():

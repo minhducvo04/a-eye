@@ -11,7 +11,9 @@ from server.agent import Session, run_turn
 SCENE = dict(caption='A pan and a screw.', ms=1, objects=[
     dict(id='a', label='pan', bbox=[0.2, 0.2, 0.4, 0.2], conf=0.9),
     dict(id='b', label='screw', bbox=[0.6, 0.6, 0.2, 0.2], conf=0.9)])
-FRAME = dict(v=2, type='frame', session_id='s', seq=1, ts_ms=1, w=10, h=10, jpeg_b64='synthetic')
+from scripts.keyframe_bench import synthetic_frame
+
+FRAME = dict(v=2, type='frame', session_id='s', seq=1, ts_ms=1, w=10, h=10, jpeg_b64=synthetic_frame(0))
 
 
 class Vision:

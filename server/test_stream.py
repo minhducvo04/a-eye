@@ -40,12 +40,13 @@ def test_cached_stream():
 def test_scene_loop_serial_interval_and_latest(monkeypatch):
     from server.ws2 import scene_loop
     from server.test_agent import FRAME
-    monkeypatch.setenv('SCENE_INTERVAL_MS', '40')
+    from server.keyframes import KeyframeGate
+    monkeypatch.setenv('KEYFRAME_HEARTBEAT_S', '.04')
 
     async def check():
         starts, messages = [], []
         active = 0
-        session = Session('s', frame=FRAME)
+        session = Session('s', frame=FRAME, keyframe_gate=KeyframeGate(min_gap_s=.04))
 
         class SlowVision:
             async def call(self, operation, payload):
@@ -64,7 +65,7 @@ def test_scene_loop_serial_interval_and_latest(monkeypatch):
         task = asyncio.create_task(scene_loop(session, SlowVision(), send))
         await asyncio.sleep(0.005)
         session.frame = dict(FRAME, seq=2)
-        await asyncio.sleep(0.005)
+        await asyncio.sleep(0.04)
         session.frame = dict(FRAME, seq=3)
         await asyncio.sleep(0.08)
         task.cancel()
