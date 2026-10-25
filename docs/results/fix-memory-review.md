@@ -1,7 +1,7 @@
 # Memory review fixes — 2026-10-25
 
 All five requested fixes are implemented on `pkg/fix-memory`, based on `29ac1aa`.
-Review source: `/Users/minhducvo/kyra-grok/aeye-review-memory/RESULT.md`.
+Review source: `$HOME/kyra-grok/aeye-review-memory/RESULT.md`.
 No push, `.env` read, or real Gemini call. `server/recent_memory.py` is unchanged;
 its two medium findings remain with the other builder.
 

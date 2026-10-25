@@ -30,7 +30,7 @@ remains covered. No existing NEXT test expectation was weakened.
   The initial parts reproduction was accidentally hidden by the note-length cap;
   isolating its card then reproduced the missing step filter (**1 failed**).
   Every requested bug had a failing reproduction before its production fix.
-- Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_guide_review.py server/test_live_guide.py server/test_home_pack.py server/test_step_check.py server/test_parts_shelf.py --tb=short` - PASS (**60 passed in 2.93s**).
+- Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server/test_guide_review.py server/test_live_guide.py server/test_home_pack.py server/test_step_check.py server/test_parts_shelf.py --tb=short` - PASS (**60 passed in 2.93s**).
 - Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server` - PASS (**867 passed, 2 warnings in 48.47s**, exit 0; final summary read).
 - Test: `git diff --check` - PASS.
 
