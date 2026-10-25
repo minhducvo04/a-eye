@@ -23,9 +23,9 @@ class FakeTL:
         self.index_names = getattr(self, 'index_names', []) + [name]
         return 'idx-1'
 
-    async def upload(self, index_id, path, metadata):
-        assert os.path.exists(path)
-        self.uploads.append((index_id, path, metadata))
+    async def upload(self, index_id, video, metadata):
+        assert isinstance(video, bytes) and video      # MP4 bytes from memory, never a file path
+        self.uploads.append((index_id, video, metadata))
         n = len(self.uploads)
         return f'task-{n}', f'vid-{n}'
 
@@ -58,9 +58,8 @@ class FakeVision:
         return dict(caption='', objects=self.objects, ms=1)
 
 
-def fake_encoder(frames, path):
-    with open(path, 'wb') as handle:
-        handle.write(b'mp4')
+def fake_encoder(frames):
+    return b'mp4'
 
 
 def make(rows=None):
@@ -98,14 +97,14 @@ def test_clip_has_preroll_extends_and_closes():
     assert rewind.keyframe('heartbeat') is None            # only real changes cut clips
 
 
-def test_flush_uploads_deletes_temp_and_thins_frames():
+def test_flush_uploads_from_memory_and_thins_frames():
     rewind, clock = make()
     rewind.set_on(True)
     feed(rewind, clock, 0, 12, keyframes=[3])
     asyncio.run(rewind.flush(wait=True))
     clip = rewind.clips[0]
-    _, path, metadata = rewind.client.uploads[0]
-    assert not os.path.exists(path)                        # no video stays on disk
+    _, video, metadata = rewind.client.uploads[0]
+    assert video == b'mp4'                                 # the encoder's bytes go straight to the upload
     assert clip.status == 'ready' and clip.video_id == 'vid-1' and len(clip.frames) in (6, 7)
     assert any(f[0] == clip.key_s for f in clip.frames)   # the change frame itself is kept
     assert metadata['start_s'] == 1.0 and metadata['end_s'] == 6.0
@@ -415,7 +414,7 @@ def test_follow_samples_any_frame_source():
 def test_recap_orders_steps_maps_times_and_filters_skipped():
     from server.rewind import recap
     rewind = ready_rewind([])                                # clips at 1..6 s and 18..23 s, 6 kept frames each
-    result = asyncio.run(recap(rewind, mode='pc_build', encoder=lambda frames, path: len(frames) * 0.5))
+    result = asyncio.run(recap(rewind, mode='pc_build', encoder=lambda frames: b"mp4"))
     mp4, prompt, schema = rewind.client.analyzed
     assert 'install the RAM' in prompt and 'never describe or identify people' in prompt and schema
     assert [s['text'] for s in result['steps']] == ['Installed the CPU', 'Plugged in the CPU fan cable']
@@ -454,7 +453,7 @@ def test_tool_interface():
         sure=True, call_time_s=20.0, label='CPU fan', box=[0.4, 0.3, 0.2, 0.2], clip_id='vid-2', alternatives=[3.0])
     json.dumps(result)                                        # JSON-safe tool_result, no image bytes
     assert 'frame_b64' not in result and cards[0]['type'] == 'rewind_hit' and cards[0]['turn_id'] == 't1'
-    session.rewind.encoder = lambda frames, path: len(frames) * 0.5
+    session.rewind.encoder = lambda frames: b"mp4"
     result, cards = asyncio.run(rewind_tools.run_tool('recap_call', {}, session, turn_id='t2'))
     assert result['skipped'] == ['install the RAM'] and result['say'].startswith("Here's what you did: Installed")
     assert cards[0]['type'] == 'rewind_recap'

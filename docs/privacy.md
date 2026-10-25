@@ -87,8 +87,10 @@ TwelveLabs [delete video](https://docs.twelvelabs.io/v1.3/api-reference/videos/d
 - **Text to speech**: Cartesia when its key is set and the voice is auto (`voice/adapter.py:101`), sending the reply
   text (`voice/cartesia_ws.py:37`); otherwise Kokoro on the box, which logs only timing (`boxsvc/app.py:111`).
 - **Rewind**: off by default, toggled per call, with an on-screen notice. Full camera frames from the session, not
-  crops, encoded with no audio, uploaded to one shared index `a-eye-rewind`. The local temp MP4 is removed after
-  upload. Turning Rewind off drops clips not yet sent. (Line numbers moved since `d33395c`; see `server/rewind.py`.)
+  crops, encoded with no audio, uploaded to one shared index `a-eye-rewind`. Clips are encoded to MP4 in memory
+  (ffmpeg stdin to stdout) and never written to the host's disk. Turning Rewind off drops clips not yet sent. In
+  "process when I save" mode (`REWIND_MODE=save` or `/ws2?rewind_mode=save`) clips stay in memory until call end
+  and are uploaded only if the call is kept, else dropped (`docs/results/recall-pipeline.md`). (Line numbers moved since `d33395c`; see `server/rewind.py`.)
   - **Own call only** (built, `12fc35b`): `for_question` no longer falls back to another call
     (`server/rewind.py:523`); the HTTP routes check the caller identity (Access email hash, token or local) and
     treat other callers' ids as unknown (`server/rewind.py:516`, `server/rewind_api.py`).
