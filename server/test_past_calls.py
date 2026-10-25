@@ -289,3 +289,32 @@ def test_saved_search_fallback_shares_deadline_and_keeps_partial_hits(tmp_path, 
     hits = asyncio.run(call.search_kept('keys'))
     assert [h['video_id'] for h in hits] == ['video-0']
     assert deadlines == [4] and cancelled == [True] and len(client.searches) == 10
+
+
+def test_past_call_question_searches_saved_videos_with_rewind_off(tmp_path, monkeypatch):
+    """Saved calls already live at TwelveLabs: this call's Rewind switch must not block searching them."""
+    session = library(tmp_path, monkeypatch)
+    privacy.set_call(cloud={'twelvelabs': True}, rewind=False)
+    session.rewind.set_on(False)
+    assert not session.rewind.on and not session.rewind.cloud_allowed()
+    result = asyncio.run(answer(session, 'Where was my wrench last call?'))
+    assert result['found'] and result['source'] == 'rewind'
+    assert session.rewind.client.searches == [('idx-1', 'Where was my wrench last call?', ['old-video'])]
+    assert not session.rewind.on  # recording of the current call stays off
+
+
+@pytest.mark.parametrize('block', ['private', 'local_only', 'no_consent'])
+def test_past_call_search_with_rewind_off_respects_privacy(tmp_path, monkeypatch, block):
+    session = library(tmp_path, monkeypatch)
+    if block == 'private':
+        privacy.set_call(cloud={'twelvelabs': True}, private=True)
+        session.private = True
+    elif block == 'local_only':
+        monkeypatch.setenv('LOCAL_ONLY', '1')
+        privacy.set_call(cloud={'twelvelabs': True})
+    else:
+        privacy.set_call(cloud={'twelvelabs': False})
+    session.rewind.set_on(False)
+    result = asyncio.run(answer(session, 'Where was my wrench last call?'))
+    assert not session.rewind.client.searches
+    assert result['source'] == 'kept-summary' and 'blue mug' in result['say']
