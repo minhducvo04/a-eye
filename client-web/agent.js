@@ -267,11 +267,13 @@ function boot() {
       setText('proof-pictures-sent', `Pictures sent: ${proof.pictures_sent ?? 'unknown'}`);
       setText('proof-cloud-calls', `Cloud AI calls: ${proof.cloud_ai_calls ?? 'unknown'}`);
       setText('proof-cloud-bytes', `Bytes to cloud: ${proof.bytes_to_cloud ?? 'unknown'}`);
+      setText('proof-context', 'used: ' + (proof.context_sources?.join(', ') || 'none'));
     } catch {
       setText('proof-pictures', 'Pictures saved: unknown');
       setText('proof-pictures-sent', 'Pictures sent: unknown');
       setText('proof-cloud-calls', 'Cloud AI calls: unknown');
       setText('proof-cloud-bytes', 'Bytes to cloud: unknown');
+      setText('proof-context', 'used: unknown');
     }
   }
   refreshProof();
@@ -1715,6 +1717,7 @@ function boot() {
     document.getElementById('guide-presenter')?.classList.add('hidden');
     ended = false;
     sessionId = randomId();
+    setText('proof-context', 'used: none');
     resetCallOwner();
     try { await callOwner(); }
     catch { pack = null; showProblem('Could not create a private call. Please try again.'); return; }

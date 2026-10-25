@@ -104,7 +104,8 @@ for (const [headset, home, live, policy] of [[false, false, false, "engineering"
     };
     if (!path.startsWith('/api/proof?')) throw new Error('Fixture unavailable');
     proofRequests.push(path);
-    return { ok: proofAvailable, json: async () => ({ pictures_saved: 0, cloud_ai_calls: 3, bytes_to_cloud: 125 }) };
+    return { ok: proofAvailable, json: async () => ({ pictures_saved: 0, cloud_ai_calls: 3, bytes_to_cloud: 125,
+      context_sources: ['camera', 'memory', 'places', 'growth'] }) };
   });
   const context = new Proxy({}, { get: (_obj, key) => key === 'measureText' ? () => ({ width: 20 }) : key === 'createRadialGradient' ? () => ({ addColorStop() {} }) : () => {} });
   class Element {
@@ -235,6 +236,7 @@ for (const [headset, home, live, policy] of [[false, false, false, "engineering"
     assert.ok(proofRequests.at(-1).includes(encodeURIComponent(socket.messages[0].session_id)));
     assert.equal(node('proof-cloud-calls').textContent, 'Cloud AI calls: 3');
     assert.equal(node('proof-cloud-bytes').textContent, 'Bytes to cloud: 125');
+    assert.equal(node('proof-context').textContent, 'used: camera, memory, places, growth');
     proofAvailable = false;
     await proofPoll.fn();
     assert.equal(node('proof-cloud-calls').textContent, 'Cloud AI calls: unknown');

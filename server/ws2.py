@@ -372,6 +372,19 @@ async def websocket(ws: WebSocket):
         event('turn_start', session.session_id)
         try:
             await lifecycle.stage('thinking', text=text)
+            context = session.context_agent
+            context_block = ''
+            if context:
+                from server.context_agent import DISMISS, classic_provider
+                if DISMISS.fullmatch(text):
+                    deleted = context.dismiss(text)
+                    await emit(say("Okay, I deleted that follow-up." if deleted else
+                                   "There isn't a follow-up to delete."))
+                    await lifecycle.stage('done')
+                    return
+                if not session.pack.refuse(text):
+                    context.ingest(text)
+                context_block = await context.collect(text, provider=classic_provider())
             # Talker + thinker: a Haiku-class talker speaks while the planner (no GPU gate) draws in parallel.
             duo = (isinstance(llm, LLMClient) and os.environ.get('BRAIN_MODE', 'duo') == 'duo'
                    and bool(os.environ.get('ANTHROPIC_API_KEY')) and claude_allowed())
@@ -405,7 +418,7 @@ async def websocket(ws: WebSocket):
                 messages = await run_turn(session, text, vision=vision, llm=TurnBrain(),
                                           started_at=lifecycle.started, turn_id=lifecycle.id,
                                           planner=llm if duo else None, stt_ms=getattr(lifecycle, 'stt_ms', None),
-                                          app=ws.app, route=label)
+                                          app=ws.app, route=label, context_block=context_block)
                 slow = slow_part(next((m for m in reversed(messages or []) if m['type'] == 'metrics'), {}))
                 if slow:
                     await lifecycle.stage('done', detail=slow)
@@ -567,6 +580,8 @@ async def websocket(ws: WebSocket):
         if session is not None:
             session.recent_memory.clear()
             session.scene_memory.entries.clear()
+            if session.context_agent:
+                session.context_agent.block = ''
         if session is not None and getattr(session, 'rewind', None):
             rewind_mod.registry(ws.app).end(session.session_id)   # uploads the rest after the call
 
@@ -705,6 +720,10 @@ async def websocket(ws: WebSocket):
                         seed(session.session_id, rewind_mod.identity(ws))
                 from server.growth import for_owner as growth_for_owner
                 session.growth = growth_for_owner(ws.app, rewind_mod.identity(ws))
+                from server.context_agent import attach, classic_provider
+                context = await asyncio.to_thread(attach, session, ws.app, rewind_mod.identity(ws))
+                provider = 'google' if ws.query_params.get('mode') == 'gemini-live' else classic_provider()
+                await context.collect(provider=provider)
                 rewind_task = asyncio.create_task(session.rewind.follow(session))
                 if session.rewind.on:
                     await send(rewind_mod.state_message(session.rewind))
@@ -713,6 +732,9 @@ async def websocket(ws: WebSocket):
                     await open_live()
                 hello_ready = True
                 await send(state('listening'))
+                opener = context.followup(provider=provider)
+                if opener:
+                    await emit(say(opener))
                 if getattr(ws.app.state, 'presenter', False) and private and session.pack.id == 'home':
                     await send(message('turn', turn_id='presenter', stage='done', detail='Presenter available',
                                        at_ms=int(time() * 1000)))
