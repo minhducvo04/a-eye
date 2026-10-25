@@ -207,6 +207,74 @@ def test_safety_and_guide_win_over_memory():
     asyncio.run(trial())
 
 
+@pytest.mark.parametrize('chunks', [('USB unplugged, next',), ('USB unplugged', ', next'),
+                                   ('USB unplugged next',)])
+def test_led_confirmation_goes_to_guide_before_seconds_router(monkeypatch, chunks):
+    from server import live_guide
+    from server.packs.electronics import ElectronicsGuide
+    monkeypatch.setenv('ROUTER', 'on')
+    monkeypatch.setattr(live_guide, 'DEBOUNCE', .02)
+    routed = []
+
+    async def seconds(session, text):
+        routed.append(text)
+        return dict(scope='seconds', scope_past=.99)
+    monkeypatch.setattr(live_memory, 'scope_decision', seconds)
+
+    async def trial():
+        bridge, emitted, fixed, wire = bridge_for()
+        bridge.session.ee_guide = ElectronicsGuide(introduced=True)
+        bridge.guide.kind = 'ee'
+        try:
+            for chunk in chunks:
+                await bridge.handle({'serverContent': {'inputTranscription': {'text': chunk}}})
+                await asyncio.sleep(0)
+            await bridge.handle({'serverContent': {'turnComplete': True}})
+            if bridge.guide.task:
+                await bridge.guide.task
+            if bridge.memory.task:
+                await bridge.memory.task
+            assert bridge.session.ee_guide.index == 1
+            assert bridge.session.ee_guide.usb_off
+            assert not routed and not fixed
+            assert prompts(wire) and all('MEMORY v' not in p for p in prompts(wire))
+        finally:
+            await bridge.guide.close()
+            await bridge.memory.close()
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('kind', ['ee', 'plan'])
+def test_active_guide_requires_explicit_memory_question(monkeypatch, kind):
+    from server.packs.electronics import ElectronicsGuide
+    from server.planner import PlannedGuide
+    from server.test_planner import plan
+    monkeypatch.setenv('ROUTER', 'on')
+    monkeypatch.setenv('PLANNER', '1')
+
+    async def seconds(session, text):
+        return dict(scope='seconds', scope_past=.99)
+    monkeypatch.setattr(live_memory, 'scope_decision', seconds)
+
+    async def trial():
+        bridge, emitted, fixed, wire = bridge_for()
+        bridge.guide.kind = kind
+        bridge.session.ee_guide = ElectronicsGuide(introduced=True)
+        bridge.guide.planned_guide = PlannedGuide(plan())
+        try:
+            for text in ('next', 'done', 'USB unplugged', 'I unplugged it earlier', 'why is this loose?'):
+                assert await bridge.memory.decide(text) is None
+                await bridge.memory.watch(text)
+                assert bridge.memory.task is None and not bridge.memory.held
+            for text in ('What did I show you?', 'Where was it earlier?', 'When did I do that before?',
+                         'What did we fix last call?'):
+                assert await bridge.memory.decide(text) is not None
+        finally:
+            await bridge.guide.close()
+            await bridge.memory.close()
+    asyncio.run(trial())
+
+
 def test_private_mode_and_gate_off_do_no_lookup(monkeypatch):
     async def trial(private):
         bridge, emitted, fixed, wire = bridge_for()

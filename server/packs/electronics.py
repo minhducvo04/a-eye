@@ -13,6 +13,20 @@ HOT = 'Do not touch the hot soldering iron tip; leave it in its stand.'
 MAINS = 'Stop; mains power and wall outlets are outside this USB-only build.'
 RESISTANCE = 'Never measure resistance on a powered circuit. Disconnect USB and batteries, and use a loose resistor out of the circuit.'
 LINES = {USB, SERIES, HOT, MAINS, RESISTANCE}
+USB_CONFIRM = re.compile(r'(?:usb unplugged|i unplugged (?:the )?usb)(?:,? next)?', re.I)
+SERIES_CONFIRM = re.compile(r'(?:the )?resistor is in series(?:,? next)?', re.I)
+POWER_CONFIRM = re.compile(r'power disconnected(?:,? next)?', re.I)
+ADVANCE = re.compile(
+    r'(?:(?:usb unplugged|i unplugged (?:the )?usb|(?:the )?resistor is in series|power disconnected),? )?'
+    r'(next|done|continue|ready)', re.I)
+
+
+def claims(text):
+    """The same completion and confirmation forms consumed by reply()."""
+    clean = text.strip().rstrip('.!?')
+    return any(pattern.fullmatch(clean) for pattern in (USB_CONFIRM, SERIES_CONFIRM, POWER_CONFIRM, ADVANCE))
+
+
 TASKS = {
     'ee_led': (
         'Find an Arduino UNO, USB cable, breadboard, LED, 220 ohm resistor and two jumper wires. Show all six part types with USB unplugged.',
@@ -129,12 +143,12 @@ class ElectronicsGuide(HomeGuide):
             self.started = monotonic()
             self.run_id = self.growth.start(self.task)
         clean = text.strip().lower().rstrip('.!?')
-        if self.task == 'ee_multimeter' and re.fullmatch(r'power disconnected(?:,? next)?', clean):
+        if self.task == 'ee_multimeter' and POWER_CONFIRM.fullmatch(clean):
             self.resistance_off = True
             self.usb_off = True
-        if re.fullmatch(r'(?:usb unplugged|i unplugged (?:the )?usb)(?:,? next)?', clean):
+        if USB_CONFIRM.fullmatch(clean):
             self.usb_off = True
-        if re.fullmatch(r'(?:the )?resistor is in series(?:,? next)?', clean):
+        if SERIES_CONFIRM.fullmatch(clean):
             if not self.usb_off:
                 return self.stop(USB)
             self.series = True
@@ -147,9 +161,7 @@ class ElectronicsGuide(HomeGuide):
             self.full_steps = True
         if clean in ('retry', 'try again'):
             self.tries += 1
-        advancing = self.introduced and bool(re.fullmatch(
-            r'(?:(?:usb unplugged|i unplugged (?:the )?usb|(?:the )?resistor is in series|power disconnected),? )?'
-            r'(next|done|continue|ready)', clean))
+        advancing = self.introduced and bool(ADVANCE.fullmatch(clean))
         index = self.index + int(advancing)
         if self.task == 'ee_multimeter' and index > 0 and not self.resistance_off:
             return self.stop(RESISTANCE)

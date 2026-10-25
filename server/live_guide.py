@@ -10,6 +10,7 @@ from time import monotonic
 
 from server import cloud_vision, parts_shelf, pointer, privacy, safety, planner
 from server.packs.home import NEXT
+from server.packs.electronics import claims as electronics_claims
 from server.task_scope import task_for, home_enabled
 
 
@@ -74,7 +75,7 @@ class LiveGuide:
             return True
         return bool(guide and not guide.completed and (NEXT.search(text) or
                     (self.kind == 'home' and OFF.search(text)) or CONTROL.search(text) or
-                    (self.kind == 'ee' and re.fullmatch(r'power disconnected[.!]?', text.strip(), re.I))))
+                    (self.kind == 'ee' and electronics_claims(text))))
 
     def pending_plan(self, text):
         pending = self.planner.task
