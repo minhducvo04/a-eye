@@ -123,7 +123,8 @@ async def tag(request: Request):
     value = await body(request)
     store = mine(request)
     try:
-        saved = store.set_tag(value.get('name'), value.get('label'), value.get('home'), value.get('kind', 'object'))
+        saved = store.set_tag(value.get('name'), value.get('label'), value.get('home'), value.get('kind', 'object'),
+                              place_path=value.get('place_path'))
     except ValueError:
         return JSONResponse({'error': 'invalid_body'}, status_code=422)
     return dict(tag=saved, **mem.status(store))

@@ -51,6 +51,10 @@ llm-probe:        ## one router call with .env loaded: make llm-probe Q="your qu
 	$(PY) -m server.llm_probe "$(Q)"
 
 .PHONY: gemini-live-check
+.PHONY: places-live-check
+places-live-check: ## .env-loaded synthetic write/read/delete; prints presence only
+	@$(PY) -m server.places_probe
+
 gemini-live-check: ## synthetic camera probe with .env loaded; never prints credentials
 	$(PY) scripts/gemini_live_check.py
 

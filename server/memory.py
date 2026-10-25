@@ -29,6 +29,7 @@ from uuid import uuid4
 
 from server.logs import event
 from server import privacy
+from server.memory_places import Places, path_parts
 
 ROOT = Path(__file__).resolve().parents[1] / 'data' / 'private' / 'memory'
 CROP_SIDE = 224
@@ -78,7 +79,7 @@ class Cipher:
         return self.fernet.decrypt(data) if self.fernet else data
 
 
-class Store:
+class Store(Places):
     """One person's memory folder. Every write and delete goes through here."""
 
     def __init__(self, memory_id, base=None, cipher=None, clock=time):
@@ -134,6 +135,7 @@ class Store:
         return out
 
     def append(self, record):
+        self._observe_places(record)
         self.dir.mkdir(parents=True, exist_ok=True)
         with open(self._path('log.jsonl'), 'ab') as handle:
             handle.write(self.cipher.seal(json.dumps(record, separators=(',', ':')).encode()) + b'\n')
@@ -164,7 +166,9 @@ class Store:
     def tags(self):
         return self._read_json('tags.json', {})
 
-    def set_tag(self, name, label=None, home=None, kind='object'):
+    def set_tag(self, name, label=None, home=None, kind='object', place_path=None):
+        if place_path is not None:
+            place_path = path_parts(place_path)
         name = ' '.join((name or '').split())[:60]
         if not name:
             raise ValueError('empty tag')
@@ -172,6 +176,10 @@ class Store:
         tags[name.lower()] = dict(name=name, label=(label or name)[:60], home=(home or None) and home[:60],
                                   kind=kind if kind in ('object', 'place') else 'object', created=self.clock())
         self._write_json('tags.json', tags)
+        if place_path is None:
+            self.ensure_thing(name, tags[name.lower()]['kind'])
+        else:
+            self.place(name, place_path, kind=tags[name.lower()]['kind'])
         return tags[name.lower()]
 
     REFUSED_ROOMS = ('bedroom', 'bathroom')
@@ -250,11 +258,15 @@ class Store:
         gone = self._drop(lambda r: not mentions(r, item))
         tags = {k: v for k, v in self.tags().items() if not (words(v['name']) & words(item))}
         self._write_json('tags.json', tags)
+        self._delete_places(things=[t['id'] for t in self.things() if words(t['name']) & words(item)])
+        self._write_json('recent.json', {})
         return gone
 
     def forget_since(self, since):
         gone = self._drop(lambda r: r.get('t', 0) < since)
         self._write_json('videos.json', [v for v in self.videos() if v.get('t', 0) < since])
+        self._delete_places(placements=[p['id'] for p in self.placements() if p['t'] >= since])
+        self._write_json('recent.json', {})
         return gone
 
     def forget_all(self):
@@ -270,6 +282,7 @@ class Store:
         if days is None:
             days = self._read_json('settings.json', {}).get('kept_days', retention_days())
         cutoff = self.clock() - 86400 * days
+        self._delete_places(placements=[p['id'] for p in self.placements() if p['t'] < cutoff])
         return self._drop(lambda r: r.get('t', 0) >= cutoff)
 
 
@@ -469,8 +482,12 @@ class Writer:
                 cx, cy = center(obj['bbox'])
                 best = min(pool, key=lambda o: (center(o['bbox'])[0] - cx) ** 2 + (center(o['bbox'])[1] - cy) ** 2)
                 near = dict(label=best['label'], bbox=best['bbox'])
-            record['tags'].append(dict(tag=tag['name'], label=obj['label'], bbox=obj['bbox'], near=near))
-        if hits:
+            entry = dict(tag=tag['name'], label=obj['label'], bbox=obj['bbox'], near=near)
+            if near and obj.get('conf', 0) >= .6:
+                # A nearby landmark is a relation, not evidence that an item is inside it.
+                entry.update(place_path=[place_words(entry, tags)], confidence=obj['conf'])
+            record['tags'].append(entry)
+        if hits and getattr(self.store, 'supports_crops', True):
             # Faces never stored: no crop when a person is in the frame or the check cannot run (fail closed).
             try:
                 person = await self.person_check(jpeg_b64, original_scene)
@@ -546,7 +563,7 @@ def arrived(sightings, target, same=0.08):
 
 def item_from(question):
     value = re.sub(r"^\s*(hey\s+)?(a-?eye,?\s*)?", '', question or '', flags=re.I)
-    value = re.sub(r"\b(where('s| is| are| did i (put|leave)| have i (put|left))|have you seen|did you see|"
+    value = re.sub(r"\b(where('s| is| are| was| were| did i (put|leave)| have i (put|left))|have you seen|did you see|"
                    r"find|what happened to)\b", ' ', value, flags=re.I)
     value = re.sub(r"\b(my|the|your)\b", ' ', value, flags=re.I)
     value = re.sub(r"[?!.]+", ' ', value)
@@ -652,6 +669,20 @@ async def find(store, question, embedder=None, scene=None, now=None, vision=None
     tags = store.tags()
     tag = next((t for t in tags.values() if words(t['name']) & words(item) or words(t['label']) & words(item)), None)
     target = (tag['name'] if tag else item)
+    location = store.where(target) if hasattr(store, 'where') else None
+    matching = [r for r in records if mentions(r, target)]
+    if location and (not matching or location['t'] > max(r['t'] for r in matching)
+                     or not getattr(store, 'supports_crops', True) and
+                     location['t'] >= max(r['t'] for r in matching)):
+        place = ' / '.join(location['place_path'])
+        when = spoken_time(location['t'], now)
+        return dict(found=True, item=target, how='tag' if location['source'] == 'tag' else 'placement',
+                    t=location['t'], when=when, place=place, place_path=location['place_path'],
+                    confidence=location['confidence'], source=location['source'],
+                    record_id=location['id'], count=len(records), count_item=len(matching),
+                    home=tag.get('home') if tag else None, live=None, crop=None,
+                    say=f"Your {target} was last recorded at {place}, {when}.",
+                    ms=round((monotonic() - started) * 1000, 1))
     hit, how = None, None
     exact = [r for r in records if any(words(e['tag']) & words(target) for e in r.get('tags') or [])]
     if exact:
@@ -737,11 +768,13 @@ class Memories:
         self.calls = {}           # session_id -> (store, writer)
 
     def store(self, memory_id):
-        return Store(memory_id, base=self.base)
+        from server.memory_storage import open_store
+        return open_store(memory_id, base=self.base)
 
     def for_owner(self, owner):
         store = self.store(person_id(owner))
-        store.claim(owner)
+        if not store.claim(owner):
+            raise PermissionError('memory belongs to another caller')
         return store
 
     def auto_attach(self, rewind):
@@ -756,6 +789,9 @@ class Memories:
         elif not store.remembering() and rewind.memory_writer is not None:
             self.detach(rewind.session_id)
             rewind.memory_writer = None
+        recent = getattr(getattr(rewind, 'session', None), 'recent_memory', None)
+        if recent is not None:
+            recent.bind(store if rewind.memory_writer is not None else None, rewind.session_id)
         return store
 
     def attach(self, session_id, memory_id, owner):
