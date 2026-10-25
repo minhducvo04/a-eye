@@ -18,7 +18,7 @@ import httpx
 from jsonschema import validate
 from websockets.asyncio.client import connect
 
-from server import cloud_meter, cloud_vision, pointer, privacy, rewind_tools
+from server import cloud_meter, cloud_vision, pointer, privacy, recent_memory, rewind_tools
 from server.agent import POWER_LINE, message, say, state
 
 DOCUMENTED_MODEL = 'gemini-3.8-live'
@@ -82,13 +82,15 @@ async def discover_model(client=None):
 
 
 TOOL_ARGS = {'point_at': ('label',), 'find_item': ('name',), 'tag_item': ('name', 'place'),
-             'forget_memory': ('name',), 'rewind_search': ('query',)}
+             'forget_memory': ('name',), 'rewind_search': ('query',), 'recent_memory': ('question',)}
 TOOL_DESCRIPTIONS = {
     'point_at': 'Ground a visible object and draw a box and arrow only when sure.',
     'find_item': 'Look up an item in the user\'s local memory.',
     'tag_item': 'Remember an item and its home place locally, when the user asks.',
     'forget_memory': 'Delete local memories of the named item when the user asks.',
     'rewind_search': 'Search this call\'s Rewind clips only while Rewind is on.',
+    'recent_memory': 'Recall recent steps or observations. Pass the full question, including its time scope; '
+                     'routes to recent call notes, Rewind, or earlier-call memory as appropriate.',
 }
 
 
@@ -120,6 +122,10 @@ def pcm16(data, rate):
 class LiveBridge:
     def __init__(self, session, vision, app, send, fixed_say, *, discover=discover_model, endpoint=ENDPOINT):
         self.session, self.vision, self.app = session, vision, app
+        # Live transcripts and scene notes must stay in this call's RAM log,
+        # including when memory settings refresh the storage binding later.
+        session.recent_memory.ram_only = True
+        session.recent_memory.bind(None, session.session_id)
         self.send, self.fixed_say = send, fixed_say
         self.discover, self.endpoint = discover, endpoint
         self.ws = None
@@ -180,6 +186,7 @@ class LiveBridge:
         try:
             setup = live_setup(self.model, self.session.pack.system_prompt +
                     ' Use point_at to point at visible objects. Use local memory tools only when requested. '
+                    'Use recent_memory for questions about previous steps or observations, preserving the full time scope. '
                     'Never claim a memory is saved or deleted before a tool confirms it.')
             setup['tools'] = [{'functionDeclarations': declarations(self.rewind_on())}]
             await self._send({'setup': setup})
@@ -320,7 +327,11 @@ class LiveBridge:
             if draw and privacy.google_allowed():
                 await self.send(draw)
             return 'Pointed at ' + args['label'] if draw else 'Unsure; nothing drawn.'
-        if name == 'rewind_search':
+        if name == 'recent_memory':
+            result = await recent_memory.answer(self.session, args['question'], self.vision)
+            cards = ([rewind_tools.memory_hit_message(result, self.turn_id,
+                      self.session.recent_memory.started_wall)] if result['source'] == 'long-term' else [])
+        elif name == 'rewind_search':
             result, cards = await rewind_tools.run_tool('search_past', args, self.session,
                                                        vision=self.vision, app=self.app)
         else:
@@ -374,6 +385,8 @@ class LiveBridge:
             await self._send({'toolResponse': {'functionResponses': [dict(
                 id=call['id'], name=call['name'], response={'result': result})]}})
         if content.get('turnComplete'):
+            if not self.blocked:
+                self.session.recent_memory.note_transcript(self.question, 'user')
             if not self.blocked and self.output.strip():
                 line = self.stop_line(self.output, True)
                 if line:
@@ -381,6 +394,7 @@ class LiveBridge:
                 else:
                     # Complete transcript first: audio can precede transcription on the wire.
                     msg = say(self.output.strip())
+                    self.session.recent_memory.note_transcript(msg['text'], 'helper')
                     msg['turn_id'] = self.turn_id
                     await self.stage('speaking', detail='Brain: Google / ' + self.model)
                     await self.send(state('speaking'))

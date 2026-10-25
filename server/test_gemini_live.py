@@ -21,6 +21,122 @@ def jpeg():
     return base64.b64encode(out.getvalue()).decode()
 
 
+def test_fake_live_recent_step_transcripts_and_scene_stay_local(monkeypatch):
+    async def trial():
+        from server.ws2 import scene_loop
+        from server.test_ws2 import Vision
+        monkeypatch.setenv('GEMINI_API_KEY', 'synthetic-key')
+        privacy.set_call({'google': True})
+        wire, emitted = [], []
+        done = asyncio.Event()
+        question = 'what step was I just on?'
+        instruction = 'Step 3: place the resistor on row 12.'
+        async def fake(ws):
+            wire.append(json.loads(await ws.recv()))
+            await ws.send(json.dumps({'setupComplete': {}}))
+            await ws.send(json.dumps({'serverContent': {
+                'inputTranscription': {'text': 'Help with the resistor.'},
+                'outputTranscription': {'text': 'Step 3: place the '}}}))
+            await ws.send(json.dumps({'serverContent': {
+                'outputTranscription': {'text': 'resistor on row 12.'}, 'turnComplete': True}}))
+            async for raw in ws:
+                msg = json.loads(raw)
+                wire.append(msg)
+                if msg.get('realtimeInput', {}).get('text') == question:
+                    await ws.send(json.dumps({'toolCall': {'functionCalls': [
+                        dict(id='recent', name='recent_memory', args={'question': question})]}}))
+                if 'toolResponse' in msg:
+                    result = msg['toolResponse']['functionResponses'][0]['response']['result']
+                    await ws.send(json.dumps({'serverContent': {
+                        'outputTranscription': {'text': result}, 'turnComplete': True}}))
+        async def emit(msg):
+            emitted.append(msg)
+            if msg.get('type') == 'say' and 'the guide said' in msg['text']:
+                done.set()
+        async def discover():
+            return 'models/' + DOCUMENTED_MODEL
+        session = Session('recent-live')
+        async with serve(fake, '127.0.0.1', 0) as server:
+            bridge = LiveBridge(session, Vision(), None, emit, emit, discover=discover,
+                                endpoint=f'ws://127.0.0.1:{server.sockets[0].getsockname()[1]}')
+            # Memory settings must not attach a persistent backend to this Live log.
+            session.recent_memory.bind(SimpleNamespace(remembering=lambda: True), session.session_id)
+            assert session.recent_memory.store is None
+            assert await bridge.start()
+            scan = None
+            try:
+                for _ in range(100):
+                    if any(m.get('text') == instruction for m in emitted):
+                        break
+                    await asyncio.sleep(.01)
+                session.frame = dict(seq=1, jpeg_b64=jpeg())
+                scan = asyncio.create_task(scene_loop(session, bridge.vision, emit))
+                for _ in range(100):
+                    if any(e['kind'] == 'scene' for e in session.recent_memory.entries):
+                        break
+                    await asyncio.sleep(.01)
+                entries = list(session.recent_memory.entries)
+                assert any(e['kind'] == 'scene' and e['note'] for e in entries)
+                assert any(e['kind'] == 'user' and e['note'] == 'Help with the resistor.' for e in entries)
+                assert any(e['kind'] == 'helper' and e['note'] == instruction for e in entries)
+                await bridge.text(question)
+                await asyncio.wait_for(done.wait(), 2)
+                response = next(m['toolResponse']['functionResponses'][0]['response']
+                                for m in wire if 'toolResponse' in m)
+                assert list(response) == ['result']
+                assert 'the guide said' in response['result'] and instruction in response['result']
+                setup = json.dumps(wire[0])
+                assert all(key not in setup for key in ('additionalProperties', 'minLength', 'maxLength'))
+                assert 'observed_at' not in json.dumps(wire) and 'wall_t' not in json.dumps(wire)
+            finally:
+                if scan:
+                    scan.cancel()
+                    await asyncio.gather(scan, return_exceptions=True)
+                await bridge.close()
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('args', [{}, {'question': ''}, {'question': 'x' * 301},
+                                 {'question': 3}, {'question': 'step', 'extra': 'no'}])
+def test_recent_tool_strict_arguments(args):
+    async def trial():
+        privacy.set_call({'google': True})
+        async def emit(msg):
+            pass
+        bridge = LiveBridge(Session('s'), None, None, emit, emit)
+        assert await bridge.tool(dict(name='recent_memory', args=args)) == 'Invalid tool arguments.'
+    asyncio.run(trial())
+
+
+def test_recent_tool_temporal_routes_and_local_result_cards(tmp_path):
+    async def trial():
+        from scripts.recent_memory_bench import fixture
+        privacy.set_call({'google': True, 'twelvelabs': True})
+        evidence = fixture(tmp_path)
+        session = Session('s', recent_memory=evidence.recent_memory)
+        session.rewind = evidence.rewind
+        emitted = []
+        async def emit(msg):
+            emitted.append(msg)
+        bridge = LiveBridge(session, None, None, emit, emit)
+        async def recall(question):
+            return await bridge.tool(dict(name='recent_memory', args={'question': question}))
+        assert 'row 12' in await recall('Where was the red wire a minute ago?')
+        assert session.rewind.calls == 0
+        assert '0:30' in await recall('Where was the resistor earlier in this call?')
+        assert session.rewind.calls == 1
+        assert 'parts bin' in await recall('Where was the resistor yesterday?')
+        assert any(m['type'] == 'find_item' for m in emitted)
+        session.rewind.on = False
+        assert 'earlier call' in await recall('Where was the resistor 3 minutes ago?')
+        assert session.rewind.calls == 1
+        assert "can't confirm" in await recall('Where was the blue wire just now?')
+        privacy.update('google', False)
+        with pytest.raises(PermissionError):
+            await recall('What was step 3?')
+    asyncio.run(trial())
+
+
 def test_camera_precedes_realtime_question():
     async def trial():
         from time import monotonic
