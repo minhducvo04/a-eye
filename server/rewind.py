@@ -273,14 +273,19 @@ def kept_calls(owner):
         return []
 
 
+def shared_demo_library():
+    # Owner decision 2026-10-25: in open demo mode the team shares one saved-call library (A_EYE_DEMO_SHARED_MEMORY=1).
+    return os.environ.get('A_EYE_DEMO_SHARED_MEMORY') == '1'
+
+
 async def _keep_and_record(rewind):
     """'Remember this call': upload the rest, then remember the call's videos so later calls can search them."""
     await rewind.flush(wait=True)
     # Live uploads may already be indexing when there are no pending clips to flush.
     while waits := [task for task in rewind.waits if not task.done()]:
         await asyncio.gather(*waits, return_exceptions=True)
-    if rewind.owner == 'local':
-        return  # Open demo callers have call-scoped recall, never a shared saved-call library.
+    if rewind.owner == 'local' and not shared_demo_library():
+        return  # Open demo callers have call-scoped recall unless the owner shares one demo library.
     clips = [dict(video_id=c.video_id, start_s=c.start_s, key_s=c.key_s) for c in rewind.clips if c.video_id]
     if not clips:
         return
@@ -573,7 +578,7 @@ class Rewind:
     @_call_cloud
     async def search_kept(self, query, limit=3):
         """Hits in this owner's earlier kept calls ("Remember this call"), newest call first."""
-        if not self.cloud_allowed() or self.owner == 'local':
+        if not self.cloud_allowed() or (self.owner == 'local' and not shared_demo_library()):
             return []
         past = {c['video_id']: (call, c) for call in kept_calls(self.owner)
                 if call.get('session_id') != self.session_id for c in call.get('clips', [])}
