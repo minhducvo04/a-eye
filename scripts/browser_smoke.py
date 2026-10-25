@@ -5,9 +5,9 @@ Runs a real Chromium (Playwright) with a fake camera and microphone against a ru
     uv run --with playwright python scripts/browser_smoke.py http://127.0.0.1:8010
     (first time only: uv run --with playwright python -m playwright install chromium)
 
-Checks: no console errors or page errors from load to the end; the pack picker starts a session; Camera on flips
+Checks: no console errors or page errors from load to the end; the Call button starts a session; Camera on flips
 its state and frames start; Mic flips its state; Hold to talk can be pressed; a socket question gets a reply
-caption; Settings shows Use my phone first and scrolls with the wheel; no long task over 300 ms after a find card. Exit 0 on pass. Synthetic media only (Chromium's fake devices).
+caption; headset additions stay hidden on desktop and phone; Settings scrolls with the wheel; no long task over 300 ms after a find card. Exit 0 on pass. Synthetic media only (Chromium's fake devices).
 """
 import json
 import os
@@ -45,6 +45,7 @@ def main():
         context = browser.new_context(permissions=["camera", "microphone"])
         # Long tasks, and a handle on the call socket so the smoke can show a find card without the brain.
         context.add_init_script("""(() => {
+          localStorage.setItem('aeye.cloud', JSON.stringify({google:false}));
           window.__long = [];
           try { new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__long.push([e.startTime, e.duration]); })
             .observe({ entryTypes: ['longtask'] }); } catch (e) {}
@@ -57,6 +58,7 @@ def main():
         page.on("pageerror", lambda e: problems.append(f"page error: {e}"))
         page.on("websocket", lambda ws: ws.on("framesent", lambda f: sent.append(f)))
 
+        page.on("response", lambda r: problems.append(f"HTTP {r.status}: {urlsplit(r.url).path}") if r.status >= 400 else None)
         page.goto(page_url())
         page.wait_for_timeout(1200)
         # The proof counters now live in the API, not in the call page DOM.
@@ -70,7 +72,7 @@ def main():
               return response.json();
             }""", session_id)
         assert isinstance(proof()['pictures_saved'], int)
-        page.click('button[data-pack="general"]')
+        page.click('#ring-hint')
         page.wait_for_timeout(600)
         hello = next(json.loads(f) for f in sent if isinstance(f, str) and json.loads(f).get('type') == 'hello')
         counts = proof(hello['session_id'])
@@ -115,41 +117,17 @@ def main():
             page.mouse.up()
 
         # The voice-first page no longer has a typed-message input. Exercise the same question contract.
-        page.evaluate("""() => window.__ws[window.__ws.length - 1].send(JSON.stringify({
-          v: 2, type: 'user_text', text: 'what do you see?', final: true, source: 'typed'
-        }))""")
+        page.evaluate("""session => window.__ws[window.__ws.length - 1].send(JSON.stringify({
+          v: 2, type: 'user_text', session_id: session, text: 'what do you see?', final: true, source: 'typed'
+        }))""", hello['session_id'])
         page.wait_for_function("document.getElementById('replies').textContent.trim().length > 0", timeout=6000)
 
-        # Settings: the phone pairing button is first and in view; the sheet scrolls with the mouse wheel.
+        # Desktop keeps the redesigned Settings; pairing is verified by headset_smoke.py.
         page.locator("#call .open-settings").click()
         page.wait_for_timeout(500)
-        pair = page.locator("#pair-request").bounding_box()
-        if not pair or pair["y"] + pair["height"] > page.viewport_size["height"]:
-            problems.append("Use my phone is not visible when Settings opens")
-        # The actual displayed QR/link must join a camera without the master token.
-        page.click('#pair-request')
-        page.wait_for_function("document.getElementById('pair-link').href.includes('join=')")
-        pair_url = page.locator('#pair-link').get_attribute('href')
-        pair_query = parse_qs(urlsplit(pair_url).query)
-        if 'token' in pair_query or not pair_query.get('join'):
-            problems.append('pair link did not use a scoped join secret')
-        if not page.locator('#pair-qr').is_visible():
-            problems.append('pair QR is hidden')
-        phone = context.new_page()
-        phone.goto(pair_url)
-        phone.get_by_role('button', name='Start', exact=True).click()
-        phone.get_by_text('Camera + mic connected', exact=True).wait_for()
-        phone.close()
-        page.get_by_text('Phone disconnected; using this device’s camera.', exact=True).wait_for()
-        if os.environ.get('A_EYE_TOKEN'):
-            if page.locator('#caregiver-link').get_attribute('aria-disabled') != 'true':
-                problems.append('token call offered unsupported caregiver controls')
-            caregiver = context.new_page()
-            caregiver.goto(BASE + '/caregiver.html?' + urlencode({'token': os.environ['A_EYE_TOKEN']}))
-            caregiver.get_by_text('Caregiver settings require personal sign-in.', exact=False).wait_for()
-            if not caregiver.locator('#save').is_disabled():
-                problems.append('token caregiver page allowed saving to a different owner')
-            caregiver.close()
+        assert not page.locator('#pair-request').is_visible(), 'Headset pairing leaked into desktop'
+        assert not page.locator('#composer').is_visible(), 'Headset composer leaked into desktop'
+        assert not page.locator('#step-card').is_visible(), 'Headset step card leaked into desktop'
         sheet = page.locator("#settings").bounding_box()
         page.mouse.move(sheet["x"] + sheet["width"] / 2, sheet["y"] + sheet["height"] / 2)
         page.mouse.wheel(0, 400)
@@ -182,6 +160,18 @@ def main():
         print(f"longest task after the find card: {round(longest)} ms")
         if longest > 300:
             problems.append(f"long task of {round(longest)} ms after the find card (limit 300 ms)")
+        page.click('#rewind-dismiss')
+        page.click('#end-call')
+        page.set_viewport_size({'width': 390, 'height': 844})
+        assert page.locator('#ring-hint').is_visible()
+        assert not page.locator('[data-pack="home"]').is_visible()
+        page.click('#ring-hint')
+        page.wait_for_timeout(600)
+        for selector in ['#composer', '#step-card', '#headset-panel']:
+            assert not page.locator(selector).is_visible(), f'{selector} leaked into phone'
+        end = page.locator('#end-call').bounding_box()
+        assert end and end['y'] >= 0 and end['y'] + end['height'] <= 844
+        page.click('#end-call')
         browser.close()
 
     print(redact(json.dumps({"frames_sent": frames, "problems": problems}, indent=1)))

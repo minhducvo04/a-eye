@@ -39,7 +39,7 @@ Then run the printed Tailscale Serve command yourself. Open the HTTPS host it pr
 2. If the server uses a token, add `&token=<A_EYE_TOKEN>` (do not paste the token into chat or logs).
 3. Sign in with the same account as the phone if Access is on.
 4. Optional: Settings → turn **Private mode** on for the sink guide.
-5. Tap **Sink** (dad-guide) or **General**.
+5. Tap **Sink guide** (dad-guide) or **Call** (General). Phone and desktop show only **Call**.
 6. Tap **Enable sound** so Safari may play the reply.
 7. If the phone does not join on its own, tap **Pair phone · show QR**.
 
@@ -62,7 +62,7 @@ The headset status becomes **Phone camera connected**. The phone is then the cam
 
 ## 5. Run General
 
-1. Start a new call and tap **General**.
+1. Start a new call by tapping **Call**.
 2. Enable sound if asked.
 3. Point the phone at an object and ask “what am I looking at?”
 4. Read the **GENERAL** step card and the caption. A box and arrow appear when the server grounds a visible object.

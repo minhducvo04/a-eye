@@ -2,6 +2,13 @@ import XCTest
 @testable import AEyeCore
 
 final class ModesTests: XCTestCase {
+    func testDadCallUsesLiveWithoutStartingSinkGuide() {
+        XCTAssertEqual(Modes.dad.pack, "general")
+        XCTAssertNil(Modes.startText(for: Modes.dad))
+        XCTAssertTrue(LiveConfiguration.enabled(mode: Modes.dad.id, google: true, privateMode: false))
+        XCTAssertFalse(LiveConfiguration.enabled(mode: Modes.dad.id, google: true, privateMode: true))
+        XCTAssertEqual(Modes.startText(for: Modes.all[0]), "sink")
+    }
     func testRingContents() {
         XCTAssertEqual(Modes.all.map(\.id), ["plumbing", "general", "memory"])
         XCTAssertEqual(Modes.all.map(\.title), ["Sink", "General", "Memory"])

@@ -20,6 +20,8 @@ public struct Mode: Equatable, Identifiable {
 }
 
 public enum Modes {
+    /// The single public call entry; specialist packs remain available to the existing guide code.
+    public static let dad = Mode(id: "general", title: "A-Eye", symbol: "phone", pack: "general", requiresPowerOff: false)
     /// Same order as the web. Extras remain compiled but are hidden by default.
     public static let all: [Mode] = [
         Mode(id: "plumbing", title: "Sink", symbol: "drop", pack: "home", requiresPowerOff: false),

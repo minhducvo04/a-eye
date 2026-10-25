@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import { nextTurnState, statusLine, createEarlyFinal } from './turn.js';
 
 test('pipeline stages, timestamps, and server timing', () => {
@@ -78,7 +79,7 @@ test('early final uses latest interim at 700ms and never sends a late correction
   assert.equal(sent.length, 2);
 });
 
-for (const [headset, home, live, policy] of [[false, false, false, "engineering"], [false, false], [true, false], [true, true], [false, true], [false, false, true], [false, false, true, "general"], [false, false, true, "optout"], [false, false, true, "private"]]) test(live ? `${policy || 'live'}: Live defaults to Google and uses existing hello and caption messages` : home ? 'sink selection and presenter controls use real client contracts' : headset ? 'headset call never acquires local video through camera or permission controls' : 'call page toggles camera, keeps voice-only hello, retries text, reconnects, and renders streamed replies', async () => {
+for (const [headset, home, live, policy] of [[false, false, false, "engineering"], [false, false], [true, false], [true, true], [false, true], [false, false, true], [false, false, true, "general"], [false, false, true, "optout"], [false, false, true, "private"], [false, false, true, "single-call"], [false, false, true, "old-memory-link"]]) test(live ? `${policy || 'live'}: Live defaults to Google and uses existing hello and caption messages` : home ? 'sink selection and presenter controls use real client contracts' : headset ? 'headset call never acquires local video through camera or permission controls' : 'call page toggles camera, keeps voice-only hello, retries text, reconnects, and renders streamed replies', async () => {
   const saved = new Map();
   const put = (key, value) => { saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { value, configurable: true, writable: true }); };
   const nodes = new Map(), intervals = new Map(), timeouts = new Map();
@@ -137,13 +138,15 @@ for (const [headset, home, live, policy] of [[false, false, false, "engineering"
     close() { this.readyState = 3; this.handlers.close(); }
   }
   const settle = async () => { for (let i = 0; i < 8; i++) await new Promise(resolve => setImmediate(resolve)); };
-  put('document', { getElementById: node, createElement: () => new Element(), createTextNode: text => ({ textContent: text }), hidden: false });
+  const currentPage = policy === 'single-call' || policy === 'old-memory-link';
+  const htmlIds = new Set([...readFileSync(new URL('./agent.html', import.meta.url), 'utf8').matchAll(/id="([^"]+)"/g)].map(m => m[1]));
+  put('document', { getElementById: id => currentPage && !htmlIds.has(id) ? null : node(id), createElement: () => new Element(), createTextNode: text => ({ textContent: text }), hidden: false });
   put('window', { isSecureContext: true, innerWidth: 390, innerHeight: 844, devicePixelRatio: 1, matchMedia: () => ({ matches: true }), addEventListener() {}, requestAnimationFrame() { return 1; }, setInterval(fn, ms) { intervals.set(++timerId, { fn, ms }); return timerId; }, clearInterval(id) { intervals.delete(id); }, setTimeout(fn, ms) { timeouts.set(++timerId, { fn, ms }); return timerId; }, clearTimeout(id) { timeouts.delete(id); } });
   put('localStorage', policy === 'optout' || policy === 'private' ? {
     getItem: key => key === 'aeye.cloud' && policy === 'optout' ? JSON.stringify({ google: false }) : key === 'aeye.private' && policy === 'private' ? '1' : null,
     setItem() {}, removeItem() {},
   } : null);
-  put('location', { search: headset ? '?device=headset' : '', protocol: 'https:', host: 'example.test' });
+  put('location', { search: headset ? '?device=headset' : policy === 'old-memory-link' ? '?mode=memory&tts=cartesia' : '', protocol: 'https:', host: 'example.test' });
   put('navigator', { mediaDevices: { enumerateDevices: async () => [], getUserMedia: async c => { constraints.push(c); gets++; return { getTracks: () => [{ stop() { stops++; } }] }; } } });
   put('SpeechRecognition', class { constructor() { recognition = this; } start() {} stop() {} });
   put('speechSynthesis', synth);
@@ -155,21 +158,24 @@ for (const [headset, home, live, policy] of [[false, false, false, "engineering"
   Date.now = () => now;
   try {
     await import(`./agent.js?headset-test=${headset}&home=${home}&live=${live}&policy=${policy}`);
-    assert.equal(node('ring-title').textContent, 'Sink', 'Sink is selected at launch');
+    if (!currentPage) assert.equal(node('ring-title').textContent, 'General', 'the one Call button starts the dad call (General) at launch');
     await settle();
-    assert.deepEqual(node('ring').children.filter(b => !b.classList.contains('hidden')).map(b => b.getAttribute('data-mode')), policy === 'engineering' ? ringModes : ringModes.slice(0, 3));
+    if (!currentPage) assert.deepEqual(node('ring').children.filter(b => !b.classList.contains('hidden')).map(b => b.getAttribute('data-mode')), policy === 'engineering' ? ringModes : ringModes.slice(0, 3));
     const choose = () => node('picker').handlers.click({ target: { closest: () => ({ getAttribute: name => policy === 'engineering' ? 'engineering' : policy === 'general' ? 'general' : live ? 'general' : home ? (name === 'data-pack' ? 'home' : 'plumbing') : 'general' }) } });
     if (!live && !home) {
       node('cloud-google').checked = false;
       node('cloud-google').handlers.change();
     }
-    choose();
+    if (home || policy === 'engineering') choose();
+    else node('ring-hint').handlers.click();
     await settle();
     const socket = Socket.all[0];
     assert.ok(socket);
     socket.open();
     assert.equal(socket.messages[0].camera, false);
+    if (currentPage) assert.equal(socket.messages[0].pack, 'general', 'the one Call button starts General, including old mode links');
     assert.equal(socket.messages[0].persona, 'chill-dad');
+    assert.equal(socket.messages[0].cloud?.cartesia ?? false, false, 'web calls never enable the retired voice provider');
     if (policy === 'private' || policy === 'optout') {
       assert.equal(new URL(socket.url).searchParams.get('mode'), null);
       assert.equal(socket.messages[0].pack, 'general');
@@ -185,9 +191,28 @@ for (const [headset, home, live, policy] of [[false, false, false, "engineering"
       assert.equal(socket.messages[0].tts, 'server');
       socket.message({ type: 'say', agent: 'helper', utterance_id: 'live', text: 'A blue board.' });
       assert.equal(node('replies').children[0].textContent, 'A blue board.');
+      if (currentPage) {
+        node('rewind-keep').checked = true;
+        node('rewind-keep').handlers.change();
+        assert.deepEqual({ on: socket.messages.at(-1).on, keep: socket.messages.at(-1).keep }, { on: true, keep: true });
+        node('rewind-btn').handlers.click();
+        assert.equal(node('rewind-keep').checked, false, 'turning off Rewind clears retention');
+        node('rewind-keep').checked = true;
+        node('rewind-keep').handlers.change();
+        assert.equal(socket.messages.at(-1).keep, true);
+      }
       node('cloud-google').checked = false;
       node('cloud-google').handlers.change();
       assert.equal(socket.readyState, 3, 'revoking Google closes its session');
+      if (currentPage) {
+        assert.equal(node('rewind-keep').checked, false, 'ending resets retention for the next call');
+        assert.equal(node('rewind-btn').attrs['aria-pressed'], 'false');
+        node('private-toggle').checked = true;
+        await node('private-toggle').handlers.change();
+        assert.equal(node('rewind-keep').disabled, true);
+        assert.equal(node('rewind-btn').disabled, true);
+        await settle();
+      }
       return;
     }
     if (policy === 'engineering') {
@@ -235,7 +260,8 @@ for (const [headset, home, live, policy] of [[false, false, false, "engineering"
       node('persona-pick').value = 'funny-dad';
       node('persona-pick').handlers.change();
       assert.equal(socket.readyState, 3, 'persona changes end the active call');
-      choose();
+      if (home || policy === 'engineering') choose();
+      else node('ring-hint').handlers.click();
       await settle();
       Socket.all[1].open();
       assert.equal(Socket.all[1].messages[0].persona, 'funny-dad');
@@ -301,8 +327,9 @@ for (const [headset, home, live, policy] of [[false, false, false, "engineering"
     node('start-camera').handlers.click();
     await settle();
     assert.equal(gets, 2);
-    node('typed').value = 'hello';
-    node('composer').handlers.submit({ preventDefault() {} });
+    node('mic').handlers.click();
+    await settle();
+    recognition.onresult({ resultIndex: 0, results: Object.assign([{ 0: { transcript: 'hello' }, isFinal: true, length: 1 }], { length: 1 }) });
     assert.equal(socket.messages.at(-1).type, 'user_text');
     assert.match(node('pipeline').textContent, /^Sent/);
     now += 2000;
@@ -340,9 +367,8 @@ for (const [headset, home, live, policy] of [[false, false, false, "engineering"
     assert.equal([...timeouts.values()].at(-1).ms, 1000);
     [...timeouts.values()].at(-1).fn();
     Socket.all[3].open();
-    // Actual call-page wiring: contact commands cannot reach the WebSocket during local speech.
-    node('mic').handlers.click();
-    await settle();
+    // The mic is already on from the voice question above.
+    // Contact commands cannot reach the WebSocket during local speech.
     familyReply = { id: 'command-reply', name: 'Fixture Friend', text: 'stop' };
     const familyPoll = [...intervals.values()].find(t => t.fn.name === 'refresh');
     const reading = familyPoll.fn();

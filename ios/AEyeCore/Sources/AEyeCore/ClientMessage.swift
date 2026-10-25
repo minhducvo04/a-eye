@@ -16,6 +16,7 @@ public enum ClientMessage {
             tts: (serverAudio || serverTTS) ? "server" : "browser",
             stt: serverAudio ? "server" : nil,
             persona: persona,
+            cloud: CloudConsent(cartesia: false),
             privateMode: privateMode ? true : nil
         ))
     }
@@ -61,10 +62,11 @@ private struct HelloPayload: Encodable {
     let tts: String
     let stt: String?
     let persona: String?
+    let cloud: CloudConsent
     let privateMode: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case v, type, pack, client, tts, stt, persona
+        case v, type, pack, client, tts, stt, persona, cloud
         case privateMode = "private"
         case sessionId = "session_id"
         case boardId = "board_id"
@@ -129,4 +131,9 @@ private struct ConfirmPayload: Encodable {
         case v, type, what, value
         case sessionId = "session_id"
     }
+}
+
+/// Explicit opt-out also prevents a server-side Kokoro failure falling back to paid voice.
+private struct CloudConsent: Encodable {
+    let cartesia: Bool
 }

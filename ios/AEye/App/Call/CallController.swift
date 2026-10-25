@@ -9,6 +9,15 @@ import Observation
 @MainActor
 @Observable
 final class CallController {
+    var holdToTalk = UserDefaults.standard.bool(forKey: "holdToTalk") {
+        didSet {
+            UserDefaults.standard.set(holdToTalk, forKey: "holdToTalk")
+            if oldValue != holdToTalk { setMuted(holdToTalk) }
+        }
+    }
+    private(set) var rewind = RewindControls()
+    var canChangeRewind: Bool { isSocketOpen && !privateMode && !rewind.locked && !rewind.pending }
+
     var googleConsent = LiveConfiguration.consent(UserDefaults.standard.object(forKey: "geminiLiveGoogle") as? Bool) {
         didSet {
             UserDefaults.standard.set(googleConsent, forKey: "geminiLiveGoogle")
@@ -110,7 +119,7 @@ final class CallController {
         serverURL(from: serverURLString, token: accessToken)
     }
 
-    /// Camera button in the call bar: off stops frames going to the server (the preview stays on screen).
+    /// Camera off stops capture, preview and transport together.
     private(set) var isCameraOn = true
 
     /// Spoken replies. Exposed so voice input can read `speakingText` / `startedAt` and call `stop()`.
@@ -167,6 +176,8 @@ final class CallController {
         isHomeStartPending = Modes.startText(for: mode) != nil
         sessionId = UUID().uuidString
         callStartedAt = Date()
+        rewind = RewindControls()
+        camera.start()
         speech.prepareAudioSession()
         if !isLive { connect() }
         startFrameLoop()
@@ -174,6 +185,8 @@ final class CallController {
     }
 
     func end() {
+        camera.stop()
+        rewind = RewindControls()
         classicTurnActive = false
         nativeNotices = []
         classicAudio = []
@@ -231,19 +244,50 @@ final class CallController {
 
     func toggleCamera() {
         isCameraOn.toggle()
+        if isCameraOn { camera.start() } else { camera.stop() }
         if isSocketOpen { socket?.send(ClientMessage.camera(sessionId: sessionId, on: isCameraOn)) { _ in } }
     }
 
     /// Mic button: stops or restarts the audio tap. Does nothing in typed mode.
     func toggleMute() {
+        setMuted(!isMuted)
+    }
+
+    func setTalking(_ talking: Bool) {
+        guard holdToTalk else { return }
+        setMuted(!talking)
+    }
+
+    private func setMuted(_ muted: Bool) {
         guard inputMode == .voice else { return }
         if isLive {
+            guard liveAudio.isMuted != muted else { return }
             do { try liveAudio.toggleMute() }
             catch { listeningFailed() }
             return
         }
-        listener.setMuted(!listener.isMuted)
+        listener.setMuted(muted)
         resetUtterance()  // muting drops any half-heard utterance
+    }
+
+    func setRewind(_ on: Bool) {
+        updateRewind(on: on, keep: rewind.keep)
+    }
+
+    func setKeepCall(_ keep: Bool) {
+        guard rewind.on || rewind.keep else { return }
+        updateRewind(on: rewind.on, keep: keep)
+    }
+
+    private func updateRewind(on: Bool, keep: Bool) {
+        guard canChangeRewind, let socket else { return }
+        rewind.request(keep: keep)
+        let current = generation
+        socket.send(ClientMessage.rewind(sessionId: sessionId, on: on, keep: keep)) { [weak self] sent in
+            guard let self, self.generation == current, !sent else { return }
+            self.rewind = RewindControls()
+            self.state.errorText = "Could not update Rewind. Reconnect and try again."
+        }
     }
 
     // MARK: - Listening
@@ -279,6 +323,7 @@ final class CallController {
                     }
                 )
                 if !didStart { inputMode = .typed }
+                else { listener.setMuted(holdToTalk) }
             }
             isInputResolved = true
         }
@@ -297,7 +342,7 @@ final class CallController {
                 self?.state.errorText = "Audio route changed. End and restart the call to restore the microphone."
             }
             do {
-                try self.liveAudio.start(microphone: granted) { [weak self] pcm, final in
+                try self.liveAudio.start(microphone: granted, muted: self.holdToTalk) { [weak self] pcm, final in
                     self?.sendAudio(pcm, final: final)
                 }
                 self.inputMode = granted ? .voice : .typed
@@ -410,7 +455,12 @@ final class CallController {
     }
 
     private func socketDidReceive(_ data: Data, _ socketGeneration: Int) {
-        guard socketGeneration == generation, let message = ServerMessage.decode(data) else { return }
+        guard socketGeneration == generation else { return }
+        if let status = RewindStatus.decode(data) {
+            rewind.receive(status)
+            return
+        }
+        guard let message = ServerMessage.decode(data) else { return }
         apply(.server(message))
         if isLive {
             if let text = LiveConfiguration.transcript(data) { liveAudio.interim = text }
@@ -479,6 +529,7 @@ final class CallController {
 
     private func socketDidClose(_ socketGeneration: Int) {
         guard socketGeneration == generation, mode != nil else { return }
+        rewind = RewindControls()
         socket = nil
         isSocketOpen = false
         isFrameInFlight = false

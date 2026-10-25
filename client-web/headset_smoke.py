@@ -2,18 +2,21 @@
 uv run --no-project --with playwright python client-web/headset_smoke.py http://127.0.0.1:18741
 """
 import json
+import os
+from urllib.parse import urlencode
 import sys
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 
 base = sys.argv[1].rstrip('/')
 ua = 'Mozilla/5.0 (Apple Vision Pro; CPU visionOS 2_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15'
-out = Path('docs/results/headset-web')
+out = Path('/private/tmp/aeye-headset-merge-proof')
 out.mkdir(parents=True, exist_ok=True)
 with sync_playwright() as p:
     browser = p.chromium.launch(args=['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'])
     ctx = browser.new_context(user_agent=ua, permissions=['camera', 'microphone'], viewport={'width': 1440, 'height': 1000})
     ctx.add_init_script('''
+      localStorage.setItem('aeye.cloud', JSON.stringify({google:false}));
       window.mediaRequests = [];
       const gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
       navigator.mediaDevices.getUserMedia = c => { window.mediaRequests.push(c); return gum(c); };
@@ -21,9 +24,9 @@ with sync_playwright() as p:
     page = ctx.new_page()
     errors = []
     page.on('pageerror', lambda e: errors.append(str(e)))
-    page.goto(base + '/agent.html?stt=server')  # UA alone must activate headset mode
+    page.goto(base + '/agent.html?' + urlencode({'stt': 'server', 'token': os.getenv('A_EYE_TOKEN', '')}))  # UA alone must activate headset mode
     expect(page.locator('body')).to_have_class('headset')
-    page.click('button[data-pack="general"]')
+    page.click('#ring-hint')
     expect(page.locator('#headset-status')).to_have_text('Waiting for your phone camera')
     page.click('#headset-sound')
     expect(page.locator('#headset-sound')).to_have_text('Sound enabled')
@@ -58,19 +61,23 @@ with sync_playwright() as p:
     page.locator('#typed').fill('What do you see?')
     page.locator('#typed').press('Enter')
     page.wait_for_timeout(1800)
+    assert not errors, errors
     page.screenshot(path=str(out / 'connected.png'))
     page.click('#phone-kick')
     expect(page.locator('#headset-status')).to_have_text('Waiting for your phone camera')
     expect(page.locator('#mic')).to_have_attribute('aria-pressed', 'true')
     page.click('#end-call')
-    page.click('button[data-pack="general"]')
+    page.click('[data-pack="home"]')
     expect(page.locator('#headset-status')).to_have_text('Waiting for your phone camera')
+    expect(page.locator('#step-eyebrow')).to_have_text('SINK')
+    expect(page.locator('#step-card')).to_be_visible()
+    page.click('#end-call')
     assert not any(c.get('video') for c in page.evaluate('window.mediaRequests'))
     assert not errors, errors
     # Reliable override works even with a desktop UA, including an accidental phone-role URL.
     desktop = browser.new_context()
     override = desktop.new_page()
-    override.goto(base + '/agent.html?device=headset&pair=123456')
+    override.goto(base + '/agent.html?' + urlencode({'device': 'headset', 'pair': '123456', 'token': os.getenv('A_EYE_TOKEN', '')}))
     expect(override.locator('body')).to_have_class('headset')
     expect(override.locator('#picker')).to_be_visible()
     print('HEADSET SMOKE PASS: UA + flag; no local video; QR; real fake-phone join/frames; mic handoff, settings, kick, second call; no page errors')

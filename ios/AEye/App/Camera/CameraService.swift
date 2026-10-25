@@ -138,8 +138,10 @@ final class CameraService: NSObject, ObservableObject {
     private let rig = CaptureRig()
     private let ciContext = CIContext()
     private var isRequestingAccess = false
+    private var wantsCapture = false
 
     func start() {
+        wantsCapture = true
         let status = AVCaptureDevice.authorizationStatus(for: .video)
         permission = status
         switch status {
@@ -152,7 +154,7 @@ final class CameraService: NSObject, ObservableObject {
                 let granted = await AVCaptureDevice.requestAccess(for: .video)
                 isRequestingAccess = false
                 permission = AVCaptureDevice.authorizationStatus(for: .video)
-                if granted { rig.start() }
+                if granted && wantsCapture { rig.start() }
             }
         default:
             break  // denied or restricted: RootView shows PermissionNotice
@@ -160,6 +162,7 @@ final class CameraService: NSObject, ObservableObject {
     }
 
     func stop() {
+        wantsCapture = false
         rig.stop()
     }
 
