@@ -26,6 +26,7 @@ from server.live_prefetch import Prefetch, query_key
 DOCUMENTED_MODEL = 'gemini-3.8-live'
 ENDPOINT = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent'
 FALLBACK_LINE = 'Gemini Live is unavailable. I am switching to the normal pipeline.'
+RECONNECT_DELAYS = (.5, 1, 2)
 MAX_AUDIO = 24000 * 2 * 60
 FIRST_AUDIO_HOLD = .25
 AUDIO_CHUNK_SECONDS = .15
@@ -41,6 +42,19 @@ MEMORY_CLAIMS = tuple((name, re.compile(pattern, re.I)) for name, pattern in (
 # websockets debug logs include the handshake URL and raw media. Never emit them.
 WIRE_LOGGER = logging.Logger('aeye.live.transport')
 WIRE_LOGGER.disabled = True
+
+
+def log_live_drop(error):
+    from server.logs import event
+    close = getattr(error, 'rcvd', None) or getattr(error, 'sent', None)
+    # Provider error strings and arbitrary close reasons can contain input text.
+    # Retain transport reasons only; never log the exception or response body.
+    reason = (getattr(close, 'reason', '') or '').lower().strip()
+    safe_reasons = {'', 'service restart', 'internal error', 'going away',
+                    'normal closure', 'keepalive ping timeout', 'deadline exceeded'}
+    event('live_drop', level='warning', code=getattr(close, 'code', None),
+          reason=reason if reason in safe_reasons else 'provider reason withheld',
+          error=type(error).__name__)
 
 
 def live_setup(model, instruction='', voice=None, handle=None):
@@ -558,7 +572,7 @@ class LiveBridge:
             await self._send(payload)
             return True
         except Exception:
-            # The reader owns the single reconnect; closing wakes it on a write failure.
+            # The reader owns reconnects; closing wakes it on a write failure.
             if self.ws:
                 await self.ws.close()
             return False
@@ -1017,7 +1031,8 @@ class LiveBridge:
                         if 'goAway' in response or 'error' in response:
                             raise ConnectionError('Live ended')
                         await self.handle(response)
-                except Exception:
+                except Exception as error:
+                    log_live_drop(error)
                     # Also cover a disconnect arriving just as the minute elapses.
                     if monotonic() - self.connected_at >= 60:
                         self.reconnects = 0
@@ -1039,8 +1054,15 @@ class LiveBridge:
                         await self.ws.close()
                     if self.closed:
                         return
-                    if self.reconnects == 0 and privacy.google_allowed():
+                    reconnected = False
+                    while self.reconnects < len(RECONNECT_DELAYS) and privacy.google_allowed():
+                        delay = RECONNECT_DELAYS[self.reconnects]
                         self.reconnects += 1
+                        await asyncio.sleep(delay)
+                        if self.closed:
+                            return
+                        if not privacy.google_allowed():
+                            break
                         try:
                             await self._open()
                             self.start_context()
@@ -1049,9 +1071,14 @@ class LiveBridge:
                                 # The new provider session must learn the code-owned step again.
                                 self.guide.published = 0 if self.guide.version else self.guide.published
                                 await self.publish_guide()
-                            continue
-                        except Exception:
-                            pass
+                            reconnected = True
+                            break
+                        except Exception as error:
+                            log_live_drop(error)
+                            if self.ws:
+                                await self.ws.close()
+                    if reconnected:
+                        continue
                     self.active = False
                     if not cloud_meter.BUDGET.exhausted():
                         await self.fixed_say(FALLBACK_LINE)

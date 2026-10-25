@@ -367,7 +367,116 @@ def test_fake_live_wire_audio_tools_captions_and_revocation(monkeypatch):
     asyncio.run(trial())
 
 
-def test_reconnect_once_then_fallback_and_close(monkeypatch):
+def test_live_drop_log_withholds_arbitrary_provider_text(capsys):
+    from server.gemini_live import log_live_drop
+    error = ConnectionError('private transcript and synthetic-key')
+    error.rcvd = SimpleNamespace(code=1011, reason='private transcript and synthetic-key')
+    log_live_drop(error)
+    output = capsys.readouterr().out
+    row = json.loads(output)
+    assert row['code'] == 1011 and row['reason'] == 'provider reason withheld'
+    assert 'private transcript' not in output and 'synthetic-key' not in output
+
+
+def test_failed_reconnect_handshakes_use_all_backoffs(monkeypatch):
+    async def trial():
+        from server import gemini_live
+        monkeypatch.setenv('LIVE_CONTEXT_ENABLED', '0')
+        privacy.set_call({'google': True})
+        delays, opens, fixed = [], [], []
+
+        async def sleep(delay):
+            delays.append(delay)
+
+        async def emit(msg):
+            pass
+
+        async def speak(text):
+            fixed.append(text)
+
+        class Socket:
+            async def recv(self):
+                raise ConnectionError('synthetic drop')
+
+            async def close(self):
+                pass
+
+        bridge = LiveBridge(Session('handshakes', camera=False), None, None, emit, speak)
+        bridge.ws = Socket()
+        bridge.active = True
+        bridge.connected_at = bridge.budget_minute = gemini_live.monotonic()
+
+        async def reopen():
+            opens.append(True)
+            raise ConnectionError('synthetic setup failure')
+
+        monkeypatch.setattr(gemini_live.asyncio, 'sleep', sleep)
+        bridge._open = reopen
+        try:
+            await bridge._run()
+            assert delays == [.5, 1, 2] and len(opens) == 3
+            assert fixed == [gemini_live.FALLBACK_LINE] and not bridge.active
+        finally:
+            await bridge.close()
+
+    asyncio.run(trial())
+
+
+def test_two_live_drops_recover_silently_with_handle(monkeypatch, capsys):
+    async def trial():
+        monkeypatch.setenv('GEMINI_API_KEY', 'synthetic-key')
+        monkeypatch.setenv('LIVE_CONTEXT_ENABLED', '0')
+        privacy.set_call({'google': True})
+        setups, fixed = [], []
+        recovered = asyncio.Event()
+
+        async def fake(ws):
+            setups.append(json.loads(await ws.recv())['setup'])
+            await ws.send('{"setupComplete": {}}')
+            await ws.send('{"sessionResumptionUpdate": {"resumable": true, "newHandle": "latest"}}')
+            if len(setups) < 3:
+                await ws.close(code=1011, reason='service restart')
+            else:
+                await ws.send('{"serverContent": {"turnComplete": true}}')
+                await ws.wait_closed()
+
+        async def emit(msg):
+            pass
+
+        async def speak(text):
+            fixed.append(text)
+
+        async def discover():
+            return 'models/fake'
+
+        async with serve(fake, '127.0.0.1', 0) as server:
+            bridge = LiveBridge(Session('drops', camera=False), None, None, emit, speak,
+                discover=discover, endpoint=f'ws://127.0.0.1:{server.sockets[0].getsockname()[1]}')
+            original_handle = bridge.handle
+
+            async def handle(response):
+                await original_handle(response)
+                if 'serverContent' in response:
+                    recovered.set()
+
+            bridge.handle = handle
+            assert await bridge.start()
+            try:
+                await asyncio.wait_for(recovered.wait(), 4)
+                assert bridge.active and fixed == []
+                assert len(setups) == 3
+                assert all(s['sessionResumption'] == {'handle': 'latest'} for s in setups[1:])
+            finally:
+                await bridge.close()
+
+    asyncio.run(trial())
+    drops = [json.loads(line) for line in capsys.readouterr().out.splitlines()
+             if '"event":"live_drop"' in line]
+    assert len(drops) == 2
+    assert all(row['code'] == 1011 and row['reason'] == 'service restart' for row in drops)
+
+
+def test_reconnect_three_times_then_fallback_and_close(monkeypatch):
     async def trial():
         from server.gemini_live import FALLBACK_LINE
         monkeypatch.setenv('GEMINI_API_KEY', 'synthetic-key')
@@ -388,8 +497,8 @@ def test_reconnect_once_then_fallback_and_close(monkeypatch):
             bridge = LiveBridge(Session('s'), None, None, emit, fixed_say, discover=discover,
                                 endpoint=f'ws://127.0.0.1:{server.sockets[0].getsockname()[1]}')
             assert await bridge.start()
-            await asyncio.wait_for(bridge.task, 2)
-            assert len(connections) == 2 and not bridge.active
+            await asyncio.wait_for(bridge.task, 6)
+            assert len(connections) == 4 and not bridge.active
             assert fixed == [FALLBACK_LINE]
             await bridge.close()
             assert bridge.task.done()
@@ -449,7 +558,7 @@ def test_reconnect_reuses_latest_resumable_handle(monkeypatch, go_away, stopped)
     asyncio.run(trial())
 
 
-@pytest.mark.parametrize('healthy_seconds,expected_connections', [(59.9, 2), (60, 3), (121, 3)])
+@pytest.mark.parametrize('healthy_seconds,expected_connections', [(59.9, 4), (60, 5), (121, 5)])
 def test_reconnect_budget_resets_after_healthy_minute(monkeypatch, healthy_seconds, expected_connections):
     async def trial():
         from server import gemini_live
@@ -485,10 +594,10 @@ def test_reconnect_budget_resets_after_healthy_minute(monkeypatch, healthy_secon
         bridge = LiveBridge(Session('reset', camera=False), None, None, emit, speak, discover=discover)
         assert await bridge.start()
         try:
-            await asyncio.wait_for(bridge.task, 2)
+            await asyncio.wait_for(bridge.task, 6)
             assert len(setups) == expected_connections
             assert fixed == [gemini_live.FALLBACK_LINE]
-            if expected_connections == 3:
+            if expected_connections == 5:
                 assert setups[-1]['sessionResumption'] == {'handle': 'healthy'}
         finally:
             await bridge.close()

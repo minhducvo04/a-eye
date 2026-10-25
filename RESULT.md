@@ -842,3 +842,17 @@ Proof logs: /private/tmp/rewind-default-node.log and /private/tmp/rewind-default
 Limits: executable client DOM/WebSocket fixtures and in-process HTTP/WebSocket
 tests, not a physical call or live TwelveLabs upload/search. Failed feature
 discovery defaults off. No .env reads, main-checkout edits, push or deployment.
+
+
+## FIX C — bounded silent Gemini Live recovery
+
+Files changed: `server/gemini_live.py`, `server/logs.py`, `server/test_gemini_live.py`, `RESULT.md`.
+
+Live reconnects now get three attempts with 0.5, 1, and 2 second backoffs, including failed setup attempts and repeated rapid socket drops. The existing healthy-minute reset, consent checks, session resumption handle, guide republish, and safety-stop latch remain in effect. Successful recovery does not speak the fallback line. Each drop records live_drop with the close code and allowlisted transport reason; arbitrary provider text is withheld to prevent transcript/key logging.
+
+Fail-before: the new two-drop loopback recovery timed out, and the retry-exhaustion regression observed only two connections instead of four.
+Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_gemini_live.py --tb=short` - FAIL (56 passed, 1 failed in 20.49s). All reconnect, backoff, resumption, safety-latch and log-privacy checks passed.
+The sole failure is `test_recent_tool_temporal_routes_and_local_result_cards` (expected row 12, got workbench); reproduced by loading `server/gemini_live.py` from baseline commit `147b1019f22e2ff13a3b0ab03f8c476b1fc49fcb` and running that test: 1 failed, 56 deselected. It is outside FIX C.
+Test: `git diff --check` - PASS (no whitespace errors).
+
+Limits: verified with real loopback WebSockets serving synthetic messages and fake handshake failures, not the live Gemini service or a physical call. Loopback tests needed sandbox escalation. No client changes, server restart, .env access, main-worktree edits, push, or merge.
