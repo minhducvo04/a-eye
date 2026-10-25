@@ -56,3 +56,4 @@ def record_usage(response):
             return
         if calls >= 0 and size >= 0:
             meter.add(calls=calls, size=size)
+            cloud_meter.charge(calls * cloud_meter.request_cost('https://vision-provider.invalid'))

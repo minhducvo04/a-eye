@@ -28,7 +28,8 @@ SWITCHES = contextvars.ContextVar('aeye_cloud', default=None)
 
 
 def server_local_only():
-    return os.environ.get('LOCAL_ONLY') == '1'
+    from server.cloud_meter import BUDGET
+    return os.environ.get('LOCAL_ONLY') == '1' or BUDGET.exhausted()
 
 
 def set_call(cloud=None, private=False, rewind=False):
@@ -39,7 +40,7 @@ def set_call(cloud=None, private=False, rewind=False):
         switches.update({k: bool(v) for k, v in cloud.items() if k in DEFAULTS})
     elif rewind:
         switches[TWELVELABS] = True  # older clients: turning Rewind on is the video-search consent
-    if private or server_local_only():
+    if private or os.environ.get('LOCAL_ONLY') == '1':
         switches = {k: False for k in DEFAULTS}
     SWITCHES.set(switches)
     return dict(switches)

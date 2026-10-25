@@ -57,6 +57,9 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None, *, pres
                 await asyncio.gather(warmup, return_exceptions=True)
 
     app = FastAPI(lifespan=lifespan)
+    from server.limits import Limits, SocketLimits
+    app.state.limits = Limits()
+    app.add_middleware(SocketLimits, limits=app.state.limits)
     app.state.vision = vision if vision is not None else VisionClient()
     app.state.llm = llm if llm is not None else make_llm()
     app.state.llm_v2 = app.state.llm
@@ -77,6 +80,13 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None, *, pres
         if request.url.path.startswith('/api/') and not authorized(request):
             event('auth_rejected', level='warning')
             return JSONResponse({'error': 'unauthorized'}, status_code=401)
+        if request.url.path.startswith('/api/') and request.method in ('POST', 'PUT'):
+            from server.limits import LIMIT_LINE, owner_key
+            from server.pairing import pairing_address
+            ip = pairing_address(request)
+            if not app.state.limits.turn(ip, owner_key(request)):
+                event('limit_rejected', reason='turns')
+                return JSONResponse({'message': LIMIT_LINE}, status_code=429)
         session_id = request.query_params.get('session_id')
         call = (rewind_api.registry(request.app).get(session_id, rewind_api.identity(request))
                 if session_id else None)
@@ -107,6 +117,7 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None, *, pres
         if not await accept_socket(ws):
             return
         session = None
+        budget_noticed = False
 
         async def send(messages):
             for message in messages:
@@ -135,6 +146,9 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None, *, pres
                 if session is None or incoming['session_id'] != session.session_id:
                     await send([error('bad_message', 'Send hello with the matching session first.')])
                     continue
+                if not budget_noticed and cloud_meter.BUDGET.exhausted():
+                    budget_noticed = True
+                    await send([session.say(cloud_meter.CAP_LINE)])
                 messages, request = session.handle(incoming, now())
                 await send(messages)
                 while request:

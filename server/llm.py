@@ -62,11 +62,15 @@ def cached_system(text):
 
 def usage_counts(message):
     usage = getattr(message, 'usage', None)
-    return dict(input_tokens=getattr(usage, 'input_tokens', 0) or 0,
+    counts = dict(input_tokens=getattr(usage, 'input_tokens', 0) or 0,
                 output_tokens=getattr(usage, 'output_tokens', 0) or 0,
                 cache_read_tokens=getattr(usage, 'cache_read_input_tokens', 0) or 0,
                 cache_creation_tokens=getattr(usage, 'cache_creation_input_tokens', 0) or 0,
                 web_searches=getattr(getattr(usage, 'server_tool_use', None), 'web_search_requests', 0) or 0)
+    if usage is not None:
+        from server.cloud_meter import record_tokens
+        record_tokens(counts)
+    return counts
 
 
 
@@ -176,11 +180,12 @@ class LLMClient:
                     "Never infer delivery times or availability. No checkout."),
             messages=[{'role': 'user', 'content': json.dumps(dict(product=product, location=location))}],
             tools=[{'type': 'web_search_20250305', 'name': 'web_search', 'max_uses': 2}])
+        measured = usage_counts(response)
         if not claude_allowed() or response.stop_reason != 'end_turn':
             return []
         counts = TURN_USAGE.get()
         if counts is not None:
-            counts.append(usage_counts(response))
+            counts.append(measured)
         blocks = [b for b in response.content if b.type == 'text']
         raw = ''.join(b.text for b in blocks).strip()
         if raw.startswith('```'):
@@ -230,6 +235,7 @@ class LLMClient:
                 else:
                     with anthropic.Anthropic() as client:
                         response = self._claude(client, model, system, user, max_tokens, images)
+                usage_counts(response)
                 if response.stop_reason != 'refusal':
                     text = '\n'.join(block.text for block in response.content if block.type == 'text')
                     if text.strip():
@@ -305,9 +311,10 @@ class LLMClient:
                                     yield delta
                             if hasattr(response, 'get_final_message'):
                                 final = await response.get_final_message()
+                                measured = usage_counts(final)
                                 counts = TURN_USAGE.get()
                                 if counts is not None:
-                                    counts.append(usage_counts(final))
+                                    counts.append(measured)
                         if getattr(final, 'stop_reason', None) != 'tool_use':
                             break
                         # Tool work can take tens of seconds; it is not first-token latency.

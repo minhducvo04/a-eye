@@ -169,6 +169,8 @@ class LiveBridge:
 
     async def _open(self):
         require_consent()
+        cloud_meter.charge(float(os.getenv('GEMINI_LIVE_USD_PER_MINUTE', '0.10')), admit=True)
+        self.budget_minute = monotonic()
         url = self.endpoint + '?key=' + quote(os.environ['GEMINI_API_KEY'], safe='')
         # Never log the URL or provider exceptions (both can contain the key/media).
         self.ws = await connect(url, open_timeout=10, close_timeout=2, max_size=4 * 1024 * 1024,
@@ -386,6 +388,9 @@ class LiveBridge:
             while not self.closed:
                 try:
                     while not self.closed:
+                        if monotonic() - self.budget_minute >= 60:
+                            cloud_meter.charge(float(os.getenv('GEMINI_LIVE_USD_PER_MINUTE', '0.10')), admit=True)
+                            self.budget_minute = monotonic()
                         require_consent()
                         await self.video()
                         try:
@@ -410,7 +415,8 @@ class LiveBridge:
                         except Exception:
                             pass
                     self.active = False
-                    await self.fixed_say(FALLBACK_LINE)
+                    if not cloud_meter.BUDGET.exhausted():
+                        await self.fixed_say(FALLBACK_LINE)
                     return
         finally:
             self.active = False

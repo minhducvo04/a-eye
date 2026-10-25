@@ -15,7 +15,17 @@ UNREACHABLE_BOX = "http://127.0.0.1:9"
 
 
 @pytest.fixture(autouse=True)
-def _hermetic_env(monkeypatch):
+def _hermetic_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("CLOUD_BUDGET_PATH", str(tmp_path / "cloud-budget.sqlite3"))
+    for name in ("DAILY_CLOUD_CAP_USD", "TURNS_PER_MINUTE", "CALLS_PER_IP", "MAX_OPEN_SOCKETS"):
+        monkeypatch.delenv(name, raising=False)
+    from server import cloud_meter, privacy
+    original_local = cloud_meter.is_local
+    from urllib.parse import urlsplit
+    monkeypatch.setattr(cloud_meter, 'is_local', lambda url: urlsplit(str(url)).hostname == 'testserver' or original_local(url))
+    privacy.PRIVATE.set(False)
+    privacy.SWITCHES.set(None)
+    cloud_meter.CURRENT.set(None)
     for name in RUNTIME_ENV:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("BOX_URL", UNREACHABLE_BOX)
