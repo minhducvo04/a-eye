@@ -1050,3 +1050,67 @@ Limits: no `.env` reads, network access, cloud/provider call, physical call,
 raw-media storage, push, merge or deployment. No full-suite PASS is claimed.
 The original real-call trigger still requires the new metadata from an authorized
 live run; local synthetic reproduction and fix are verified.
+
+
+## Round 13 — context summary advice is not a current hazard (2026-10-25)
+
+Base: `06833c0` (fresh from main). Exact reported trigger: headphone plan,
+turn 2, "Okay, what is the next step?", stopped as
+`{"gate":"water_electric","source":"context"}`. The background builder combined
+the hazard field with a mixed summary and sent both through full output checks.
+
+`server/context_agent.py` now checks the hazard field through the original full
+callback, separately from the summary. Summary checks use the `ask` patterns of
+state-bearing danger gates, with clause-local negation/advice guards (`no`, `not`,
+`never`, `don't`, `avoid`, `keep`, `make sure`, and conditional/advisory wording).
+Scope/action-only mentions do not stop a summary. Separate facts after punctuation
+or "but" still stop; full text is checked before the 100-word publication limit.
+Raw scene checks, hazard-field checks, direct input and output gates are unchanged.
+
+Synthetic builder regressions reproduce a realistic headphone summary containing
+cords/plugs and dry-hands/water precautions. They check publication versus actual
+fixed-stop side effects, real smoking-charger/water observations, advice adjacent
+to a separate danger, and full hazard-field checking. The existing
+`test_builder_hazards_are_fixed_stops_even_after_word_limit` remains unchanged and passes.
+
+Test: `PYTHONPATH=.pytest_cache/offline:. ~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_bg_context.py -k 'summary_facts or hazards_are_fixed'` — FAIL before fix
+(9 failed, 8 passed, 6 deselected in 1.39s).
+Log: `.pytest_cache/planner-live13-before.log`.
+
+Test: same targeted command — PASS after fix
+(17 passed, 6 deselected in 0.87s).
+Log: `.pytest_cache/planner-live13-targeted.log`.
+
+Test: `PYTHONPATH=.pytest_cache/offline:. ~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` — FAIL
+(1386 passed, 17 failed, 2 warnings in 101.95s). Summary and failure reasons read.
+The local audit hook blocks socket binds, connections and DNS (including loopback)
+and all `.env` reads. Failures: 15 blocked network operations, one downstream
+Live-start state assertion, and one blocked synthetic `.env` read. This matches
+the round-12 failure set; both warnings concern existing short synthetic JWT keys.
+Log: `.pytest_cache/planner-live13-full.log`.
+
+Failed node IDs:
+- `server/test_bg_context.py::test_live_publishes_context_while_next_build_waits_and_cancels_on_close`
+- `server/test_cloud_meter.py::test_real_websocket_send_boundary`
+- `server/test_gemini_live.py::test_fake_live_recent_step_transcripts_and_scene_stay_local`
+- `server/test_gemini_live.py::test_fake_live_wire_audio_tools_captions_and_revocation`
+- `server/test_gemini_live.py::test_reconnect_once_then_fallback_and_close`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[False-False]`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[True-False]`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[True-True]`
+- `server/test_limits.py::test_live_minutes_stop_idle_connection`
+- `server/test_live_prefetch.py::test_slow_tool_does_not_delay_audio`
+- `server/test_live_prefetch.py::test_streaming_prefetch_card_cache_and_idle_publication`
+- `server/test_live_streaming.py::test_fake_live_streams_before_complete_and_stops_mid_reply[False]`
+- `server/test_live_streaming.py::test_fake_live_streams_before_complete_and_stops_mid_reply[True]`
+- `server/test_live_streaming.py::test_ws2_hazard_sends_stop_caption_and_fixed_audio`
+- `server/test_step_check.py::test_real_loopback_api_to_qwen_protocol_keeps_pictures_zero`
+- `scripts/test_public.py::test_tracked_scan_and_git_free_export`
+- `scripts/test_ready.py::test_live_pair_request_on_fake_socket`
+
+Test: `git diff --check` — PASS.
+Files changed: `server/context_agent.py`, `server/test_bg_context.py`,
+`docs/results/planner-live.md`, `RESULT.md`.
+Limits: bounded lexical summary checks, not general language understanding.
+No network, `.env` reads, real provider/physical-call verification, push, merge or
+deployment. No full-suite PASS claimed. Only comments changed after suite launch.

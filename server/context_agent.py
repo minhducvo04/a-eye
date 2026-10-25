@@ -241,6 +241,31 @@ LIVE_CONTEXT_PROMPT = (
 UNKNOWN_HAZARD_LINE = 'Stop for a moment. I cannot verify this is safe. Check the hazard before continuing.'
 
 
+# Summary prose mixes observations with advice. Only state-bearing gates apply;
+# scope/action gates (e.g. merely mentioning a power supply) belong to the hazard
+# field and direct input, where the full pack checks still run.
+CONTEXT_DANGER_GATES = frozenset({
+    'water_electric', 'burning_device', 'hot_oil', 'gas_smell', 'live_power',
+    'damaged_battery', 'unsafe_ladder', 'solder_fumes', 'water_on',
+})
+CONTEXT_NONFACT = re.compile(
+    r"\b(?:no|not|never|don't|don’t|do not|avoid\w*|keep|make sure|ensure|check|"
+    r"should|must|if|whether|might|could|would|may|recommend\w*|remind\w*)\b", re.I)
+
+
+def context_danger_line(text):
+    """Check complete summary facts, not negated hazards or preventive advice."""
+    from server.safety import GATES
+    # Keep the guard local: advice/negation must not hide a separate observation.
+    for clause in re.split(r'[.!?;,\n]+|\bbut\b', text, flags=re.I):
+        if CONTEXT_NONFACT.search(clause):
+            continue
+        for gate in GATES:
+            if gate.id in CONTEXT_DANGER_GATES and gate.ask.search(clause):
+                return gate.line
+    return None
+
+
 def picture_allowed(session):
     # The claude-sees package owns the switch and full-frame normalization. Older
     # checkouts fail closed; do not repurpose the crop API to send a full picture.
@@ -373,11 +398,11 @@ class LiveContextBuilder:
             result = await assess_live_context(s, evidence)
             if not result:
                 return
-            # Check the complete output BEFORE limiting its length. Explicit hazards
-            # without a known pack rule still receive a fixed, coded stop.
-            # Only a coded gate may stop the call. A model-flagged hazard with no matching gate
-            # stays in the context (Live hears it) instead of interrupting: it fired on a plain desk.
-            line = self.safety_line(result['hazard'] + '\n' + result['context'])
+            # Check both fields BEFORE limiting length. The hazard field keeps full
+            # pack checks; the mixed summary checks only current danger facts.
+            # Only a coded gate may stop the call, not a model's hazard flag alone.
+            line = (self.safety_line(result['hazard'])
+                    or context_danger_line(result['context']))
         if line:
             self.pending_stop = line
             await self.release_stop()

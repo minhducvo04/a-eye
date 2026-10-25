@@ -667,3 +667,24 @@ Log: .pytest_cache/planner-live12-final-full.log.
 Limits: no network, `.env` read, real provider/physical call, push, merge or
 outside-worktree source changes. Original live-call phrase unverified; synthetic
 reproduction verified. Local commit only, no push.
+
+
+## Planner Live round 13 — summary advice false stop
+
+Split full hazard-field checks from clause-local, present-danger summary checks.
+Reproduced the headphone turn-2 water/cord precaution false stop before the fix;
+kept the existing smoking-charger-after-word-limit regression passing.
+
+Files changed: `server/context_agent.py`, `server/test_bg_context.py`,
+`docs/results/planner-live.md`, `RESULT.md`.
+
+Test: `PYTHONPATH=.pytest_cache/offline:. ~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_bg_context.py -k 'summary_facts or hazards_are_fixed'` - PASS (17 passed, 6 deselected; before fix: 9 failed, 8 passed).
+Test: `PYTHONPATH=.pytest_cache/offline:. ~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL (1386 passed, 17 failed, 2 warnings, 101.95s).
+Test: `git diff --check` - PASS.
+
+Full-suite failures are 15 blocked network operations, one downstream Live-start
+assertion and one blocked synthetic `.env` read; summary read, no full PASS claimed.
+Proof and failed node IDs: `docs/results/planner-live.md`, round 13;
+local logs: `.pytest_cache/planner-live13-{before,targeted,full}.log`.
+Limits: lexical summary guard; no provider/physical-call verification, network,
+`.env` reads, push, merge or deployment. Only comments changed after suite launch.
