@@ -396,10 +396,10 @@ class LiveBridge:
             await self.stage('done')
         return True
 
-    async def prompt_turn(self, text, *, memory_version=None):
+    async def prompt_turn(self, text, *, memory_version=None, idle_timeout=3):
         """Ask Live to speak now. clientContent interrupts generation, so wait for the held turn first."""
         try:
-            await asyncio.wait_for(self.provider_idle.wait(), 3)
+            await asyncio.wait_for(self.provider_idle.wait(), idle_timeout)
         except asyncio.TimeoutError:
             pass
         if (not self.active or self.closed or self.safety_stopped or self.scope_redirected or self.session.private
