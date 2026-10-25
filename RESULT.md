@@ -193,3 +193,50 @@ See its docs/results report.
 ## refocus
 
 See docs/results/refocus-electronics-tie.md.
+
+## evals — 2026-10-25
+
+Built on `pkg/evals` from `446fe77`, committed locally without pushing. Full
+usage, record contract, score bars and owner handoffs:
+[docs/results/evals.md](docs/results/evals.md).
+
+Files changed:
+- `eval/swap/run.py`, `__init__.py`: offline-default runner, immutable recording,
+  per-case score JSON and one appended Markdown row per scored run.
+- `eval/swap/planner.py`, `checker.py`, `decision.py`: code metrics, actual
+  production safety checks, and both held-out decision files through recorded
+  outputs or the existing scope evaluator with mandatory offline feature caches.
+- `eval/swap/test_runner.py`, `test_components.py`, `test_heldout.py`: runner,
+  adapter, metric, safety-result, cache and eight-word leakage regressions.
+- `eval/cases/planner_cases.jsonl`, `checker_bad_plans.jsonl`,
+  `checker_good_plans.jsonl`: 20 task-only planner cases, 15 bad plans and 12 good
+  synthetic controls. No personal data or media.
+- `eval/swap/fixtures/planner/fixture.jsonl`,
+  `eval/swap/fixtures/decision/fixture.jsonl`: explicitly synthetic recordings.
+- `docs/results/evals.md`, `RESULT.md`: documentation and this handoff.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q eval/swap` - PASS
+(19 passed in 0.57s).
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q eval scripts` - FAIL
+(179 passed, 1 failed in 2.95s; summary read). Only failure:
+`scripts/test_ready.py::test_live_pair_request_on_fake_socket` cannot bind
+`127.0.0.1` under the sandbox. Network permission was not expanded.
+Test: changed-package privacy scan - PASS (14 files, 0 findings, 0 binaries).
+Test: offline planner fixture CLI - PASS (20 cases; all implemented code bars).
+Test: offline production checker CLI - FAIL (5/15 bad plans caught; 0/12 false
+drops; planner checker absent). This is a measured production gap, not a runner
+test failure. Unsafe charger/sink and schema/length checks need the planner owner.
+Test: offline decision fixture CLI - FAIL as intended (200 always-now synthetic
+records; scope 20%, route 53%). No real decision-model result is claimed.
+
+Local proof: `eval/out/swap.md`, the three `swap-*.json` details and
+`eval/out/proof-{planner,checker,decision}.txt` (gitignored).
+
+Limits: no live provider calls, retraining, actual credential-file reads, real
+media, push or deployment. `server/planner.py` is not present here or in the
+inspected planner branch commit. The coordinator must check the documented
+`plan(..., model=...)` and `check_plan(plan)` adapter seams when it lands, then
+record real outputs. Latency, billed cost, cache performance, subjective quality
+and FINAL decision-slice acceptance remain unverified. The eight-word held-out
+guard passes with no exceptions; a seven-word generic phrase is shared by
+existing router cases `h016` and `g2471`, documented without changing their data.
