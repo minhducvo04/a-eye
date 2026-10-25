@@ -17,7 +17,7 @@ The initial real simulator build reproduced the unfinished view failure (`Memory
 
 Test: `swift test --package-path ios/AEyeCore` - PASS (67 tests, 0 failures).
 Test: `node --test client-web/` - PASS (165 tests, 0 failures, 0 skipped).
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q` - FAIL (1232 passed, 1 failed, 2 warnings).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q` - FAIL (1232 passed, 1 failed, 2 warnings).
 Build: `xcodebuild -project ios/AEye/AEye.xcodeproj -scheme AEye -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath /private/tmp/aeye-call-ui-build CODE_SIGNING_ALLOWED=NO build` - PASS (`** BUILD SUCCEEDED **`).
 Test: `git diff --check` - PASS.
 
