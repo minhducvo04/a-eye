@@ -241,28 +241,33 @@ LIVE_CONTEXT_PROMPT = (
 UNKNOWN_HAZARD_LINE = 'Stop for a moment. I cannot verify this is safe. Check the hazard before continuing.'
 
 
-# Summary prose mixes observations with advice. Only state-bearing gates apply;
-# scope/action gates (e.g. merely mentioning a power supply) belong to the hazard
-# field and direct input, where the full pack checks still run.
-CONTEXT_DANGER_GATES = frozenset({
-    'water_electric', 'burning_device', 'hot_oil', 'gas_smell', 'live_power',
-    'damaged_battery', 'unsafe_ladder', 'solder_fumes', 'water_on',
-})
+# Background prose is evidence, never authority to interrupt a call. Only an
+# explicit current hazard may reach the existing gates, outside low-voltage work.
 CONTEXT_NONFACT = re.compile(
     r"\b(?:no|not|never|don't|don’t|do not|avoid\w*|keep|make sure|ensure|check|"
     r"should|must|if|whether|might|could|would|may|recommend\w*|remind\w*)\b", re.I)
+CONTEXT_LOW_VOLTAGE = re.compile(r'\b(?:headphones?|usb|arduino)\b', re.I)
+CONTEXT_BATTERY = re.compile(r'\bbatter(?:y|ies)\b', re.I)
+CONTEXT_VOLTAGE = re.compile(r'\b(\d+(?:\.\d+)?)\s*[- ]?(?:v|volts?)\b', re.I)
 
 
-def context_danger_line(text):
-    """Check complete summary facts, not negated hazards or preventive advice."""
-    from server.safety import GATES
-    # Keep the guard local: advice/negation must not hide a separate observation.
-    for clause in re.split(r'[.!?;,\n]+|\bbut\b', text, flags=re.I):
+def context_danger_line(hazard, safety_line, context=''):
+    """Require an explicit present hazard; never infer danger from summary prose."""
+    if not hazard.strip():
+        return None
+    evidence = context + '\n' + hazard
+    if CONTEXT_LOW_VOLTAGE.search(evidence):
+        return None
+    if CONTEXT_BATTERY.search(evidence) and any(
+            float(match.group(1)) < 12 for match in CONTEXT_VOLTAGE.finditer(evidence)):
+        return None
+    # Advice/negation must not hide a separate explicit observation.
+    for clause in re.split(r'[.!?;,\n]+|\bbut\b', hazard, flags=re.I):
         if CONTEXT_NONFACT.search(clause):
             continue
-        for gate in GATES:
-            if gate.id in CONTEXT_DANGER_GATES and gate.ask.search(clause):
-                return gate.line
+        line = safety_line(clause)
+        if line:
+            return line
     return None
 
 
@@ -386,23 +391,22 @@ class LiveContextBuilder:
             # event loop; neither can hold up the Live receiver or microphone.
             personal = await asyncio.to_thread(agent.gather, provider='local')
         scene_note = str(scene.get('caption', ''))[:1000] if scene else ''
-        line = self.safety_line(scene_note)
         # Code-owned parts note for the guide step and part names said in the last few turns; local, no network.
         parts = parts_shelf.step_note(s, [d['text'] for d in dialogue[-4:]])
-        if not line:
-            evidence = json.dumps(dict(scene=scene_note,
-                scene_age_s=round(max(0, observed - s.scene_time), 1) if scene else None,
-                dialogue=dialogue, personal=personal, previous=self.block,
-                # The code-owned step, so the summary never describes a different step than the guide.
-                guide=getattr(s, 'live_guide_note', None), parts=parts))
-            result = await assess_live_context(s, evidence)
-            if not result:
-                return
-            # Check both fields BEFORE limiting length. The hazard field keeps full
-            # pack checks; the mixed summary checks only current danger facts.
-            # Only a coded gate may stop the call, not a model's hazard flag alone.
-            line = (self.safety_line(result['hazard'])
-                    or context_danger_line(result['context']))
+        guide = getattr(s, 'live_guide_note', None)
+        evidence = json.dumps(dict(scene=scene_note,
+            scene_age_s=round(max(0, observed - s.scene_time), 1) if scene else None,
+            dialogue=dialogue, personal=personal, previous=self.block,
+            # The code-owned step keeps the summary aligned with the guide.
+            guide=guide, parts=parts))
+        result = await assess_live_context(s, evidence)
+        if not result:
+            return
+        # Neither scene captions nor summaries can fire wording-based gates.
+        # Check the explicit hazard before truncation; low-voltage work never
+        # triggers a background stop. Direct speech/output gates are unchanged.
+        line = context_danger_line(result['hazard'], self.safety_line,
+                                   '\n'.join((result['context'], scene_note, json.dumps(guide))))
         if line:
             self.pending_stop = line
             await self.release_stop()

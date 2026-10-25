@@ -133,7 +133,7 @@ def test_builder_hazards_are_fixed_stops_even_after_word_limit(monkeypatch):
         bridge = LiveBridge(session, None, None, emit, speak)
         bridge.ws, bridge.active = SimpleNamespace(send=send), True
         async def assess(session, evidence):
-            return {'context': 'cup ' * 130 + 'smoking charger', 'hazard': ''}
+            return {'context': 'cup ' * 130, 'hazard': 'smoking charger'}
         monkeypatch.setattr(context_agent, 'assess_live_context', assess)
         builder = context_agent.LiveContextBuilder(session, bridge.publish_context, bridge.stop,
                                                    lambda text: bridge.stop_line(text, True))
@@ -156,15 +156,27 @@ def test_builder_hazards_are_fixed_stops_even_after_word_limit(monkeypatch):
     ('Keep the plug dry.', '', None),
     ('Check whether the charger is smoking.', '', None),
     ('The plan mentions opening a power supply.', '', None),
-    ('The charger is smoking.', '', 'burning_device'),
-    ('Water is pooling around the plug.', '', 'water_electric'),
-    ('There is no water near the cord, but the charger is smoking.', '', 'burning_device'),
-    ('Keep hands dry; the charger is smoking.', '', 'burning_device'),
-    ('The charger is smoking; do not touch it.', '', 'burning_device'),
+    ('The charger is smoking.', '', None),
+    ('Water is pooling around the plug.', '', None),
+    ('There is no water near the cord, but the charger is smoking.', '', None),
+    ('Keep hands dry; the charger is smoking.', '', None),
+    ('The charger is smoking; do not touch it.', '', None),
+    ('The headphone wire is plugged into a phone during cable repair.', '', None),
+    ('The wire is still live.', '', None),
+    ('Repairing headphones.', 'The wire is plugged in.', None),
+    ('Repairing a USB cable.', 'Water near the cord.', None),
+    ('Wiring an Arduino.', 'The wire is still live.', None),
+    ('Repairing a 9 V battery circuit.', 'The wire is still live.', None),
+    ('Repairing a battery powered circuit at 11.1 volts.', 'The wire is still live.', None),
+    ('Repairing a 12 V battery circuit.', 'The wire is still live.', 'live_power'),
+    ('The desk is clear.', 'The wire is not live.', None),
+    ('The desk is clear.', 'Check whether the wire is live.', None),
+    ('The desk is clear.', 'The wire is still live.', 'live_power'),
+    ('The desk is clear.', 'No water near the cord; the charger is smoking.', 'burning_device'),
     ('The desk is clear.', 'water near the cord', 'water_electric'),
     ('The desk is clear.', 'opening a power supply', 'open_power_supply'),
 ])
-def test_builder_summary_facts_not_headphone_precautions(monkeypatch, summary, hazard, gate):
+def test_builder_only_explicit_present_hazards_outside_low_voltage(monkeypatch, summary, hazard, gate):
     async def trial():
         from server import safety
         privacy.set_call({'google': True})
@@ -255,4 +267,24 @@ def test_live_publishes_context_while_next_build_waits_and_cancels_on_close(monk
                 await bridge.close()
             assert cancelled.is_set() and builder.task.done()
             assert bridge.session.live_context is None
+    asyncio.run(trial())
+
+
+def test_scene_prose_cannot_stop_without_explicit_hazard(monkeypatch):
+    async def trial():
+        from server.safety import before
+        session = Session('scene-prose', camera=True)
+        session.scene = {'caption': 'The wire is still live.'}
+        published, fixed = [], []
+        async def assess(*args):
+            return {'context': 'Inspecting the wire.', 'hazard': ''}
+        async def publish(block):
+            published.append(block)
+            return True
+        async def stop(line):
+            fixed.append(line)
+        monkeypatch.setattr(context_agent, 'assess_live_context', assess)
+        builder = context_agent.LiveContextBuilder(session, publish, stop, before)
+        await builder.build()
+        assert published and not fixed
     asyncio.run(trial())

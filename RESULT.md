@@ -1,3 +1,20 @@
+# FIX B — explicit background hazards only
+
+Changed: `server/context_agent.py`, `server/test_bg_context.py`, `server/test_false_stop.py`, `RESULT.md`.
+
+Scene captions and context summaries no longer trigger safety stops. Only a non-negated, non-precautionary explicit hazard field reaches existing safety gates. Background stops are suppressed for headphones, USB, Arduino, and battery contexts specifying less than 12 V. Direct user speech and Gemini output checks are unchanged.
+
+Synthetic headphone replay reproduced the electrician false stop before the fix and passes afterward. Regression coverage includes summary-only live-power/water/burning wording, scene-only wording, explicit present hazard controls, negation/advice, low-voltage tasks, and the 12 V boundary.
+
+Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_bg_context.py server/test_false_stop.py` - FAIL before fix (17 failed, 35 passed; one failure was sandbox socket binding).
+Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_bg_context.py server/test_false_stop.py server/test_planner_safety_steps.py server/test_live_polish.py --tb=short` - FAIL in sandbox (116 passed, 1 localhost socket bind permission failure).
+Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_bg_context.py::test_live_publishes_context_while_next_build_waits_and_cancels_on_close` - PASS with socket access (1 passed). All 117 selected cases passed across these final runs.
+Test: `git diff --check` - PASS.
+
+Limits: synthetic packets, mocked assessment, and real localhost WebSocket only; no live provider or physical rehearsal proof. Low-voltage recognition is lexical. No client changes, server restart, .env read, push, or merge. FIX A and FIX C are outside this change.
+
+---
+
 # Claim guard
 
 Changed files: `server/gemini_live.py`, `server/live_memory.py`, `server/test_gemini_live.py`, `RESULT.md`.
