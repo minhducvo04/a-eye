@@ -2159,3 +2159,11 @@ body.headset {
 .works-with p { line-height: 1.5; }
 
 .headset-panel.connected button { pointer-events: auto; }
+
+#flip-camera[hidden] { display: none; }
+
+/* Keep the extra mobile control in the existing row on narrow phones. */
+@media (max-width: 380px) {
+  .bottom:has(#flip-camera:not([hidden])) { gap: 4px; }
+  .bottom:has(#flip-camera:not([hidden])) .r56 { width: 36px; height: 44px; }
+}

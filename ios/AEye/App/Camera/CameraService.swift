@@ -38,6 +38,37 @@ nonisolated final class CaptureRig: NSObject, AVCaptureVideoDataOutputSampleBuff
         }
     }
 
+    func flip(completion: @escaping @Sendable (Bool) -> Void) {
+        sessionQueue.async { [self] in
+            guard isConfigured,
+                  let old = session.inputs.compactMap({ $0 as? AVCaptureDeviceInput }).first,
+                  let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video,
+                      position: old.device.position == .back ? .front : .back),
+                  let next = try? AVCaptureDeviceInput(device: device)
+            else { completion(false); return }
+            session.beginConfiguration()
+            session.removeInput(old)
+            let changed = session.canAddInput(next)
+            if changed { session.addInput(next) }
+            else { session.addInput(old) }
+            configureOutputConnections()
+            session.commitConfiguration()
+            storeBuffer(nil)
+            completion(changed)
+        }
+    }
+
+    private func configureOutputConnections() {
+        for output in session.outputs {
+            guard let connection = output.connection(with: .video) else { continue }
+            if connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
+            if connection.isVideoMirroringSupported {
+                connection.automaticallyAdjustsVideoMirroring = false
+                connection.isVideoMirrored = false
+            }
+        }
+    }
+
     func latestBuffer() -> CVPixelBuffer? {
         lock.lock()
         defer { lock.unlock() }
@@ -72,10 +103,7 @@ nonisolated final class CaptureRig: NSObject, AVCaptureVideoDataOutputSampleBuff
         guard session.canAddOutput(output) else { return }
         session.addOutput(output)
 
-        // Buffers arrive upright for a portrait phone (sensor is landscape, so rotate 90 degrees).
-        if let connection = output.connection(with: .video), connection.isVideoRotationAngleSupported(90) {
-            connection.videoRotationAngle = 90
-        }
+        configureOutputConnections()
         isConfigured = true
     }
 
@@ -90,7 +118,22 @@ nonisolated final class CaptureRig: NSObject, AVCaptureVideoDataOutputSampleBuff
 final class CameraService: NSObject, ObservableObject {
     @Published private(set) var permission: AVAuthorizationStatus = AVCaptureDevice.authorizationStatus(for: .video)
 
+    @Published private(set) var isFront = false
+    @Published private(set) var isSwitching = false
+
     var session: AVCaptureSession { rig.session }
+
+    func flip() {
+        guard !isSwitching else { return }
+        isSwitching = true
+        rig.flip { [weak self] changed in
+            Task { @MainActor in
+                guard let self else { return }
+                if changed { self.isFront.toggle() }
+                self.isSwitching = false
+            }
+        }
+    }
 
     private let rig = CaptureRig()
     private let ciContext = CIContext()

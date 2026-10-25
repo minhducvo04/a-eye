@@ -16,6 +16,7 @@ final class PreviewView: UIView {
 
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
+    var isFront = false
 
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
@@ -25,5 +26,10 @@ struct CameraPreview: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ uiView: PreviewView, context: Context) {}
+    func updateUIView(_ uiView: PreviewView, context: Context) {
+        guard let connection = uiView.previewLayer?.connection,
+              connection.isVideoMirroringSupported else { return }
+        connection.automaticallyAdjustsVideoMirroring = false
+        connection.isVideoMirrored = isFront
+    }
 }
