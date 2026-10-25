@@ -391,7 +391,7 @@ class LiveBridge:
 
     async def publish_guide(self):
         guide = self.guide
-        if guide and guide.guide and guide.version != guide.published:
+        if guide and guide.version != guide.published:
             version = guide.version
             if await self.publish_context(guide.block()):
                 guide.published = version
@@ -505,6 +505,8 @@ class LiveBridge:
         if line:
             await self.stop(line)
             return True
+        if self.guide:
+            self.guide.observe(text)
         if self.guide and self.guide.claims(text):
             await self.hold()
             self.guide.schedule(text)
@@ -777,6 +779,8 @@ class LiveBridge:
                     from server.context_agent import DISMISS
                     if self.session.context_agent and DISMISS.fullmatch(self.question) and not self.blocked:
                         await self.dismiss_followup(self.question)
+        if content.get('inputTranscription', {}).get('finished') and self.guide and not self.safety_stopped:
+            self.guide.observe(self.question)
         if not self.blocked:
             for part in content.get('modelTurn', {}).get('parts', []):
                 blob = part.get('inlineData')
@@ -808,6 +812,9 @@ class LiveBridge:
         if content.get('turnComplete'):
             self.input_turn_open = False
             self.provider_idle.set()
+            if self.guide and not self.safety_stopped:
+                # Providers without a finished transcription flag use the final turn boundary.
+                self.guide.observe(self.question)
             if not self.blocked:
                 if self.session.context_agent:
                     self.session.context_agent.ingest(self.question)

@@ -1,3 +1,27 @@
+# RESULT: Background task planner — 2026-10-25
+
+Implemented the two-call background planner on `pkg/planner`; Gemini remains the planned
+guide's only talker. Coded guides win, rejected/timed-out plans fall back to free-form, and
+validated plans cache locally with user-reported completion marked good.
+
+Files changed: `server/planner.py`, `server/live_guide.py`, `server/gemini_live.py`,
+`server/test_planner.py`, `docs/results/planner.md`, `RESULT.md`.
+
+Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts` -
+FAIL (1064 passed, 17 failed, 2 warnings in 51.38s). All 51 planner tests passed. Fifteen failures
+are denied localhost fake-server binds; the other two also reproduce with the unchanged Live
+modules (one home-guide timeout, one hazard test affected by a denied Live start).
+
+Test: `git diff --check` - PASS.
+
+Limits: no real provider/device call, no `.env` read, no UI/contract changes, no push. The
+coordinator owns real-call acceptance before 05:00 PDT. Full design, failure attribution and
+acceptance instructions: [docs/results/planner.md](docs/results/planner.md).
+
+The inherited report follows unchanged.
+
+---
+
 # RESULT: Background context and Live streaming — 2026-10-24
 
 Continued the inherited uncommitted background-context work in `pkg/bg-context`.
