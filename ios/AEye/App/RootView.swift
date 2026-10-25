@@ -28,13 +28,13 @@ struct RootView: View {
                     message: "A-eye looks through the camera to point at parts while you work. Turn the camera on for A-eye in Settings."
                 )
             } else {
-                CameraPreview(session: camera.session)
+                CameraPreview(session: camera.session, isFront: camera.isFront)
                     .ignoresSafeArea()
             }
 
             if !isCameraBlocked {
                 if controller.mode != nil {
-                    CallScreen(controller: controller)
+                    CallScreen(controller: controller, camera: camera)
                 } else {
                     cameraChrome
                 }

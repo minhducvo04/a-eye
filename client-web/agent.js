@@ -1,3 +1,4 @@
+import { wireFlipCamera } from "./flip-camera.js";
 import { liveSettings } from './gemini-live.js';
 import { triggerClient } from './trigger.js';
 import { setupFamily } from './family-note.js';
@@ -1371,6 +1372,12 @@ function boot() {
     }
   }
 
+  const flipCamera = wireFlipCamera({
+    video, button: document.getElementById("flip-camera"),
+    active: () => cameraOn && !headset, busy: () => starting,
+    onError: showProblem, onSwitch: () => commitTracker("draw"),
+  });
+
   async function startCamera() {
     if (headset || starting || cameraOn) return;
     if (!window.isSecureContext) {
@@ -1387,7 +1394,7 @@ function boot() {
     let retryDefault = false;
     try {
       const stream = await requestLocalMedia(navigator.mediaDevices, headset, {
-        video: videoConstraints(cameraChoice),
+        video: flipCamera.constraints(videoConstraints(cameraChoice)),
         audio: false,
       });
       if (!pack) {
@@ -1401,6 +1408,7 @@ function boot() {
       video.muted = true;
       // On before play(): a play() that never settles must not leave a live camera the button can't stop.
       cameraOn = true;
+      void flipCamera.refresh();
       await video.play().catch(() => {});
       if (video.srcObject !== stream) return;
       renderCamera();
@@ -2602,16 +2610,17 @@ function boot() {
 
   // Live camera switch: open the new device, then stop the old tracks. The call and frames keep going.
   async function swapCamera() {
-    if (headset || !cameraOn || starting) return;
+    if (headset || !cameraOn || starting || flipCamera.busy()) return;
     starting = true;
     try {
-      const stream = await requestLocalMedia(navigator.mediaDevices, headset, { video: videoConstraints(cameraChoice), audio: false });
+      const stream = await requestLocalMedia(navigator.mediaDevices, headset, { video: flipCamera.constraints(videoConstraints(cameraChoice)), audio: false });
       if (!cameraOn || !pack) {
         for (const track of stream.getTracks()) track.stop();
         return;
       }
       const old = video.srcObject;
       video.srcObject = stream;
+      flipCamera.preview();
       if (old && typeof old.getTracks === "function") for (const track of old.getTracks()) track.stop();
       await video.play().catch(() => {});
       paint(Date.now());

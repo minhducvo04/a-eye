@@ -6,12 +6,13 @@ import SwiftUI
 /// pill and badges on top; wait card, caption, listening strip, power gate, typed bar and the button row below.
 struct CallScreen: View {
     let controller: CallController
+    @ObservedObject var camera: CameraService
 
     /// Text being typed in the message bar.
     @State private var draft = ""
     @State private var showSettings = false
 
-    private static let buttonGap: CGFloat = 14
+    private static let buttonGap: CGFloat = 10
 
     /// The calm Memory look: larger caption, reading font in the pill, no scan band.
     private var isMemory: Bool {
@@ -211,6 +212,16 @@ struct CallScreen: View {
     private var bottomBar: some View {
         HStack(spacing: Self.buttonGap) {
             cameraButton
+            Button { camera.flip() } label: {
+                Image(systemName: "arrow.triangle.2.circlepath.camera")
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(width: 56, height: 56)
+                    .callGlass(Circle())
+            }
+            .disabled(camera.isSwitching)
+            .accessibilityLabel("Flip camera")
+            .accessibilityValue(camera.isFront ? "Front" : "Back")
             micButton
 
             Button {
