@@ -1,3 +1,29 @@
+## Final product README rewrite
+
+Changed files: README.md and this RESULT.md entry. The README now describes the
+Dad call, electronics and tie guides, coded stops, object boxes, time-scoped
+memory, background planning, parts shelf, local mode, system map and model evals.
+Claims were checked against current source, the Makefile and existing evidence.
+Only the requested performance and cost figures are included.
+
+Limits: guest sign-in does not itself enable Private mode; the README makes that
+distinction. Independent decision accuracy and demo timings are attributed to
+recorded team evidence, not remeasured. No network, credential-file access,
+application run, push or deployment was performed. The live map URL was not fetched.
+
+Test: README reference, Makefile target, section-shape and wording checks - PASS.
+Test: git diff --check - PASS.
+Test: project Python scripts/check_public.py, before edits - PASS.
+check_public: PASS (775 files, 0 hits, 154 binary files without visual inspection)
+Test: project Python scripts/check_public.py, rewritten README - FAIL.
+check_public: FAIL (775 files, 2 hits, 154 binary files without visual inspection)
+
+The final scan flags only the explicitly requested public map URL and team
+credit in README.md (known identity rule). Both are retained as requested.
+The checker was not weakened or changed. A final publication PASS is not claimed.
+
+---
+
 ## Planner Live fix-back round 5 — pkg/planner-live5, 2026-10-25
 
 Base: `9469744`. Default planner model is now `claude-haiku-5-5`; env overrides,
