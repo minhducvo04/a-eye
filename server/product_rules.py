@@ -2,13 +2,24 @@
 import re
 import unicodedata
 
-ROLE_WORDS = ('dad', 'daddy', 'father', 'mom', 'mommy', 'mother', 'parent', 'parental')
+# Owner decision 2026-10-24: an AI dad persona is allowed; actual-parent claims are not.
+ROLE_WORDS = ('daddy', 'mom', 'mommy', 'mother', 'parent', 'parental')
+FAMILY_WORDS = ('dad', 'father') + ROLE_WORDS
 CLAIMS = ("i'm proud", 'i am proud', 'proud of you', "i'm always here", 'i am always here',
           'always here for you', 'i love you', 'i care about you', 'you mean everything to me',
           'you only need me', "you don't need anyone else", 'you do not need anyone else',
           "they don't matter", 'they do not matter', "doesn't matter", 'does not matter',
           'i believe in you', 'you can always count on me', 'i will always', "i'll always",
-          'good job', 'great job', 'well done', 'amazing work')
+          'good job', 'great job', 'well done', 'amazing work',
+          'your real dad', 'your actual dad', 'your biological dad',
+          'your real father', 'your actual father', 'your biological father',
+          'avoid real people', 'avoid your friends', 'avoid your family',
+          'stop talking to', 'stop seeing your', 'stay away from your friends',
+          'stay away from your family', 'keep this between us',
+          'do not talk to anyone', "don't talk to anyone", 'you need no one',
+          'you need nobody', 'replace your family', 'replace your friends',
+          'i want to date you', 'be my girlfriend', 'be my boyfriend',
+          'in love with you', 'kiss me', 'marry me', 'my soulmate')
 NEUTRAL = 'That sounds difficult. You can choose whether to talk with someone you trust.'
 SERIOUS = ('That sounds serious. Consider a trusted adult or a local helpline; '
            'if you are in immediate danger, contact emergency services.')
@@ -42,7 +53,7 @@ def check(text):
 
 def vent_reply(text):
     text = normalized(text)
-    relation = re.search(r'\b(?:' + '|'.join(ROLE_WORDS) +
+    relation = re.search(r'\b(?:' + '|'.join(FAMILY_WORDS) +
                          r'|family|brother|sister|sibling|relative|grandparent|grandma|grandpa)s?\b', text)
     if not relation:
         return None

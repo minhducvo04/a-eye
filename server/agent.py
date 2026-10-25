@@ -21,7 +21,7 @@ from server.privacy import claude_allowed, local_only
 
 from contracts import schema, validate
 from market.search import search
-from server import packs, shopping
+from server import packs, shopping, personas, features
 from server.logs import event
 from server.keyframes import KeyframeGate, SceneMemory
 from server.recent_memory import RecentMemory
@@ -69,6 +69,7 @@ class Session:
     checker_test_mode: bool = False
     checker_test_verdict: tuple | None = field(default=None, repr=False)
     board: dict = field(init=False)
+    persona: dict = field(default_factory=personas.get)
 
     def __post_init__(self):
         self.board = load_board(self.board_id)
@@ -524,7 +525,7 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         lookup = asyncio.create_task(shopping.shopping_turn(session, text, vision, source))
         part = 0
         try:
-            if claude_allowed() and session.camera and session.frame:
+            if features.shopping() and claude_allowed() and session.camera and session.frame:
                 ack = say('Let me compare the offers.', 'shopper')
                 ack.update(turn_id=turn_id, part=0, final=False)
                 await emit(ack)
@@ -570,7 +571,7 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
     # Cached grounding avoids putting a slow refresh on the voice critical path.
     if fresh and session.scene is not None:
         scene, seq = session.scene, session.scene_seq
-    system = session.pack.system_prompt + (
+    system = session.pack.system_prompt + personas.style_block(session.persona) + (
         " memory lists earlier views, oldest last; only the entry marked now is what the camera shows.")
     duo = planner is not None
     pointing = session.pack.id == 'general'
@@ -808,7 +809,9 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                 await speech(pending, agent=turn['agent'])
             pending = tail
         # Hard rule in code: a shopping question always brings in the shopper, even if the model forgot.
-        if not turn.get('market_category'):
+        if not features.shopping():
+            turn.pop('market_category', None)
+        if features.shopping() and not turn.get('market_category'):
             category = shopping_category(text)
             if category:
                 turn['market_category'] = category
@@ -832,7 +835,7 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                 planned, note, speak_note = None, '', False
             stalled = bool(_FILLER.search(reply_text))
             event('planner', session.session_id, ms=(monotonic() - planned_at) * 1000)
-            if planned and planned.get('market_category') and not turn.get('market_category'):
+            if features.shopping() and planned and planned.get('market_category') and not turn.get('market_category'):
                 turn['market_category'] = planned['market_category']
             # Repeating the talker is worse than silence: then the planner only draws.
             if note and (speak_note or stalled) and not repeats(note, reply_text):

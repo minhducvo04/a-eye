@@ -21,7 +21,52 @@ final class CallController {
             if oldValue != privateMode, mode != nil { end() }
         }
     }
+    var persona = UserDefaults.standard.string(forKey: "persona") ?? "chill-dad" {
+        didSet {
+            UserDefaults.standard.set(persona, forKey: "persona")
+            if oldValue != persona, mode != nil { end() }
+        }
+    }
+    private(set) var personas: [Persona] = []
+    private(set) var modes = Modes.all
+    private(set) var productSettingsNotice = ""
+
+    func loadProductSettings() async {
+        modes = Modes.all
+        guard let base = socketURL, var parts = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return }
+        parts.scheme = parts.scheme == "wss" ? "https" : "http"
+        parts.queryItems = nil
+        func read(_ path: String) async throws -> Data {
+            var target = parts
+            target.path = path
+            guard let url = target.url else { throw URLError(.badURL) }
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 5
+            if !accessToken.isEmpty { request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization") }
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+            return data
+        }
+        do {
+            let registry = try JSONDecoder().decode(PersonaRegistry.self, from: await read("/api/personas"))
+            guard base == socketURL else { return }
+            personas = registry.personas
+            if !personas.contains(where: { $0.id == persona }) { persona = registry.defaultPersona }
+            productSettingsNotice = ""
+        } catch { productSettingsNotice = "Could not load personas. Check the server address and access token." }
+        do {
+            let flags = try JSONDecoder().decode(ProductFeatures.self, from: await read("/api/features"))
+            guard base == socketURL else { return }
+            modes = Modes.available(extraModes: flags.extraModes)
+        } catch { /* Core modes remain available offline. */ }
+    }
+
     private(set) var isLive = false
+    private var classicAudio: [ServerAudio] = []
+    private var classicLines: [(String, String)] = []
+    private var classicAudioBytes = 0
+    private var classicTurnActive = false
+    private var nativeNotices: Set<String> = []
     var liveAllowed: Bool { googleConsent && !privateMode }
     let liveAudio = LiveAudio()
     var isMuted: Bool { isLive ? liveAudio.isMuted : listener.isMuted }
@@ -129,6 +174,11 @@ final class CallController {
     }
 
     func end() {
+        classicTurnActive = false
+        nativeNotices = []
+        classicAudio = []
+        classicLines = []
+        classicAudioBytes = 0
         listenToken += 1
         listener.stop()
         liveAudio.stop()
@@ -325,6 +375,8 @@ final class CallController {
     private func interruptSpeech() {
         let utteranceId = speech.speakingUtteranceId
         let atMs = max(0, Int((speech.startedAt.map { Date().timeIntervalSince($0) } ?? 0) * 1000))
+        liveAudio.stopPlayback()
+        classicAudio = []; classicLines = []; classicAudioBytes = 0
         speech.stop()
         guard let utteranceId, isSocketOpen, let socket else { return }
         socket.send(ClientMessage.bargeIn(sessionId: sessionId, utteranceId: utteranceId, atMs: atMs)) { _ in }
@@ -353,7 +405,7 @@ final class CallController {
         guard socketGeneration == generation, let pack = mode?.pack, let socket else { return }
         isSocketOpen = true
         apply(.connected)
-        socket.send(ClientMessage.hello(sessionId: sessionId, pack: pack, serverAudio: isLive, privateMode: privateMode)) { _ in }
+        socket.send(ClientMessage.hello(sessionId: sessionId, pack: pack, serverAudio: isLive, privateMode: privateMode, persona: persona, serverTTS: true)) { _ in }
         socket.send(ClientMessage.camera(sessionId: sessionId, on: isCameraOn)) { _ in }
     }
 
@@ -372,13 +424,57 @@ final class CallController {
             default: break
             }
         }
-        if !isLive, case .say(_, let utteranceId, let text) = message, !text.isEmpty {
-            speech.speak(text: text, utteranceId: utteranceId)
+        if !isLive {
+            // Queue a completed classic turn so successive TTS utterances do not cut each other off.
+            // Native speech remains the fallback when the server has no TTS adapter.
+            switch message {
+            case .say(_, let id, let text):
+                if classicTurnActive { classicLines.append((id, text)) }
+                else {
+                    // Out-of-turn notices have no completion event when server TTS is unavailable.
+                    // Keep their immediate native speech, and suppress duplicate server audio.
+                    nativeNotices.insert(id)
+                    speech.speak(text: text, utteranceId: id)
+                }
+            case .audio(let audio):
+                if nativeNotices.contains(audio.utteranceId) {
+                    if audio.final { nativeNotices.remove(audio.utteranceId) }
+                    break
+                }
+                classicAudioBytes += audio.pcm.count
+                if classicAudioBytes <= 1_920_000 { classicAudio.append(audio) }
+                else { classicAudio = [] }
+            case .turn(_, .done, _, _):
+                classicTurnActive = false
+                playClassicReply()
+            case .turn(_, let stage, _, _) where stage == .cancelled || stage == .received:
+                classicTurnActive = stage == .received
+                liveAudio.stopPlayback()
+                speech.stop()
+                classicAudio = []; classicLines = []; classicAudioBytes = 0
+            default: break
+            }
         }
         if isHomeStartPending, case .agentState(_, .listening) = message {
             isHomeStartPending = false
             if let mode, let text = Modes.startText(for: mode) { send(text: text) }
         }
+    }
+
+    private func playClassicReply() {
+        if classicAudioBytes > 0 && !classicAudio.isEmpty {
+            liveAudio.stopPlayback()
+            if let first = classicLines.first {
+                speech.trackServerSpeech(text: classicLines.map { $0.1 }.joined(separator: " "),
+                                         utteranceId: first.0)
+            }
+            liveAudio.onPlaybackFinished = { [weak self] in self?.speech.stop() }
+            do { for audio in classicAudio { try liveAudio.play(audio, queued: true) } }
+            catch { speech.stop(); state.errorText = "Audio playback unavailable." }
+        } else if let first = classicLines.first {
+            speech.speak(text: classicLines.map { $0.1 }.joined(separator: " "), utteranceId: first.0)
+        }
+        classicAudio = []; classicLines = []; classicAudioBytes = 0
     }
 
     private func socketDidClose(_ socketGeneration: Int) {

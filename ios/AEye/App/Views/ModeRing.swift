@@ -6,6 +6,7 @@ import UIKit
 /// (or shakes, for a "coming soon" mode).
 struct ModeRing: View {
     @Binding var index: Int
+    let modes: [Mode]
     let onStart: (Mode) -> Void
 
     @State private var position: Int?
@@ -18,9 +19,10 @@ struct ModeRing: View {
     private static let slotWidth: CGFloat = 84
     private static let centreRing: CGFloat = 5
 
-    init(index: Binding<Int>, onStart: @escaping (Mode) -> Void) {
+    init(index: Binding<Int>, modes: [Mode], onStart: @escaping (Mode) -> Void) {
         _index = index
         _position = State(initialValue: index.wrappedValue)
+        self.modes = modes
         self.onStart = onStart
     }
 
@@ -32,7 +34,7 @@ struct ModeRing: View {
     }
 
     private var selectedMode: Mode {
-        Modes.all[min(max(index, 0), Modes.all.count - 1)]
+        modes[min(max(index, 0), modes.count - 1)]
     }
 
     private var label: some View {
@@ -53,7 +55,7 @@ struct ModeRing: View {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 0) {
-                        ForEach(Modes.all.indices, id: \.self) { item($0) }
+                        ForEach(modes.indices, id: \.self) { item($0) }
                     }
                     .scrollTargetLayout()
                 }
@@ -75,7 +77,7 @@ struct ModeRing: View {
     }
 
     private func item(_ i: Int) -> some View {
-        let mode = Modes.all[i]
+        let mode = modes[i]
         let distance = min(abs(i - index), Self.diameters.count - 1)
         let diameter = Self.diameters[distance]
         let isCentre = distance == 0
@@ -108,7 +110,7 @@ struct ModeRing: View {
     }
 
     private func tap(_ i: Int) {
-        let mode = Modes.all[i]
+        let mode = modes[i]
         if i != index {
             withAnimation(.snappy) { position = i }
         }

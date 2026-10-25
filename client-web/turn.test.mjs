@@ -91,6 +91,8 @@ for (const [headset, home, live, policy] of [[false, false, false, "engineering"
   let presenterEnabled = false;
   const presenterRequests = [];
   put('fetch', async (path, options) => {
+    if (path === '/api/features') return { ok: true, json: async () => ({ extra_modes: policy === 'engineering', shopping: false }) };
+    if (path === '/api/personas') return { ok: true, json: async () => ({ default: 'chill-dad', personas: [{ id: 'chill-dad', display_name: 'Chill dad' }, { id: 'funny-dad', display_name: 'Funny dad' }] }) };
     if (path.startsWith('/api/dad-demo?')) {
       presenterRequests.push(options);
       const body = options?.body ? JSON.parse(options.body) : null;
@@ -118,6 +120,13 @@ for (const [headset, home, live, policy] of [[false, false, false, "engineering"
     play() { return Promise.resolve(); }
   }
   const node = id => { if (!nodes.has(id)) nodes.set(id, new Element()); return nodes.get(id); };
+  const ringModes = ['plumbing', 'general', 'memory', 'pc_build', 'cooking', 'assemble', 'mechanic', 'engineering'];
+  node('ring').querySelectorAll = () => node('ring').children;
+  for (const id of ringModes) {
+    const button = new Element();
+    button.setAttribute('data-mode', id);
+    node('ring').append(button);
+  }
   class Socket {
     static OPEN = 1; static CONNECTING = 0; static all = [];
     constructor(url) { this.url = url; this.readyState = 0; this.handlers = {}; this.messages = []; Socket.all.push(this); }
@@ -146,30 +155,22 @@ for (const [headset, home, live, policy] of [[false, false, false, "engineering"
   Date.now = () => now;
   try {
     await import(`./agent.js?headset-test=${headset}&home=${home}&live=${live}&policy=${policy}`);
-    assert.equal(node('ring-title').textContent, 'Gemini Live', 'Live is selected at launch');
-    const choose = () => node('picker').handlers.click({ target: { closest: () => ({ getAttribute: name => policy === 'engineering' ? 'engineering' : policy === 'general' ? 'general' : live ? 'gemini-live' : home ? (name === 'data-pack' ? 'home' : 'plumbing') : 'general' }) } });
+    assert.equal(node('ring-title').textContent, 'Sink', 'Sink is selected at launch');
+    await settle();
+    assert.deepEqual(node('ring').children.filter(b => !b.classList.contains('hidden')).map(b => b.getAttribute('data-mode')), policy === 'engineering' ? ringModes : ringModes.slice(0, 3));
+    const choose = () => node('picker').handlers.click({ target: { closest: () => ({ getAttribute: name => policy === 'engineering' ? 'engineering' : policy === 'general' ? 'general' : live ? 'general' : home ? (name === 'data-pack' ? 'home' : 'plumbing') : 'general' }) } });
     if (!live && !home) {
       node('cloud-google').checked = false;
       node('cloud-google').handlers.change();
     }
     choose();
     await settle();
-    if (policy === 'optout') {
-      assert.equal(Socket.all.length, 0, 'Live opt-out must not silently start a different transport');
-      assert.equal(node('settings').classList.contains('hidden'), false);
-      assert.equal(node('live-start-notice').classList.contains('hidden'), false);
-      assert.match(node('live-start-notice').textContent, /turn on Gemini Live \(Google\)/);
-      node('cloud-google').checked = true;
-      node('cloud-google').handlers.change();
-      node('ring-hint').handlers.click();
-      await settle();
-      assert.equal(node('live-start-notice').classList.contains('hidden'), true);
-    }
     const socket = Socket.all[0];
     assert.ok(socket);
     socket.open();
     assert.equal(socket.messages[0].camera, false);
-    if (policy === 'private') {
+    assert.equal(socket.messages[0].persona, 'chill-dad');
+    if (policy === 'private' || policy === 'optout') {
       assert.equal(new URL(socket.url).searchParams.get('mode'), null);
       assert.equal(socket.messages[0].pack, 'general');
       assert.equal(Boolean(socket.messages[0].private), policy === 'private');
@@ -219,6 +220,14 @@ for (const [headset, home, live, policy] of [[false, false, false, "engineering"
       assert.equal(socket.messages.at(-1).source, 'typed');
       socket.message({ type: 'turn', stage: 'speaking', detail: 'Home: complete' });
       assert.equal(Boolean(node('family-panel').open), false, 'no contact means no sharing suggestion');
+      node('persona-pick').value = 'funny-dad';
+      node('persona-pick').handlers.change();
+      assert.equal(socket.readyState, 3, 'persona changes end the active call');
+      choose();
+      await settle();
+      Socket.all[1].open();
+      assert.equal(Socket.all[1].messages[0].persona, 'funny-dad');
+      assert.equal(Socket.all[1].messages[0].voice, undefined, 'persona voice is selected by the server');
       return;
     }
     const proofPoll = [...intervals.values()].find(timer => timer.fn.name === 'refreshProof');

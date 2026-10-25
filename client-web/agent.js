@@ -60,21 +60,23 @@ import {
   videoConstraints,
 } from "./devices.js";
 
-// Same names and order as ios/AEyeCore Modes.all; Live is centred at launch.
-const MODES = [
+// Same names and order as iOS. Sink is the hero; extras require the server flag.
+const CORE_MODES = [
+  { id: "plumbing", title: "Sink", pack: "home" },
   { id: "general", title: "General", pack: "general" },
+  { id: "memory", title: "Memory", pack: "memory" },
+];
+const EXTRA_MODES = [
   { id: "pc_build", title: "PC Build", pack: "pc_build" },
   { id: "cooking", title: "Cooking", pack: "cooking" },
   { id: "assemble", title: "Assembly", pack: "assemble" },
-  { id: "memory", title: "Memory", pack: "memory" },
   { id: "mechanic", title: "Mechanic", pack: null },
-  { id: "plumbing", title: "Sink", pack: "home" },
   { id: "engineering", title: "Engineering", pack: "engineering" },
-  { id: "gemini-live", title: "Gemini Live", pack: "gemini-live" },
 ];
-const DEFAULT_MODE = MODES.findIndex((m) => m.id === "gemini-live");
+let MODES = CORE_MODES;
+const DEFAULT_MODE = 0;
 const RING_SLOT = 84;
-const PACK_LABEL = Object.fromEntries(MODES.filter((m) => m.pack).map((m) => [m.pack, m.title]));
+const PACK_LABEL = Object.fromEntries([...CORE_MODES, ...EXTRA_MODES].filter((m) => m.pack).map((m) => [m.pack, m.title]));
 const PRESENCE_STATES = ["idle", "listening", "thinking", "speaking"];
 
 const FRAME_MS = 1000;
@@ -210,6 +212,9 @@ function boot() {
   const wantCartesia = params.get("tts") === "cartesia";
   let tts = !wantCartesia && (params.get("tts") === "browser" || storedVoice === "browser") ? "browser" : "server";
   let ttsVoice = storedVoice && storedVoice !== "browser" ? storedVoice : "";
+  const personaPick = document.getElementById("persona-pick");
+  let persona = (() => { try { return safeStorage()?.getItem("aeye.persona") || "chill-dad"; } catch { return "chill-dad"; } })();
+  let personaVoices = {};
   const voicePick = document.getElementById("voice-pick");
   let stt = params.get("stt") === "server" ? "server" : "browser";
   let beforeLiveAudio = null;
@@ -326,7 +331,7 @@ function boot() {
   const memoryCountEl = document.getElementById("memory-count");
   const memoryActions = document.getElementById("memory-actions");
   let powerConfirmed = false;
-  // ?mode=memory centres a mode at launch (demo and caregiver links); otherwise PC Build, as iOS.
+  // ?mode=memory centres a mode at launch (demo and caregiver links); otherwise Sink, as iOS.
   // Shared-token calls have private, temporary owners; cross-call caregiver settings need personal sign-in.
   const caregiverLink = document.getElementById("caregiver-link");
   if (caregiverLink && params.get("token")) {
@@ -334,7 +339,7 @@ function boot() {
     caregiverLink.setAttribute('aria-disabled', 'true');
     caregiverLink.textContent = 'Caregiver settings require personal sign-in';
   }
-  const askedMode = MODES.findIndex((m) => m.id === params.get("mode"));
+  const askedMode = MODES.findIndex((m) => m.id === (params.get("mode") === "gemini-live" ? "general" : params.get("mode")));
   let ringIndex = askedMode >= 0 ? askedMode : DEFAULT_MODE;
   let voice = null;
   let listening = false;
@@ -582,6 +587,7 @@ function boot() {
     const hello = {
       v: 2,
       type: "hello",
+      persona,
       session_id: sessionId,
       pack: ["gemini-live", "engineering"].includes(pack) ? "general" : pack,
       client: "web",
@@ -1599,7 +1605,8 @@ function boot() {
     applyAudioPrefs();
     if (tts === "server") {
       try {
-        const reply = await apiFetch(`/api/voice_sample?voice=${encodeURIComponent(ttsVoice)}&session_id=${encodeURIComponent(sessionId)}`);
+        const sampleVoice = ttsVoice || personaVoices[persona] || "";
+        const reply = await apiFetch(`/api/voice_sample?voice=${encodeURIComponent(sampleVoice)}&session_id=${encodeURIComponent(sessionId)}`);
         if (reply.ok) {
           const sample = await reply.json();
           voice.playPcm("test-voice", sample.pcm16_b64, true);
@@ -1612,6 +1619,36 @@ function boot() {
     voice.speak("test-voice", TEST_LINE);
   }
 
+  async function loadProductSettings() {
+    try {
+      const response = await apiFetch("/api/features");
+      if (response.ok) {
+        const flags = await response.json();
+        MODES = flags.extra_modes === true ? [...CORE_MODES, ...EXTRA_MODES] : CORE_MODES;
+        const wanted = params.get("mode") === "gemini-live" ? "general" : params.get("mode");
+        ringIndex = Math.max(0, MODES.findIndex(m => m.id === wanted));
+        renderRing();
+        scrollRingTo(ringIndex, false);
+      }
+    } catch { /* Core modes stay available when discovery is offline. */ }
+    if (!personaPick) return;
+    try {
+      const response = await apiFetch("/api/personas");
+      if (!response.ok) return;
+      const registry = await response.json();
+      personaVoices = Object.fromEntries(registry.personas.map(row => [row.id, row.tts_voice]));
+      if (!registry.personas.some(row => row.id === persona)) persona = registry.default;
+      personaPick.textContent = "";
+      for (const row of registry.personas) {
+        const option = document.createElement("option");
+        option.value = row.id;
+        option.textContent = row.display_name;
+        personaPick.append(option);
+      }
+      personaPick.value = persona;
+    } catch { /* Keep the shipped default; the server validates every selection. */ }
+  }
+
   async function loadVoices() {
     if (!voicePick) return;
     let listed = [];
@@ -1622,6 +1659,10 @@ function boot() {
       listed = [];
     }
     voicePick.textContent = "";
+    const personaOption = document.createElement("option");
+    personaOption.value = "";
+    personaOption.textContent = "Persona voice";
+    voicePick.append(personaOption);
     for (const item of listed) {
       const option = document.createElement("option");
       option.value = item.id;
@@ -1632,7 +1673,6 @@ function boot() {
     browserOption.value = "browser";
     browserOption.textContent = "Browser voice (robotic)";
     voicePick.append(browserOption);
-    const fallback = (listed.find((item) => item.default) || listed[0] || { id: "browser" }).id;
     if (wantCartesia && !String(ttsVoice).startsWith("cartesia:")) {
       const cartesia = listed.find((item) => item.engine === "cartesia" && item.default)
         || listed.find((item) => item.engine === "cartesia");
@@ -1641,7 +1681,7 @@ function boot() {
         sendHello();
       }
     }
-    voicePick.value = tts === "browser" ? "browser" : (ttsVoice || fallback);
+    voicePick.value = tts === "browser" ? "browser" : ttsVoice;
   }
 
   function onVoicePick() {
@@ -1659,7 +1699,7 @@ function boot() {
   }
 
   async function choosePack(next) {
-    if (!PACK_LABEL[next] || pack) return;
+    if (!MODES.some(m => m.pack === next) || pack) return;
     if (next === 'gemini-live' && !cloud.google && !privateMode) {
       const notice = document.getElementById('live-start-notice');
       notice.textContent = 'To start Gemini Live, turn on Gemini Live (Google) below. It sends microphone audio and downscaled camera video to Google. You can also choose General with Google off.';
@@ -1791,7 +1831,10 @@ function boot() {
 
   // ModeRing.swift: centred item 78 px with a white ring, neighbours 52 / 42 / 34 and fading.
   function renderRing() {
-    ringButtons().forEach((button, i) => {
+    ringButtons().forEach((button) => {
+      const i = MODES.findIndex(m => m.id === button.getAttribute("data-mode"));
+      button.classList.toggle("hidden", i < 0);
+      if (i < 0) return;
       const dist = Math.min(Math.abs(i - ringIndex), 3);
       button.setAttribute("data-dist", String(dist));
       button.setAttribute("aria-current", dist === 0 ? "true" : "false");
@@ -2354,6 +2397,18 @@ function boot() {
     ui.dispatch({ type: "volume", volume: Number(volumeEl.value) });
     applyAudioPrefs();
   });
+  if (personaPick) personaPick.addEventListener("change", () => {
+    if (pack) endCall();
+    persona = personaPick.value;
+    ttsVoice = "";
+    tts = "server";
+    if (voicePick) voicePick.value = "";
+    try {
+      safeStorage()?.setItem("aeye.persona", persona);
+      safeStorage()?.removeItem("aeye.voice");
+    } catch { /* Convenience storage only. */ }
+  });
+  void loadProductSettings();
   if (voicePick) {
     voicePick.addEventListener("change", onVoicePick);
     void loadVoices();

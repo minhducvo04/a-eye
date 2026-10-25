@@ -49,25 +49,24 @@
       </div>
       <!-- First run: what A-eye is and the privacy promise, before anything starts. -->
       <div class="intro">
-        <h1 class="intro-title">I look, point, and remember.</h1>
-        <p class="intro-text">Show me what you are working on, or ask where you left something. Choose a helper below to start.</p>
+        <h1 class="intro-title">Dad, how do I?</h1>
+        <p class="intro-text">Meet A-Eye, an AI dad who helps you do things. Start with the sink, ask a question, or find something you left behind.</p>
         <p class="intro-note"><svg aria-hidden="true"><use href="#i-shield"/></svg>Video and pictures are not saved unless you turn on Rewind or the memory aid.</p>
       </div>
       <div class="ring-bottom">
         <div class="ring-label" aria-live="polite">
-          <p id="ring-title" class="ring-title">Memory</p>
+          <p id="ring-title" class="ring-title">Sink</p>
           <button type="button" id="ring-hint" class="ring-hint">tap to start</button>
         </div>
         <div id="ring" class="ring">
-          <button type="button" data-mode="general" data-pack="general" aria-label="General"><span class="disc"><svg><use href="#i-sparkles"/></svg></span><span class="ring-name" aria-hidden="true">General</span></button>
-          <button type="button" data-mode="pc_build" data-pack="pc_build" aria-label="PC Build"><span class="disc"><svg><use href="#i-desktop"/></svg></span><span class="ring-name" aria-hidden="true">PC Build</span></button>
-          <button type="button" data-mode="cooking" data-pack="cooking" aria-label="Cooking"><span class="disc"><svg><use href="#i-pan"/></svg></span><span class="ring-name" aria-hidden="true">Cooking</span></button>
-          <button type="button" data-mode="assemble" data-pack="assemble" aria-label="Assembly"><span class="disc"><svg><use href="#i-hammer"/></svg></span><span class="ring-name" aria-hidden="true">Assembly</span></button>
-          <button type="button" data-mode="memory" data-pack="memory" aria-label="Memory"><span class="disc"><svg><use href="#i-pin"/></svg></span><span class="ring-name" aria-hidden="true">Memory</span></button>
-          <button type="button" data-mode="mechanic" aria-label="Mechanic, coming soon"><span class="disc"><svg><use href="#i-car"/></svg></span><span class="ring-name" aria-hidden="true">Mechanic</span></button>
           <button type="button" data-mode="plumbing" data-pack="home" aria-label="Sink"><span class="disc"><svg><use href="#i-drop"/></svg></span><span class="ring-name" aria-hidden="true">Sink</span></button>
-          <button type="button" data-mode="engineering" aria-label="Engineering, coming soon"><span class="disc"><svg><use href="#i-gears"/></svg></span><span class="ring-name" aria-hidden="true">Engineering</span></button>
-          <button type="button" data-mode="gemini-live" data-pack="gemini-live" aria-label="Gemini Live"><span class="disc"><svg><use href="#i-sparkles"/></svg></span><span class="ring-name" aria-hidden="true">Gemini Live</span></button>
+          <button type="button" data-mode="general" data-pack="general" aria-label="General"><span class="disc"><svg><use href="#i-sparkles"/></svg></span><span class="ring-name" aria-hidden="true">General</span></button>
+          <button type="button" data-mode="memory" data-pack="memory" aria-label="Memory"><span class="disc"><svg><use href="#i-pin"/></svg></span><span class="ring-name" aria-hidden="true">Memory</span></button>
+          <button class="hidden" type="button" data-mode="pc_build" data-pack="pc_build" aria-label="PC Build"><span class="disc"><svg><use href="#i-desktop"/></svg></span><span class="ring-name" aria-hidden="true">PC Build</span></button>
+          <button class="hidden" type="button" data-mode="cooking" data-pack="cooking" aria-label="Cooking"><span class="disc"><svg><use href="#i-pan"/></svg></span><span class="ring-name" aria-hidden="true">Cooking</span></button>
+          <button class="hidden" type="button" data-mode="assemble" data-pack="assemble" aria-label="Assembly"><span class="disc"><svg><use href="#i-hammer"/></svg></span><span class="ring-name" aria-hidden="true">Assembly</span></button>
+          <button class="hidden" type="button" data-mode="mechanic" aria-label="Mechanic, coming soon"><span class="disc"><svg><use href="#i-car"/></svg></span><span class="ring-name" aria-hidden="true">Mechanic</span></button>
+          <button class="hidden" type="button" data-mode="engineering" data-pack="engineering" aria-label="Engineering"><span class="disc"><svg><use href="#i-gears"/></svg></span><span class="ring-name" aria-hidden="true">Engineering</span></button>
         </div>
       </div>
     </section>
@@ -246,6 +245,10 @@
       <button type="button" id="rewind-forget" class="row text-btn">Forget this call's clips</button>
     </div>
     <p id="rewind-notice" class="group-foot">When on, short video clips of this call are uploaded to TwelveLabs so you can ask about them later. They are deleted from TwelveLabs when the call ends unless you keep them.</p>
+
+    <p class="group-title">Dad persona</p>
+    <div class="group"><label class="row">Persona <select id="persona-pick" class="voice-pick" aria-label="Dad persona"><option value="chill-dad">Chill dad</option></select></label></div>
+    <p class="group-foot">Changes tone and voice. Safety and task steps stay the same. Changing persona ends the current call.</p>
 
     <p class="group-title">Voice</p>
     <div class="group">

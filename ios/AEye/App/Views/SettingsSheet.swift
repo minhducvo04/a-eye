@@ -43,6 +43,20 @@ struct SettingsSheet: View {
                     Text("Gemini Live sends microphone audio and downscaled camera video through your server to Google. Private mode blocks cloud services. Changing consent ends the active Live call; changing Private mode ends the current call. Start a new call to apply your choice.")
                 }
 
+                Section("Dad persona") {
+                    Picker("Persona", selection: $controller.persona) {
+                        if controller.personas.isEmpty {
+                            Text("Chill dad").tag("chill-dad")
+                        }
+                        ForEach(controller.personas) { persona in
+                            Text(persona.displayName).tag(persona.id)
+                        }
+                    }
+                    Text("Changes tone and voice. Safety and task steps stay the same. Changing persona ends the current call.")
+                        .font(.footnote)
+                    if !controller.productSettingsNotice.isEmpty { Text(controller.productSettingsNotice) }
+                }
+
                 Section("Connection") {
                     Text(status)
                 }
@@ -61,6 +75,7 @@ struct SettingsSheet: View {
                 }
             }
         }
+        .task(id: controller.serverURLString + controller.accessToken) { await controller.loadProductSettings() }
         .presentationDetents([.medium, .large])
     }
 

@@ -119,6 +119,9 @@ def recommend(product, offers, *, setup_known=False, urgent=False):
 
 
 async def shopping_turn(session, text, vision, source=None):
+    from server import features
+    if not features.shopping():
+        return None, 'Shopping is off.'
     if local_only():
         return None, 'Shopping needs the cloud, so it is unavailable in Private mode.'
     if not claude_allowed():

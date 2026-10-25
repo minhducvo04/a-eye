@@ -635,6 +635,8 @@ async def websocket(ws: WebSocket):
                                and incoming['pack'] == 'general' else incoming['pack'])
                     new_session = Session(incoming['session_id'], packs.get(pack_id),
                                           incoming.get('board_id', 'demo-b650'), incoming.get('tts', 'browser'))
+                    from server import personas
+                    new_session.persona = personas.get(incoming.get('persona'))
                 except (OSError, ValueError, ValidationError, KeyError):
                     await send(message('error', code='bad_message', message='Unknown or invalid board or pack.'))
                     continue
@@ -679,7 +681,7 @@ async def websocket(ws: WebSocket):
                 voice = None
                 if session.tts == 'server':
                     factory = getattr(ws.app.state, 'voice_factory_v2', adapter.make_adapter)
-                    picked = incoming.get('voice') or new_session.pack.voice or None
+                    picked = personas.tts_voice(session.persona, incoming.get('voice'), session.pack.voice)
                     candidate = await asyncio.to_thread(
                         factory, **({'voice': picked} if factory is adapter.make_adapter else {}))
                     if not isinstance(candidate, FakeAdapter):

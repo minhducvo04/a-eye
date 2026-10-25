@@ -51,6 +51,7 @@ def test_socket_authorized(monkeypatch, path, auth):
 
 @pytest.mark.parametrize('token', [False, True])
 def test_rest(monkeypatch, token):
+    monkeypatch.setenv('SHOPPING', '1')
     if token:
         monkeypatch.setenv('A_EYE_TOKEN', 'private-secret')
     with TestClient(create_app()) as client:
@@ -130,6 +131,7 @@ def test_live_status_parallel_cached(monkeypatch):
 
 
 def test_invalid_dependency_response(monkeypatch):
+    monkeypatch.setenv('SHOPPING', '1')
     monkeypatch.setattr(api, 'search', lambda body: {})
     with TestClient(create_app()) as client:
         assert client.post('/api/market', json=dict(v=1, category='ram', owned_parts=[])).status_code == 422

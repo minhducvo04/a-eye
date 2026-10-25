@@ -584,6 +584,13 @@
    "role": "camera",
    "pair_code": "ABCD2345",
    "camera": true
+  },
+  {
+   "v": 2,
+   "type": "hello",
+   "session_id": "dad-demo",
+   "pack": "home",
+   "persona": "chill-dad"
   }
  ],
  "v2_frame": [

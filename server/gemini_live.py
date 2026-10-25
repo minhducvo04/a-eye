@@ -18,7 +18,7 @@ import httpx
 from jsonschema import validate
 from websockets.asyncio.client import connect
 
-from server import cloud_meter, cloud_vision, pointer, privacy, recent_memory, rewind_tools
+from server import cloud_meter, cloud_vision, pointer, privacy, recent_memory, rewind_tools, personas
 from server.agent import POWER_LINE, message, say, state
 
 DOCUMENTED_MODEL = 'gemini-3.8-live'
@@ -31,10 +31,13 @@ WIRE_LOGGER = logging.Logger('aeye.live.transport')
 WIRE_LOGGER.disabled = True
 
 
-def live_setup(model, instruction=''):
+def live_setup(model, instruction='', voice=None):
     """Shared camera context for the bridge and the real transport probe."""
+    generation = {'responseModalities': ['AUDIO']}
+    if voice:
+        generation['speechConfig'] = {'voiceConfig': {'prebuiltVoiceConfig': {'voiceName': voice}}}
     return {'model': model,
-            'generationConfig': {'responseModalities': ['AUDIO']},
+            'generationConfig': generation,
             'inputAudioTranscription': {}, 'outputAudioTranscription': {},
             'realtimeInputConfig': {'turnCoverage': 'TURN_INCLUDES_ALL_INPUT'},
             'systemInstruction': {'parts': [{'text':
@@ -184,10 +187,11 @@ class LiveBridge:
         self.ws = await connect(url, open_timeout=10, close_timeout=2, max_size=4 * 1024 * 1024,
                                 logger=WIRE_LOGGER)
         try:
-            setup = live_setup(self.model, self.session.pack.system_prompt +
+            setup = live_setup(self.model, self.session.pack.system_prompt + personas.style_block(self.session.persona) +
                     ' Use point_at to point at visible objects. Use local memory tools only when requested. '
                     'Use recent_memory for questions about previous steps or observations, preserving the full time scope. '
-                    'Never claim a memory is saved or deleted before a tool confirms it.')
+                    'Never claim a memory is saved or deleted before a tool confirms it.',
+                    voice=self.session.persona.get('gemini_live_voice'))
             setup['tools'] = [{'functionDeclarations': declarations(self.rewind_on())}]
             await self._send({'setup': setup})
             response = json.loads(await asyncio.wait_for(self.ws.recv(), 10))

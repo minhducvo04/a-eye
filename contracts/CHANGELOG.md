@@ -1,3 +1,7 @@
+# 2026-10-24 — optional dad persona
+
+Owner-authorized additive v2 hello field `persona`: registry id, omitted defaults to `chill-dad`; unknown ids reject the hello. TS, Swift and examples updated. Wire version stays 2.
+
 # Contract changelog and freeze
 
 - Additive shopping payload: `shopping_offer` and `shopping_response` accepted by v2 `market_results`; original PC market payload and wire versions unchanged.
