@@ -17,6 +17,7 @@ class FakeTL:
         self.rows = rows or []
         self.uploads = []
         self.searches = []
+        self.image_searches = []
         self.deleted = []
 
     async def ensure_index(self, name=None):
@@ -43,9 +44,16 @@ class FakeTL:
                                      {'t': 0.1, 'text': 'Installed the CPU'}],
                            'skipped': ['install the RAM', 'juggle the case']}), {'output_tokens': 40}
 
-    async def search(self, index_id, query, video_ids=None, limit=5):
-        self.searches.append((index_id, query, list(video_ids or [])))
-        return [r for r in self.rows if not video_ids or r['video_id'] in video_ids]
+    image_rows = None   # rows for image queries; None means the same rows as text
+
+    async def search(self, index_id, query=None, video_ids=None, limit=5, image=None):
+        if image is not None:
+            self.image_searches.append((index_id, bytes(image), list(video_ids or [])))
+            rows = self.rows if self.image_rows is None else self.image_rows
+        else:
+            self.searches.append((index_id, query, list(video_ids or [])))
+            rows = self.rows
+        return [r for r in rows if not video_ids or r['video_id'] in video_ids]
 
 
 class FakeVision:
@@ -536,3 +544,89 @@ def test_clip_caption_prefers_object_over_higher_scored_phone():
     rewind.session = SimpleNamespace(recent_memory=log)
     hits = asyncio.run(rewind.search('Dad where is my water bottle'))
     assert hits[0]['video_id'] == 'vid-2'
+
+
+def real_jpeg_b64(size=(64, 48)):
+    from io import BytesIO
+    from PIL import Image
+    out = BytesIO()
+    Image.new('RGB', size, (200, 30, 30)).save(out, format='JPEG')
+    return base64.b64encode(out.getvalue()).decode()
+
+
+def held_session(rewind, fresh=True, private=False, scene=None):
+    """A session holding a camera frame; fresh means under 3 s old."""
+    from types import SimpleNamespace
+    from time import monotonic
+    session = SimpleNamespace(camera=True, private=private, frame=dict(seq=1, jpeg_b64=real_jpeg_b64()),
+                              frame_time=monotonic() - (0 if fresh else 10), scene=scene)
+    rewind.session = session
+    return session
+
+
+def test_held_question_with_fresh_frame_sends_image_query():
+    from server.privacy import set_call
+    set_call(rewind=True)
+    rows = [dict(video_id='vid-2', start=0, end=5, rank=1, score=0.9)]
+    rewind = ready_rewind(rows)
+    held_session(rewind, scene=dict(objects=[dict(label='bottle', bbox=[0.4, 0.4, 0.2, 0.3], conf=0.9)]))
+    text, hit = asyncio.run(rewind.answer('did I have this last call'))
+    assert len(rewind.client.image_searches) == 1 and rewind.client.searches == []   # pointing words: image only
+    crop = rewind.client.image_searches[0][1]
+    assert crop[:2] == b'\xff\xd8' and len(crop) < len(base64.b64decode(real_jpeg_b64())) * 2
+    assert rewind.client.image_searches[0][2] == ['vid-1', 'vid-2']
+    assert hit['t_s'] == 20.0 and 'best guess' in text
+
+
+def test_named_object_sends_text_query_only():
+    from server.privacy import set_call
+    set_call(rewind=True)
+    rewind = ready_rewind([dict(video_id='vid-2', start=0, end=5, rank=1, score=0.9)])
+    held_session(rewind)
+    asyncio.run(rewind.answer('where did I put my water bottle'))
+    assert [s[1] for s in rewind.client.searches] == ['water bottle'] and rewind.client.image_searches == []
+
+
+def test_both_queries_merge_with_overlap_boost():
+    from server.privacy import set_call
+    set_call(rewind=True)
+    rewind = ready_rewind([dict(video_id='vid-1', start=0, end=5, rank=1, score=0.95),
+                           dict(video_id='vid-2', start=0, end=5, rank=2, score=0.7)])
+    rewind.client.image_rows = [dict(video_id='vid-2', start=1, end=4, rank=1, score=0.6)]
+    held_session(rewind)
+    hits = asyncio.run(rewind.search('is this my water bottle from last call',
+                                     image=rewind.held_crop('is this my water bottle from last call')))
+    assert len(rewind.client.searches) == 1 and len(rewind.client.image_searches) == 1
+    assert [h['video_id'] for h in hits] == ['vid-2', 'vid-1']      # in both lists ranks first
+    assert hits[0]['both'] and hits[0]['score'] == 0.7 and not hits[0]['weak']
+    assert not hits[1]['both'] and not hits[1]['weak']           # strong single text hit
+
+
+def test_stale_or_missing_frame_means_text_only():
+    from server.privacy import set_call
+    set_call(rewind=True)
+    rewind = ready_rewind([dict(video_id='vid-2', start=0, end=5, rank=1, score=0.9)])
+    held_session(rewind, fresh=False)
+    asyncio.run(rewind.answer('did I have this water bottle last call'))
+    assert rewind.client.image_searches == [] and [s[1] for s in rewind.client.searches] == ['water bottle']
+    rewind.session.frame = None
+    assert rewind.held_crop('did I have this last call') is None
+
+
+def test_private_mode_sends_nothing():
+    from server.privacy import set_call
+    set_call(rewind=True, private=True)
+    rewind = ready_rewind([dict(video_id='vid-2', start=0, end=5, rank=1, score=0.9)])
+    held_session(rewind, private=True)
+    rewind.private = True
+    assert rewind.held_crop('did I have this last call') is None
+    asyncio.run(rewind.answer('did I have this last call'))
+    assert rewind.client.image_searches == [] and rewind.client.searches == []
+
+
+def test_merge_rows_marks_weak_single_hits():
+    from server.rewind import merge_rows
+    merged = merge_rows([dict(video_id='a', start=0, end=5, score=0.3)], [dict(video_id='b', start=0, end=5, score=0.4)])
+    assert all(r['weak'] for r in merged)
+    merged = merge_rows([dict(video_id='a', start=0, end=5, score=0.3)], [])
+    assert merged[0]['weak'] is False     # text alone keeps today's behaviour
