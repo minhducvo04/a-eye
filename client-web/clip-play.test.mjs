@@ -128,3 +128,19 @@ test('hls.js past-call clip: video is in the pane before attach, plays from star
     delete globalThis.Hls;
   }
 });
+
+test('a browser that says "maybe" to native HLS still streams through hls.js when it is loaded (Chromium answers maybe, then fails)', async () => {
+  const { doc, body, pane } = page(true);
+  const hls = { handlers: {}, on(name, fn) { this.handlers[name] = fn; }, loadSource(url) { this.url = url; }, attachMedia(video) { this.video = video; } };
+  globalThis.Hls = class { static isSupported() { return true; } static Events = { MANIFEST_PARSED: 'mp', ERROR: 'err' }; constructor() { return hls; } };
+  try {
+    const update = renderSplit(doc, body, { hit: { t_s: 52, start_s: 0, end_s: 3, past_call: true,
+      clip_url: 'https://media.invalid/saved.m3u8' }, line: pastCallLine({ t_s: 52 }) });
+    const video = pane().children.find(el => el.tag === 'video');
+    assert.equal(hls.video, video, 'hls.js attached, not the native src path');
+    assert.equal(video.src, undefined);
+    update.dispose();
+  } finally {
+    delete globalThis.Hls;
+  }
+});

@@ -1,4 +1,4 @@
-import { wireFlipCamera } from "./flip-camera.js";
+import { wireFlipCamera } from "./flip-camera.js?v=1792947000";
 // Safari call page. Speaks the v1 WebSocket contract. Frames stay in memory only
 // for the JPEG we are about to send; nothing is written to storage or disk.
 
@@ -8,8 +8,8 @@ import {
   reduceOverlay,
   sharpCanvasSize,
   visibleOverlay,
-} from "./overlay.js";
-import { buildFrameMessage, createFrameLoop, frameOrientation, writeFrame } from "./live.js";
+} from "./overlay.js?v=1792947000";
+import { buildFrameMessage, createFrameLoop, frameOrientation, writeFrame } from "./live.js?v=1792947000";
 
 const BOARD_ID = "demo-b650";
 const MAX_PHOTO_WIDTH = 640;
