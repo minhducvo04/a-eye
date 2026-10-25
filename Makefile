@@ -51,6 +51,10 @@ llm-probe:        ## one router call with .env loaded: make llm-probe Q="your qu
 	$(PY) -m server.llm_probe "$(Q)"
 
 .PHONY: gemini-live-check
+.PHONY: kb-upload
+kb-upload:        ## upload data/kb/cards.json to the team kb_card table (.env: SPACETIMEDB_URI/MODULE/TOKEN)
+	$(PY) scripts/kb_upload.py
+
 .PHONY: places-live-check
 places-live-check: ## .env-loaded synthetic write/read/delete; prints presence only
 	@$(PY) -m server.places_probe

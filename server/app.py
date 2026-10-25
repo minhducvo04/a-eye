@@ -26,7 +26,7 @@ from jsonschema import ValidationError
 
 from contracts import validate
 from market.search import search
-from server import ws2
+from server import parts_shelf, ws2
 from server import accounts
 from server.expert import check_local_model
 from server.routing import warm_router
@@ -45,6 +45,7 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None, *, pres
     async def lifespan(app):
         protect_transport_logs()
         warn_unconfigured()
+        parts_shelf.shelf()  # local data/kb read once at start; an empty shelf if the files are missing
         cleanup = asyncio.create_task(accounts.cleanup_loop(app))
         warmup = None if app.state.mock else asyncio.create_task(ws2.warm_brain(app))
         if not app.state.mock:

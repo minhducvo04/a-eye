@@ -10,7 +10,7 @@ import asyncio
 import os
 import re
 
-from server import cloud_vision, pointer, privacy, safety
+from server import cloud_vision, parts_shelf, pointer, privacy, safety
 
 
 def ui_detail(detail):
@@ -113,7 +113,8 @@ class LiveGuide:
         head += f', step {guide.index + 1} of {self.total()}. '
         if not self.line:
             return head + 'The user is practicing without hints; answer only if asked and never give later steps.'
-        return head + f'The step: "{self.line}". ' + RULE
+        parts = parts_shelf.step_note(self.session)
+        return head + f'The step: "{self.line}". ' + RULE + (' ' + parts if parts else '')
 
     def total(self):
         from server.packs.electronics import TASKS as EE_TASKS
