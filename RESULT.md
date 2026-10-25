@@ -185,3 +185,7 @@ Test: `git diff --check` - PASS.
 Limits: fake providers and synthetic media only; no `.env` read, real Gemini
 call, push, deployment or physical-device proof. Initial full run needed a rerun
 with local socket access. Full evidence: [fix-bridge](docs/results/fix-bridge.md).
+
+## acceptance
+
+See its docs/results report.
