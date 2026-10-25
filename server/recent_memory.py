@@ -363,7 +363,18 @@ async def answer(session, question, vision=None, *, on_hit=None, scope=None):
                     hit = dict(hits[0], sure=False, objects=[], alternatives=[h['t_s'] for h in hits[1:2]])
                     if on_hit:
                         await on_hit(hit)
-                    return dict(source='rewind', found=True, say=past_call_line(hit), t_s=hit['t_s'])
+                    spoken = past_call_line(hit).replace('a call you saved', 'an earlier call you saved')
+                    owner = getattr(rewind, 'owner', None)
+                    calls = kept_calls(owner) if owner is not None else []
+                    call = next((c for c in calls if (
+                        hit.get('call_started_wall') is not None
+                        and c.get('started_wall') == hit['call_started_wall']) or (
+                        hit.get('video_id') and any(clip.get('video_id') == hit['video_id']
+                                                   for clip in c.get('clips', [])))), {})
+                    summary = call.get('summary')
+                    if isinstance(summary, str) and summary.strip():
+                        spoken += f" In that call: {summary[:600]}."
+                    return dict(source='rewind', found=True, say=spoken, t_s=hit['t_s'])
             except Exception:
                 pass  # Search availability must not block the local text fallback.
         owner = getattr(rewind, 'owner', None)

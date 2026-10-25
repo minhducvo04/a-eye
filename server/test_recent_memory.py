@@ -1,11 +1,40 @@
 import asyncio
 from types import SimpleNamespace
 
+import pytest
+
 from server.recent_memory import RecentMemory, source_for, answer
 
 
 def scene(note, *labels):
     return dict(caption=note, objects=[dict(label=x) for x in labels], image_b64='never retain')
+
+
+@pytest.mark.parametrize('match', ['call_started_wall', 'video_id'])
+def test_past_search_hit_includes_matching_call_summary(monkeypatch, match):
+    from server import rewind as rw
+
+    summary = "colorful patterned tumbler with a blue and white design; That's a nice travel mug. " + 'x' * 600
+    calls = [
+        dict(started_wall=100, summary=summary, clips=[dict(video_id='mug-video')]),
+        dict(started_wall=200, summary='Unrelated call with a wrench', clips=[]),
+    ]
+    monkeypatch.setattr(rw, 'kept_calls', lambda owner: calls if owner == 'fixture-owner' else [])
+
+    async def search_kept(question):
+        return [dict(t_s=3, **{match: 100 if match == 'call_started_wall' else 'mug-video'})]
+
+    session = SimpleNamespace(
+        recent_memory=RecentMemory(),
+        rewind=SimpleNamespace(on=False, owner='fixture-owner', search_kept=search_kept),
+    )
+    result = asyncio.run(answer(session, 'What did I show you last call?'))
+    assert result['found'] and result['source'] == 'rewind' and result['t_s'] == 3
+    assert 'In that call: ' + summary[:600] + '.' in result['say']
+    assert summary[:601] not in result['say']
+    assert 'Unrelated' not in result['say']
+    assert 'earlier call' in result['say'] or 'last call' in result['say'].lower()
+    assert 'our call' not in result['say'] and 'this call' not in result['say']
 
 
 def test_window_step_and_specific_time():
