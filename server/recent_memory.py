@@ -173,10 +173,10 @@ async def long_term(session, question):
     return dict(result, source='long-term') if result['found'] else None
 
 
-async def answer(session, question, vision=None):
-    from server.privacy import local_only
+async def answer(session, question, vision=None, *, on_hit=None):
+    from server.privacy import twelvelabs_allowed
     rewind = getattr(session, 'rewind', None)
-    on = bool(rewind and rewind.on and not local_only() and not getattr(session, 'private', False))
+    on = bool(rewind and rewind.on and twelvelabs_allowed() and not getattr(session, 'private', False))
     requested = source_for(question, on) or 'recent'
     if requested == 'recent':
         hit = session.recent_memory.find(question)
@@ -188,6 +188,8 @@ async def answer(session, question, vision=None):
     if requested == 'rewind' and on:
         try:
             spoken, hit = await rewind.answer(question, vision=vision, before_s=rewind.now_s() - 20)
+            if hit and on_hit:
+                await on_hit(hit)
             if hit and hit['sure']:
                 return dict(source='rewind', found=True, say=spoken.replace(" Here's the clip.", ''), t_s=hit['t_s'])
         except Exception:

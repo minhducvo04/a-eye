@@ -83,7 +83,8 @@ def test_fake_live_recent_step_transcripts_and_scene_stay_local(monkeypatch):
                 await asyncio.wait_for(done.wait(), 2)
                 response = next(m['toolResponse']['functionResponses'][0]['response']
                                 for m in wire if 'toolResponse' in m)
-                assert list(response) == ['result']
+                assert set(response) == {'result', 'scheduling'}
+                assert response['scheduling'] == 'WHEN_IDLE'
                 assert 'the guide said' in response['result'] and instruction in response['result']
                 setup = json.dumps(wire[0])
                 assert all(key not in setup for key in ('additionalProperties', 'minLength', 'maxLength'))
