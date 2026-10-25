@@ -214,6 +214,7 @@ class LiveBridge:
         self.blocked = False
         self.safety_stopped = False
         self.safety_line = None
+        self.scope_redirected = False
 
     def _reset_output(self):
         self.turn_id = uuid4().hex
@@ -372,13 +373,33 @@ class LiveBridge:
         self.output = ''
         await self.send(state('listening'))
 
+    async def redirect_scope(self, text):
+        """Answer user input only; suppress this reply without setting the safety latch."""
+        from server.task_scope import refuse_home
+        line = refuse_home(text)
+        if not line or self.safety_stopped:
+            return False
+        if not self.scope_redirected:
+            self.scope_redirected = True
+            self.memory.yield_turn()
+            self.cancel_tools()
+            if self.prefetch.task:
+                self.prefetch.task.cancel()
+            if self.guide:
+                await self.guide.close()
+            await self.hold()
+            await self.stage('speaking', detail='Task scope')
+            await self.fixed_say(line)
+            await self.stage('done')
+        return True
+
     async def prompt_turn(self, text, *, memory_version=None):
         """Ask Live to speak now. clientContent interrupts generation, so wait for the held turn first."""
         try:
             await asyncio.wait_for(self.provider_idle.wait(), 3)
         except asyncio.TimeoutError:
             pass
-        if (not self.active or self.closed or self.safety_stopped or self.session.private
+        if (not self.active or self.closed or self.safety_stopped or self.scope_redirected or self.session.private
                 or not privacy.google_allowed()):
             return False
         if memory_version is not None and not self.memory.current(memory_version):
@@ -482,7 +503,7 @@ class LiveBridge:
         if raw:
             # A mic chunk after VAD ends is not permission to release a coded
             # hold or safety stop. Only the owner may finish/cancel its work.
-            held = self.memory.held or any(
+            held = self.scope_redirected or self.memory.held or any(
                 owner and owner.task and not owner.task.done()
                 for owner in (self.guide, self.memory))
             if self.blocked and not self.audio_input_open and not self.safety_stopped and not held:
@@ -504,6 +525,9 @@ class LiveBridge:
         line = self.stop_line(text)
         if line:
             await self.stop(line)
+            return True
+        if await self.redirect_scope(text):
+            self.input_turn_open = False  # Typed scope input was never sent to the provider.
             return True
         if self.guide:
             self.guide.observe(text)
@@ -731,7 +755,7 @@ class LiveBridge:
             self.input_turn_open = False
             # Normal barge-in starts a new provider turn. A safety stop is
             # different: its late interruption acknowledgement cannot reopen it.
-            if not self.safety_stopped:
+            if not self.safety_stopped and not self.scope_redirected:
                 self._reset_reply()
                 await self.send(state('listening'))
             self.provider_idle.set()
@@ -746,6 +770,8 @@ class LiveBridge:
             text = content.get(field, {}).get('text', '')
             if text:
                 if not output and not self.input_turn_open:
+                    if self.scope_redirected and not self.safety_stopped:
+                        self._reset_reply()
                     self.new_input_turn()
                 attr = 'output' if output else 'question'
                 setattr(self, attr, getattr(self, attr) + text)
@@ -754,14 +780,15 @@ class LiveBridge:
                 line = self.stop_line(getattr(self, attr), output)
                 if line:
                     await self.stop(line)
-                if (not output and not line and self.guide and not self.safety_stopped
+                scoped = not output and not line and await self.redirect_scope(self.question)
+                if (not output and not line and not scoped and self.guide and not self.safety_stopped
                         and self.guide.claims(self.question)):
                     # Code owns this turn (a task start, "done", "it's off"): Live's reply is never played.
                     if not self.blocked:
                         await self.hold()
                     self.memory.yield_turn()
                     self.guide.schedule(self.question)
-                elif not output and not line and not self.safety_stopped:
+                elif not output and not line and not scoped and not self.safety_stopped:
                     await self.memory.watch(self.question)
                 if output and not self.blocked and not self.pointed and spoken_target(
                         self.output, getattr(self.session, 'scene', None) or {}):
@@ -779,7 +806,8 @@ class LiveBridge:
                     from server.context_agent import DISMISS
                     if self.session.context_agent and DISMISS.fullmatch(self.question) and not self.blocked:
                         await self.dismiss_followup(self.question)
-        if content.get('inputTranscription', {}).get('finished') and self.guide and not self.safety_stopped:
+        if (content.get('inputTranscription', {}).get('finished') and self.guide
+                and not self.safety_stopped and not self.scope_redirected):
             self.guide.observe(self.question)
         if not self.blocked:
             for part in content.get('modelTurn', {}).get('parts', []):
@@ -812,7 +840,7 @@ class LiveBridge:
         if content.get('turnComplete'):
             self.input_turn_open = False
             self.provider_idle.set()
-            if self.guide and not self.safety_stopped:
+            if self.guide and not self.safety_stopped and not self.scope_redirected:
                 # Providers without a finished transcription flag use the final turn boundary.
                 self.guide.observe(self.question)
             if not self.blocked:

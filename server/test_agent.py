@@ -119,6 +119,53 @@ def test_no_frame():
     assert next(m for m in messages if m['type'] == 'draw')['seq'] == 0
 
 
+def test_private_current_view_reuses_local_caption_without_cpu_generation():
+    async def trial():
+        session = Session('s', frame=FRAME, private=True)
+        session.scene = dict(SCENE, caption='A blue mug on the table.', source='ollama')
+        session.scene_time = monotonic()
+        session.scene_seq = FRAME['seq']
+        llm = LLM()
+        messages = await asyncio.wait_for(run_turn(
+            session, 'what is on the table?', vision=Vision(), llm=llm), .5)
+        assert not llm.calls
+        assert any(m['type'] == 'say' and 'blue mug' in m['text'] for m in messages)
+        assert not any('Brain:' in m.get('detail', '') for m in messages)
+    asyncio.run(trial())
+
+
+def test_private_header_then_stalled_brain_times_out_with_honest_reply(monkeypatch):
+    monkeypatch.setenv('LOCAL_REPLY_S', '.03')
+    closed = []
+
+    class Stalled:
+        async def stream(self, *args, **kwargs):
+            try:
+                yield '{"agent":"helper","draw":[]}\nSAY: '
+                await asyncio.sleep(10)
+            finally:
+                closed.append(True)
+
+    async def trial():
+        session = Session('s', private=True, camera=False)
+        messages = await asyncio.wait_for(run_turn(
+            session, 'Can you help me organize this?', vision=Vision(), llm=Stalled()), .5)
+        assert any(m['type'] == 'say' and 'taking too long' in m['text'] for m in messages)
+        assert not any('Brain: local' in m.get('detail', '') for m in messages)
+        assert closed
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('source,age,camera', [('fake', 0, True), ('ollama', 20, True), ('ollama', 0, False)])
+def test_private_caption_shortcut_requires_local_recent_camera(source, age, camera):
+    session = Session('s', frame=FRAME, private=True, camera=camera)
+    session.scene = dict(SCENE, caption='A blue mug on the table.', source=source)
+    session.scene_time = monotonic() - age
+    llm = LLM()
+    asyncio.run(run_turn(session, 'what is on the table?', vision=Vision(), llm=llm))
+    assert llm.calls
+
+
 def test_sanitize_header_drops_non_string_fields():
     # Seen live with qwen3.5:9b: a list where a string belongs crashed the whole turn.
     from server.agent import sanitize_header

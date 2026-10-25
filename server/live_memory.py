@@ -135,6 +135,11 @@ class MemoryTurn:
         if self.held or self.claims(text):
             await self.hold()
             self.schedule(text)
+        elif recent_memory.current_view_question(text, partial=True):
+            # The acceptance table question was held, discarded, then generated a second time.
+            # Keep Live's original response for an unambiguous current-view question. A later
+            # transcript suffix such as "earlier" still enters the explicit memory branch above.
+            return
         elif os.environ.get('ROUTER', 'off') == 'on' and len(text.split()) >= 3 and not self.bridge.blocked:
             await self.hold()
             self.schedule(text)   # no time words: the scope head decides after the debounce

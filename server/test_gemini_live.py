@@ -584,6 +584,7 @@ def test_mic_chunk_preserves_code_owned_hold(monkeypatch, owner):
         # VAD ends the input stream while code is still checking the user's turn.
         await bridge.audio('AAA=', final=True)
         if owner == 'guide':
+            monkeypatch.setenv('HOME_TASKS', '1')
             monkeypatch.setattr(agent, 'check_water_off', check)
             bridge.session.home_guide = HomeGuide(task='sink', index=2, introduced=True)
             bridge.guide.kind = 'home'

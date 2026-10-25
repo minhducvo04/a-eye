@@ -25,17 +25,16 @@ def with_safety(pack):
     """Every pack, every brain: home-safety gates before the pack's own refusals, and a post-check on speech."""
     from dataclasses import replace
     from server import safety
-    from server.task_scope import refuse_home
     from server.product_rules import check, vent_reply
     own_refuse, own_guard = pack.refuse, pack.guard
 
     def refuse(text):
-        return safety.before(text) or own_refuse(text) or refuse_home(text) or vent_reply(text)
+        # Home tasks are simply not started (task_scope.task_for); a scope redirect is not a safety stop,
+        # and as a stop it latched on scene captions and muted Live for the whole call.
+        return safety.before(text) or own_refuse(text) or vent_reply(text)
 
     def guard(text, question='', first=False):
         checked = safety.after(text, question)
-        if checked == text:
-            checked = refuse_home(checked) or checked
         if checked != text or own_guard is None:
             return check(checked)
         return check(safety.after(own_guard(text, question, first), question))

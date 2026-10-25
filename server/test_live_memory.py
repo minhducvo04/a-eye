@@ -153,6 +153,45 @@ def test_now_question_is_not_held():
     asyncio.run(trial())
 
 
+def test_current_table_question_does_not_pay_router_and_second_generation(monkeypatch):
+    monkeypatch.setenv('ROUTER', 'on')
+
+    async def forbidden(*args):
+        raise AssertionError('A plain current-view question needs no temporal classifier')
+
+    monkeypatch.setattr(live_memory, 'scope_decision', forbidden)
+
+    async def trial():
+        bridge, emitted, fixed, wire = bridge_for()
+        await bridge.handle({'serverContent': {'inputTranscription': {'text': 'What is on'}}})
+        assert not bridge.blocked
+        await say_user(bridge, ' the table?', live_says='A blue mug.')
+        assert bridge.memory.task is None and not prompts(wire) and not fixed
+        assert any(m['type'] == 'audio' and m['pcm16_b64'] for m in emitted)
+    asyncio.run(trial())
+
+
+def test_opening_caption_is_delivered_as_memory_evidence():
+    async def trial():
+        bridge, emitted, fixed, wire = bridge_for(clock=60)
+        bridge.session.recent_memory.add(scene('A blue mug on the table', 'the object'), 1)
+        bridge.session.recent_memory.add(scene('A red apple on the table', 'the object'), 25)
+        await say_user(bridge, 'what did I show you at the start of this call?')
+        [text] = prompts(wire)
+        assert 'blue mug' in text and 'red apple' not in text and not fixed
+    asyncio.run(trial())
+
+
+def test_current_view_prefix_with_past_suffix_still_holds_memory():
+    async def trial():
+        bridge, emitted, fixed, wire = bridge_for(clock=60)
+        await bridge.handle({'serverContent': {'inputTranscription': {'text': 'What is on the table'}}})
+        await say_user(bridge, ' earlier in this call?')
+        assert fixed and "can't confirm" in fixed[-1]
+        assert not played(emitted) and not prompts(wire)
+    asyncio.run(trial())
+
+
 def test_safety_and_guide_win_over_memory():
     async def trial():
         bridge, emitted, fixed, wire = bridge_for()
