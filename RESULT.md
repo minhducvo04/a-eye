@@ -688,3 +688,21 @@ Proof and failed node IDs: `docs/results/planner-live.md`, round 13;
 local logs: `.pytest_cache/planner-live13-{before,targeted,full}.log`.
 Limits: lexical summary guard; no provider/physical-call verification, network,
 `.env` reads, push, merge or deployment. Only comments changed after suite launch.
+
+---
+
+# No recap result
+
+Removed automatic web recap and its sheet trigger; added kept-call indexing status on web and iPhone. Server waits for final and already-indexing clips without Pegasus. Explicit recap callers remain supported.
+
+Files changed, exact commands, test evidence and limits: [docs/results/no-recap.md](docs/results/no-recap.md).
+
+Test: /Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server - FAIL (1135 passed; 15 sandbox/network-related failures; 2 warnings).
+Test: /Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_no_recap.py - PASS (3 passed).
+Test: node --test client-web/*.test.mjs - PASS (172 passed).
+Test: swift build --package-path ios/AEyeCore --scratch-path /private/tmp/a-eye-no-recap-swift --disable-sandbox - PASS.
+Test: swiftc -frontend -parse ios/AEye/App/Call/CallController.swift ios/AEye/App/RootView.swift ios/AEye/App/Views/StartScreen.swift - PASS (syntax only).
+Test: xcodebuild (full command in report) - BLOCKED (sandbox cache permissions and unavailable simulator service).
+Test: git diff --check - PASS.
+
+No iPhone recap view/trigger was present to remove. App-target compilation and physical-device behavior remain unverified. No push, .env reads, or external service calls.

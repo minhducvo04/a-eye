@@ -79,19 +79,25 @@ test('early final uses latest interim at 700ms and never sends a late correction
   assert.equal(sent.length, 2);
 });
 
-for (const [home, live, policy] of [[false, false, "engineering"], [false], [true], [false, true], [false, true, "general"], [false, true, "optout"], [false, true, "private"], [false, true, "single-call"], [false, true, "old-memory-link"]]) test(live ? `${policy || 'live'}: Live defaults to Google and uses existing hello and caption messages` : home ? 'sink selection and presenter controls use real client contracts' : 'call page toggles camera, keeps voice-only hello, retries text, reconnects, and renders streamed replies', async () => {
+for (const [home, live, policy] of [[false, false, "engineering"], [false], [true], [false, true], [false, true, "general"], [false, true, "optout"], [false, true, "private"], [false, true, "single-call"], [false, true, "old-memory-link"], [false, true, "recall-off"]]) test(live ? `${policy || 'live'}: Live defaults to Google and uses existing hello and caption messages` : home ? 'sink selection and presenter controls use real client contracts' : 'call page toggles camera, keeps voice-only hello, retries text, reconnects, and renders streamed replies', async () => {
   const saved = new Map();
   const put = (key, value) => { saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { value, configurable: true, writable: true }); };
   const nodes = new Map(), intervals = new Map(), timeouts = new Map();
   let timerId = 0, stops = 0, gets = 0;
   const constraints = [];
   let proofAvailable = true, familyReply = null;
+  let recallSaveStatus = "saving";
+  const recallRequests = [];
   let recognition;
   const synth = { getVoices: () => [{ localService: true, lang: "en-US" }], cancel() {}, speak(u) { this.current = u; } };
   const proofRequests = [];
   let presenterEnabled = false;
   const presenterRequests = [];
   put('fetch', async (path, options) => {
+    if (path.startsWith('/api/rewind/')) {
+      recallRequests.push(path);
+      return { ok: true, json: async () => ({ save_status: recallSaveStatus }) };
+    }
     if (path === '/api/features') return { ok: true, json: async () => ({ extra_modes: policy === 'engineering', shopping: false }) };
     if (path === '/api/personas') return { ok: true, json: async () => ({ default: 'chill-dad', personas: [{ id: 'chill-dad', display_name: 'Chill dad' }, { id: 'funny-dad', display_name: 'Funny dad' }] }) };
     if (path.startsWith('/api/dad-demo?')) {
@@ -139,7 +145,7 @@ for (const [home, live, policy] of [[false, false, "engineering"], [false], [tru
     close() { this.readyState = 3; this.handlers.close(); }
   }
   const settle = async () => { for (let i = 0; i < 8; i++) await new Promise(resolve => setImmediate(resolve)); };
-  const currentPage = policy === 'single-call' || policy === 'old-memory-link';
+  const currentPage = policy === 'single-call' || policy === 'old-memory-link' || policy === 'recall-off';
   const htmlIds = new Set([...readFileSync(new URL('./agent.html', import.meta.url), 'utf8').matchAll(/id="([^"]+)"/g)].map(m => m[1]));
   put('document', { getElementById: id => currentPage && !htmlIds.has(id) ? null : node(id), createElement: () => new Element(), createTextNode: text => ({ textContent: text }), hidden: false });
   put('window', { isSecureContext: true, innerWidth: 390, innerHeight: 844, devicePixelRatio: 1, matchMedia: () => ({ matches: true }), addEventListener() {}, requestAnimationFrame() { return 1; }, setInterval(fn, ms) { intervals.set(++timerId, { fn, ms }); return timerId; }, clearInterval(id) { intervals.delete(id); }, setTimeout(fn, ms) { timeouts.set(++timerId, { fn, ms }); return timerId; }, clearTimeout(id) { timeouts.delete(id); } });
@@ -201,12 +207,36 @@ for (const [home, live, policy] of [[false, false, "engineering"], [false], [tru
         node('rewind-keep').checked = true;
         node('rewind-keep').handlers.change();
         assert.equal(socket.messages.at(-1).keep, true);
+        if (policy === 'recall-off') node('rewind-btn').handlers.click();
+        if (policy === 'old-memory-link') {
+          node('rewind-keep').checked = false;
+          node('rewind-keep').handlers.change();
+        }
+      }
+      if (currentPage) {
+        node('rewind-sheet').classList.add('hidden'); // Initial HTML state in the lightweight DOM fixture.
+        socket.message({ type: 'rewind_recap', steps: [{ t_s: 156, text: 'Placed board' }], skipped: ['RAM'] });
+        assert.equal(node('rewind-sheet').classList.contains('hidden'), true, 'recap messages no longer open a sheet');
       }
       node('cloud-google').checked = false;
       node('cloud-google').handlers.change();
       assert.equal(socket.readyState, 3, 'revoking Google closes its session');
       if (currentPage) {
         assert.equal(node('rewind-keep').checked, false, 'ending resets retention for the next call');
+        await settle();
+        assert.equal(recallRequests.some(path => path.includes('/recap')), false, 'hang-up never requests Pegasus');
+        assert.equal(node('rewind-sheet').classList.contains('hidden'), true, 'hang-up does not open the recap sheet');
+        if (policy === 'single-call') {
+          assert.equal(node('recall-save-status').textContent, 'Saving this call for Recall, about 30 s');
+          assert.equal(node('recall-save-status').classList.contains('hidden'), false);
+          recallSaveStatus = 'saved';
+          for (const [id, timer] of [...timeouts]) if (timer.ms === 2000) { timeouts.delete(id); timer.fn(); }
+          await settle();
+          assert.equal(node('recall-save-status').textContent, 'Saved. Your next call can recall this one.');
+        } else {
+          assert.equal(recallRequests.length, 0, 'unkept calls do not poll');
+          assert.equal(node('recall-save-status').classList.contains('hidden'), true);
+        }
         assert.equal(node('rewind-btn').attrs['aria-pressed'], 'false');
         node('private-toggle').checked = true;
         await node('private-toggle').handlers.change();

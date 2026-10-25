@@ -3,6 +3,7 @@ import SwiftUI
 /// Static light and expressive type keep the welcome quiet, including with Reduce Motion enabled.
 /// Uses only the shared palette; the polish owner can restyle this independently of call behavior.
 struct StartScreen: View {
+    var recallSaveText: String = ""
     let onCall: () -> Void
 
     var body: some View {
@@ -26,6 +27,16 @@ struct StartScreen: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Call")
                     .padding(.bottom, 36)
+
+                    if !recallSaveText.isEmpty {
+                        Text(recallSaveText)
+                            .font(.footnote)
+                            .foregroundStyle(Palette.text2)
+                            .multilineTextAlignment(.center)
+                            .padding(12)
+                            .callGlass(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                            .accessibilityAddTraits(.updatesFrequently)
+                    }
 
                     Text("A companion call that watches, guides, and remembers as you learn.")
                         .font(.footnote)

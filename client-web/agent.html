@@ -52,6 +52,7 @@
         <h1 class="intro-title">Call <span class="intro-verb">it</span></h1>
         <p class="intro-note">A companion call that watches, guides, and remembers as you learn.</p>
         <button type="button" id="ring-hint" class="call-start">Call</button>
+        <p id="recall-save-status" class="chip glass soft hidden" role="status" aria-live="polite"></p>
       </div>
     </section>
 
@@ -62,12 +63,11 @@
           <span id="presence-dot" class="presence-dot" role="img" aria-label=""></span>
           <b>Dad</b><span class="sep" aria-hidden="true">·</span><span id="pack-label">A-Eye</span><span class="sep" aria-hidden="true">·</span><span id="elapsed" class="digits">0:00</span>
         </div>
-        <!-- Status badges under the pill (one style): Private, Rewind on (+ Recap), Expert. -->
+        <!-- Status badges under the pill (one style): Private, Rewind on, Expert. -->
         <div class="badges">
           <span id="private-badge" class="badge private hidden" title="Nothing leaves our own machines">Private</span>
           <span id="rewind-badge" class="rewind-badge hidden">
             <span class="badge rewind" title="Clips of this call are uploaded to TwelveLabs">Rewind on</span>
-            <button type="button" id="rewind-recap" class="badge action" aria-label="Recap this call">Recap</button>
           </span>
           <span id="expert-badge" class="badge expert hidden" title="A stronger model is checking this answer">Expert</span>
         </div>
