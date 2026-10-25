@@ -164,11 +164,15 @@ class LiveBridge:
             return
         hold = int(self.rate * 2 * 0.25)
         if not self.stream_id:
-            if len(self.audio_buffer) < hold or self.stop_line(self.output, True):
+            if len(self.audio_buffer) < hold or not self.output.strip() or self.stop_line(self.output, True):
                 return
-            self.stream_id = uuid4().hex
+            # Caption first, so the client ties this audio to the turn and never arms its own fallback voice.
+            first = say(self.output.strip())
+            self.stream_id = first['utterance_id']
+            first['turn_id'] = self.turn_id
             await self.stage('speaking', detail='Brain: Google / ' + self.model)
             await self.send(state('speaking'))
+            await self.send(first)
         end = len(self.audio_buffer) - (len(self.audio_buffer) - self.streamed) % 2
         chunk = bytes(self.audio_buffer[self.streamed:end])
         if self.rate == 24000:
