@@ -220,7 +220,11 @@ class MemoryTurn:
             if not done and self.current(version):
                 filler = True
                 await b.fixed_say(FILLER)
-            result, _ = await asyncio.wait_for(lookup, max(.1, TIMEOUT - (monotonic() - started)))
+            result, cards = await asyncio.wait_for(lookup, max(.1, TIMEOUT - (monotonic() - started)))
+            for card in cards:
+                # Show the found moment on screen too, not only in Dad's voice.
+                if card['type'] != 'rewind_hit' or b.rewind_on():
+                    await b.send(card)
         except asyncio.TimeoutError:
             result = dict(source='unavailable', found=False, say=TIMEOUT_LINE)
         finally:
