@@ -59,7 +59,7 @@ response carries only source names in `context_sources`. Existing turn event ord
 ## Rehearse
 
 ```sh
-/Users/minhducvo/Projects/a-eye/.venv/bin/python -m scripts.context_agent_rehearsal
+$HOME/Projects/a-eye/.venv/bin/python -m scripts.context_agent_rehearsal
 ```
 
 The script seeds “I'm going to SF Saturday” on the Friday preceding the last completed Saturday, starts
@@ -90,7 +90,7 @@ The normal turn path was gathering twice and scheduling tiny local reads behind 
 gathers once and reads local context directly; remote reads remain off the event loop. The final full run
 with timeout tracebacks completed without a stall. No latency assertion was relaxed.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q -o faulthandler_timeout=15` - FAIL overall:
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q -o faulthandler_timeout=15` - FAIL overall:
 
 ```text
 FAILED vision/test_gemini.py::test_recorded_payment_failure_is_reported_and_cleared
@@ -114,7 +114,7 @@ Test: `node --test client-web/` - PASS:
 
 Log: `/private/tmp/context-agent-node-final.log`.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m scripts.context_agent_rehearsal` - PASS
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m scripts.context_agent_rehearsal` - PASS
 (`opener="How was the trip to SF?"`, `repeated=false`, `deleted=true`; successful subsequent turn).
 
 Test: `git diff --check` - PASS.

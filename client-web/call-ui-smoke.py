@@ -80,7 +80,7 @@ def capture(token):
             assert page.locator('#settings').is_visible()
             page.locator('#settings-done').click()
             assert page.locator('[data-mode], #pair-call, #pair-request, #memory-aid, #caregiver-link').count() == 0
-            assert page.locator('.intro-note').inner_text() == 'Video and pictures are not saved unless you turn on Rewind or the memory aid.'
+            assert page.locator('.intro-note').inner_text() == 'A companion call that watches, points, and guides as you learn.'
             assert_in_view(page, '#ring-hint')
             page.screenshot(path=str(OUT / f'after-start-{width}.png'))
             page.get_by_role('button', name='Call', exact=True).focus()

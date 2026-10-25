@@ -27,7 +27,7 @@ struct StartScreen: View {
                     .accessibilityLabel("Call")
                     .padding(.bottom, 36)
 
-                    Text("Video and pictures are not saved unless you turn on Rewind or the memory aid.")
+                    Text("A companion call that watches, points, and guides as you learn.")
                         .font(.footnote)
                         .foregroundStyle(Palette.text2)
                         .multilineTextAlignment(.center)
