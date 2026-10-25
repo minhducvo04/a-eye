@@ -608,25 +608,46 @@ class Rewind:
 
     @_call_cloud
     async def search_kept(self, query, limit=3):
-        """Hits in this owner's earlier kept calls ("Remember this call"), newest call first."""
-        if not self.cloud_allowed() or (self.owner == 'local' and not shared_demo_library()):
+        """Best hits in up to 360 saved clips, searched newest first within four seconds."""
+        if limit <= 0 or not self.cloud_allowed() or (self.owner == 'local' and not shared_demo_library()):
             return []
         past = {c['video_id']: (call, c) for call in kept_calls(self.owner)
                 if call.get('session_id') != self.session_id for c in call.get('clips', [])}
         if not past:
             return []
-        if self.index_id is None:
-            self.index_id = await self.client.ensure_index(self.index_name)
-        # TwelveLabs returns nothing for very long id filters: search the newest saved clips only.
-        newest = list(past)[-60:]  # kept file is in save order: the last entries are the newest calls
-        past = {v: past[v] for v in newest}
-        rows = await self.client.search(self.index_id, query, video_ids=list(past), limit=limit)
-        if not rows and self.index_name != INDEX_NAME:
-            # Saved calls may live in the shared index (open demo calls upload there), not this caller's own index.
-            shared = await self.client.ensure_index(INDEX_NAME)
-            rows = await self.client.search(shared, query, video_ids=list(past), limit=limit)
+        # Long TwelveLabs id filters return HTTP 400. Bound fan-out to six batches of 60.
+        newest = list(reversed(past))[:360]  # kept file is in save order
+        batches = [newest[i:i + 60] for i in range(0, len(newest), 60)]
+        results = [[] for _ in batches]
+
+        async def search_batch(index_id, number, video_ids):
+            try:
+                results[number] = await self.client.search(index_id, query, video_ids=video_ids, limit=limit)
+            except httpx.HTTPStatusError as exc:
+                event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
+                      where='rewind_search_kept', error=exc.response.status_code)
+            except Exception as exc:
+                event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
+                      where='rewind_search_kept', error=type(exc).__name__)
+
+        async def search_index(index_id):
+            await asyncio.gather(*(search_batch(index_id, n, ids) for n, ids in enumerate(batches)))
+
+        try:
+            # Includes index lookup and fallback; completed batches survive cancellation of slow ones.
+            async with asyncio.timeout(4):
+                if self.index_id is None:
+                    self.index_id = await self.client.ensure_index(self.index_name)
+                await search_index(self.index_id)
+                if not any(results) and self.index_name != INDEX_NAME:
+                    # Open demo calls may have uploaded saved clips to the shared index.
+                    shared = await self.client.ensure_index(INDEX_NAME)
+                    await search_index(shared)
+        except TimeoutError:
+            pass
+        rows = [row for batch in results for row in batch]
         hits = []
-        for row in sorted(rows, key=lambda r: r.get('rank', 99)):
+        for row in sorted(rows, key=lambda r: (r.get('rank') or 99, -(r.get('score') or 0))):
             hit = past.get(row.get('video_id'))
             if hit is None:
                 continue
@@ -636,6 +657,8 @@ class Rewind:
                              rank=row.get('rank'), video_id=row.get('video_id'), frame=None, candidates=[],
                              past_call=True, video_t_s=float(row.get('start', 0)),
                              call_started_wall=call.get('started_wall')))
+            if len(hits) >= limit:
+                break
         return hits
 
     @_call_cloud
