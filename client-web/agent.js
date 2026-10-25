@@ -1,18 +1,18 @@
-import { wireFlipCamera } from "./flip-camera.js";
-import { liveSettings } from './gemini-live.js';
-import { triggerClient } from './trigger.js';
-import { setupFamily } from './family-note.js';
-import { createValveCard } from './step-check.js';
-import { bootPairCamera, phoneMicRoute, setupPairCall } from './pair.js';
-import { callOwner, ownerHeaders, ownerQuery, resetCallOwner } from './call-owner.js';
+import { wireFlipCamera } from "./flip-camera.js?v=1792947000";
+import { liveSettings } from './gemini-live.js?v=1792947000';
+import { triggerClient } from './trigger.js?v=1792947000';
+import { setupFamily } from './family-note.js?v=1792947000';
+import { createValveCard } from './step-check.js?v=1792947000';
+import { bootPairCamera, phoneMicRoute, setupPairCall } from './pair.js?v=1792947000';
+import { callOwner, ownerHeaders, ownerQuery, resetCallOwner } from './call-owner.js?v=1792947000';
 // Agent call page. Speaks the v2 WebSocket contract on /ws2.
 // Frames exist only as the JPEG about to be sent. Nothing is written to storage.
 
-import { paintDraw, applyDraw, pruneDraw, viewTransform, visibleOps, targetLabels, splitByTargets } from "./draw.js";
-import { writeFrame } from "./live.js";
-import { agoLine, countAt, countLine, createMemoryApi, pastCallLine, placeFor, renderSplit } from "./memory.js";
-import { forgetRewind, initialRewind, nextRewind, NOTICE as REWIND_NOTICE, PROMPTS as REWIND_PROMPTS, showsRewindChip } from "./rewind.js";
-import { sharpCanvasSize } from "./overlay.js";
+import { paintDraw, applyDraw, pruneDraw, viewTransform, visibleOps, targetLabels, splitByTargets } from "./draw.js?v=1792947000";
+import { writeFrame } from "./live.js?v=1792947000";
+import { agoLine, countAt, countLine, createMemoryApi, pastCallLine, placeFor, renderSplit } from "./memory.js?v=1792947000";
+import { forgetRewind, initialRewind, nextRewind, NOTICE as REWIND_NOTICE, PROMPTS as REWIND_PROMPTS, showsRewindChip } from "./rewind.js?v=1792947000";
+import { sharpCanvasSize } from "./overlay.js?v=1792947000";
 import {
   AUDIO_FALLBACK_MS,
   ERROR_HTTPS,
@@ -20,7 +20,7 @@ import {
   createCallUi,
   fallbackDecision,
   replyLines,
-} from "./ui.js";
+} from "./ui.js?v=1792947000";
 import {
   bargeSpeech,
   dbfs,
@@ -39,12 +39,12 @@ import {
   noteTrackerMs,
   pushSay,
   shouldTrack,
-} from "./realtime.js";
-import { applyAnchors, createTracker, toGray } from "./track.js";
+} from "./realtime.js?v=1792947000";
+import { applyAnchors, createTracker, toGray } from "./track.js?v=1792947000";
 
-import { nextTurnState, statusLine } from "./turn.js";
-import { appendingLevel, LEVEL_HISTORY_COUNT, listeningLine, normalizedLevel, poolLevel, smoothedLevel, waveBars } from "./listen.js";
-import { capitalized, visibleWait, waitAfterAgentState, waitAfterTurn, waitCopy, waitPercent, waitProgress } from "./wait.js";
+import { nextTurnState, statusLine } from "./turn.js?v=1792947000";
+import { appendingLevel, LEVEL_HISTORY_COUNT, listeningLine, normalizedLevel, poolLevel, smoothedLevel, waveBars } from "./listen.js?v=1792947000";
+import { capitalized, visibleWait, waitAfterAgentState, waitAfterTurn, waitCopy, waitPercent, waitProgress } from "./wait.js?v=1792947000";
 import {
   chooseDevice,
   createLevelPreview,
@@ -57,7 +57,7 @@ import {
   saveChoice,
   sinkSupported,
   videoConstraints,
-} from "./devices.js";
+} from "./devices.js?v=1792947000";
 
 // Same names and order as iOS. Sink is the hero; extras require the server flag.
 const CORE_MODES = [
@@ -2664,7 +2664,7 @@ function boot() {
 
   async function rebuildVoice() {
     try {
-      const mod = await import("./voice.js");
+      const mod = await import("./voice.js?v=1792947000");
       if (voice && typeof voice.stopListening === "function") voice.stopListening();
       if (!mod || typeof mod.createVoice !== "function") return null;
       const next = mod.createVoice(voiceOptions());

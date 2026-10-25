@@ -1,4 +1,4 @@
-import { accountAPI } from './account-api.js';
+import { accountAPI } from './account-api.js?v=1792947000';
 
 const api = accountAPI();
 const status = document.getElementById('account-status');
