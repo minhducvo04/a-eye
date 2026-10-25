@@ -8,6 +8,7 @@ import pytest
 
 from server import planner
 from server.test_planner import setup, plan
+from server.test_live_guide import prompts, say_user
 
 # Keep the prose and whitespace as emitted in a realistic text fallback.
 FENCED = '''```json
@@ -41,7 +42,7 @@ def test_haiku_like_rejections_log_only_reason(monkeypatch, tmp_path, capsys, ra
 
     async def trial():
         async def complete(system, evidence):
-            return 'Research notes.' if system == planner.RESEARCH else raw
+            return raw
         b, emitted, fixed, wire, fake, store, points = setup(monkeypatch, tmp_path, complete)
         try:
             b.guide.observe('help me fix my headphones')
@@ -105,6 +106,45 @@ def test_pending_next_includes_provider_idle_in_three_second_budget(monkeypatch,
             assert monotonic() - before < 3.4
             assert not b.blocked and not b.guide.planner.task.done()
             assert wire[-1]['clientContent']['turnComplete'] is True
+        finally:
+            await b.guide.close()
+            await b.prefetch.close()
+    asyncio.run(trial())
+
+
+def test_plan_lands_during_freeform_reply_and_guides_next_turn(monkeypatch, tmp_path):
+    async def trial():
+        started, release = asyncio.Event(), asyncio.Event()
+
+        async def slow(*args):
+            started.set()
+            await release.wait()
+            return plan()
+        b, emitted, fixed, wire, fake, store, points = setup(monkeypatch, tmp_path, slow)
+        try:
+            await b.handle({'serverContent': {'inputTranscription': {
+                'text': 'help me fix my headphones', 'finished': True}}})
+            await started.wait()
+            blob = dict(mimeType='audio/pcm;rate=24000',
+                        data=base64.b64encode(b'\x01\x00' * 7200).decode())
+            await b.handle({'serverContent': {
+                'outputTranscription': {'text': 'Let us take a look.'},
+                'modelTurn': {'parts': [{'inlineData': blob}]}}})
+            assert not b.blocked and not b.guide.guide
+            assert any(m['type'] == 'audio' for m in emitted)
+            emitted.clear()
+            release.set()
+            await b.guide.planner.task
+            assert b.guide.kind == 'plan' and not b.blocked and not prompts(wire)
+            await b.handle({'serverContent': {
+                'outputTranscription': {'text': 'Keep it disconnected.'},
+                'modelTurn': {'parts': [{'inlineData': blob}]}}})
+            assert any(m['type'] == 'audio' for m in emitted)
+            await b.handle({'serverContent': {'turnComplete': True}})
+            assert any('GUIDE v' in json.dumps(m) for m in wire)
+            b._reset_reply()
+            await say_user(b, 'next')
+            assert 'step 2 of 2' in prompts(wire)[-1] and not fixed
         finally:
             await b.guide.close()
             await b.prefetch.close()

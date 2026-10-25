@@ -14,6 +14,7 @@ from server.test_live_guide import bridge_for, details, prompts, say_user
 def isolated_planner(monkeypatch, tmp_path):
     monkeypatch.delenv('PLANNER', raising=False)
     monkeypatch.delenv('PLANNER_MODEL', raising=False)
+    monkeypatch.delenv('PLANNER_TIMEOUT_S', raising=False)
     monkeypatch.setenv('PLANNER_CACHE_PATH', str(tmp_path / 'default-plans.json'))
     monkeypatch.setattr(planner, '_CACHE', None)
 
@@ -41,8 +42,7 @@ class FakeLLM:
 
     async def __call__(self, system, evidence):
         self.calls.append((system, json.loads(evidence)))
-        return ('Facts: check the connector without power.' if len(self.calls) % 2 else
-                json.dumps(self.result or plan(self.calls[-1][1]['task'])))
+        return json.dumps(self.result or plan(self.calls[-1][1]['task']))
 
 
 def setup(monkeypatch, tmp_path, llm=None):
@@ -109,7 +109,7 @@ def test_real_live_repair_chunks_use_app_client_and_advance(monkeypatch, tmp_pat
             await b.handle({'serverContent': {'turnComplete': True}})
             assert b.guide.planner.task is not None, 'finished Live utterance must request a plan'
             await b.guide.planner.task
-            assert len(fake.calls) == 2 and len(clients) == 1
+            assert len(fake.calls) == 1 and len(clients) == 1
             assert fake.calls[0][1]['question'] == ''.join(chunks)
             assert fake.calls[0][1]['task'] == 'fix the wire on the headphones near the plug'
             assert 'Guide: plan 1/2' in details(emitted)
@@ -118,8 +118,8 @@ def test_real_live_repair_chunks_use_app_client_and_advance(monkeypatch, tmp_pat
             await say_user(b, 'Okay, what is the next step?')
             assert b.guide.guide.index == 1
             assert 'Guide: plan 2/2' in details(emitted)
-            assert 'step 2 of 2' in prompts(wire)[-1] and len(fake.calls) == 2
-            assert options == [dict(max_retries=0, timeout=planner.TIMEOUT)] * 2
+            assert 'step 2 of 2' in prompts(wire)[-1] and len(fake.calls) == 1
+            assert options == [dict(max_retries=0, timeout=planner.TIMEOUT)]
         finally:
             await b.guide.close()
             await b.prefetch.close()
@@ -151,7 +151,7 @@ def test_live_intent_packets(monkeypatch, tmp_path, text, expected):
             if expected:
                 assert b.guide.planner.task is not None
                 await b.guide.planner.task
-                assert len(fake.calls) == 2
+                assert len(fake.calls) == 1
                 assert b.guide.guide.task == expected and b.guide.guide.index == 0
                 if result:
                     assert b.guide.guide.plan == result
@@ -195,13 +195,13 @@ def test_live_timed_transcription_plans_before_reply_ends(monkeypatch, tmp_path,
                     await b.handle({'serverContent': {'outputTranscription': {'text': ' More.'}}})
             assert b.guide.planner.task is not None, 'final input must plan before model turnComplete'
             await b.guide.planner.task
-            assert len(fake.calls) == 2
+            assert len(fake.calls) == 1
             assert fake.calls[0][1]['question'] == ''.join(chunks)
             assert b.guide.guide.task == 'fix the wire on the headphones near the plug'
             assert b.guide.guide.index == 0
             await b.handle({'serverContent': {'turnComplete': True}})
             await say_user(b, 'Okay, what is the next step?')
-            assert b.guide.guide.index == 1 and len(fake.calls) == 2
+            assert b.guide.guide.index == 1 and len(fake.calls) == 1
         finally:
             await b.memory.close()
             await b.guide.close()
@@ -265,7 +265,7 @@ def test_live_interleaved_late_transcript_retries_and_next_waits(monkeypatch, tm
             await asyncio.wait_for(followup, PLAN_WAIT + .5)
             assert fake.calls[0][1]['question'] == text
             assert fake.calls[0][1]['task'] == 'fix the wire on the headphones near the plug'
-            assert len(fake.calls) == 2 and b.guide.guide.index == 0
+            assert len(fake.calls) == 1 and b.guide.guide.index == 0
             assert 'step 1 of 2' in prompts(wire)[-1] and not fixed
         finally:
             await b.memory.close()
@@ -339,7 +339,7 @@ def test_live_next_waits_for_pending_plan(monkeypatch, tmp_path, outcome):
                 assert b.guide.guide.index == 0
                 assert 'step 1 of 2' in prompts(wire)[-1]
                 assert plan()['steps'][0]['say'] in prompts(wire)[-1]
-                assert len(fake.calls) == 2 and not b.blocked and not fixed
+                assert len(fake.calls) == 1 and not b.blocked and not fixed
                 b._reset_reply()
                 await say_user(b, 'next')
                 assert b.guide.guide.index == 1
@@ -456,7 +456,7 @@ def test_live_planner_diagnostics_without_client(monkeypatch, capsys, text, outc
     asyncio.run(trial())
     events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     reasons = [e['reason'] for e in events if e['event'] == 'planner']
-    assert [{k: v for k, v in r.items() if k not in ('task_hash', 'chars')} for r in reasons] == outcomes
+    assert [{k: v for k, v in r.items() if k not in ('task_hash', 'chars', 'call_ms')} for r in reasons] == outcomes
     assert all(r['chars'] == len(text) for r in reasons)
     assert 'headphones' not in json.dumps(events) and 'hello Dad' not in json.dumps(events)
 
@@ -507,7 +507,7 @@ def test_live_immediate_answer_idle_publish_advance_and_good_cache(monkeypatch, 
         await b.guide.planner.task
         await asyncio.sleep(0)
         assert b.guide.kind == 'plan' and not b.blocked and not fixed
-        assert len(fake.calls) == 2
+        assert len(fake.calls) == 1
         assert fake.calls[0][1]['scene'] == 'A synthetic headphone cable.'
         assert 'NEVER SEND' not in json.dumps(fake.calls)
         assert any(m.get('text') == 'Disconnect the headphones first.' for m in emitted)
@@ -529,7 +529,7 @@ def test_live_immediate_answer_idle_publish_advance_and_good_cache(monkeypatch, 
         b._reset_reply()
         b.guide.observe('help me fix my headphones')
         await b.guide.planner.task
-        assert b.guide.guide.index == 0 and not b.guide.guide.completed and len(fake.calls) == 2
+        assert b.guide.guide.index == 0 and not b.guide.guide.completed and len(fake.calls) == 1
         await b.guide.close()
     asyncio.run(trial())
 
@@ -589,7 +589,7 @@ def test_cache_hit_revalidated_and_no_model(monkeypatch, tmp_path):
 
 
 def test_timeout_falls_back_and_never_retries_same_task(monkeypatch, tmp_path, capsys):
-    monkeypatch.setattr(planner, 'TIMEOUT', .01)
+    monkeypatch.setenv('PLANNER_TIMEOUT_S', '.01')
 
     async def trial():
         calls = []
@@ -650,7 +650,7 @@ def test_bad_step_replaced_before_install_and_cache(monkeypatch, tmp_path, capsy
         b, emitted, fixed, wire, fake, store, points = setup(monkeypatch, tmp_path, FakeLLM(bad))
         b.guide.observe('help me fix my headphones')
         await b.guide.planner.task
-        assert len(fake.calls) == 2 and b.guide.guide and not b.blocked
+        assert len(fake.calls) == 1 and b.guide.guide and not b.blocked
         checked = b.guide.guide.plan
         assert len(checked['steps']) == 2 and checked['steps'][0] == bad['steps'][0]
         assert checked['steps'][1]['say'] == planner.SAFETY_LINES['hot_tool']
@@ -721,25 +721,41 @@ def test_personal_plan_rejected():
         planner.validate(value, value['task'])
 
 
-def test_second_call_shares_total_timeout(monkeypatch, tmp_path):
-    monkeypatch.setattr(planner, 'TIMEOUT', .04)
+@pytest.mark.parametrize('delay,expected', [(15, 'valid'), (25, 'timeout')])
+def test_slow_single_call_budget(monkeypatch, tmp_path, capsys, delay, expected):
+    from time import monotonic
 
     async def trial():
         calls = []
 
         async def slow(system, evidence):
             calls.append(system)
-            await asyncio.sleep(.025)
-            return 'Facts' if len(calls) == 1 else json.dumps(plan())
+            await asyncio.sleep(delay)
+            return plan(count=8)
         b, emitted, fixed, wire, fake, store, points = setup(monkeypatch, tmp_path, slow)
+        started = monotonic()
         b.guide.observe('help me fix my headphones')
         await b.guide.planner.task
-        assert len(calls) == 2 and not b.guide.guide and not store.rows and not b.blocked
+        elapsed = monotonic() - started
+        assert len(calls) == 1 and not b.blocked
+        if expected == 'valid':
+            assert 15 <= elapsed < 20
+            assert len(b.guide.guide.plan['steps']) == 8 and store.rows
+        else:
+            assert 20 <= elapsed < 23
+            assert not b.guide.guide and not store.rows
+        await b.guide.close()
     asyncio.run(trial())
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    result = [e for e in events if e['event'] == 'planner'][-1]
+    assert result['reason']['result'] == expected
+    assert type(result['reason']['call_ms']) is int
+    expected_ms = min(delay, 20) * 1000
+    assert expected_ms - 100 <= result['reason']['call_ms'] < expected_ms + 3000
 
 
-@pytest.mark.parametrize('model', [None, 'fixture-model'])
-def test_sdk_two_calls_text_only_retries_off(monkeypatch, tmp_path, model):
+@pytest.mark.parametrize('model,budget', [(None, None), ('fixture-model', '30')])
+def test_sdk_one_call_text_only_retries_off(monkeypatch, tmp_path, model, budget):
     from server import llm
     calls, options = [], []
 
@@ -754,8 +770,7 @@ def test_sdk_two_calls_text_only_retries_off(monkeypatch, tmp_path, model):
 
         async def create(self, **kwargs):
             calls.append(kwargs)
-            block = (SimpleNamespace(type='text', text='Facts') if len(calls) == 1 else
-                     SimpleNamespace(type='tool_use', name='submit_plan', input=plan()))
+            block = SimpleNamespace(type='tool_use', name='submit_plan', input=plan())
             return SimpleNamespace(content=[block], usage=None)
 
     async def trial():
@@ -763,19 +778,22 @@ def test_sdk_two_calls_text_only_retries_off(monkeypatch, tmp_path, model):
         monkeypatch.setenv('ANTHROPIC_API_KEY', 'synthetic')
         if model:
             monkeypatch.setenv('PLANNER_MODEL', model)
+        if budget:
+            monkeypatch.setenv('PLANNER_TIMEOUT_S', budget)
         monkeypatch.setattr(llm, '_shared_anthropic', lambda: Client())
         b.guide.planner.complete = planner.claude
         b.guide.observe('help me fix my headphones')
         await b.guide.planner.task
-        assert b.guide.kind == 'plan' and len(calls) == 2
+        assert b.guide.kind == 'plan' and len(calls) == 1
         assert all(c['model'] == (model or 'claude-haiku-5-5')
                    and isinstance(c['messages'][0]['content'], str) for c in calls)
-        assert all(o == dict(max_retries=0, timeout=12) for o in options)
-        assert 'tools' not in calls[0]
-        assert calls[1]['tool_choice'] == {'type': 'tool', 'name': 'submit_plan'}
-        assert [t['name'] for t in calls[1]['tools']] == ['submit_plan']
+        assert all(o == dict(max_retries=0, timeout=float(budget or 20)) for o in options)
+        assert calls[0]['max_tokens'] == 700
+        assert calls[0]['temperature'] == .1
+        assert calls[0]['tool_choice'] == {'type': 'tool', 'name': 'submit_plan'}
+        assert [t['name'] for t in calls[0]['tools']] == ['submit_plan']
         from jsonschema import validate
-        validate(plan(), calls[1]['tools'][0]['input_schema'])
+        validate(plan(), calls[0]['tools'][0]['input_schema'])
         await b.guide.close()
     asyncio.run(trial())
 
@@ -801,7 +819,7 @@ def test_recorded_headphone_repair_installs_and_reloads(monkeypatch, tmp_path):
                 b._reset_reply()
                 await say_user(b, 'next')
                 assert b.guide.guide.index == index
-            assert len(fake.calls) == 2 and not fixed
+            assert len(fake.calls) == 1 and not fixed
         finally:
             await b.guide.close()
             await b.prefetch.close()

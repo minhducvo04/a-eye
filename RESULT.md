@@ -483,3 +483,29 @@ before the final task-cause logging additions. Logs, failed node IDs and behavio
 are recorded in [the round 7 report](docs/results/planner-live.md).
 Limits: no `.env` read, external network, real provider call, raw media, push,
 merge or deployment. Local commit on `pkg/planner-live7` only.
+
+
+## planner-live8 — 2026-10-25
+
+One forced `submit_plan` call merges research and planning, with 700 output tokens,
+temperature 0.1, no retries, and `PLANNER_TIMEOUT_S` defaulting to 20 seconds.
+Planner result metadata includes numeric `reason.call_ms`. Existing speech and
+guide handoff code remains unchanged; synthetic audio verifies the current reply
+continues when the plan lands and the next guide turn uses it.
+
+Files changed: `server/planner.py`, `server/test_planner.py`,
+`server/test_planner_output.py`, `docs/results/planner-live.md`, `RESULT.md`.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py server/test_planner_output.py -k 'sdk_one_call or diagnostics_without_client or lands_during' --tb=short` - PASS
+(5 passed, 99 deselected in 0.98s; summary read).
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(1273 passed, 16 failed, 2 warnings in 100.67s; summary and failure evidence read).
+All planner tests pass. The 15-second fake installs eight steps before 20 seconds;
+the 25-second fake times out at 20 seconds without installation or caching.
+All 16 failures match round 7's denied sockets/downstream hazard-state failure.
+Test: `git diff --check` - PASS.
+
+Full log: `/private/tmp/planner-live8-full.log`. Details and failed node IDs:
+[planner-live report](docs/results/planner-live.md).
+Limits: no `.env` read, external network, real provider call, push or deployment.
+Real Haiku latency/output fit remains unverified. Local commit only.

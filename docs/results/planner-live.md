@@ -601,3 +601,69 @@ Changed files: `server/planner.py`, `server/safety.py`, `server/test_planner.py`
 Limits: offline synthetic providers/fixtures only; no `.env` read, external network,
 real API call, raw media, push, merge or deployment. The next real Haiku call is
 not verified by this offline work. Local commit only.
+
+
+## Planner Live round 8 — 2026-10-25
+
+Merged background research and planning into one text-only forced `submit_plan`
+call. The prompt considers task facts, tools, parts, mistakes and safety directly;
+no separate research response or second call remains. Haiku remains the default,
+SDK retries remain disabled, `max_tokens=700`, and `temperature=0.1`.
+`PLANNER_TIMEOUT_S` now configures the whole build deadline and SDK timeout;
+the default is 20 seconds. The final planner event retains total `ms` and adds
+numeric `reason.call_ms` for the single completion attempt, including timeout or
+cancellation; cache hits have no call timing. No model text or evidence is logged.
+
+Live speech/guide production code is unchanged. A regression exercises synthetic
+Live audio before and after the plan lands during an active reply, then verifies
+GUIDE publication and the next guided turn. The existing bounded wait for an
+explicit pending-plan “next” request remains unchanged.
+
+Verification: the new single-call SDK regression failed twice on the original
+implementation (two calls instead of one), then passed after the fix. Real-duration
+slow fakes verify an eight-step plan at 15 seconds completes before 20 seconds,
+and a 25-second completion is cancelled at the 20-second deadline without cache
+or guide installation. Configured timeout, forced tool, token limit, temperature,
+zero retries, and numeric call timing are asserted.
+
+Initial targeted run: 102 passed, 1 failed in 50.01s. The sole failure was an old
+exact log-shape assertion missing the new `call_ms` metadata; updated its metadata
+filter. Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py server/test_planner_output.py -k 'sdk_one_call or diagnostics_without_client or lands_during' --tb=short` - PASS
+(5 passed, 99 deselected in 0.98s; summary read).
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(1273 passed, 16 failed, 2 warnings in 100.67s; exit 1; summary and failures read).
+All planner tests pass, including both real-duration slow fakes and the handoff
+regression. The same 16 failed node IDs as round 7 remain: 15 denied loopback
+socket operations and one hazard-state KeyError after Live startup PermissionError.
+Warnings concern short synthetic JWT keys. No network permission was requested.
+Test: `git diff --check` - PASS.
+
+Logs: `/private/tmp/planner-live8-targeted.log` (initial assertion mismatch),
+`/private/tmp/planner-live8-full.log` (final source and complete suite).
+
+Failed node IDs:
+
+- `server/test_bg_context.py::test_live_publishes_context_while_next_build_waits_and_cancels_on_close`
+- `server/test_cloud_meter.py::test_real_websocket_send_boundary`
+- `server/test_gemini_live.py::test_fake_live_recent_step_transcripts_and_scene_stay_local`
+- `server/test_gemini_live.py::test_fake_live_wire_audio_tools_captions_and_revocation`
+- `server/test_gemini_live.py::test_reconnect_once_then_fallback_and_close`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[False-False]`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[True-False]`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[True-True]`
+- `server/test_limits.py::test_live_minutes_stop_idle_connection`
+- `server/test_live_prefetch.py::test_slow_tool_does_not_delay_audio`
+- `server/test_live_prefetch.py::test_streaming_prefetch_card_cache_and_idle_publication`
+- `server/test_live_streaming.py::test_fake_live_streams_before_complete_and_stops_mid_reply[False]`
+- `server/test_live_streaming.py::test_fake_live_streams_before_complete_and_stops_mid_reply[True]`
+- `server/test_live_streaming.py::test_ws2_hazard_sends_stop_caption_and_fixed_audio`
+- `server/test_step_check.py::test_real_loopback_api_to_qwen_protocol_keeps_pictures_zero`
+- `scripts/test_ready.py::test_live_pair_request_on_fake_socket`
+
+Changed files: `server/planner.py`, `server/test_planner.py`,
+`server/test_planner_output.py`, `docs/results/planner-live.md`, `RESULT.md`.
+Limits: offline synthetic provider/Live packets only; no `.env` read, external
+network, real Haiku call, push, merge, deployment, or physical-device proof.
+Actual Haiku latency and eight-step output within 700 tokens remain unverified.
+Local commit only on `pkg/planner-live8`.
