@@ -49,6 +49,10 @@ HINTS = {
               'Clear your fingers; test the door.'),
 }
 
+# What each step asks the camera to show; the Live guide boxes it when the step is given.
+TARGETS = {'sink': ('tap', 'valve', 'valve', 'supply line', 'connection', 'label', 'towel'),
+           'hinge': ('hinge', 'screw', 'hinge'),
+           'breaker': ('appliance', 'label', 'label')}
 
 @dataclass
 class HomeGuide:
