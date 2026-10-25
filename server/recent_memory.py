@@ -48,7 +48,7 @@ def age_seconds(text):
     return value * (60 if match[2].lower().startswith('minute') else 1)
 
 
-def source_for(text, rewind_on=False):
+def source_for(text, rewind_on=False, *, default_recent=True):
     """Explicit temporal scope wins over the optional semantic intent router."""
     if LONG.search(text):
         return 'long-term'
@@ -60,7 +60,7 @@ def source_for(text, rewind_on=False):
         return 'recent'
     if OPENING.search(text) or re.search(r'\b(earlier|before|start of (?:the|this) call)\b', text, re.I):
         return 'rewind' if rewind_on else 'recent'
-    if re.search(r"\b(what did i)\b", text, re.I):
+    if default_recent and re.search(r"\b(what did i)\b", text, re.I):
         return 'recent'
     return None
 
@@ -317,7 +317,9 @@ async def answer(session, question, vision=None, *, on_hit=None, scope=None):
     from server.privacy import twelvelabs_allowed
     rewind = getattr(session, 'rewind', None)
     on = bool(rewind and rewind.on and twelvelabs_allowed() and not getattr(session, 'private', False))
-    requested = source_for(question, on) or scope or 'recent'
+    requested = source_for(question, on, default_recent=False) or scope or source_for(question, on) or 'recent'
+    if requested == 'past_calls':
+        requested = 'long-term'
     if requested == 'rewind' and not on:
         requested = 'recent'
     if requested == 'recent':
@@ -345,6 +347,33 @@ async def answer(session, question, vision=None, *, on_hit=None, scope=None):
             return hit
         if guess:
             return guess
+    if requested == 'long-term' and rewind is not None:
+        from server.rewind import kept_calls, past_call_line, shared_demo_library
+        # Generic recall has no visual object to search. Remove question/temporal filler.
+        target = words(DAYS.sub('', LONG.sub('', question))) - {
+            'me', 'we', 'us', 'our', 'previous', 'session', 'can', 'could', 'tell', 'happen',
+            'anything', 'something', 'everything', 'thing', 'talk', 'discuss', 'about'}
+        if on and target:
+            try:
+                hits = await rewind.search_kept(question)
+                if hits:
+                    hit = dict(hits[0], sure=False, objects=[], alternatives=[h['t_s'] for h in hits[1:2]])
+                    if on_hit:
+                        await on_hit(hit)
+                    return dict(source='rewind', found=True, say=past_call_line(hit), t_s=hit['t_s'])
+            except Exception:
+                pass  # Search availability must not block the local text fallback.
+        owner = getattr(rewind, 'owner', None)
+        if owner is not None and (owner != 'local' or shared_demo_library()):
+            start, end, _ = window(question, session.recent_memory.started_wall)
+            calls = [c for c in kept_calls(owner) if c.get('session_id') != rewind.session_id
+                     and start <= c.get('started_wall', 0) < end]
+            latest = max(calls, key=lambda c: c.get('started_wall', 0), default={})
+            summary = latest.get('summary')
+            if isinstance(summary, str) and summary.strip():
+                prefix = 'Last call you showed me: ' if not DAYS.search(question) and not re.search(
+                    r'\b(yesterday|last week|last weekend|other day)\b', question, re.I) else 'In a saved call you showed me: '
+                return dict(source='kept-summary', found=True, say=prefix + summary[:1500])
     try:
         hit = await long_term(session, question)
     except Exception:

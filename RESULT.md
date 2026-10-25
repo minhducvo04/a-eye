@@ -1,3 +1,25 @@
+## Past-call recall — pkg/past-calls, 2026-10-25
+
+Saved calls now retain bounded local text; past-call questions search saved
+videos with consent or read the newest saved summary before the old fallback.
+WebSocket teardown snapshots text before clearing RAM. No UI changes.
+
+Files: `server/recent_memory.py`, `server/rewind.py`, `server/ws2.py`,
+`server/test_past_calls.py`, `docs/results/past-calls.md`, `RESULT.md`.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_past_calls.py` - PASS (10 passed; original 8 failed before fix).
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_past_calls.py server/test_recent_memory.py server/test_recall_review.py server/test_recall_pipeline.py` - PASS (40 passed before two additional acceptance checks).
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server` - FAIL (1144 passed, 15 failed, 2 warnings, 95.81s; summary read).
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server --lf --tb=line` - FAIL (14 denied loopback binds; one downstream Live startup assertion; 15 failed in 1.04s).
+Test: `git diff --check` - PASS.
+
+Limits: old saved calls cannot gain summaries offline; save a new call for generic
+recall. No `.env` reads, network access granted, real provider/device proof, push
+or deployment. Detailed behavior, evidence and failed nodes:
+[past-calls report](docs/results/past-calls.md).
+
+---
+
 ## Final product README rewrite
 
 Changed files: README.md and this RESULT.md entry. The README now describes the

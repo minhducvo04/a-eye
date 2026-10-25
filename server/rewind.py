@@ -261,7 +261,7 @@ def encode_mp4(frames):
 
 
 def _kept_path(owner):
-    # Kept-call index for one owner: TwelveLabs video ids and call times only, no media or transcripts.
+    # Kept-call index: video ids, call times and a bounded text summary; never media.
     from server.memory import person_id, root
     return root() / person_id(owner) / 'rewind_kept.json'
 
@@ -278,8 +278,32 @@ def shared_demo_library():
     return os.environ.get('A_EYE_DEMO_SHARED_MEMORY') == '1'
 
 
-async def _keep_and_record(rewind):
+def past_call_line(hit):
+    ago = max(0, time() - (hit.get('call_started_wall') or time()))
+    when = (f"{round(ago / 60)} minutes ago" if ago < 5400 else f"{round(ago / 3600)} hours ago"
+            if ago < 172800 else f"{round(ago / 86400)} days ago")
+    return f"I found it in a call you saved from about {when}, {fmt_offset(hit['t_s'])} into that call."
+
+
+def call_summary(rewind):
+    """Snapshot only observed captions and user questions, never helper claims or media."""
+    log = getattr(getattr(rewind, 'session', None), 'recent_memory', None)
+    captions, questions = [], []
+    for entry in reversed(list(getattr(log, 'entries', []))):
+        note = ' '.join(str(entry.get('note') or '').split())
+        if not note:
+            continue
+        if entry.get('kind') == 'scene' and note not in captions and len(captions) < 12:
+            captions.append(note)
+        elif entry.get('kind') == 'user' and note not in questions and len(questions) < 12:
+            questions.append(note)
+    asked = (' User questions: ' + '; '.join(reversed(questions)))[:500] if questions else ''
+    return '; '.join(reversed(captions))[:1500 - len(asked)] + asked
+
+
+async def _keep_and_record(rewind, summary=None):
     """'Remember this call': upload the rest, then remember the call's videos so later calls can search them."""
+    summary = call_summary(rewind) if summary is None else summary
     await rewind.flush(wait=True)
     # Live uploads may already be indexing when there are no pending clips to flush.
     while waits := [task for task in rewind.waits if not task.done()]:
@@ -290,7 +314,8 @@ async def _keep_and_record(rewind):
     if not clips:
         return
     calls = [c for c in kept_calls(rewind.owner) if c.get('session_id') != rewind.session_id]
-    calls.append(dict(session_id=rewind.session_id, started_wall=rewind.started_wall, clips=clips))
+    calls.append(dict(session_id=rewind.session_id, started_wall=rewind.started_wall, clips=clips,
+                      summary=summary[:1500]))
     path = _kept_path(rewind.owner)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(calls[-50:]))
@@ -584,6 +609,8 @@ class Rewind:
                 if call.get('session_id') != self.session_id for c in call.get('clips', [])}
         if not past:
             return []
+        if self.index_id is None:
+            self.index_id = await self.client.ensure_index(self.index_name)
         rows = await self.client.search(self.index_id, query, video_ids=list(past), limit=limit)
         hits = []
         for row in sorted(rows, key=lambda r: r.get('rank', 99)):
@@ -667,10 +694,7 @@ class Rewind:
         hit.pop('candidates', None)
         hit['alternatives'] = [h['t_s'] for h in hits[1:2]]
         if hit.get('past_call'):
-            ago = max(0, time() - (hit.get('call_started_wall') or time()))
-            when = (f"{round(ago / 60)} minutes ago" if ago < 5400 else f"{round(ago / 3600)} hours ago"
-                    if ago < 172800 else f"{round(ago / 86400)} days ago")
-            return f"I found it in a call you saved from about {when}, {fmt_offset(hit['t_s'])} into that call.", hit
+            return past_call_line(hit), hit
         if hit['sure']:
             return f"That was {fmt_offset(hit['t_s'])}. Here's the clip.", hit
         times = ' or '.join(fmt_offset(t) for t in [hit['t_s']] + hit['alternatives'])
@@ -833,7 +857,7 @@ class Registry:
             self.memories.detach(rewind.session_id)      # local memory stops writing when the call ends
         rewind.memory_writer = None
         if rewind.keep and rewind.on:
-            rewind.end_task = self.spawn(_keep_and_record(rewind))
+            rewind.end_task = self.spawn(_keep_and_record(rewind, call_summary(rewind)))
         elif any(c.video_id for c in rewind.clips) or rewind.waits or rewind.lock.locked():
             rewind.end_task = self.spawn(self._end_and_forget(rewind))
         else:
