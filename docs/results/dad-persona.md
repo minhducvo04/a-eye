@@ -31,11 +31,11 @@ Commands used the sibling checkout's existing Python environment. Tests exchange
 
 | Command | Result | Retained log |
 |---|---|---|
-| `make test PY=/Users/minhducvo/Projects/a-eye/.venv/bin/python` | **FAIL:** `1 failed, 1232 passed, 2 warnings in 62.63s (0:01:02)` | `/private/tmp/dad-persona-full-final.log` |
+| `make test PY=$HOME/Projects/a-eye/.venv/bin/python` | **FAIL:** `1 failed, 1232 passed, 2 warnings in 62.63s (0:01:02)` | `/private/tmp/dad-persona-full-final.log` |
 | `node --test client-web/` | **PASS:** `tests 165`, `pass 165`, `fail 0`, `skipped 0` | `/private/tmp/dad-persona-node-final.log` |
 | `swift test --package-path ios/AEyeCore` | **PASS:** `Executed 64 tests, with 0 failures (0 unexpected)` | `/private/tmp/dad-persona-swift.log` |
 | `xcodebuild -project ios/AEye/AEye.xcodeproj -scheme AEye -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath /private/tmp/dad-persona-build CODE_SIGNING_ALLOWED=NO build` | **PASS:** `** BUILD SUCCEEDED **` | `/private/tmp/dad-persona-xcode-final.log` |
-| `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_personas.py` | **PASS:** `5 passed in 0.97s` after allowing extra drop-in files in test expectations | `/private/tmp/dad-persona-registry-final.log` |
+| `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server/test_personas.py` | **PASS:** `5 passed in 0.97s` after allowing extra drop-in files in test expectations | `/private/tmp/dad-persona-registry-final.log` |
 | `git diff --check` | **PASS** | No output |
 
 The sole full-suite failure is `vision/test_gemini.py::test_recorded_payment_failure_is_reported_and_cleared`: missing `vision/fixtures/gemini_payment_required.json`. This is the same missing fixture recorded in [gemini-live.md](gemini-live.md); no vision file was edited, fixture invented, or test skipped. The vision owner needs to restore the original fixture. Make therefore stopped before its web target, which was run separately. Python warnings concern short synthetic JWT keys.
