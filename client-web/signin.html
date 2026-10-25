@@ -1,18 +1,52 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#000000">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <title>Sign in · A-eye</title><link rel="stylesheet" href="accounts.css">
+  <title>Sign in · A-eye</title>
+  <link rel="stylesheet" href="accounts.css">
 </head>
-<body><main>
-  <a href="agent.html">← Back to A-eye</a>
-  <h1>Your own space in A-eye</h1>
-  <p>Sign in to keep your settings and memories across calls, or try a temporary guest account.</p>
-  <button id="load-google" hidden>Sign in with Google</button><div id="google-button"></div>
-  <button id="guest" disabled>Continue as Guest</button>
-  <p>Guest accounts last 24 hours, with up to 100 turns and 10 turns per minute. Guest data is then deleted.</p>
-  <p id="account-status" role="status" aria-live="polite"></p>
-  <p><a href="my-data.html">My data — view, export or delete for free</a></p>
-</main><script type="module" src="accounts.js"></script></body>
+<body>
+  <header class="top">
+    <a class="back" href="agent.html" aria-label="Back to A-eye">
+      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+    </a>
+    <p class="wordmark" aria-hidden="true">A-eye</p>
+  </header>
+
+  <main>
+    <section class="card" aria-labelledby="signin-heading">
+      <p class="eyebrow">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="3"/><circle cx="12" cy="11" r="2.4"/><path d="M8 17c.9-1.5 2.3-2.2 4-2.2s3.1.7 4 2.2"/></svg>
+        Account
+      </p>
+      <h1 id="signin-heading">Your own space in A-eye</h1>
+      <p class="lead">Sign in to keep your settings and memories across calls, or try a temporary guest account.</p>
+
+      <div class="actions">
+        <button id="load-google" class="primary" hidden>Sign in with Google</button>
+        <div id="google-button"></div>
+        <button id="guest" disabled>Continue as Guest</button>
+      </div>
+      <p class="note">Guest accounts last 24 hours, with up to 100 turns and 10 turns per minute. Guest data is then deleted.</p>
+      <p id="account-status" class="status" role="status" aria-live="polite"></p>
+
+      <nav class="group" aria-label="Account links">
+        <a class="row" href="my-data.html">
+          <span>My data<span class="leak">View, export or delete for free</span></span>
+          <span aria-hidden="true">›</span>
+        </a>
+      </nav>
+
+      <p class="privacy">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3l7 3v5.5c0 4.4-3 8-7 9.5-4-1.5-7-5.1-7-9.5V6z"/></svg>
+        Video and pictures are never stored unless you turn on Rewind or the memory aid.
+      </p>
+    </section>
+  </main>
+  <script type="module" src="accounts.js"></script>
+</body>
 </html>
