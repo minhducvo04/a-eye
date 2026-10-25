@@ -2,6 +2,9 @@
 import asyncio
 import base64
 from io import BytesIO
+from shutil import which
+
+import pytest
 
 from PIL import Image, ImageDraw
 
@@ -31,6 +34,7 @@ def test_local_change_sees_an_arm_but_not_jitter():
     assert not local_change(None, base)
 
 
+@pytest.mark.skipif(which('ffmpeg') is None, reason='needs ffmpeg to encode the clip')
 def test_activity_opens_a_clip_and_the_check_tries_the_settled_frame():
     class Vision:
         def __init__(self):

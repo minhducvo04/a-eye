@@ -9,6 +9,8 @@ import {
   applyDraw,
   opToPixels,
   roleColor,
+  splitByTargets,
+  targetLabels,
   viewTransform,
   visibleOps,
 } from "./draw.js";
@@ -157,4 +159,22 @@ test("ttl_ms hides an op after it elapses and a draw-on finishes at 250 ms", () 
   assert.equal(born.progress, 0);
   assert.equal(done.progress, 1);
   assert.equal(visibleOps(state, 5000).find((item) => item.op.kind === "box").fade, 1);
+});
+
+test("target labels come from target boxes only, longest first, and split the caption around them", () => {
+  const msg = { type: "draw", agent: "helper", seq: 1, ops: [
+    { kind: "box", id: "a", bbox: [0.1, 0.1, 0.2, 0.2], role: "target", label: "mug" },
+    { kind: "box", id: "b", bbox: [0.1, 0.1, 0.2, 0.2], role: "target", label: "blue mug" },
+    { kind: "box", id: "c", bbox: [0.5, 0.5, 0.2, 0.2], role: "info", label: "pill bottle" },
+  ] };
+  const state = applyDraw(null, msg, 0);
+  assert.deepEqual(targetLabels(state, 10), ["blue mug", "mug"]);
+  assert.deepEqual(splitByTargets("That's your Blue mug. Pills left of it.", targetLabels(state, 10)), [
+    { text: "That's your ", target: false },
+    { text: "Blue mug", target: true },
+    { text: ". Pills left of it.", target: false },
+  ]);
+  assert.deepEqual(splitByTargets("Nothing here", []), [{ text: "Nothing here", target: false }]);
+  assert.deepEqual(splitByTargets("", ["mug"]), []);
+  assert.deepEqual(splitByTargets("a (b) c", ["(b)"]), [{ text: "a ", target: false }, { text: "(b)", target: true }, { text: " c", target: false }]);
 });

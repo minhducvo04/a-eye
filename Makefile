@@ -20,7 +20,7 @@ test-py:
 	$(PY) -m pytest -q
 
 test-web:
-	@if ls client-web/*.test.mjs >/dev/null 2>&1; then node --test client-web/; else echo "no client-web tests yet"; fi
+	@if ls client-web/*.test.mjs >/dev/null 2>&1; then node --test client-web/*.test.mjs; else echo "no client-web tests yet"; fi
 
 vision:           ## vision service on :8001 (VISION_BACKEND=fake|ollama|auto)
 	VISION_BACKEND=$(VISION_BACKEND) $(PY) -m uvicorn vision.app:app --host 0.0.0.0 --port $(VISION_PORT)

@@ -7,7 +7,7 @@ import { callOwner, ownerHeaders, ownerQuery, resetCallOwner } from './call-owne
 // Agent call page. Speaks the v2 WebSocket contract on /ws2.
 // Frames exist only as the JPEG about to be sent. Nothing is written to storage.
 
-import { paintDraw, applyDraw, pruneDraw, viewTransform, visibleOps } from "./draw.js";
+import { paintDraw, applyDraw, pruneDraw, viewTransform, visibleOps, targetLabels, splitByTargets } from "./draw.js";
 import { writeFrame } from "./live.js";
 import { agoLine, countAt, countLine, createMemoryApi, placeFor, renderSplit } from "./memory.js";
 import { fetchRecap, forgetRewind, initialRewind, nextRewind, NOTICE as REWIND_NOTICE, PROMPTS as REWIND_PROMPTS, renderRecap, showsRewindChip } from "./rewind.js";
@@ -92,6 +92,38 @@ function boot() {
   const still = document.getElementById("still");
   const drawCanvas = document.getElementById("draw");
   const callEl = document.getElementById("call");
+  // Controls fold into one button after a short idle time so the caption has the lower screen.
+  const CONTROLS_HIDE_MS = 3000;
+  const controlsBar = document.getElementById("controls");
+  const controlsToggle = document.getElementById("controls-toggle");
+  let controlsTimer = 0;
+  function setControls(collapsed) {
+    callEl.classList.toggle("controls-collapsed", collapsed);
+    controlsToggle.setAttribute("aria-expanded", String(!collapsed));
+    controlsToggle.setAttribute("aria-label", collapsed ? "Show controls" : "Hide controls");
+    controlsToggle.setAttribute("title", collapsed ? "Show controls" : "Hide controls");
+  }
+  function armControls() {
+    window.clearTimeout(controlsTimer);
+    setControls(false);
+    controlsTimer = window.setTimeout(() => setControls(true), CONTROLS_HIDE_MS);
+  }
+  function stopControls() {
+    window.clearTimeout(controlsTimer);
+    setControls(false);
+  }
+  controlsToggle.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (callEl.classList.contains("controls-collapsed")) armControls();
+    else { window.clearTimeout(controlsTimer); setControls(true); }
+  });
+  // Using any control keeps the bar open a little longer; it folds again 3 s after the last touch.
+  for (const type of ["pointerdown", "focusin"]) {
+    controlsBar.addEventListener(type, (event) => {
+      if (event.target === controlsToggle || event.target?.closest?.("#controls-toggle")) return;
+      if (!callEl.classList.contains("controls-collapsed")) armControls();
+    });
+  }
   const ringEl = document.getElementById("ring");
   const ringTitle = document.getElementById("ring-title");
   const ringHint = document.getElementById("ring-hint");
@@ -161,13 +193,14 @@ function boot() {
   }
 
   let sessionId = randomId();
-  const family = setupFamily({ session: () => sessionId,
+  // The People panel is not on the call page any more; without it the family feature is a no-op.
+  const family = document.getElementById('family-panel') ? setupFamily({ session: () => sessionId,
     speak: text => voice.speak("family-note", text, { localOnly: true }), request: async (path, data) => {
     const result = await apiFetch(path, data);
     const body = await result.json();
     if (!result.ok) throw new Error(body.detail || 'Family note unavailable.');
     return body;
-  } });
+  } }) : { consume: () => false, complete() {} };
   const params = new URLSearchParams(location.search);
   // Server voice (Cartesia when keyed, else Kokoro on the box) by default; the browser voice is the last resort.
   // ?tts=cartesia means server TTS with a Cartesia voice from /api/voices.
@@ -213,6 +246,8 @@ function boot() {
   let retryTimer = 0;
   let reconnectDelay = 500;
   let turn = nextTurnState(null, {}, Date.now());
+  // Proof counters are no longer shown on the call page; keep them when a page still has the nodes.
+  const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
   async function refreshProof() {
     const proofSession = sessionId;
     try {
@@ -220,13 +255,13 @@ function boot() {
       if (!response.ok) throw new Error('Proof unavailable');
       const proof = await response.json();
       if (proofSession !== sessionId) return;
-      document.getElementById('proof-pictures').textContent = `Pictures saved: ${proof.pictures_saved ?? 'unknown'}`;
-      document.getElementById('proof-cloud-calls').textContent = `Cloud AI calls: ${proof.cloud_ai_calls ?? 'unknown'}`;
-      document.getElementById('proof-cloud-bytes').textContent = `Bytes to cloud: ${proof.bytes_to_cloud ?? 'unknown'}`;
+      setText('proof-pictures', `Pictures saved: ${proof.pictures_saved ?? 'unknown'}`);
+      setText('proof-cloud-calls', `Cloud AI calls: ${proof.cloud_ai_calls ?? 'unknown'}`);
+      setText('proof-cloud-bytes', `Bytes to cloud: ${proof.bytes_to_cloud ?? 'unknown'}`);
     } catch {
-      document.getElementById('proof-pictures').textContent = 'Pictures saved: unknown';
-      document.getElementById('proof-cloud-calls').textContent = 'Cloud AI calls: unknown';
-      document.getElementById('proof-cloud-bytes').textContent = 'Bytes to cloud: unknown';
+      setText('proof-pictures', 'Pictures saved: unknown');
+      setText('proof-cloud-calls', 'Cloud AI calls: unknown');
+      setText('proof-cloud-bytes', 'Bytes to cloud: unknown');
     }
   }
   refreshProof();
@@ -659,7 +694,7 @@ function boot() {
       if (message.detail === 'Stopped by code') document.getElementById('proof-safety')?.classList.remove('hidden');
       if (message.detail === 'Home: complete') family.complete('sink');
       if (message.detail === 'Home: sink') { pack = 'home'; packLabel.textContent = 'Sink'; }
-      if (message.detail?.startsWith('Brain: ')) document.getElementById('proof-brain').textContent = message.detail;
+      if (message.detail?.startsWith('Brain: ')) setText('proof-brain', message.detail);
       wait = waitAfterTurn(wait, message, now);
       if (message.stage === "failed" && message.detail) ui.dispatch({ type: "error", message: String(message.detail) });
       if (message.stage === "received") pendingText = null;
@@ -683,6 +718,7 @@ function boot() {
       if (drawState !== before) {
         const changed = Array.isArray(message.ops) ? message.ops : [];
         commitTracker("draw", message.seq, null, changed);
+        renderCall();
       }
       return;
     }
@@ -1635,6 +1671,7 @@ function boot() {
     ui.dispatch({ type: "pack", pack: next });
     picker.classList.add("hidden");
     callEl.classList.remove("hidden");
+    armControls();
     voice = await rebuildVoice();
     if (voice && !voice.supported.stt && stt !== "server") {
       stt = "server";
@@ -1703,6 +1740,7 @@ function boot() {
     closeSheets();
     permissionEl.classList.add("hidden");
     overlayEl.classList.add("hidden");
+    stopControls();
     callEl.classList.add("hidden");
     picker.classList.remove("hidden");
     renderLink();
@@ -1874,9 +1912,19 @@ function boot() {
   function renderReplies(st) {
     repliesEl.replaceChildren();
     const lines = replyLines(st);
+    // Words that name a boxed object take the box colour, so the reader links the sentence to the outline.
+    const targets = targetLabels(drawState, Date.now());
     lines.forEach((line, i) => {
       if (i) repliesEl.append(document.createTextNode(" "));
-      repliesEl.append(el("span", line.active ? "line active" : "line", line.text));
+      const cls = line.active ? "line active" : "line";
+      const runs = splitByTargets(line.text, targets);
+      if (!runs.some((run) => run.target)) {
+        repliesEl.append(el("span", cls, line.text));
+        return;
+      }
+      const span = el("span", cls, "");
+      for (const run of runs) span.append(run.target ? el("em", "target", run.text) : document.createTextNode(run.text));
+      repliesEl.append(span);
     });
     const last = lines[lines.length - 1];
     const shopper = Boolean(last && last.speaker === "Shopper");
@@ -2167,6 +2215,12 @@ function boot() {
     button.textContent = prompt.label;
     button.addEventListener("click", () => {
       togglePrompts(false);
+      if (!typedEl) {
+        ui.dispatch({ type: "final", text: prompt.text, now: Date.now() });
+        renderCall();
+        sendUser(prompt.text, "typed");
+        return;
+      }
       typedEl.value = prompt.text;
       typedEl.focus();
       typedEl.setSelectionRange(prompt.text.length, prompt.text.length);
@@ -2206,7 +2260,7 @@ function boot() {
   document.getElementById("upload").addEventListener("change", (event) => {
     onUpload(event);
   });
-  document.getElementById("composer").addEventListener("submit", (event) => {
+  document.getElementById("composer")?.addEventListener("submit", (event) => {
     event.preventDefault();
     const text = typedEl.value;
     typedEl.value = "";

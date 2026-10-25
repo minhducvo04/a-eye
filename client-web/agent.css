@@ -432,13 +432,15 @@ svg .fill {
   margin: 0 auto;
 }
 
-/* CaptionCard.swift */
+/* CaptionCard.swift (web: a smaller card, fewer lines, no typed bar below it) */
 .caption {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 14px 16px;
+  gap: 4px;
+  padding: 10px 14px;
   border-radius: var(--r-caption);
+  max-width: 440px;
+  margin: 0 auto;
 }
 
 .eyebrow {
@@ -455,18 +457,23 @@ svg .fill {
 }
 
 .caption-text {
-  font-size: var(--fs-body);
+  font-size: var(--fs-subhead);
   font-weight: 500;
   line-height: 1.3;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 8;
-  line-clamp: 8;
+  -webkit-line-clamp: 5;
+  line-clamp: 5;
   overflow: hidden;
 }
 
 .caption-text:empty {
   display: none;
+}
+
+.caption-text .target {
+  font-style: normal;
+  color: var(--role-target);
 }
 
 .caption-text .pending {
@@ -715,6 +722,77 @@ svg .fill {
   align-items: center;
   justify-content: center;
   gap: 14px;
+}
+
+/* Folded controls (resting state): only the dots button on the left and the mic on the right stay, in the
+   same row, so the subtitle above keeps the whole width. Tapping the dots brings the full row back. */
+.call.controls-collapsed .bottom {
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.call.controls-collapsed .bottom > :not(#controls-toggle, #mic) {
+  display: none;
+}
+
+.call.controls-collapsed #mic {
+  width: 64px;
+  height: 64px;
+  box-shadow: 0 6px 20px rgba(142, 182, 255, 0.25);
+}
+
+#controls-toggle {
+  color: var(--text-2);
+}
+
+#controls-toggle svg {
+  width: 24px;
+  height: 24px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .bottom > .round {
+    transition: opacity 0.2s ease, transform 0.25s ease, width 0.2s ease, height 0.2s ease;
+  }
+
+  .call.controls-collapsed .bottom > .round {
+    animation: controls-dock 0.3s ease;
+  }
+}
+
+/* Phones: the expanded row drops the two desktop-only controls (pair a phone, hold-to-talk with Space) and
+   tightens so six buttons fit a 320 px screen. */
+@media (max-width: 480px) {
+  .bottom #pair-call,
+  .bottom #hold {
+    display: none;
+  }
+
+  .bottom {
+    gap: 8px;
+    padding: 0 2px;
+  }
+
+  .bottom .r56 {
+    width: 44px;
+    height: 44px;
+  }
+
+  .bottom #end-call {
+    width: 56px;
+    height: 56px;
+    margin: 0 2px;
+  }
+
+  .call.controls-collapsed #mic {
+    width: 64px;
+    height: 64px;
+  }
+}
+
+@keyframes controls-dock {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
 }
 
 #mic[data-muted="true"] {
@@ -1648,14 +1726,9 @@ body[data-mode="memory"] .lower {
   max-width: 640px;
 }
 
-body[data-mode="memory"] .caption {
-  padding: 18px 20px;
-}
-
-body[data-mode="memory"] .caption-text {
-  font-size: 23px;
-  line-height: 1.38;
-  font-weight: 500;
+body[data-mode="memory"] .call .caption-text {
+  font-size: 25px;
+  line-height: 1.36;
 }
 
 body[data-mode="memory"] .caption-error {
@@ -1873,8 +1946,66 @@ input[type="checkbox"][role="switch"]:disabled {
   background-color: rgba(8, 10, 14, 0.58);
 }
 
-.call .caption {
-  background-color: rgba(8, 10, 14, 0.66);
+/* Subtitle stage: the answer reads like a TV caption over the camera, no card. A soft fade at the foot of the
+   stage keeps white text readable over a bright counter. */
+.call::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 46%;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0.5) 45%, transparent);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.call > * {
+  position: relative;
+  z-index: 1;
+}
+
+.call .caption.glass {
+  background: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
+  padding: 0 8px;
+  max-width: none;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+}
+
+.call .caption-text {
+  font-size: 22px;
+  line-height: 1.32;
+  font-weight: 600;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9), 0 0 2px #000;
+}
+
+.call .caption-error {
+  justify-content: center;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9), 0 0 2px #000;
+}
+
+.call .listen.glass {
+  background: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
+  justify-content: center;
+  padding: 0;
+}
+
+.call .listen-text {
+  flex: 0 1 auto;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
+}
+
+/* Wider screens: keep the subtitle line length comfortable. */
+@media (min-width: 700px) {
+  .call .caption-text {
+    font-size: 24px;
+  }
 }
 
 /* ---------- Review d64c237 fixes ---------- */
