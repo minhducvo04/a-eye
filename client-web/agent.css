@@ -2168,15 +2168,134 @@ body.headset {
   .bottom:has(#flip-camera:not([hidden])) .r56 { width: 36px; height: 44px; }
 }
 
-/* One-button start: the Call button stands alone under the slogan. */
-.ring-hint.call-button {
-  font-size: 1.15rem;
-  font-weight: 600;
-  padding: 0.85rem 2.6rem;
+/* A quiet launcher: one type family, one accent, one action.
+   Design variance 5 / motion 4 / density 2. The verbs introduce the promise once. */
+.start-screen {
+  --start-bg: #101a19;
+  --start-text: #f0f5f2;
+  --start-muted: #b5c4be;
+  --start-accent: #b5dfca;
+  --start-gutter: clamp(24px, 7.5vw, 96px);
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: auto;
+  padding: max(24px, env(safe-area-inset-top)) var(--start-gutter) max(32px, env(safe-area-inset-bottom));
+  color: var(--start-text);
+  background: linear-gradient(125deg, #101716 12%, var(--start-bg) 55%, #233e34 100%);
+}
+.start-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 1088px;
+  margin: 0 auto;
+}
+.start-wordmark { font-size: 22px; font-weight: 650; letter-spacing: -.045em; }
+.start-header .open-settings { color: var(--start-muted); }
+.start-header .open-settings:hover { background: #ffffff0d; color: var(--start-text); }
+.start-screen .intro {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  align-self: center;
+  max-width: 1088px;
+  padding: 48px 0 80px;
+  text-align: left;
+}
+.start-screen .intro-title {
+  max-width: none;
+  font-size: clamp(40px, 7.5vw, 96px);
+  font-weight: 500;
+  line-height: 1.12;
+  letter-spacing: -.04em;
+  word-spacing: .045em;
+  color: var(--start-text);
+  text-wrap: nowrap;
+}
+.intro-line { display: block; }
+.intro-verb { display: inline-block; color: var(--start-accent); }
+.start-screen .intro-note {
+  display: block;
+  max-width: 45ch;
+  margin: 28px 0 0;
+  color: var(--start-muted);
+  font-size: clamp(14px, 1.3vw, 16px);
+  line-height: 1.65;
+  font-weight: 400;
+  text-wrap: pretty;
+}
+.call-start {
+  margin-top: 40px;
+  min-width: 200px;
+  min-height: 64px;
+  padding: 16px 48px;
+  border: 1px solid #ffffff24;
   border-radius: 999px;
-  background: var(--helper, #8eb6ff);
-  color: #0b1220;
+  background: var(--start-accent);
+  color: var(--start-bg);
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -.02em;
+  white-space: nowrap;
+  transition: transform .18s ease-out;
+}
+.call-start:hover { transform: translateY(-2px); }
+.call-start:active { transform: translateY(0) scale(.98); }
+.start-screen button:focus-visible { outline: 2px solid var(--start-text); outline-offset: 6px; }
+@media (prefers-reduced-motion: no-preference) {
+  .intro-verb { animation: introduce-verb .8s var(--ease-calm) both; }
+  .intro-line:first-child .intro-verb:nth-child(2) { animation-delay: .18s; }
+  .intro-line:last-child .intro-verb { animation-delay: .36s; }
+}
+@keyframes introduce-verb {
+  from { opacity: .4; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.call .bottom { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; }
+.memory-controls { display: flex; align-items: stretch; gap: 8px; margin-left: auto; padding-left: 20px; border-left: 1px solid #ffffff24; }
+.memory-control { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 56px; padding: 10px 16px; border-radius: 18px; font-size: 14px; line-height: 1.25; text-align: left; cursor: pointer; }
+.memory-control svg { width: 22px; height: 22px; flex-shrink: 0; }
+.memory-control small { display: block; margin-top: 4px; color: #b6b9bb; font-size: 11px; }
+.memory-control input { width: 18px; height: 18px; accent-color: #b9d0c1; }
+.memory-control:has(input:checked), .memory-control[aria-pressed="true"] { background: #36574ad9; box-shadow: inset 0 0 0 1px #a9c8b8; }
+.memory-control:has(input:disabled) { opacity: .45; cursor: not-allowed; }
+.settings-notes { margin-top: 24px; color: var(--text-3); font-size: 12px; line-height: 1.5; }
+.settings-notes p { margin: 8px 0; }
+.settings-notes details { margin-top: 12px; }
+.call .lower { width: 100%; max-width: 1080px; align-self: center; }
+.call .bottom > .round { flex-shrink: 0; }
+#mic.hold-default { box-shadow: inset 0 0 0 2px var(--accent); touch-action: none; }
+@media (max-width: 700px) {
+  .call .bottom { flex-wrap: wrap; gap: 12px; }
+  .memory-controls { justify-content: flex-end; width: 100%; margin: 4px 0 0; padding: 12px 0 0; border-left: 0; border-top: 1px solid #ffffff24; }
+  .memory-control { min-height: 48px; padding: 8px 14px; font-size: 12px; }
+  .memory-control small { font-size: 10px; }
+  .call .bottom .r56 { width: 48px; height: 48px; }
+  .call .bottom #end-call { width: 60px; height: 60px; }
+
+}
+@media (max-width: 767px) {
+  .start-screen .intro { padding: 40px 0 64px; }
+  .start-screen .intro-note { max-width: 36ch; margin-top: 24px; }
+  .call-start { min-width: 184px; margin-top: 32px; }
+}
+@media (max-height: 560px) {
+  .start-screen { padding-top: 16px; padding-bottom: 20px; }
+  .start-screen .intro { padding: 16px 0; }
+  .start-screen .intro-title { font-size: clamp(22px, 6.4vw, 38px); }
+  .start-screen .intro-note { margin-top: 14px; }
+  .call-start { margin-top: 20px; min-height: 52px; padding: 12px 40px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .start-screen *, .start-screen *::before, .start-screen *::after { animation: none; transition: none; }
 }
 
 /* Owner: the slogan stays on one line at every width. */
 .intro-title { white-space: nowrap; font-size: clamp(1.35rem, 6.2vw, 3.6rem); }
+
+/* Owner 2026-10-24: one-line slogan on the start screen at every width (overrides the two-line layout). */
+.start-screen .intro-title { white-space: nowrap; font-size: clamp(22px, 6.4vw, 84px); }
+.start-screen .intro-line { display: inline; }

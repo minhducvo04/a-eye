@@ -96,38 +96,7 @@ function boot() {
   const still = document.getElementById("still");
   const drawCanvas = document.getElementById("draw");
   const callEl = document.getElementById("call");
-  // Controls fold into one button after a short idle time so the caption has the lower screen.
-  const CONTROLS_HIDE_MS = 3000;
-  const controlsBar = document.getElementById("controls");
-  const controlsToggle = document.getElementById("controls-toggle");
-  let controlsTimer = 0;
-  function setControls(collapsed) {
-    callEl.classList.toggle("controls-collapsed", collapsed);
-    controlsToggle.setAttribute("aria-expanded", String(!collapsed));
-    controlsToggle.setAttribute("aria-label", collapsed ? "Show controls" : "Hide controls");
-    controlsToggle.setAttribute("title", collapsed ? "Show controls" : "Hide controls");
-  }
-  function armControls() {
-    window.clearTimeout(controlsTimer);
-    setControls(false);
-    controlsTimer = window.setTimeout(() => setControls(true), CONTROLS_HIDE_MS);
-  }
-  function stopControls() {
-    window.clearTimeout(controlsTimer);
-    setControls(false);
-  }
-  controlsToggle.addEventListener("click", (event) => {
-    event.stopPropagation();
-    if (callEl.classList.contains("controls-collapsed")) armControls();
-    else { window.clearTimeout(controlsTimer); setControls(true); }
-  });
-  // Using any control keeps the bar open a little longer; it folds again 3 s after the last touch.
-  for (const type of ["pointerdown", "focusin"]) {
-    controlsBar.addEventListener(type, (event) => {
-      if (event.target === controlsToggle || event.target?.closest?.("#controls-toggle")) return;
-      if (!callEl.classList.contains("controls-collapsed")) armControls();
-    });
-  }
+  // Call controls, especially End call, stay visible throughout the call.
   const ringEl = document.getElementById("ring");
   const ringTitle = document.getElementById("ring-title");
   const ringHint = document.getElementById("ring-hint");
@@ -170,7 +139,7 @@ function boot() {
   const scanPath = document.getElementById("scan-path");
   const typedEl = document.getElementById("typed");
   const micBtn = document.getElementById("mic");
-  const holdBtn = document.getElementById("hold");
+  const holdToggle = document.getElementById("hold-toggle");
   const sensEl = document.getElementById("sensitivity");
   const ambientEl = document.getElementById("ambient");
   // Hold to talk is the reliable mode in a loud hall; ?hold=1 forces it, a noisy calibration turns it on.
@@ -206,12 +175,10 @@ function boot() {
     return body;
   } }) : { consume: () => false, complete() {} };
   const params = new URLSearchParams(location.search);
-  // Server voice (Cartesia when keyed, else Kokoro on the box) by default; the browser voice is the last resort.
-  // ?tts=cartesia means server TTS with a Cartesia voice from /api/voices.
+  // Server fallback uses Kokoro; browser speech is the last resort.
   const storedVoice = (() => { try { return safeStorage()?.getItem("aeye.voice") || ""; } catch { return ""; } })();
-  const wantCartesia = params.get("tts") === "cartesia";
-  let tts = !wantCartesia && (params.get("tts") === "browser" || storedVoice === "browser") ? "browser" : "server";
-  let ttsVoice = storedVoice && storedVoice !== "browser" ? storedVoice : "";
+  let tts = (params.get("tts") === "browser" || storedVoice === "browser") ? "browser" : "server";
+  let ttsVoice = storedVoice && storedVoice !== "browser" && !storedVoice.startsWith("cartesia:") ? storedVoice : "";
   const personaPick = document.getElementById("persona-pick");
   let persona = (() => { try { return safeStorage()?.getItem("aeye.persona") || "chill-dad"; } catch { return "chill-dad"; } })();
   let personaVoices = {};
@@ -288,13 +255,13 @@ function boot() {
   // Private mode: hello.private makes the server keep everything local; the page uses server STT (browser
   // recognition can send audio to Google), the server voice (Kokoro) and keeps Rewind off.
   let privateMode = (() => { try { return safeStorage()?.getItem("aeye.private") === "1"; } catch { return false; } })();
-  // Home first: four cloud switches. Claude, Cartesia and Google default on; TwelveLabs stays off.
+  // The default talker and Claude fallback are enabled; Rewind requires per-call consent.
   // The TwelveLabs switch and the Rewind toggle are one consent.
-  const CLOUD_DEFAULTS = { claude: true, cartesia: true, twelvelabs: false, google: true };
+  const CLOUD_DEFAULTS = { claude: true, cartesia: false, twelvelabs: false, google: true };
   let cloud = (() => {
     try {
       const saved = JSON.parse(safeStorage()?.getItem("aeye.cloud") || "null");
-      return { ...CLOUD_DEFAULTS, ...(saved && typeof saved === "object" ? saved : {}), twelvelabs: false };
+      return { ...CLOUD_DEFAULTS, ...(saved && typeof saved === "object" ? saved : {}), cartesia: false, twelvelabs: false };
     } catch {
       return { ...CLOUD_DEFAULTS };
     }
@@ -302,7 +269,6 @@ function boot() {
   const cloudBoxes = {
     google: document.getElementById("cloud-google"),
     claude: document.getElementById("cloud-claude"),
-    cartesia: document.getElementById("cloud-cartesia"),
     twelvelabs: document.getElementById("cloud-twelvelabs"),
   };
   const leavesList = document.getElementById("leaves-list");
@@ -922,6 +888,8 @@ function boot() {
 
   function showRewind(on) {
     rewindOn = on;
+    const keep = document.getElementById("rewind-keep");
+    if (keep && !on) keep.checked = false;
     if (rewindToggle) rewindToggle.checked = on;
     if (rewindBadge) rewindBadge.classList.toggle("hidden", !on);
     if (rewindBtn) {
@@ -987,6 +955,7 @@ function boot() {
 
   // "Remembering 12 things today"; the number counts down when something is forgotten.
   function setMemoryCount(next) {
+    if (!memoryEl) return;
     const from = memoryShown;
     memoryCount = Math.max(0, Number(next) || 0);
     const started = performance.now();
@@ -1511,6 +1480,10 @@ function boot() {
     micIcon.setAttribute("href", on ? "#i-mic" : "#i-mic-off");
     micBtn.setAttribute("aria-label", on ? "Stop microphone" : "Start microphone");
     micBtn.title = on ? "Mic is on. Tap to turn it off." : "Mic is off. Tap to turn it on.";
+    if (holdMode) {
+      micBtn.setAttribute("aria-label", holdPressed ? "Listening, release to send" : "Hold to talk");
+      micBtn.title = "Press and hold to talk";
+    }
     renderMicLine();
     renderListen(ui.getState());
   }
@@ -1664,7 +1637,7 @@ function boot() {
     personaOption.value = "";
     personaOption.textContent = "Persona voice";
     voicePick.append(personaOption);
-    for (const item of listed) {
+    for (const item of listed.filter(item => item.engine !== "cartesia" && !item.id.startsWith("cartesia:"))) {
       const option = document.createElement("option");
       option.value = item.id;
       option.textContent = item.label + (item.default ? " (default)" : "");
@@ -1674,14 +1647,6 @@ function boot() {
     browserOption.value = "browser";
     browserOption.textContent = "Browser voice (robotic)";
     voicePick.append(browserOption);
-    if (wantCartesia && !String(ttsVoice).startsWith("cartesia:")) {
-      const cartesia = listed.find((item) => item.engine === "cartesia" && item.default)
-        || listed.find((item) => item.engine === "cartesia");
-      if (cartesia) {
-        ttsVoice = cartesia.id;
-        sendHello();
-      }
-    }
     voicePick.value = tts === "browser" ? "browser" : ttsVoice;
   }
 
@@ -1733,10 +1698,12 @@ function boot() {
     elapsedEl.textContent = "0:00";
     memoryShown = 0;
     setMemoryCount(0);
-    window.clearInterval(memoryTimer);
-    memoryTimer = window.setInterval(() => void refreshMemory(), 10000);
-    void memoryApi.settings().then((s) => { memoryItems = s.items; }, () => {});
-    packLabel.textContent = PACK_LABEL[next];
+    if (memoryEl) {
+      window.clearInterval(memoryTimer);
+      memoryTimer = window.setInterval(() => void refreshMemory(), 10000);
+      void memoryApi.settings().then((s) => { memoryItems = s.items; }, () => {});
+    }
+    packLabel.textContent = "A-Eye";
     if (document.body && document.body.dataset) document.body.dataset.mode = next; // calm Memory look in CSS
     link = "connecting";
     renderPresence();
@@ -1744,7 +1711,6 @@ function boot() {
     ui.dispatch({ type: "pack", pack: next });
     picker.classList.add("hidden");
     callEl.classList.remove("hidden");
-    armControls();
     voice = await rebuildVoice();
     if (voice && !voice.supported.stt && stt !== "server") {
       stt = "server";
@@ -1767,10 +1733,9 @@ function boot() {
   }
 
   function renderHold() {
-    if (!holdBtn) return;
-    holdBtn.classList.toggle("hold-default", holdMode);
-    holdBtn.setAttribute("aria-pressed", holdPressed ? "true" : "false");
-    holdBtn.setAttribute("aria-label", holdPressed ? "Listening, release to send" : "Hold to talk");
+    if (holdToggle) holdToggle.checked = holdMode;
+    micBtn.classList.toggle("hold-default", holdMode);
+    renderMic();
   }
 
   // CallController.end: back to the mode ring with the same mode selected.
@@ -1779,7 +1744,7 @@ function boot() {
     stopTrigger?.();
     if (!pack) return;
     window.clearInterval(memoryTimer);
-    memoryEl.classList.add("hidden");
+    memoryEl?.classList.add("hidden");
     ended = true;
     if (cameraOn || video.srcObject) stopCamera();
     holdPressed = false;
@@ -1818,12 +1783,16 @@ function boot() {
     closeSheets();
     permissionEl.classList.add("hidden");
     overlayEl.classList.add("hidden");
-    stopControls();
     callEl.classList.add("hidden");
     picker.classList.remove("hidden");
     renderLink();
     paint(Date.now());
-    if (rewindOn) void showRecap(sessionId);   // end-of-call recap; the server uploads the last clips first
+    const hadRewind = rewindOn;
+    rewind = initialRewind();
+    cloud.twelvelabs = false;
+    showRewind(false);
+    renderPrivate();
+    if (hadRewind) void showRecap(sessionId);   // end-of-call recap; the server uploads the last clips first
   }
 
   function ringButtons() {
@@ -1832,6 +1801,7 @@ function boot() {
 
   // ModeRing.swift: centred item 78 px with a white ring, neighbours 52 / 42 / 34 and fading.
   function renderRing() {
+    if (!ringEl || !ringTitle) return; // Legacy guide UI is not part of the dad call.
     ringButtons().forEach((button) => {
       const i = MODES.findIndex(m => m.id === button.getAttribute("data-mode"));
       button.classList.toggle("hidden", i < 0);
@@ -1866,7 +1836,7 @@ function boot() {
   }
 
   async function onHoldDown() {
-    if (holdPressed) return;
+    if (!pack || !holdMode || holdPressed) return;
     holdPressed = true;
     renderHold();
     if (voice) void voice.unlockAudio();
@@ -1890,6 +1860,9 @@ function boot() {
     for (const [name, box] of Object.entries(cloudBoxes)) {
       if (box) box.checked = !privateMode && Boolean(cloud[name]);
     }
+    rewindBtn.disabled = privateMode;
+    const keep = document.getElementById("rewind-keep");
+    if (keep) keep.disabled = privateMode;
     renderLeaves();
   }
 
@@ -1900,8 +1873,7 @@ function boot() {
     const lines = [];
     if (on("google")) lines.push(liveSettings(pack, true, privateMode).notice);
     if (on("claude")) lines.push("Your question and a written note about the scene go to Claude. Sometimes one small close-up photo.");
-    if (on("cartesia")) lines.push("A-eye's reply sentence goes to Cartesia, which turns it into speech.");
-    if (on("twelvelabs") && rewindOn) lines.push("Short silent video clips go to TwelveLabs. They are deleted when the call ends.");
+    if (on("twelvelabs") && rewindOn) lines.push("Silent clips go to TwelveLabs; deleted at call end unless Remember this call is on.");
     if (stt !== "server") lines.push("Your speech goes to your browser's speech service (in Chrome, that is Google).");
     if (!lines.length) lines.push("Nothing leaves your home right now.");
     leavesList.textContent = "";
@@ -2140,7 +2112,7 @@ function boot() {
 
   // Tap the centred mode to start; a coming-soon mode shakes. With a mouse there is no swipe, so tapping a side
   // mode that works starts it directly (iOS only scrolls it to the centre).
-  ringHint.addEventListener('click', () => void choosePack(MODES[ringIndex].pack));
+  ringHint.addEventListener('click', () => void choosePack('general'));
   picker.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-mode]");
     if (!button) return;
@@ -2249,7 +2221,7 @@ function boot() {
     });
   }
   document.addEventListener?.("keydown", (event) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    if (!ringEl || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
     if (picker.classList.contains("hidden") || (ringEl && ringEl.contains(event.target))) return;
     if (event.target && /^(INPUT|SELECT|TEXTAREA)$/.test(event.target.tagName || "")) return;
     if (!settingsEl.classList.contains("hidden")) return;
@@ -2274,18 +2246,21 @@ function boot() {
   }
   if (rewindEl) document.getElementById("rewind-dismiss").addEventListener("click", closeSheets);
   const keepBox = document.getElementById("rewind-keep");
-  if (keepBox) keepBox.addEventListener("change", sendRewind);
-  memoryCountEl.addEventListener("click", () => {
+  if (keepBox) keepBox.addEventListener("change", () => {
+    if (keepBox.checked && !rewindOn) setRewind(true);
+    else sendRewind();
+  });
+  memoryCountEl?.addEventListener("click", () => {
     const open = memoryActions.classList.contains("hidden");
     memoryActions.classList.toggle("hidden", !open);
     memoryCountEl.setAttribute("aria-expanded", open ? "true" : "false");
   });
-  document.getElementById("forget-last").addEventListener("click", () => void forgetMemory("last"));
+  document.getElementById("forget-last")?.addEventListener("click", () => void forgetMemory("last"));
   // Disconnect the paired phone; a remembered phone then waits for the next call (server: Call.kick).
   document.getElementById("phone-kick").addEventListener("click", () => {
     send({ v: 2, type: "pair_request", session_id: sessionId, kick: true });
   });
-  document.getElementById("forget-today").addEventListener("click", () => void forgetMemory("today"));
+  document.getElementById("forget-today")?.addEventListener("click", () => void forgetMemory("today"));
   const forgetBtn = document.getElementById("rewind-forget");
   if (forgetBtn) forgetBtn.addEventListener("click", () => void forgetRewind(sessionId).then(
     (r) => showProblem(`Forgot ${r.deleted} clip${r.deleted === 1 ? "" : "s"}.`), () => showProblem("Nothing to forget.")));
@@ -2358,26 +2333,34 @@ function boot() {
     sendUser(clean, "typed");
   });
   micBtn.addEventListener("click", () => {
-    onMic();
+    if (!holdMode) onMic();
   });
-  if (holdBtn) {
-    holdBtn.addEventListener("pointerdown", (event) => {
-      event.preventDefault();
-      if (typeof holdBtn.setPointerCapture === "function") holdBtn.setPointerCapture(event.pointerId);
-      void onHoldDown();
-    });
-    for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) holdBtn.addEventListener(name, onHoldUp);
-    holdBtn.addEventListener("contextmenu", (event) => event.preventDefault());
-  }
+  if (holdToggle) holdToggle.addEventListener("change", async () => {
+    if (holdToggle.checked) await enableHold();
+    else {
+      onHoldUp();
+      holdMode = false;
+      voice?.setHoldMode(false);
+      renderHold();
+    }
+  });
+  micBtn.addEventListener("pointerdown", (event) => {
+    if (!holdMode) return;
+    event.preventDefault();
+    micBtn.setPointerCapture?.(event.pointerId);
+    void onHoldDown();
+  });
+  for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) micBtn.addEventListener(name, onHoldUp);
+  micBtn.addEventListener("contextmenu", (event) => { if (holdMode) event.preventDefault(); });
   const typingTarget = (el) => el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
   window.addEventListener("keydown", (event) => {
-    if (event.code !== "Space" || event.repeat || typingTarget(document.activeElement)) return;
+    if (!pack || !holdMode || event.code !== "Space" || event.repeat || typingTarget(document.activeElement)) return;
     if (backdropEl && !backdropEl.classList.contains("hidden")) return; // a sheet is open: Space scrolls it
     event.preventDefault();
     void onHoldDown();
   });
   window.addEventListener("keyup", (event) => {
-    if (event.code !== "Space" || typingTarget(document.activeElement)) return;
+    if (!pack || !holdMode || event.code !== "Space" || typingTarget(document.activeElement)) return;
     event.preventDefault();
     onHoldUp();
   });
