@@ -100,11 +100,26 @@ class MemoryTurn:
 
     def claims(self, text):
         """Fast check on a streaming transcript: hold now on explicit time words. The router may still veto."""
-        return self.allowed() and explicit(text, self.bridge.rewind_on()) is not None
+        return (self.allowed() and self.guide_allows(text)
+                and explicit(text, self.bridge.rewind_on()) is not None)
+
+    def guide_allows(self, text):
+        """Guide intent wins; during a task, only an explicit past question may interrupt it."""
+        live = self.bridge.guide
+        if not live:
+            return True
+        if live.claims(text):
+            return False
+        guide = live.guide
+        if not guide or guide.completed:
+            return True
+        return bool(re.search(r'\b(what|where|when)\b', text, re.I) and (
+            recent_memory.source_for(text, self.bridge.rewind_on(), default_recent=False)
+            or re.search(r'\bwhat did i show you\b', text, re.I)))
 
     async def decide(self, text):
         """(source, scope, via) for a past question, else None."""
-        if not self.allowed():
+        if not self.allowed() or not self.guide_allows(text):
             return None
         on = self.bridge.rewind_on()
         source = explicit(text, on)
@@ -132,7 +147,7 @@ class MemoryTurn:
 
     async def watch(self, text):
         """Called on every streaming input transcript that safety and the guide did not take."""
-        if not self.allowed():
+        if not self.allowed() or not self.guide_allows(text):
             return
         if self.held or self.claims(text):
             await self.hold()

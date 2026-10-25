@@ -825,3 +825,39 @@ Proof logs: /private/tmp/rewind-default-node.log and /private/tmp/rewind-default
 Limits: executable client DOM/WebSocket fixtures and in-process HTTP/WebSocket
 tests, not a physical call or live TwelveLabs upload/search. Failed feature
 discovery defaults off. No .env reads, main-checkout edits, push or deployment.
+
+
+## FIX A — guide-first routing — pkg/fixA
+
+Files changed: server/live_guide.py, server/live_memory.py,
+server/packs/electronics.py, server/test_live_memory.py, RESULT.md.
+
+LiveGuide now shares the electronics pack's exact confirmation/advance patterns.
+An active coded guide or plan rejects classifier-only memory turns: guide claims
+win, and other memory turns require an explicit what/where/when past question
+(or "what did I show you"). Safety and step gates remain intact.
+
+Fail-before: the five new regression cases produced 3 failed, 2 passed.
+The unpunctuated "USB unplugged next" reproduced the memory interception;
+"USB unplugged, next" and its split transcription were already accepted and
+remain covered. Both active-guide/plan classifier-only rejection cases failed
+before the fix. Afterward all five passed, with the LED advancing to step 2,
+USB reported disconnected, no memory router call and no memory filler.
+
+Test: /Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_live_memory.py server/test_live_guide.py server/test_refocus.py server/test_planner.py - FAIL (167 passed, 2 failed in 47.66s).
+Test: /Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_ee_guide.py server/test_guide_review.py - PASS (26 passed in 2.61s).
+Test: /Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_live_memory.py -k 'led_confirmation or active_guide_requires' - PASS (5 passed, 24 deselected).
+Test: git diff --check - PASS.
+
+The two failures are existing test_code_owned_memory_does_not_send_query_or_crop_cards
+cases (rewind_hit and find_item). Re-executing HEAD:server/live_memory.py from
+baseline 147b101 in memory and running those two tests reproduced both failures
+(2 failed, 27 deselected). No checkout/restore or baseline file edits were used.
+Their existing card-emission behavior is outside FIX A and remains unchanged.
+An initial command named nonexistent server/test_electronics.py; it collected
+no tests and was corrected to the actual electronics tests listed above.
+
+Limits: real pytest runs with synthetic Live packets; no physical/live-provider
+call proof. No client changes, .env reads, server restart, FIX B/C changes,
+main-checkout changes, push or merge. Router training weights are unchanged;
+the deterministic gate prevents them from taking guide commands.
