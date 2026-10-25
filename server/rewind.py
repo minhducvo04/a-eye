@@ -251,96 +251,16 @@ class TwelveLabsClient:
             record_tokens(usage)
             return result.get('data') or '', usage
 
-    async def search(self, index_id, query=None, video_ids=None, limit=5, image=None):
-        """Text query, or (v1.3 docs, "Make a search request") an image query: query_media_type=image with
-        the JPEG as the query_media_file part. One or the other per request; the caller merges."""
-        data = [('index_id', index_id), ('search_options', 'visual'),
+    async def search(self, index_id, query, video_ids=None, limit=5):
+        data = [('index_id', index_id), ('query_text', query), ('search_options', 'visual'),
                 ('group_by', 'clip'), ('page_limit', str(limit)), ('include_user_metadata', 'true')]
-        if image is not None:
-            data.append(('query_media_type', 'image'))
-        else:
-            data.append(('query_text', query))
         if video_ids:
             data.append(('filter', json.dumps({'id': list(video_ids)})))
-        parts = [(k, (None, v)) for k, v in data]
-        if image is not None:
-            parts.append(('query_media_file', ('query.jpg', bytes(image), 'image/jpeg')))
         async with self._client() as client:
             # multipart/form-data as the API requires; repeated fields stay repeated.
-            response = await client.post('/search', files=parts)
+            response = await client.post('/search', files=[(k, (None, v)) for k, v in data])
             response.raise_for_status()
             return response.json().get('data', [])
-
-
-_HELD = re.compile(r"\b(this|these|it|the (thing|one|object) (in|from) my hand|what i('m| am) holding|"
-                   r"what i('m| am) showing)\b", re.I)
-_HELD_FILLER = {'did', 'i', 'have', 'had', 'has', 'this', 'these', 'it', 'that', 'last', 'call', 'where', 'put',
-                'thing', 'one', 'object', 'in', 'my', 'hand', 'holding', 'showing', 'show', 'showed', 'you', 'was',
-                'is', 'the', 'a', 'an', 'what', 'before', 'earlier', 'do', 'with', 'from', 'am', 'm', 'see',
-                'seen', 'saw', 'ever', 'already', 'dad'}
-FRESH_FRAME_S = 3
-WEAK_SCORE = 0.5
-
-
-def refers_to_held(text):
-    """The question points at what the camera sees now ("did I have this last call")."""
-    return bool(_HELD.search(text or ''))
-
-
-def names_object(query):
-    """The question names something in words ("water bottle"), beyond pointing words."""
-    return any(w.lower() not in _HELD_FILLER for w in re.findall(r'[a-zA-Z0-9]+', query or ''))
-
-
-def hand_crop(frame_b64, scene=None, pad=0.15):
-    """JPEG bytes of the hand/object region: the best grounding box in the scene, else the centre 60 percent.
-    Never the full frame. None when the frame cannot be decoded."""
-    from io import BytesIO
-    from PIL import Image
-    boxes = [o for o in (scene or {}).get('objects', []) if o.get('bbox')]
-    x, y, w, h = max(boxes, key=lambda o: o.get('conf', 0))['bbox'] if boxes else (0.2, 0.2, 0.6, 0.6)
-    x0, y0 = max(0.0, x - w * pad), max(0.0, y - h * pad)
-    x1, y1 = min(1.0, x + w * (1 + pad)), min(1.0, y + h * (1 + pad))
-    try:
-        with Image.open(BytesIO(base64.b64decode(frame_b64))) as image:
-            W, H = image.size
-            region = image.convert('RGB').crop((round(x0 * W), round(y0 * H), round(x1 * W), round(y1 * H)))
-    except Exception:
-        return None
-    region.thumbnail((512, 512))
-    out = BytesIO()
-    region.save(out, format='JPEG', quality=80)
-    return out.getvalue()
-
-
-def _overlaps(a, b):
-    return (a.get('video_id') == b.get('video_id')
-            and float(a.get('start', 0)) <= float(b.get('end', 0)) and float(b.get('start', 0)) <= float(a.get('end', 0)))
-
-
-def merge_rows(text_rows, image_rows):
-    """Combine the text and image result lists: a clip in both ranks first (boost), else the best score."""
-    if not image_rows:
-        return [dict(r, weak=False, both=False) for r in text_rows]
-    if not text_rows:
-        return [dict(r, weak=False, both=False) for r in image_rows]
-    merged, used = [], set()
-    for row in text_rows:
-        twin = next((i for i, other in enumerate(image_rows) if i not in used and _overlaps(row, other)), None)
-        if twin is None:
-            merged.append(dict(row, both=False))
-            continue
-        used.add(twin)
-        other = image_rows[twin]
-        best = max((row, other), key=lambda r: r.get('score') if r.get('score') is not None else -1)
-        merged.append(dict(best, both=True, rank=min(row.get('rank') or 99, other.get('rank') or 99)))
-    merged.extend(dict(r, both=False) for i, r in enumerate(image_rows) if i not in used)
-    merged.sort(key=lambda r: (not r['both'], *search_order(r)))
-    for row in merged:
-        # Only a clip that both queries agree on, or a strong single score, is more than a best guess.
-        row['weak'] = not row['both'] and (row.get('score') is None or float(row['score']) < WEAK_SCORE
-                                           or low_confidence(row))
-    return merged
 
 
 def clip_duration(frames):
@@ -714,34 +634,9 @@ class Rewind:
                     indexing=counts.get('indexing', 0) + counts.get('uploading', 0),
                     pending=counts.get('pending', 0) + counts.get('open', 0))
 
-    def held_crop(self, text):
-        """The crop to send as an image query, or None: the question must point at what is held now, the
-        camera frame must be under FRESH_FRAME_S old, and this call must allow TwelveLabs (never Private)."""
-        session = getattr(self, 'session', None)
-        if not refers_to_held(text) or not self.search_allowed() or session is None:
-            return None
-        frame = getattr(session, 'frame', None)
-        if not frame or not frame.get('jpeg_b64') or not getattr(session, 'camera', True):
-            return None
-        if monotonic() - getattr(session, 'frame_time', 0) > FRESH_FRAME_S:
-            return None
-        return hand_crop(frame['jpeg_b64'], getattr(session, 'scene', None))
-
-    async def _dual_search(self, index_id, query, video_ids, limit, image):
-        """Text and/or image queries over the same clips, concurrently, merged by merge_rows."""
-        want_text = image is None or names_object(query)
-        text_task = self.client.search(index_id, query, video_ids=video_ids, limit=limit) if want_text else None
-        image_task = (self.client.search(index_id, None, video_ids=video_ids, limit=limit, image=image)
-                      if image is not None else None)
-        results = list(await asyncio.gather(*(t for t in (text_task, image_task) if t is not None)))
-        text_rows = results.pop(0) if text_task is not None else []
-        image_rows = results.pop(0) if image_task is not None else []
-        return merge_rows(text_rows, image_rows)
-
     @_call_cloud
-    async def search_kept(self, query, limit=5, image=None):
-        """Best hits in up to 360 saved clips, searched newest first within four seconds. `image` (JPEG bytes
-        of what is held now) adds a concurrent image query; see held_crop."""
+    async def search_kept(self, query, limit=5):
+        """Best hits in up to 360 saved clips, searched newest first within four seconds."""
         if limit <= 0 or not self.search_allowed() or (self.owner == 'local' and not shared_demo_library()):
             return []
         past = {c['video_id']: (call, c) for call in kept_calls(self.owner)
@@ -756,7 +651,7 @@ class Rewind:
 
         async def search_batch(index_id, number, video_ids):
             try:
-                results[number] = await self._dual_search(index_id, query, video_ids, max(5, limit), image)
+                results[number] = await self.client.search(index_id, query, video_ids=video_ids, limit=max(5, limit))
             except httpx.HTTPStatusError as exc:
                 event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
                       where='rewind_search_kept', error=exc.response.status_code)
@@ -782,7 +677,6 @@ class Rewind:
         rows = [row for batch in results for row in batch]
         hits = []
         for row in sorted(rows, key=lambda r: (
-                not r.get('both'),
                 not mentions_object(past.get(r.get('video_id'), ({}, {}))[0].get('summary'), query),
                 *search_order(r))):
             hit = past.get(row.get('video_id'))
@@ -792,26 +686,26 @@ class Rewind:
             at = clip['start_s'] + float(row.get('start', 0))
             hits.append(dict(t_s=round(at, 1), start_s=round(at, 1), end_s=round(clip['start_s'] + float(row.get('end', 0)), 1),
                              rank=row.get('rank'), score=row.get('score'), confidence=row.get('confidence'),
-                             video_id=row.get('video_id'), frame=None, candidates=[], weak=row.get('weak', False),
-                             both=row.get('both', False), past_call=True, video_t_s=float(row.get('start', 0)),
+                             video_id=row.get('video_id'), frame=None, candidates=[],
+                             past_call=True, video_t_s=float(row.get('start', 0)),
                              call_started_wall=call.get('started_wall')))
             if len(hits) >= limit:
                 break
         return hits
 
     @_call_cloud
-    async def search(self, query, limit=5, before_s=None, image=None):
+    async def search(self, query, limit=5, before_s=None):
         """Hits in this call, best first: call time, clip window and the nearest kept frame."""
         if not self.cloud_allowed():
             return []
         clips = {c.video_id: c for c in self.clips if c.video_id and c.status == 'ready'
                  and (before_s is None or c.end_s <= before_s)}
         if not clips:
-            return await self.search_kept(query, limit, image=image) if before_s is None else []
+            return await self.search_kept(query, limit) if before_s is None else []
         query = query_from(query)
-        rows = await self._dual_search(self.index_id, query, list(clips), max(5, limit), image)
+        rows = await self.client.search(self.index_id, query, video_ids=list(clips), limit=max(5, limit))
         hits = []
-        for row in sorted(rows, key=lambda r: (not r.get('both'), *search_order(r))):
+        for row in sorted(rows, key=search_order):
             clip = clips.get(row.get('video_id'))
             if clip is None:
                 continue
@@ -831,8 +725,8 @@ class Rewind:
                 if all(t_f != c[0] for c in candidates):
                     candidates.append((t_f, jpeg))
             hits.append(dict(t_s=round(at, 1), start_s=round(start, 1), end_s=round(end, 1), rank=row.get('rank'),
-                             video_id=clip.video_id, frame=frame, candidates=candidates, both=row.get('both', False),
-                             weak=row.get('weak', False), score=row.get('score'), confidence=row.get('confidence')))
+                             video_id=clip.video_id, frame=frame, candidates=candidates,
+                             score=row.get('score'), confidence=row.get('confidence')))
         log = getattr(getattr(self, 'session', None), 'recent_memory', None)
         entries = getattr(log, 'entries', [])
         hits.sort(key=lambda h: not any(
@@ -845,13 +739,11 @@ class Rewind:
         if not self.on and not self.clips:
             return "Rewind is off, so I didn't keep clips of this call. Turn on Rewind to use it.", None
         query = query_from(text)
-        image = self.held_crop(text)   # "did I have this": the held object itself is the query, when allowed
         self.flush_soon()      # live mode: upload the newest clips; this answer uses what is indexed now
         try:
-            hits = (await self.search(query, before_s=before_s, image=image) if before_s is not None
-                    else await self.search(query, image=image))
+            hits = await self.search(query, before_s=before_s) if before_s is not None else await self.search(query)
             if not hits and before_s is None and any(c.video_id for c in self.clips):
-                hits = await self.search_kept(query, image=image)   # nothing in this call: try the calls you saved
+                hits = await self.search_kept(query)   # nothing in this call: try the calls you saved
         except Exception as exc:
             event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
                   error=type(exc).__name__)
@@ -871,7 +763,7 @@ class Rewind:
             for t_f, jpeg in hit.pop('candidates', None) or [(hit['t_s'], hit['frame'])]:
                 objects = await confirm(vision, jpeg, hit['target'])
                 if objects:
-                    hit.update(objects=objects, sure=not low_confidence(hit) and not hit.get('weak'), frame=jpeg)
+                    hit.update(objects=objects, sure=not low_confidence(hit), frame=jpeg)
                     break
         hit.pop('candidates', None)
         hit['alternatives'] = [h['t_s'] for h in hits[1:2]]
