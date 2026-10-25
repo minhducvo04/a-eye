@@ -41,7 +41,7 @@ TASKS = {
 # A whole completion/request clause, including "the water is off, next".
 # Narration ("next to") and negation ("not done") are not completion intent.
 NEXT = re.compile(r"(?:^|[,;.!?]\s*)(?:(?:ok(?:ay)?|please)[, ]+)?"
-                  r"(?:next(?: step)?|done|continue|ready|i(?:['’]m| am) done|what(?:['’]s| is) next)"
+                  r"(?:next(?: step)?|done|continue|ready|i(?:['’]m| am) done|what(?:['’]s| is) (?:the )?next(?: step)?)"
                   r"\s*[.!?]*\s*$", re.I)
 HINTS = {
     'sink': ('Show the leak and floor.', 'Locate the shutoff.', TASKS['sink'][2],

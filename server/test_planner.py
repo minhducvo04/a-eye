@@ -48,11 +48,83 @@ def setup(monkeypatch, tmp_path, llm=None):
     return bridge, emitted, fixed, wire, fake, store, points
 
 
+@pytest.mark.parametrize('finished', [False, True])
+def test_real_live_repair_chunks_use_app_client_and_advance(monkeypatch, tmp_path, capsys, finished):
+    from server import llm
+    from server.app import create_app
+
+    fake = FakeLLM()
+    options, clients = [], []
+
+    class Client:
+        def is_closed(self):
+            return False
+
+        def with_options(self, **kwargs):
+            options.append(kwargs)
+            return self
+
+        @property
+        def messages(self):
+            return self
+
+        async def create(self, **kwargs):
+            text = await fake(kwargs['system'][0]['text'], kwargs['messages'][0]['content'])
+            return SimpleNamespace(content=[SimpleNamespace(type='text', text=text)], usage=None)
+
+    def client():
+        clients.append(Client())
+        return clients[-1]
+
+    monkeypatch.setenv('ANTHROPIC_API_KEY', 'synthetic')
+    monkeypatch.setattr(llm, '_ANTHROPIC', {})
+    monkeypatch.setattr(llm.anthropic, 'AsyncAnthropic', client)
+
+    async def trial():
+        # Actual app and default planner: only the provider transport is fake.
+        b, emitted, fixed, wire = bridge_for(monkeypatch, app=create_app())
+        try:
+            for chunk in ('Dad, the wire on my', ' headphones broke', ' near the plug.',
+                          ' How do I', ' fix it?'):
+                await b.handle({'serverContent': {'inputTranscription': {'text': chunk}}})
+                assert b.guide.planner.task is None and not fake.calls
+            if finished:
+                await b.handle({'serverContent': {'inputTranscription': {'finished': True}}})
+            await b.handle({'serverContent': {'turnComplete': True}})
+            assert b.guide.planner.task is not None, 'finished Live utterance must request a plan'
+            await b.guide.planner.task
+            assert len(fake.calls) == 2 and len(clients) == 1
+            assert fake.calls[0][1]['question'] == (
+                'Dad, the wire on my headphones broke near the plug. How do I fix it?')
+            assert fake.calls[0][1]['task'] == 'fix the wire on the headphones near the plug'
+            assert 'Guide: plan 1/2' in details(emitted)
+            assert b.guide.kind == 'plan' and b.guide.guide.index == 0
+            assert 'Step data:' in json.dumps(wire) and not fixed
+            await say_user(b, 'Okay, what is the next step?')
+            assert b.guide.guide.index == 1
+            assert 'Guide: plan 2/2' in details(emitted)
+            assert 'step 2 of 2' in prompts(wire)[-1] and len(fake.calls) == 2
+            assert options == [dict(max_retries=0, timeout=planner.TIMEOUT)] * 2
+        finally:
+            await b.guide.close()
+            await b.prefetch.close()
+    asyncio.run(trial())
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    outcomes = [e['reason']['result'] for e in events if e['event'] == 'planner']
+    assert outcomes == ['started', 'valid', 'rejected']
+    assert 'headphones' not in json.dumps(events)
+
+
 @pytest.mark.parametrize('text,expected', [
     ('help me fix my headphones', 'fix the headphones'),
     ('how do I solder a wire?', 'solder a wire'),
     ('teach me what a capacitor does', 'what a capacitor does'),
     ('Dad, help me fold a paper airplane', 'fold a paper airplane'),
+    ('Dad, the wire on my headphones broke near the plug. How do I fix it?',
+     'fix the wire on the headphones near the plug'),
+    ('My headphones are broken. How can I repair them?', None),  # unresolved form: no guess
+    ('My wall outlet is broken. How do I fix it?', None),
+    ('My headphones for Alex broke. How do I fix it?', None),
     ('can you teach me how to sew a button?', 'how to sew a button'),
     ('hello dad', None), ('how are you?', None), ('what is this?', None),
     ('help me find where the wire is now', None),
@@ -68,6 +140,35 @@ def setup(monkeypatch, tmp_path, llm=None):
 ])
 def test_task_intent(text, expected):
     assert planner.task_request(text) == expected
+
+
+@pytest.mark.parametrize('text,outcomes', [
+    ('hello Dad', [{'result': 'rejected', 'cause': 'no_intent'}]),
+    ('help me fix my headphones', [{'result': 'started'}, {'result': 'no_client'}]),
+])
+def test_live_planner_diagnostics_without_client(monkeypatch, capsys, text, outcomes):
+    from server import llm
+
+    def forbidden():
+        pytest.fail('missing credentials must not construct a provider client')
+    monkeypatch.setattr(llm, '_shared_anthropic', forbidden)
+
+    async def trial():
+        b, emitted, fixed, wire = bridge_for(monkeypatch)
+        try:
+            await b.handle({'serverContent': {'inputTranscription': {'text': text, 'finished': True}}})
+            await b.handle({'serverContent': {'turnComplete': True}})
+            if b.guide.planner.task:
+                await b.guide.planner.task
+            assert b.guide.kind is None and not b.blocked and not wire and not fixed
+        finally:
+            await b.guide.close()
+            await b.prefetch.close()
+    asyncio.run(trial())
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    reasons = [e['reason'] for e in events if e['event'] == 'planner']
+    assert [{k: v for k, v in r.items() if k != 'task_hash'} for r in reasons] == outcomes
+    assert 'headphones' not in json.dumps(events) and 'hello Dad' not in json.dumps(events)
 
 
 @pytest.mark.parametrize('change', [
@@ -217,7 +318,7 @@ def test_timeout_falls_back_and_never_retries_same_task(monkeypatch, tmp_path, c
     asyncio.run(trial())
     events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     events = [e for e in events if e['event'] == 'planner']
-    assert len(events) == 1 and events[0]['reason']['result'] == 'timeout'
+    assert [e['reason']['result'] for e in events] == ['started', 'timeout']
     assert 'headphones' not in json.dumps(events)
 
 
@@ -263,7 +364,7 @@ def test_bad_plan_falls_back_without_cache_or_speech(monkeypatch, tmp_path, caps
         assert len(fake.calls) == 2 and not b.guide.guide and not b.blocked
         assert not store.rows and not store.path.exists() and not wire and not fixed and not points
     asyncio.run(trial())
-    assert '"result":"unsafe"' in capsys.readouterr().out
+    assert '"result":"rejected","cause":"unsafe"' in capsys.readouterr().out
 
 
 def test_cache_rechecks_home_scope(monkeypatch, tmp_path):

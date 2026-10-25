@@ -196,6 +196,7 @@ class LiveBridge:
         self.tool_tasks = {}
         self.prefetch = Prefetch(session, self._lookup_memory, self._prefetch_ready)
         self.input_turn_open = False
+        self.guide_observed = False
         self.pending_memory = None
         # Set while the provider is not generating; a guide prompt waits for it.
         self.provider_idle = asyncio.Event()
@@ -422,7 +423,16 @@ class LiveBridge:
         self.prefetch.new_turn()
         self.pending_memory = None
         self.input_turn_open = True
+        self.guide_observed = False
         self.memory.reset()
+
+    def observe_guide(self):
+        # Live sends deltas, sometimes without finished. Observe the assembled input once,
+        # at finished or turnComplete, before _reset_reply clears it.
+        if (self.guide and self.question.strip() and not self.guide_observed
+                and not self.safety_stopped and not self.scope_redirected):
+            self.guide_observed = True
+            self.guide.observe(self.question)
 
     def memory_allowed(self, result):
         if self.closed or self.session.private or not privacy.google_allowed():
@@ -529,8 +539,7 @@ class LiveBridge:
         if await self.redirect_scope(text):
             self.input_turn_open = False  # Typed scope input was never sent to the provider.
             return True
-        if self.guide:
-            self.guide.observe(text)
+        self.observe_guide()
         if self.guide and self.guide.claims(text):
             await self.hold()
             self.guide.schedule(text)
@@ -806,9 +815,8 @@ class LiveBridge:
                     from server.context_agent import DISMISS
                     if self.session.context_agent and DISMISS.fullmatch(self.question) and not self.blocked:
                         await self.dismiss_followup(self.question)
-        if (content.get('inputTranscription', {}).get('finished') and self.guide
-                and not self.safety_stopped and not self.scope_redirected):
-            self.guide.observe(self.question)
+        if content.get('inputTranscription', {}).get('finished'):
+            self.observe_guide()
         if not self.blocked:
             for part in content.get('modelTurn', {}).get('parts', []):
                 blob = part.get('inlineData')
@@ -840,9 +848,7 @@ class LiveBridge:
         if content.get('turnComplete'):
             self.input_turn_open = False
             self.provider_idle.set()
-            if self.guide and not self.safety_stopped and not self.scope_redirected:
-                # Providers without a finished transcription flag use the final turn boundary.
-                self.guide.observe(self.question)
+            self.observe_guide()
             if not self.blocked:
                 if self.session.context_agent:
                     self.session.context_agent.ingest(self.question)
