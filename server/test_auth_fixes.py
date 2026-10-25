@@ -26,7 +26,9 @@ def clean(monkeypatch):
     monkeypatch.setattr(pairing, 'registry', pairing.Registry())
 
 
-def test_unconfigured_remote_denied_loopback_and_explicit_open_work(monkeypatch, capsys):
+@pytest.mark.parametrize('open_flag', ['', '1'])
+def test_unconfigured_remote_denied_and_loopback_works(monkeypatch, capsys, open_flag):
+    monkeypatch.setenv('A_EYE_OPEN', open_flag)
     for host, allowed in [('192.0.2.10', False), ('127.0.0.1', True), ('::1', True)]:
         with TestClient(app(), client=(host, 1234)) as client:
             assert client.get('/api/status').status_code == (200 if allowed else 401)
@@ -39,10 +41,6 @@ def test_unconfigured_remote_denied_loopback_and_explicit_open_work(monkeypatch,
                         with client.websocket_connect(path):
                             pass
     assert 'auth_loopback_only' in capsys.readouterr().out
-    monkeypatch.setenv('A_EYE_OPEN', '1')
-    with TestClient(app(), client=('192.0.2.10', 1234)) as client:
-        assert client.get('/api/status').status_code == 200
-    assert 'auth_explicitly_open' in capsys.readouterr().out
 
 
 @pytest.mark.parametrize('header', [
@@ -61,7 +59,7 @@ def test_unconfigured_proxy_headers_never_grant_access(header, host, value, monk
                     pass
             assert closed.value.code == 4401
         monkeypatch.setenv('A_EYE_OPEN', '1')
-        assert client.get('/api/status', headers=headers).status_code == 200
+        assert client.get('/api/status', headers=headers).status_code == 401
         monkeypatch.setenv('A_EYE_TOKEN', 'synthetic-master')
         assert client.get('/api/status', headers=headers).status_code == 401
         assert client.get('/api/status', headers=dict(headers, authorization='Bearer synthetic-master')).status_code == 200

@@ -25,7 +25,7 @@ def proxied(connection):
 
 
 def fetch_certs(url):
-    response = httpx.get(url, timeout=3)
+    response = httpx.get(url, timeout=3, follow_redirects=False)
     response.raise_for_status()
     return response.json()
 
@@ -95,10 +95,8 @@ def configured():
 
 def warn_unconfigured():
     if not configured():
-        opened = os.environ.get('A_EYE_OPEN') == '1'
-        event('auth_explicitly_open' if opened else 'auth_loopback_only', level='warning',
-              reason='No credentials: all clients allowed by A_EYE_OPEN=1' if opened
-              else 'No credentials: remote and proxied clients refused; configure authentication or A_EYE_OPEN=1')
+        event('auth_loopback_only', level='warning',
+              reason='No credentials: remote and proxied clients refused; configure authentication')
 
 
 def rejected(reason):
@@ -119,8 +117,7 @@ def authorized(connection):
     audience = os.environ.get('CF_ACCESS_AUD', '')
     if not (expected or team or audience):
         peer = connection.client.host if connection.client else ''
-        return (os.environ.get('A_EYE_OPEN') == '1'
-                or (peer in ('127.0.0.1', '::1') and not proxied(connection))
+        return ((peer in ('127.0.0.1', '::1') and not proxied(connection))
                 or rejected('unconfigured_remote'))
     header = connection.headers.get('authorization', '')
     bearer = header[7:] if header.lower().startswith('bearer ') else ''

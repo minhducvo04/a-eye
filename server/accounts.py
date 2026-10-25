@@ -21,6 +21,8 @@ from starlette.requests import HTTPConnection
 
 from server.auth import AccessKeys
 from server import memory
+from server.growth import GrowthLog, for_owner as growth_for_owner
+from server.memory_storage import SpacetimeStore, StorageError
 from server.rewind import identity, registry
 
 COOKIE = 'aeye_session'
@@ -55,6 +57,8 @@ class Database:
                     deleting INTEGER NOT NULL DEFAULT 0, turns INTEGER NOT NULL DEFAULT 0);
                 CREATE TABLE IF NOT EXISTS sessions (
                     sid TEXT PRIMARY KEY, owner TEXT NOT NULL, expires REAL NOT NULL);
+                CREATE TABLE IF NOT EXISTS used_logins (
+                    nonce TEXT PRIMARY KEY, expires REAL NOT NULL);
             ''')
         self.path.chmod(0o600)
 
@@ -69,11 +73,22 @@ class Database:
         finally:
             db.close()
 
-    def issue(self, owner, kind):
+    def consume_login(self, db, challenge):
+        now = time()
+        if challenge['exp'] <= now:
+            raise HTTPException(403, 'Reload the sign-in page.')
+        db.execute('DELETE FROM used_logins WHERE expires<=?', (now,))
+        if db.execute('INSERT OR IGNORE INTO used_logins VALUES (?, ?)',
+                      (digest(challenge['nonce']), challenge['exp'])).rowcount != 1:
+            raise HTTPException(403, 'Reload the sign-in page.')
+
+    def issue(self, owner, kind, challenge=None):
         now = self.clock()
         duration = DAY if kind == 'guest' else 30 * DAY
         sid = secrets.token_urlsafe(32)
         with self.connect() as db:
+            if challenge is not None:
+                self.consume_login(db, challenge)
             db.execute('INSERT OR IGNORE INTO owners(owner, kind, expires) VALUES (?, ?, ?)',
                        (owner, kind, now + duration if kind == 'guest' else None))
             row = db.execute('SELECT * FROM owners WHERE owner=?', (owner,)).fetchone()
@@ -155,6 +170,10 @@ def check_login(request):
         nonce = claims['nonce']
         if not hmac.compare_digest(nonce, request.headers.get('x-aeye-csrf', '')):
             raise ValueError()
+        with database(request.app).connect() as db:
+            if db.execute('SELECT 1 FROM used_logins WHERE nonce=?', (digest(nonce),)).fetchone():
+                raise ValueError()
+        request.state.login_challenge = claims
         return nonce
     except (jwt.InvalidTokenError, KeyError, ValueError, TypeError):
         raise HTTPException(403, 'Reload the sign-in page.') from None
@@ -175,7 +194,7 @@ async def config():
 
 
 def signed_in(request, owner, kind):
-    encoded, duration = database(request.app).issue(owner, kind)
+    encoded, duration = database(request.app).issue(owner, kind, request.state.login_challenge)
     reply = response({'kind': kind, 'expires_in': duration})
     set_cookie(reply, COOKIE, encoded, duration)
     clear_cookie(reply, CHALLENGE)
@@ -218,6 +237,9 @@ async def google(request: Request):
 async def guest(request: Request):
     check_login(request)
     if authenticate_session(request):
+        db = database(request.app)
+        with db.connect() as conn:
+            db.consume_login(conn, request.state.login_challenge)
         return response({'kind': request.state.account['kind'], 'already_signed_in': True})
     ip = 'login:' + request.client.host
     if not request.app.state.limits.turn(ip, ip):
@@ -249,13 +271,17 @@ def stores(app, owner):
     memories = memory.memories(app)
     base = Path(memories.base or memory.root())
     found = {memory.person_id(owner): memories.store(memory.person_id(owner))}
+    local = []
     if base.exists():
         for path in base.iterdir():
             if path.is_dir() and not path.is_symlink() and memory._ID.fullmatch(path.name):
-                store = memories.store(path.name)
+                if path.name in found and not isinstance(found[path.name], SpacetimeStore):
+                    continue
+                # These are legacy local folders, not additional remote token bindings.
+                store = memory.Store(path.name, base=base)
                 if store.owner() == owner:
-                    found[path.name] = store
-    return list(found.values())
+                    local.append(store)
+    return list(found.values()) + local
 
 
 def family_owned(key, owner):
@@ -264,11 +290,14 @@ def family_owned(key, owner):
 
 def my_data(app, owner):
     owned = stores(app, owner)
-    growth = getattr(app.state, 'growth_logs', {}).get(owner)
+    for store in owned:
+        if not store.claim(owner):
+            raise PermissionError('memory belongs to another caller')
+    growth = growth_for_owner(app, owner)
     family = getattr(app.state, 'family_notes', None)
     result = dict(owner=owner, memory=[dict(id=s.id, settings=s.settings(), tags=s.tags(),
         records=[{k: v for k, v in r.items() if k not in ('emb', 'crops')} for r in s.records()],
-        videos=s.videos(), growth=s._read_json('growth.json', []),
+        videos=s.videos(), growth=GrowthLog(memory.Store(s.id, base=s.dir.parent)).entries,
         files=[dict(name=p.name, bytes=p.stat().st_size) for p in s.dir.rglob('*') if p.is_file()]) for s in owned],
         growth=growth.entries if growth else [],
         calls=[dict(id=c.session_id, status=c.status()) for c in registry(app).calls.values() if c.owner == owner],
@@ -328,7 +357,13 @@ async def delete_owner(app, owner):
     # Stop all account sockets and wait for their normal cleanup before removing their stores.
     await stop_sockets(app, owner)
     memories = memory.memories(app)
-    owned = stores(app, owner)
+    try:
+        owned = stores(app, owner)
+        for store in owned:
+            if not store.claim(owner):
+                raise PermissionError('memory belongs to another caller')
+    except StorageError:
+        return 1  # sessions are revoked; the deleting owner remains for the reaper
     failed = 0
     for call in list(registry(app).calls.values()):
         if call.owner != owner:
@@ -344,7 +379,10 @@ async def delete_owner(app, owner):
             for clip in call.clips:
                 if clip.video_id and call.index_id:
                     # Retain a retry manifest before discarding live state.
-                    owned[0].add_video(call.index_id, clip.video_id)
+                    try:
+                        owned[0].add_video(call.index_id, clip.video_id)
+                    except StorageError:
+                        return 1  # keep the live manifest for the reaper as well
             await call.aclose()
             call.ring.clear()
             call.clips.clear()
@@ -353,6 +391,7 @@ async def delete_owner(app, owner):
     growth = getattr(app.state, 'growth_logs', {}).pop(owner, None)
     if growth:
         growth.forget()
+        growth.store.revoked = True
     family = getattr(app.state, 'family_notes', None)
     if family:
         for key in list(family.contacts):
@@ -365,16 +404,25 @@ async def delete_owner(app, owner):
         for key in list(family.limits):
             if family_owned(key.removeprefix('owner:'), owner):
                 del family.limits[key]
+    local_dirs = {s.dir for s in owned if not isinstance(s, SpacetimeStore)}
     for store in owned:
-        _, remaining = await memory.delete_cloud(store, client=getattr(app.state, 'rewind_client', None))
-        pending = store.videos()
-        failed += remaining
-        if store.dir.exists():
-            shutil.rmtree(store.dir)
-        if pending:
-            store._write_json('owner.json', {'owner': owner})
-            store._write_json('videos.json', pending)
-        memories.retire(store.id)
+        try:
+            _, remaining = await memory.delete_cloud(store, client=getattr(app.state, 'rewind_client', None))
+            pending = store.videos()
+            failed += remaining
+            # Keep the remote retry manifest until its videos are gone. forget_all also deletes it.
+            if not (pending and isinstance(store, SpacetimeStore)):
+                store.forget_all()
+            # A migrated local store owns its directory and any old video retry manifest.
+            if store.dir.exists() and (not isinstance(store, SpacetimeStore) or store.dir not in local_dirs):
+                shutil.rmtree(store.dir)
+            if pending and not isinstance(store, SpacetimeStore):
+                store.claim(owner)
+                store._write_json('videos.json', pending)
+        except StorageError:
+            failed += 1
+        finally:
+            memories.retire(store.id)
     with app.state.limits.lock:
         app.state.limits.turns.pop(('owner', owner), None)
     if not failed:

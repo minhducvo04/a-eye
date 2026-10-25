@@ -53,7 +53,7 @@ def test_google_claims_and_valid_control(setup, change):
         response = login(client, key)
         assert response.status_code == 200
         cookie = response.headers['set-cookie']
-        assert 'HttpOnly' in cookie and 'Secure' in cookie and 'Max-Age=2592000' in cookie
+        assert all(flag in cookie for flag in ('HttpOnly', 'Secure', 'SameSite=lax', 'Max-Age=2592000'))
         first = client.get('/api/me').json()['owner']
         assert login(client, key, email='changed@example.test').status_code == 200
         assert client.get('/api/me').json()['owner'] == first
@@ -250,3 +250,264 @@ def test_local_only_keeps_guest_but_refuses_google(setup, monkeypatch):
         assert client.get('/auth/config').json()['google_client_id'] == ''
         assert login(client, key).status_code == 503
         assert guest(client).status_code == 200
+
+
+@pytest.mark.parametrize('kind', ['google', 'guest'])
+@pytest.mark.parametrize('replay_kind', ['google', 'guest'])
+def test_login_challenge_cannot_be_replayed_after_database_reopen(setup, kind, replay_kind):
+    from server import accounts
+    app, key = setup
+    with TestClient(app, base_url=ORIGIN) as client:
+        nonce = client.get('/auth/config').json()['nonce']
+        challenge = client.cookies.get(accounts.CHALLENGE)
+        encoded = jwt.encode(dict(sub='alice', iss='https://accounts.google.com',
+                                  aud='synthetic-client', exp=int(time.time()) + 300, nonce=nonce),
+                             key, algorithm='RS256', headers={'kid': 'google-test'})
+        headers = {'origin': ORIGIN, 'x-aeye-csrf': nonce,
+                   'cookie': f'{accounts.CHALLENGE}={challenge}'}
+        assert client.post('/auth/' + kind, json={'credential': encoded}, headers=headers).status_code == 200
+        app.state.accounts = accounts.Database(accounts.database(app).path)
+        assert client.post('/auth/' + replay_kind, json={'credential': encoded}, headers=headers).status_code == 403
+        assert (login(client, key) if kind == 'google' else guest(client)).status_code == 200
+
+
+def test_login_challenge_consumption_is_atomic(setup):
+    from concurrent.futures import ThreadPoolExecutor
+    from fastapi import HTTPException
+    from server import accounts
+    app, _ = setup
+    db = accounts.database(app)
+    challenge = {'nonce': 'synthetic-once', 'exp': int(time.time()) + 600}
+    def issue(_):
+        try:
+            accounts.Database(db.path).issue('google:alice', 'google', challenge)
+            return 200
+        except HTTPException as error:
+            return error.status_code
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(issue, range(2))) == [200, 403]
+    with db.connect() as conn:
+        assert conn.execute('SELECT count(*) FROM sessions').fetchone()[0] == 1
+        assert conn.execute('SELECT nonce FROM used_logins').fetchone()[0] == accounts.digest(challenge['nonce'])
+
+
+def test_login_challenge_expiring_during_verification_cannot_issue_again(setup, monkeypatch):
+    from fastapi import HTTPException
+    from server import accounts
+    app, _ = setup
+    db = accounts.database(app)
+    challenge = {'nonce': 'synthetic-expiring', 'exp': int(time.time()) + 1}
+    db.issue('google:alice', 'google', challenge)
+    # Another request passed check_login before expiry, then waited for Google keys.
+    monkeypatch.setattr(accounts, 'time', lambda: challenge['exp'] + 1)
+    with pytest.raises(HTTPException) as error:
+        db.issue('google:alice', 'google', challenge)
+    assert error.value.status_code == 403
+    with db.connect() as conn:
+        assert conn.execute('SELECT count(*) FROM sessions').fetchone()[0] == 1
+
+
+@pytest.fixture
+def spacetime(setup, monkeypatch):
+    import httpx
+    from cryptography.fernet import Fernet
+    from server import memory_storage
+    from server.test_memory_places import FakeSpacetime
+    monkeypatch.setenv('STORE', 'spacetime')
+    monkeypatch.setenv('A_EYE_MEMORY_KEY', Fernet.generate_key().decode())
+    monkeypatch.setenv('SPACETIMEDB_URI', 'https://synthetic.invalid')
+    monkeypatch.setenv('SPACETIMEDB_MODULE', 'synthetic')
+    monkeypatch.setenv('SPACETIMEDB_TOKEN', 'fake-owner-a')
+    fake = FakeSpacetime()
+    fake.fail = ''
+    def handle(request):
+        if fake.fail and request.url.path.endswith('/' + fake.fail):
+            return httpx.Response(503)
+        return fake.handle(request)
+    open_store = memory_storage.open_store
+    with httpx.Client(transport=httpx.MockTransport(handle)) as network:
+        monkeypatch.setattr(memory_storage, 'open_store',
+                            lambda *args, **kwargs: open_store(*args, client=network, **kwargs))
+        yield fake
+
+
+def seed_remote(app):
+    from server import accounts
+    with accounts.database(app).connect() as db:
+        owner = db.execute('SELECT owner FROM owners').fetchone()['owner']
+    store = memory.memories(app).for_owner(owner)
+    store.set_tag('remote keys', place_path=['desk'])
+    store.append(dict(id='synthetic', t=time.time(), note='remote note'))
+    return owner, store
+
+
+def test_spacetime_my_data_and_export_load_growth_after_restart(setup, spacetime):
+    import json
+    from server.growth import GrowthLog
+    app, key = setup
+    with TestClient(app, base_url=ORIGIN) as client:
+        assert login(client, key).status_code == 200
+        owner, store = seed_remote(app)
+        local = memory.Store(store.id, base=store.dir.parent)
+        GrowthLog(local).start('alarm')
+        other = memory.Store('other-local', base=store.dir.parent)
+        other.claim('other-owner')
+        other.set_tag('other keys')
+        memory.memories(app).stores.clear()  # the next route must claim a fresh adapter
+        response = client.get('/api/me')
+        assert response.status_code == 200
+        assert response.json()['growth'][0]['task'] == 'alarm'
+        assert 'remote keys' in response.text and 'other keys' not in response.text
+        exported = client.get('/api/me/export')
+        assert exported.status_code == 200
+        with zipfile.ZipFile(io.BytesIO(exported.content)) as archive:
+            assert json.loads(archive.read('my-data.json'))['growth'][0]['task'] == 'alarm'
+
+
+def test_growth_with_spacetime_stays_local_and_encrypted(setup, spacetime):
+    from server.growth import for_owner
+    app, key = setup
+    with TestClient(app, base_url=ORIGIN) as client:
+        assert login(client, key).status_code == 200
+        owner, store = seed_remote(app)
+        log = for_owner(app, owner)
+        log.start('alarm')
+        assert b'alarm' not in (store.dir / 'growth.json').read_bytes()
+        app.state.growth_logs.clear()
+        assert for_owner(app, owner).entries[0]['task'] == 'alarm'
+        assert all(r['id'] != 'growth.json' for r in spacetime.rows['documents'].values())
+
+
+@pytest.mark.parametrize('action', ['delete', 'expire', 'claim_memory', 'delete_memory_rows'])
+@pytest.mark.parametrize('legacy', [False, True])
+def test_spacetime_account_deletion_and_expiry_clear_remote_rows(setup, spacetime, action, legacy):
+    from server import accounts
+    app, key = setup
+    with TestClient(app, base_url=ORIGIN) as client:
+        assert (guest(client) if action == 'expire' else login(client, key)).status_code == 200
+        owner, store = seed_remote(app)
+        extra = memory.Store('legacy-local', base=store.dir.parent)
+        other = memory.Store('other-local', base=store.dir.parent)
+        if legacy:
+            extra.claim(owner)
+            extra.set_tag('legacy keys')
+            other.claim('other-owner')
+            other.set_tag('other keys')
+        db = accounts.database(app)
+        if action == 'expire':
+            db.clock = lambda: time.time() + 86401
+            client.portal.call(accounts.reap, app)
+        else:
+            spacetime.fail = action if action != 'delete' else ''
+            response = client.delete('/api/me', headers={'origin': ORIGIN})
+            assert response.status_code == (200 if action == 'delete' else 202)
+            if spacetime.fail:
+                with db.connect() as conn:
+                    assert conn.execute('SELECT deleting FROM owners WHERE owner=?', (owner,)).fetchone()[0] == 1
+                    assert not conn.execute('SELECT * FROM sessions').fetchall()
+                assert spacetime.rows['things']
+                assert login(client, key).status_code == 409
+                spacetime.fail = ''
+                client.portal.call(accounts.reap, app)
+        assert all(not spacetime.rows[table] for table in ('things', 'placements', 'records', 'documents'))
+        assert not store.dir.exists() and not extra.dir.exists()
+        if legacy:
+            assert other.tags() and other.dir.exists()
+        with db.connect() as conn:
+            assert not conn.execute('SELECT * FROM owners WHERE owner=?', (owner,)).fetchall()
+        assert client.get('/api/me').status_code == 401
+
+
+def test_retired_spacetime_store_cannot_restore_deleted_rows(setup, spacetime):
+    app, key = setup
+    with TestClient(app, base_url=ORIGIN) as client:
+        assert login(client, key).status_code == 200
+        _, store = seed_remote(app)
+        store.forget_all()
+        memory.memories(app).retire(store.id)
+        with pytest.raises(PermissionError):
+            store.set_tag('late keys', place_path=['desk'])
+        with pytest.raises(PermissionError):
+            store.append(dict(id='late', t=time.time(), note='late note'))
+        assert not spacetime.rows['things'] and not spacetime.rows['records']
+
+
+def test_spacetime_cloud_failure_preserves_retry_until_reap(setup, spacetime):
+    from server import accounts
+    app, key = setup
+    class Cloud:
+        fail = True
+        deleted = []
+        async def delete_video(self, index_id, video_id, force=False):
+            assert force
+            if self.fail:
+                raise RuntimeError('synthetic outage')
+            self.deleted.append((index_id, video_id))
+    cloud = app.state.rewind_client = Cloud()
+    with TestClient(app, base_url=ORIGIN) as client:
+        assert login(client, key).status_code == 200
+        owner, store = seed_remote(app)
+        store.add_video('index', 'video')
+        result = client.delete('/api/me', headers={'origin': ORIGIN})
+        assert result.status_code == 202
+        assert login(client, key).status_code == 409
+        # Drop process caches: a pending deletion must remain retryable from storage.
+        app.state.accounts = accounts.Database(accounts.database(app).path)
+        memory.memories(app).stores.clear()
+        cloud.fail = False
+        client.portal.call(accounts.reap, app)
+        assert cloud.deleted == [('index', 'video')]
+        assert all(not spacetime.rows[t] for t in ('things', 'placements', 'records', 'documents'))
+        assert login(client, key).status_code == 200
+
+
+def test_spacetime_delete_keeps_canonical_local_video_retry_manifest(setup, spacetime):
+    from server import accounts
+    app, key = setup
+    class Cloud:
+        fail = True
+        deleted = []
+        async def delete_video(self, index_id, video_id, force=False):
+            if self.fail:
+                raise RuntimeError('synthetic outage')
+            self.deleted.append((index_id, video_id))
+    cloud = app.state.rewind_client = Cloud()
+    with TestClient(app, base_url=ORIGIN) as client:
+        assert login(client, key).status_code == 200
+        owner, remote = seed_remote(app)
+        # Retained before STORE changed from local to spacetime.
+        local = memory.Store(remote.id, base=remote.dir.parent)
+        local.claim(owner)
+        local.add_video('old-index', 'old-video')
+        assert client.delete('/api/me', headers={'origin': ORIGIN}).status_code == 202
+        assert local.videos()[0]['video_id'] == 'old-video'
+        cloud.fail = False
+        client.portal.call(accounts.reap, app)
+        assert cloud.deleted == [('old-index', 'old-video')]
+        assert not local.dir.exists()
+
+
+def test_spacetime_live_call_manifest_failure_returns_pending_then_retries(setup, spacetime):
+    from types import SimpleNamespace
+    from server import accounts
+    from server.rewind import registry
+    app, key = setup
+    class Cloud:
+        deleted = []
+        async def delete_video(self, index_id, video_id, force=False):
+            self.deleted.append((index_id, video_id))
+    cloud = app.state.rewind_client = Cloud()
+    with TestClient(app, base_url=ORIGIN) as client:
+        assert login(client, key).status_code == 200
+        owner, _ = seed_remote(app)
+        call = registry(app).open('pending-call', owner=owner)
+        call.index_id = 'index'
+        call.clips.append(SimpleNamespace(video_id='video', status='ready'))
+        spacetime.fail = 'put_document'
+        assert client.delete('/api/me', headers={'origin': ORIGIN}).status_code == 202
+        assert registry(app).calls['pending-call'].clips
+        spacetime.fail = ''
+        client.portal.call(accounts.reap, app)
+        assert cloud.deleted == [('index', 'video')]
+        assert 'pending-call' not in registry(app).calls
+        assert all(not spacetime.rows[t] for t in ('things', 'placements', 'records', 'documents'))
