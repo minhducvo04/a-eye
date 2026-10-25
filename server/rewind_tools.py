@@ -71,8 +71,8 @@ async def run_tool(name, args, session, vision=None, app=None, turn_id=None):
 FIND_ITEM_TOOL = {
     'name': 'find_item',
     'description': (
-        "Find where the user last put an object, from their local memory across calls and days (kept on this "
-        "machine). Use for 'where are my keys?', 'where did I leave my glasses?', 'have you seen the blue pill "
+        "Find where the user last put an object, from their selected memory store across calls and days. "
+        "Use for 'where are my keys?', 'where did I leave my glasses?', 'have you seen the blue pill "
         "box?'. Returns found, when (spoken time), place (e.g. 'under the left cup'), home (the tagged home place), "
         "live (the item or its last place is in view now; an arrow is drawn), count, and say (a ready spoken "
         "answer). Prefer this over search_past for objects; use search_past for moments in this call."),
@@ -89,6 +89,9 @@ TAG_ITEM_TOOL = {
         'name': {'type': 'string', 'description': 'What the user calls it, e.g. "keys" or "key bowl".'},
         'label': {'type': 'string', 'description': 'What the camera sees, if different, e.g. "keys".'},
         'home': {'type': 'string', 'description': 'Where it belongs, e.g. "blue bowl".'},
+        'place_path': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 1, 'maxItems': 16,
+                       'description': 'Confirmed current location, outermost first, e.g. ["desk", "drawer"]. '
+                                      'Omit when only a preferred home is known.'},
         'kind': {'type': 'string', 'enum': ['object', 'place']}}, 'required': ['name']},
 }
 
@@ -138,7 +141,8 @@ async def run_memory_tool(name, args, session, app, turn_id=None):
         session.memory_last_item = result.get('item')
         return result, cards
     if name == 'tag_item':
-        tag = store.set_tag(args.get('name'), args.get('label'), args.get('home'), args.get('kind', 'object'))
+        tag = store.set_tag(args.get('name'), args.get('label'), args.get('home'), args.get('kind', 'object'),
+                            place_path=args.get('place_path'))
         line = f"I'll remember your {tag['name']}" + (f", and that they belong in the {tag['home']}." if tag['home'] else '.')
         return dict(tag=tag, say=line), [memory_state_message(store)]
     if name == 'forget_memory':

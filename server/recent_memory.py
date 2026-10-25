@@ -1,4 +1,4 @@
-"""Call-local text recall. No frames, embeddings, model calls or disk writes."""
+"""Call-local text recall; selected storage only while memory consent is enabled."""
 from collections import deque
 from datetime import datetime, timedelta
 import re
@@ -50,6 +50,24 @@ class RecentMemory:
         self.started_wall = time()
         self.entries = deque(maxlen=1024)
         self.step = ''
+        self.store = None
+        self.call_id = None
+
+    def bind(self, store, call_id):
+        if self.store is not None and (store is None or call_id != self.call_id):
+            self._clear_persisted()
+        self.store, self.call_id = store, call_id
+
+    def _clear_persisted(self):
+        from server.logs import event
+        from server.memory_storage import StorageError
+        try:
+            self.store.clear_recent(self.call_id)
+        except StorageError:
+            # Privacy/offline failures must not interrupt the rest of call teardown.
+            # The remote copy remains until a later successful expiry/Forget write.
+            event('dependency_error', None, dependency='memory', level='error',
+                  error='recent_cleanup_failed')
 
     def prune(self, now=None):
         now = self.clock() if now is None else now
@@ -59,6 +77,12 @@ class RecentMemory:
     def clear(self):
         self.entries.clear()
         self.step = ''
+        if self.store is not None:
+            try:
+                self._clear_persisted()
+            finally:
+                self.store = None
+                self.call_id = None
 
     def note_step(self, text):
         # Only numbered guide instructions establish a step; never infer completion.
@@ -68,14 +92,21 @@ class RecentMemory:
 
     def add(self, scene, observed_at, step=None, kind='scene'):
         self.prune(observed_at)
-        self.entries.append(dict(observed_at=observed_at, t_s=max(0, observed_at - self.started),
+        entry = dict(observed_at=observed_at, t_s=max(0, observed_at - self.started),
                                  note=str(scene.get('caption') or '')[:2000],
                                  labels=[str(o['label'])[:120] for o in scene.get('objects', [])[:64]],
-                                 step=self.step if step is None else str(step)[:1000], kind=kind))
+                                 step=self.step if step is None else str(step)[:1000], kind=kind,
+                                 wall_t=self.started_wall + max(0, observed_at - self.started))
+        self.entries.append(entry)
+        if self.store is not None and self.store.remembering():
+            self.store.append_recent(self.call_id, entry)
 
     def find(self, question):
         self.prune()
         entries = list(self.entries)
+        if self.store is not None and self.store.remembering():
+            entries = [e for e in self.store.recent_records(self.call_id)
+                       if self.clock() - e['observed_at'] <= 120]
         step = STEP.search(question)
         target = words(AGE.sub('', question))
         if step:
@@ -114,12 +145,15 @@ async def long_term(session, question):
         return None  # Do not relabel a newest sighting as evidence for an unsupported date.
 
     class PastStore:
-        clock = writer.store.clock
+        clock = staticmethod(writer.store.clock)
         tags = writer.store.tags
         load_crop = writer.store.load_crop
 
         def records(self):
             return [r for r in writer.store.records() if start <= r['t'] < end]
+
+        def where(self, name):
+            return writer.store.where(name, start=start, end=end)
 
     query = LONG.sub('', question)
     result = await memory.find(PastStore(), query, embedder=writer.embedder)

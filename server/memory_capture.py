@@ -68,7 +68,7 @@ async def capture(store, frames, judge=worth_noting):
         if not note or not store.remembering():
             return {'noted': False}
         store.purge_old()
-        store.append(dict(id=uuid4().hex[:12], t=store.clock(), call='capture', note=note,
+        store.append(dict(id=uuid4().hex[:12], t=store.clock(), call='capture', source='capture', note=note,
                           labels=note.split(), tags=[], crops={}, emb=None))
         return {'noted': True}
     finally:
