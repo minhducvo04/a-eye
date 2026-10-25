@@ -64,7 +64,7 @@ def capture(token):
             page.get_by_role('button', name='Call', exact=True).wait_for()
             assert page.locator('#picker button:visible').count() == 2
             assert page.locator('#picker .open-settings').count() == 1
-            assert page.locator('.intro-title').inner_text().replace('\n', ' ').strip() == 'I look, point, and remember.'
+            assert page.locator('.intro-title').inner_text().replace('\n', ' ').strip() == 'Call it'
             for selector in ('.intro-title', '.intro-note', '#picker .open-settings'):
                 assert_in_view(page, selector)
             assert page.locator('#picker').evaluate('(el) => el.scrollWidth <= el.clientWidth && el.scrollHeight <= el.clientHeight')
@@ -80,7 +80,7 @@ def capture(token):
             assert page.locator('#settings').is_visible()
             page.locator('#settings-done').click()
             assert page.locator('[data-mode], #pair-call, #pair-request, #memory-aid, #caregiver-link').count() == 0
-            assert page.locator('.intro-note').inner_text() == 'A companion call that watches, points, and guides as you learn.'
+            assert page.locator('.intro-note').inner_text() == 'A companion call that watches, guides, and remembers as you learn.'
             assert_in_view(page, '#ring-hint')
             page.screenshot(path=str(OUT / f'after-start-{width}.png'))
             page.get_by_role('button', name='Call', exact=True).focus()

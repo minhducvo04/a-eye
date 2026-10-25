@@ -27,7 +27,7 @@ struct StartScreen: View {
                     .accessibilityLabel("Call")
                     .padding(.bottom, 36)
 
-                    Text("A companion call that watches, points, and guides as you learn.")
+                    Text("A companion call that watches, guides, and remembers as you learn.")
                         .font(.footnote)
                         .foregroundStyle(Palette.text2)
                         .multilineTextAlignment(.center)
@@ -44,18 +44,14 @@ struct StartScreen: View {
     private var hero: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: -4) {
-                Text("Dad,")
-                    .font(.system(size: 72, weight: .regular, design: .serif).italic())
-                    .foregroundStyle(Palette.helper)
-                Text("how do I?")
-                    .font(.system(size: 49, weight: .medium))
+                (Text("Call ").foregroundStyle(.white) + Text("it").italic().foregroundStyle(Palette.helper))
+                    .font(.system(size: 72, weight: .medium))
                     .tracking(-2)
-                    .foregroundStyle(.white)
             }
             .minimumScaleFactor(0.65)
             .lineLimit(1)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Dad, how do I?")
+            .accessibilityLabel("Call it")
             .accessibilityAddTraits(.isHeader)
 
             Capsule().fill(Palette.helper.opacity(0.6)).frame(width: 44, height: 2)
