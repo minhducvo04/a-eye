@@ -25,14 +25,14 @@ test('completion never suggests sharing without a contact; removing the last con
     const flow = setupFamily({session: () => sid, speak: async () => {},
       request: async () => ({contacts: rows, tasks: {}, replies: []})});
     await refresh();
-    flow.complete('sink');
+    flow.complete('ee_led');
     assert.equal(node('family-panel').open, false);
     assert.equal(node('family-heading').textContent, 'People');
     assert.equal(node('family-sharing').hidden, true);
     assert.equal(node('family-draft').disabled, true);
     rows = [{id: 'friend', name: 'Fixture', relation: 'friend'}];
     await refresh();
-    flow.complete('sink');
+    flow.complete('ee_led');
     assert.equal(node('family-panel').open, true);
     assert.equal(node('family-heading').textContent, 'Want to show someone?');
     assert.equal(node('family-sharing').hidden, false);
@@ -42,7 +42,7 @@ test('completion never suggests sharing without a contact; removing the last con
     assert.equal(node('family-send').disabled, true);
     sid = 'two';
     await refresh();
-    flow.complete('sink');
+    flow.complete('ee_led');
     assert.equal(node('family-panel').open, false);
   } finally {
     for (const [key, descriptor] of saved) {

@@ -119,7 +119,7 @@ final class CallController {
         self.mode = mode
         isLive = LiveConfiguration.enabled(mode: mode.id, google: googleConsent, privateMode: privateMode)
         state = .initial
-        isHomeStartPending = mode.pack == Modes.homePack
+        isHomeStartPending = Modes.startText(for: mode) != nil
         sessionId = UUID().uuidString
         callStartedAt = Date()
         speech.prepareAudioSession()
@@ -334,7 +334,8 @@ final class CallController {
 
     private func connect() {
         guard let mode, mode.pack != nil, let base = socketURL,
-              let url = LiveConfiguration.url(base, live: isLive, google: googleConsent, privateMode: privateMode) else { return }
+              let url = LiveConfiguration.url(base, live: isLive, google: googleConsent, privateMode: privateMode,
+                                              engineering: mode.id == "engineering") else { return }
         generation += 1
         let thisGeneration = generation
         socket?.close()
@@ -376,7 +377,7 @@ final class CallController {
         }
         if isHomeStartPending, case .agentState(_, .listening) = message {
             isHomeStartPending = false
-            send(text: Modes.homeStartText)
+            if let mode, let text = Modes.startText(for: mode) { send(text: text) }
         }
     }
 

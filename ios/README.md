@@ -20,7 +20,8 @@ The ring shows the v2 skill packs, Gemini Live, and two placeholders:
 | Assembly | `assemble` | works |
 | Memory | `memory` | works; retains its existing flow |
 | Sink | `home` | works; the app sends "sink" as soon as the helper first listens, like the web |
-| Mechanic, Engineering | none | "coming soon" (tap shakes, no call) |
+| Engineering | `general` + `mode=engineering` URL selection | sends "light an LED" once; deterministic USB-only guide |
+| Mechanic | none | "coming soon" (tap shakes, no call) |
 
 ## Protocol
 
@@ -110,7 +111,7 @@ and the Mac must be on the same Wi-Fi. Accepted forms: `192.168.1.10:8000` (beco
 - Portrait, iPhone only.
 - Modes without Live use the system voice (`tts:"browser"`); Live and General play server PCM audio when Google is enabled outside Private mode.
 - Boxes are drawn where the server put them. There is no tracking between frames, so they can lag a moving object.
-- Mechanic and Engineering are placeholders.
+- Mechanic is a placeholder. Engineering's native mode wiring has core tests; physical-device rehearsal is pending.
 - No app icon yet.
 - The app is a helper, not a certified or medical tool, and it is not for mains, gas or PSU internals.
 - Safari (`client-web/`) stays the committed demo unless native passes the same rehearsal.

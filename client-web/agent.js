@@ -69,7 +69,7 @@ const MODES = [
   { id: "memory", title: "Memory", pack: "memory" },
   { id: "mechanic", title: "Mechanic", pack: null },
   { id: "plumbing", title: "Sink", pack: "home" },
-  { id: "engineering", title: "Engineering", pack: null },
+  { id: "engineering", title: "Engineering", pack: "engineering" },
   { id: "gemini-live", title: "Gemini Live", pack: "gemini-live" },
 ];
 const DEFAULT_MODE = MODES.findIndex((m) => m.id === "gemini-live");
@@ -483,6 +483,7 @@ function boot() {
     const scheme = location.protocol === "https:" ? "wss:" : "ws:";
     const token = new URLSearchParams(location.search).get("token");
     const base = `${scheme}//${location.host}/ws2${token ? `?token=${encodeURIComponent(token)}${ownerQuery()}` : ""}`;
+    if (pack === 'engineering') return `${base}${base.includes('?') ? '&' : '?'}mode=engineering`;
     return liveSettings(pack, cloud.google, privateMode).allowed ? `${base}${base.includes("?") ? "&" : "?"}mode=gemini-live&google=${cloud.google && !privateMode ? "1" : "0"}` : base;
   }
 
@@ -582,7 +583,7 @@ function boot() {
       v: 2,
       type: "hello",
       session_id: sessionId,
-      pack: pack === "gemini-live" ? "general" : pack,
+      pack: ["gemini-live", "engineering"].includes(pack) ? "general" : pack,
       client: "web",
       tts,
       stt,
@@ -700,6 +701,7 @@ function boot() {
       if (message.stage === 'received') document.getElementById('proof-safety')?.classList.add('hidden');
       if (message.detail === 'Stopped by code') document.getElementById('proof-safety')?.classList.remove('hidden');
       if (message.detail === 'Home: complete') family.complete('sink');
+      if (message.detail === 'Engineering: complete') family.complete('ee_led');
       if (message.detail === 'Home: sink') { pack = 'home'; packLabel.textContent = 'Sink'; }
       if (message.detail?.startsWith('Brain: ')) setText('proof-brain', message.detail);
       wait = waitAfterTurn(wait, message, now);
@@ -743,7 +745,7 @@ function boot() {
     if (message.type === "agent_state") {
       if (homeStartPending && message.state === 'listening') {
         homeStartPending = false;
-        sendUser('sink', 'typed');
+        sendUser(pack === 'engineering' ? 'light an LED' : 'sink', 'typed');
       }
       // Phone speech barged in on the server: stop this laptop's playback as its own VAD would.
       if (micRoute.phone && message.state === "listening") stopLocalPlayback();
@@ -1669,7 +1671,7 @@ function boot() {
     document.getElementById('live-start-notice').classList.add('hidden');
     pack = next;
     renderLeaves();
-    homeStartPending = next === 'home';
+    homeStartPending = next === 'home' || next === 'engineering';
     document.getElementById('guide-presenter')?.classList.add('hidden');
     ended = false;
     sessionId = randomId();

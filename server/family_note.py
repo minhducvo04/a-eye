@@ -17,6 +17,12 @@ router = APIRouter()
 TTL = 24 * 60 * 60
 # Controlled, current-task facts: never free-form scene/history/memory extraction.
 TASKS = {
+    'ee_led': {
+        'fixed': 'I finished an Arduino LED practice guide.',
+        'details': ['I practiced the series resistor wiring.', 'I practiced checking LED polarity.',
+                    'I practiced uploading Blink for pin 9.'],
+        'question': 'Would you like to see the circuit?',
+    },
     'sink': {
         'fixed': 'I fixed the sink leak.',
         'details': ['I tightened the fitting.', 'I replaced the washer.', 'I checked for drips.',
