@@ -21,10 +21,10 @@ This fixes the previously recorded missing-fixture failure without changing the 
 Updated receipts: `RESULT.md` and `docs/results/bg-context.md`.
 
 Test: affected Live/context/pointer tests - PASS (78 passed in 4.14s).
-Test: `make -k test PY=/Users/minhducvo/Projects/a-eye/.venv/bin/python` - PASS
+Test: `make -k test PY=$HOME/Projects/a-eye/.venv/bin/python` - PASS
 (1260 passed, 2 warnings in 67.17s; web: 169 passed, 0 failed).
 Test: `node --test client-web/` - PASS (169 passed, 0 failed, 0 skipped).
-Test: `make smoke PY=/Users/minhducvo/Projects/a-eye/.venv/bin/python` - PASS
+Test: `make smoke PY=$HOME/Projects/a-eye/.venv/bin/python` - PASS
 (`steps=['SAFETY', 'IDENTIFY', 'LOCATE', 'GUIDE', 'AWAIT'] target_overlays=1`, `SMOKE PASS`).
 Test: `/private/tmp/aeye-bg-merge-rewind-check.py` with the project Python and
 worktree PYTHONPATH - PASS (saved-call retrieval after empty/current-call misses;
@@ -32,7 +32,7 @@ other-owner isolation; fake TwelveLabs, metadata only).
 Test: `git diff --cached --check` - PASS.
 
 Real checks used `make -f Makefile -f /private/tmp/aeye-bg-merge-probe.mk`, with
-`PY=/Users/minhducvo/Projects/a-eye/.venv/bin/python`. The supplemental makefile
+`PY=$HOME/Projects/a-eye/.venv/bin/python`. The supplemental makefile
 loads the main checkout's `.env` without printing it and invokes this worktree's
 `server.live_latency_probe --real --trials 5` and `scripts/gemini_live_check.py`.
 The existing daily cap is $5; the ledger reports $5.03 and a latched stop.
@@ -102,9 +102,9 @@ or first client audio, and that closing the bridge cancels its context worker.
 Commands:
 
 ```sh
-/Users/minhducvo/Projects/a-eye/.venv/bin/python -m server.live_latency_probe --bridge-source /private/tmp/aeye-bg-context-live-before.py
-/Users/minhducvo/Projects/a-eye/.venv/bin/python -m server.live_latency_probe
-make -C /Users/minhducvo/Projects/a-eye -f /private/tmp/aeye-bg-context-probe.mk -k bg-context-real-before bg-context-real-after PY=/Users/minhducvo/Projects/a-eye/.venv/bin/python
+$HOME/Projects/a-eye/.venv/bin/python -m server.live_latency_probe --bridge-source /private/tmp/aeye-bg-context-live-before.py
+$HOME/Projects/a-eye/.venv/bin/python -m server.live_latency_probe
+make -C $HOME/Projects/a-eye -f /private/tmp/aeye-bg-context-probe.mk -k bg-context-real-before bg-context-real-after PY=$HOME/Projects/a-eye/.venv/bin/python
 ```
 
 Before source: a copy of this worktree's original uncommitted `gemini_live.py`,
@@ -127,7 +127,7 @@ Background tests cover context publication during speech, a stalled worker,
 coalescing, freshness, cancellation, privacy, model routing, and coded hazards.
 
 Test: affected Live/context/WebSocket suite - PASS (59 passed in 5.13s).
-Test: `make -k test PY=/Users/minhducvo/Projects/a-eye/.venv/bin/python` - FAIL
+Test: `make -k test PY=$HOME/Projects/a-eye/.venv/bin/python` - FAIL
 (1 failed, 1257 passed, 2 warnings in 68.89s; web: 169 passed, 0 failed).
 Test: `node --test client-web/` - PASS (169 passed, 0 failed, 0 skipped).
 Test: `git diff --check` - PASS.
