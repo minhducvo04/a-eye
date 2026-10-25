@@ -89,7 +89,7 @@ TOOL_ARGS = {'point_at': ('label',), 'find_item': ('name',), 'tag_item': ('name'
              'gather_context': ('question',)}
 TOOL_DESCRIPTIONS = {
     'gather_context': 'Gather relevant camera, recent memory, places, growth and dated notes before answering a user question.',
-    'point_at': 'Ground a visible object and draw a box and arrow only when sure.',
+    'point_at': 'Draw a box and arrow on a visible object you are talking about or recommending. Call it whenever you name or choose a specific visible object.',
     'find_item': 'Look up an item in the user\'s local memory.',
     'tag_item': 'Remember an item and its home place locally, when the user asks.',
     'forget_memory': 'Delete local memories of the named item when the user asks.',
@@ -193,7 +193,11 @@ class LiveBridge:
             context = self.session.context_agent
             context_block = (await context.collect(provider='google')) if context else ''
             setup = live_setup(self.model, self.session.pack.system_prompt + personas.style_block(self.session.persona) +
-                    ' Use point_at to point at visible objects. Use local memory tools only when requested. '
+                    ' Whenever your answer names, recommends, compares or chooses a specific object that is visible in the '
+                    'camera (for example "use the red wire", "this valve", "the left one"), call point_at with a short '
+                    'label for that object while you speak, so a box and arrow appear on it. When you choose between '
+                    'options, point at the one you chose. Do not point at things you cannot see. '
+                    'Use local memory tools only when requested. '
                     'Use recent_memory for questions about previous steps or observations, preserving the full time scope. '
                     'Never claim a memory is saved or deleted before a tool confirms it. '
                     'Call gather_context before answering each spoken user question. ' + context_block,
