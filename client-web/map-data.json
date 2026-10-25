@@ -1,0 +1,1237 @@
+{
+ "version": 1,
+ "title": "A-Eye system map",
+ "measured_note": "Measured on real Gemini Live calls on 2026-10-25 with synthetic speech. Anything else says not measured.",
+ "cost_note": "Costs are estimates from the server's own meter defaults, not provider invoices. One 2.5 minute Live call with Rewind measured about $1.40 on the meter; the meter overcounts status polls. Local models cost $0.",
+ "zones": [
+  {
+   "id": "device",
+   "name": "Phone / browser",
+   "color": "#8fb3ff",
+   "center": [
+    -10.5,
+    0.5,
+    0
+   ],
+   "radius": 2.0,
+   "label_at": [
+    -10.5,
+    2.6,
+    0
+   ]
+  },
+  {
+   "id": "server",
+   "name": "Mac server (FastAPI)",
+   "color": "#6ff0c0",
+   "center": [
+    -2.4,
+    0.6,
+    1
+   ],
+   "radius": 4.6,
+   "label_at": [
+    -2.4,
+    5.6,
+    1
+   ]
+  },
+  {
+   "id": "cloud",
+   "name": "Cloud (switchable)",
+   "color": "#c4a1ff",
+   "center": [
+    7,
+    4.4,
+    -1
+   ],
+   "radius": 2.6,
+   "label_at": [
+    7,
+    6.6,
+    -1
+   ]
+  },
+  {
+   "id": "gpu",
+   "name": "Home GPU over Tailscale",
+   "color": "#ff9cb8",
+   "center": [
+    7.6,
+    -2.4,
+    1.6
+   ],
+   "radius": 3.2,
+   "label_at": [
+    8.0,
+    -6.0,
+    1.2
+   ]
+  },
+  {
+   "id": "memory",
+   "name": "Memory",
+   "color": "#b6f27a",
+   "center": [
+    -4.2,
+    -7.8,
+    -1.0
+   ],
+   "radius": 5.4,
+   "label_at": [
+    -4.2,
+    -9.6,
+    -1
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "id": "capture",
+   "zone": "device",
+   "pos": [
+    -10.5,
+    0.5,
+    0
+   ],
+   "size": 0.62,
+   "status": "working",
+   "name": "Camera + mic",
+   "speed": "1 fps, 320 px frames",
+   "cost": "$0",
+   "kind": "Phone or web client",
+   "what": "The phone or browser streams microphone audio and one camera frame per second, downscaled to 320 px, over one WebSocket. It plays the voice reply and draws boxes on the live view.",
+   "code": [
+    "client-web/live.js",
+    "client-web/gemini-live.js",
+    "server/ws2.py"
+   ],
+   "facts": [
+    [
+     "Frames",
+     "1 per second, 320 px (server/ws2.py thumbnails to 320)"
+    ],
+    [
+     "Socket",
+     "/ws2"
+    ],
+    [
+     "Cost",
+     "$0"
+    ]
+   ]
+  },
+  {
+   "id": "server",
+   "zone": "server",
+   "pos": [
+    -5,
+    0,
+    0
+   ],
+   "size": 0.8,
+   "status": "working",
+   "name": "A-Eye server /ws2",
+   "speed": "not measured alone",
+   "cost": "$0",
+   "kind": "FastAPI on the Mac",
+   "what": "One socket per call. It fans each turn out to the router, the safety gates, the step guide, vision and memory, and relays Gemini's voice back. Code decides what is safe and which step is next; models only phrase and look.",
+   "code": [
+    "server/ws2.py",
+    "server/app.py"
+   ],
+   "facts": [
+    [
+     "Runs on",
+     "the host Mac"
+    ],
+    [
+     "Hub for",
+     "every edge on this map"
+    ]
+   ]
+  },
+  {
+   "id": "gemini",
+   "zone": "cloud",
+   "pos": [
+    7,
+    4.4,
+    -1
+   ],
+   "size": 0.78,
+   "status": "working",
+   "privacy": "google",
+   "name": "Gemini Live talker",
+   "speed": "0.6 to 1.1 s to voice",
+   "cost": "~$0.10 / min (est.)",
+   "kind": "Cloud voice model (gemini-3.8-live)",
+   "what": "Hears the voice and sees 1 fps frames, then speaks. It is the only voice in the normal call. Safety gates can mute it mid sentence and speak a fixed line instead.",
+   "code": [
+    "server/gemini_live.py"
+   ],
+   "facts": [
+    [
+     "Model",
+     "gemini-3.8-live (DOCUMENTED_MODEL)"
+    ],
+    [
+     "End of speech to first voice",
+     "0.6 to 1.1 s (measured)"
+    ],
+    [
+     "Cost",
+     "GEMINI_LIVE_USD_PER_MINUTE, default 0.10 (estimate)"
+    ]
+   ],
+   "look": {
+    "type": "range",
+    "title": "Measured response times",
+    "unit": "s",
+    "min": 0,
+    "max": 3,
+    "ranges": [
+     {
+      "label": "Speech end to voice",
+      "from": 0.6,
+      "to": 1.1,
+      "tone": "speed"
+     },
+     {
+      "label": "Named to box",
+      "from": 1.8,
+      "to": 2.3,
+      "tone": "gpu"
+     }
+    ],
+    "marks": [
+     {
+      "at": 0.086,
+      "label": "hazard stop line 86 ms",
+      "tone": "danger"
+     }
+    ],
+    "foot": "Measured on real Live calls tonight, synthetic speech."
+   }
+  },
+  {
+   "id": "router",
+   "zone": "server",
+   "pos": [
+    -0.8,
+    2.3,
+    1.2
+   ],
+   "size": 0.55,
+   "status": "working",
+   "building": "Time scope (just now / earlier this call / earlier calls) is being built tonight.",
+   "name": "Router",
+   "speed": "~43 ms",
+   "cost": "$0 (local)",
+   "kind": "Decision model: EmbeddingGemma + logistic regression",
+   "what": "Embeds each question and picks a lane in about 43 ms: answer from now (camera), from the past (memory) or ask the expert. Small and local, so it never waits on the cloud.",
+   "code": [
+    "router/route.py",
+    "router/embed_local.py",
+    "router/results/heldout_eval.json"
+   ],
+   "facts": [
+    [
+     "Held-out accuracy",
+     "96 of 100 (router/results/heldout_eval.json)"
+    ],
+    [
+     "Latency",
+     "p50 43 ms, p90 49.5 ms"
+    ],
+    [
+     "Claude Haiku as router",
+     "97 of 100, p50 803 ms"
+    ],
+    [
+     "Regex baseline",
+     "64 of 100"
+    ]
+   ],
+   "look": {
+    "type": "bars",
+    "title": "Router vs alternatives, 100 held-out questions",
+    "groups": [
+     {
+      "label": "Accuracy",
+      "unit": "%",
+      "max": 100,
+      "items": [
+       {
+        "label": "Router",
+        "value": 96,
+        "tone": "server"
+       },
+       {
+        "label": "Claude Haiku",
+        "value": 97,
+        "tone": "cloud"
+       },
+       {
+        "label": "Regex",
+        "value": 64,
+        "tone": "muted"
+       }
+      ]
+     },
+     {
+      "label": "Time, p50",
+      "unit": "ms",
+      "max": 900,
+      "items": [
+       {
+        "label": "Router",
+        "value": 43,
+        "tone": "server"
+       },
+       {
+        "label": "Claude Haiku",
+        "value": 803.3,
+        "tone": "cloud"
+       }
+      ]
+     }
+    ],
+    "foot": "From router/results/heldout_eval.json."
+   }
+  },
+  {
+   "id": "safety",
+   "zone": "server",
+   "pos": [
+    -1.6,
+    -2.8,
+    1.8
+   ],
+   "size": 0.55,
+   "status": "working",
+   "tone": "danger",
+   "name": "Safety gates",
+   "speed": "86 ms stop line",
+   "cost": "$0 (code)",
+   "kind": "Coded rules (server/safety.py)",
+   "what": "Plain code, no model. A question about a known hazard gets a fixed line and no model is asked. A reply that calls a hazard fine is replaced. On a hazard it mutes Gemini and speaks the stop line 86 ms after speech ends.",
+   "code": [
+    "server/safety.py",
+    "server/gates.py"
+   ],
+   "facts": [
+    [
+     "Stop line",
+     "86 ms after speech, Gemini muted (measured)"
+    ],
+    [
+     "Why code",
+     "a local model once told a user heavily smoking oil was fine"
+    ]
+   ],
+   "look": {
+    "type": "range",
+    "title": "After the user stops speaking",
+    "unit": "s",
+    "min": 0,
+    "max": 1.5,
+    "ranges": [
+     {
+      "label": "Gemini would speak",
+      "from": 0.6,
+      "to": 1.1,
+      "tone": "cloud"
+     }
+    ],
+    "marks": [
+     {
+      "at": 0.086,
+      "label": "stop line 86 ms",
+      "tone": "danger"
+     }
+    ],
+    "foot": "The gate speaks first, so the model never gets to say the unsafe thing."
+   }
+  },
+  {
+   "id": "guide",
+   "zone": "server",
+   "pos": [
+    0.4,
+    -0.3,
+    2.2
+   ],
+   "size": 0.5,
+   "status": "working",
+   "name": "Step guide",
+   "speed": "not measured",
+   "cost": "$0 (code)",
+   "kind": "Coded step guide (server/live_guide.py)",
+   "what": "Code owns the task and the current step; Gemini only phrases it. A step moves only when the guide's rules pass. The shutoff step also needs the valve checker to see the valve off in the current frame: saying \"it's off\" is refused.",
+   "code": [
+    "server/live_guide.py",
+    "server/steps.py"
+   ],
+   "facts": [
+    [
+     "Valve check",
+     "refuses spoken \"it's off\" without a frame that shows it"
+    ],
+    [
+     "Who speaks steps",
+     "fixed lines from code, phrased by Live"
+    ]
+   ],
+   "look": {
+    "type": "cards",
+    "title": "How a step advances",
+    "cards": [
+     {
+      "head": "User says",
+      "body": "\"Done, it's off.\""
+     },
+     {
+      "head": "Guide asks the valve checker",
+      "body": "Current frame only, Qwen 2.5-VL on the home GPU."
+     },
+     {
+      "head": "No proof in the frame",
+      "body": "Step stays. Fixed retry line is spoken.",
+      "tone": "danger"
+     },
+     {
+      "head": "Proof in the frame",
+      "body": "Step moves on.",
+      "tone": "server"
+     }
+    ]
+   }
+  },
+  {
+   "id": "context",
+   "zone": "server",
+   "pos": [
+    1.4,
+    4.3,
+    -0.6
+   ],
+   "size": 0.5,
+   "status": "working",
+   "privacy": "claude",
+   "name": "Context builder",
+   "speed": "every ~4 s",
+   "cost": "tokens, est.",
+   "kind": "Background agent (Claude Haiku, server/context_agent.py)",
+   "what": "Every ~4 seconds in the background it writes a short scene note from the transcript and recent frames and hands it to Gemini, so answers know what happened. With Claude switched off it falls back to a local model.",
+   "code": [
+    "server/context_agent.py",
+    "server/cloud_meter.py"
+   ],
+   "facts": [
+    [
+     "Model",
+     "claude-haiku-5-5 (ANTHROPIC_CONTEXT_MODEL)"
+    ],
+    [
+     "Interval",
+     "4 s (interval=4)"
+    ],
+    [
+     "Meter weights",
+     "$5 / M input, $25 / M output, $0.5 / M cache read (cloud_meter.py defaults, budget weights not an invoice)"
+    ],
+    [
+     "Speed per note",
+     "not measured"
+    ]
+   ]
+  },
+  {
+   "id": "ground",
+   "zone": "gpu",
+   "pos": [
+    5.4,
+    -1.2,
+    2
+   ],
+   "size": 0.55,
+   "status": "working",
+   "name": "Grounding boxes",
+   "speed": "box in 1.8 to 2.3 s",
+   "cost": "$0 (local)",
+   "kind": "Qwen 3.5 9B on the home GPU",
+   "what": "When you name an object it finds it in the frame and returns a box, drawn on your screen about 1.8 to 2.3 s after the object is named.",
+   "code": [
+    "server/vision_client.py",
+    "server/pointer.py",
+    "vision/"
+   ],
+   "facts": [
+    [
+     "Model",
+     "qwen3.5:9b-q4_K_M (VISION_GROUND_MODEL)"
+    ],
+    [
+     "Box after object named",
+     "1.8 to 2.3 s (measured)"
+    ],
+    [
+     "Network",
+     "Tailscale only"
+    ]
+   ],
+   "look": {
+    "type": "range",
+    "title": "Object named to box on screen",
+    "unit": "s",
+    "min": 0,
+    "max": 3,
+    "ranges": [
+     {
+      "label": "Box",
+      "from": 1.8,
+      "to": 2.3,
+      "tone": "gpu"
+     }
+    ],
+    "marks": [],
+    "foot": "Measured on real calls tonight."
+   }
+  },
+  {
+   "id": "caption",
+   "zone": "gpu",
+   "pos": [
+    9.4,
+    -0.2,
+    0.4
+   ],
+   "size": 0.5,
+   "status": "working",
+   "name": "Captions + valve check",
+   "speed": "not measured",
+   "cost": "$0 (local)",
+   "kind": "Qwen 2.5-VL 7B on the home GPU",
+   "what": "Writes short captions of frames for memory and runs the trusted valve checker the step guide relies on.",
+   "code": [
+    "server/cloud_vision.py",
+    "server/step_check.py"
+   ],
+   "facts": [
+    [
+     "Model",
+     "qwen2.5vl:7b-q4_K_M (VISION_CAPTION_MODEL)"
+    ],
+    [
+     "Speed",
+     "not measured"
+    ]
+   ]
+  },
+  {
+   "id": "yolo",
+   "zone": "gpu",
+   "pos": [
+    9.8,
+    -3.6,
+    0.4
+   ],
+   "size": 0.44,
+   "status": "working",
+   "name": "YOLO detector",
+   "speed": "not measured",
+   "cost": "$0 (local)",
+   "kind": "boxsvc on the home GPU",
+   "what": "Fast object detection on frames, served by boxsvc on the GPU box, bound to the tailnet only.",
+   "code": [
+    "boxsvc/app.py",
+    "boxsvc/engines.py",
+    "server/box_client.py"
+   ],
+   "facts": [
+    [
+     "Port",
+     "8090 on the Tailscale IP"
+    ],
+    [
+     "Speed",
+     "not measured"
+    ]
+   ]
+  },
+  {
+   "id": "private",
+   "zone": "gpu",
+   "pos": [
+    6.2,
+    -4.4,
+    1.0
+   ],
+   "size": 0.5,
+   "status": "working",
+   "name": "Private mode voice",
+   "speed": "not measured",
+   "cost": "$0 (local)",
+   "kind": "Whisper + Kokoro (boxsvc) + local brain",
+   "what": "In Private mode every cloud switch is off: Whisper turns speech into text, a local model answers and Kokoro speaks, all at home.",
+   "code": [
+    "boxsvc/engines.py",
+    "server/brain_local.py",
+    "server/privacy.py"
+   ],
+   "facts": [
+    [
+     "Speech to text",
+     "faster-whisper"
+    ],
+    [
+     "Voice",
+     "Kokoro"
+    ],
+    [
+     "Talker",
+     "local Qwen (server/brain_local.py)"
+    ],
+    [
+     "Speed",
+     "not measured"
+    ]
+   ]
+  },
+  {
+   "id": "recent",
+   "zone": "memory",
+   "pos": [
+    -6.4,
+    -7.6,
+    -0.8
+   ],
+   "size": 0.5,
+   "status": "working",
+   "name": "Recent memory",
+   "speed": "seconds to minutes",
+   "cost": "$0 (local)",
+   "kind": "Call-local text recall (server/recent_memory.py)",
+   "what": "Remembers what was said and seen in this call so \"what did I just do?\" can be answered from text, without video. Lives only for the call.",
+   "code": [
+    "server/recent_memory.py"
+   ],
+   "facts": [
+    [
+     "Holds",
+     "up to 1,024 entries per call"
+    ],
+    [
+     "Scope",
+     "this call, seconds to minutes ago"
+    ]
+   ],
+   "look": {
+    "type": "scopes",
+    "title": "Where an answer about the past comes from",
+    "rows": [
+     {
+      "label": "Right now",
+      "who": "Camera frame",
+      "tone": "device",
+      "status": "working"
+     },
+     {
+      "label": "Seconds to minutes ago",
+      "who": "Recent memory",
+      "tone": "memory",
+      "status": "working"
+     },
+     {
+      "label": "Earlier this call",
+      "who": "Rewind (TwelveLabs)",
+      "tone": "cloud",
+      "status": "working"
+     },
+     {
+      "label": "Earlier calls",
+      "who": "Saved calls",
+      "tone": "memory",
+      "status": "building"
+     }
+    ],
+    "foot": "The router's time scope picks the row. Time scope is being built tonight."
+   }
+  },
+  {
+   "id": "rewind",
+   "zone": "memory",
+   "pos": [
+    -2.6,
+    -7.4,
+    -1.4
+   ],
+   "size": 0.55,
+   "status": "working",
+   "privacy": "twelvelabs",
+   "name": "Rewind",
+   "speed": "searchable in 35 to 40 s",
+   "cost": "~$0.10 / req (est.)",
+   "kind": "TwelveLabs video search of this call",
+   "what": "Short silent clips around busy moments are uploaded to TwelveLabs so you can ask about earlier in the call. Clips are deleted when the call ends.",
+   "code": [
+    "server/rewind.py",
+    "server/rewind_tools.py",
+    "server/cloud_meter.py"
+   ],
+   "facts": [
+    [
+     "Searchable after the event",
+     "about 35 to 40 s (measured)"
+    ],
+    [
+     "Flush",
+     "now 15 s (REWIND_FLUSH_S; code default 60), not re-measured"
+    ],
+    [
+     "Clip",
+     "up to 12 s, at most 60 per call, deleted at call end"
+    ],
+    [
+     "Meter",
+     "TWELVELABS_REQUEST_USD default 0.10 per request, demo override 0.01 (estimate)"
+    ]
+   ],
+   "look": {
+    "type": "range",
+    "title": "Event to searchable",
+    "unit": "s",
+    "min": 0,
+    "max": 60,
+    "ranges": [
+     {
+      "label": "Searchable",
+      "from": 35,
+      "to": 40,
+      "tone": "cloud"
+     }
+    ],
+    "marks": [
+     {
+      "at": 15,
+      "label": "flush now 15 s",
+      "tone": "muted"
+     }
+    ],
+    "foot": "35 to 40 s was measured before the flush moved to 15 s; not re-measured."
+   }
+  },
+  {
+   "id": "saved",
+   "zone": "memory",
+   "pos": [
+    1.2,
+    -8.0,
+    -0.8
+   ],
+   "size": 0.55,
+   "status": "working",
+   "building": "Recall from saved calls into a live call is being built tonight.",
+   "name": "Saved calls",
+   "speed": "recall: building",
+   "cost": "$0 (local)",
+   "kind": "Long-term local memory (server/memory.py)",
+   "what": "With memory consent, a call is saved on this Mac, encrypted on disk when the memory key is set. Pulling it back into a new call is the recall pipeline, still being built.",
+   "code": [
+    "server/memory.py",
+    "server/memory_capture.py"
+   ],
+   "facts": [
+    [
+     "At rest",
+     "Fernet encrypted when A_EYE_MEMORY_KEY is set; otherwise file system protection only"
+    ],
+    [
+     "Where",
+     "this Mac by default (STORE=local); optional SpacetimeDB store encrypts personal fields before upload"
+    ],
+    [
+     "Kept",
+     "7 days by default (A_EYE_MEMORY_DAYS)"
+    ],
+    [
+     "Recall",
+     "building"
+    ]
+   ],
+   "look": {
+    "type": "cards",
+    "title": "Knowledge cards: what a saved call keeps",
+    "cards": [
+     {
+      "head": "Encrypted on disk",
+      "body": "Fernet, when A_EYE_MEMORY_KEY is set. Stays on the Mac by default (STORE=local).",
+      "tone": "memory"
+     },
+     {
+      "head": "Consent first",
+      "body": "Saved only while memory consent is on."
+     },
+     {
+      "head": "Kept 7 days",
+      "body": "Default retention, A_EYE_MEMORY_DAYS."
+     },
+     {
+      "head": "Recall",
+      "body": "Being built tonight.",
+      "tone": "building"
+     }
+    ]
+   }
+  },
+  {
+   "id": "parts",
+   "zone": "memory",
+   "pos": [
+    -10.6,
+    -7.4,
+    -1.0
+   ],
+   "size": 0.5,
+   "status": "building",
+   "cloud_points": 10001,
+   "name": "Parts shelf",
+   "speed": "not measured",
+   "cost": "not measured",
+   "kind": "Team SpacetimeDB, Apify scrape",
+   "what": "10,001 Amazon tool and electronics listings scraped with Apify by Shivam and stored in the team SpacetimeDB, so A-Eye can suggest a part that fits. Hooking it into the call is being built tonight.",
+   "code": [
+    "market/apify.py",
+    "market/search.py",
+    "market/compat.py"
+   ],
+   "facts": [
+    [
+     "Listings",
+     "10,001"
+    ],
+    [
+     "Store",
+     "team SpacetimeDB"
+    ],
+    [
+     "Fit check",
+     "market/compat.py decides in code; unknown spec is unverified"
+    ],
+    [
+     "Status",
+     "building"
+    ]
+   ],
+   "look": {
+    "type": "stat",
+    "title": "Parts shelf",
+    "value": "10,001",
+    "unit": "listings",
+    "foot": "The cloud of points around this node has one point per listing. Positions are decorative."
+   }
+  },
+  {
+   "id": "privacy",
+   "zone": "server",
+   "pos": [
+    -6.6,
+    -3.3,
+    2
+   ],
+   "size": 0.42,
+   "status": "working",
+   "shape": "switch",
+   "name": "Privacy switches",
+   "speed": "applies per call",
+   "cost": "$0",
+   "kind": "Per-call cloud switches (server/privacy.py)",
+   "what": "Every cloud path has a named switch checked in code on every server path. Private mode turns them all off and the call runs at home.",
+   "code": [
+    "server/privacy.py"
+   ],
+   "facts": [
+    [
+     "Switches",
+     "Google, Claude, TwelveLabs, Cartesia"
+    ],
+    [
+     "Private mode",
+     "all off; Whisper, local brain, Kokoro"
+    ]
+   ],
+   "look": {
+    "type": "switches",
+    "title": "What leaves home, and what turns it off",
+    "rows": [
+     {
+      "label": "Google (Gemini)",
+      "sends": "downscaled camera frames and voice",
+      "node": "gemini"
+     },
+     {
+      "label": "Claude",
+      "sends": "question and a written scene note",
+      "node": "context"
+     },
+     {
+      "label": "TwelveLabs",
+      "sends": "short silent clips, deleted at call end",
+      "node": "rewind"
+     },
+     {
+      "label": "Private mode",
+      "sends": "nothing: every switch off",
+      "node": "private"
+     }
+    ],
+    "foot": "Paraphrased from server/privacy.py WHAT_LEAVES."
+   }
+  }
+ ],
+ "edges": [
+  {
+   "id": "cap-srv",
+   "from": "capture",
+   "to": "server",
+   "both": true,
+   "status": "working",
+   "rate": 1.0,
+   "name": "voice + frames",
+   "speed": "1 fps",
+   "cost": "",
+   "what": "Mic audio and 1 fps, 320 px frames up; voice and boxes back down. One WebSocket, /ws2."
+  },
+  {
+   "id": "srv-gem",
+   "from": "server",
+   "to": "gemini",
+   "both": true,
+   "status": "working",
+   "rate": 1.0,
+   "bend": 1.2,
+   "name": "live audio + frames",
+   "speed": "0.6 to 1.1 s",
+   "cost": "~$0.10 / min",
+   "what": "The live conversation. Gemini hears and sees, then speaks; the reply streams back through the server to the phone."
+  },
+  {
+   "id": "srv-rt",
+   "from": "server",
+   "to": "router",
+   "status": "working",
+   "rate": 0.8,
+   "name": "question",
+   "speed": "43 ms",
+   "cost": "$0",
+   "what": "Each finished question is routed in about 43 ms (p50, held-out set)."
+  },
+  {
+   "id": "rt-ground",
+   "from": "router",
+   "to": "ground",
+   "status": "working",
+   "rate": 0.5,
+   "bend": 1.4,
+   "name": "find an object",
+   "speed": "box 1.8 to 2.3 s",
+   "cost": "$0",
+   "what": "\"Where is the M.2 slot?\" goes to grounding; the box is on screen about 1.8 to 2.3 s after the object is named."
+  },
+  {
+   "id": "rt-recent",
+   "from": "router",
+   "to": "recent",
+   "status": "working",
+   "rate": 0.4,
+   "bend": 1.0,
+   "name": "just now",
+   "speed": "",
+   "cost": "$0",
+   "what": "Questions about seconds or minutes ago read recent memory."
+  },
+  {
+   "id": "rt-rewind",
+   "from": "router",
+   "to": "rewind",
+   "status": "working",
+   "rate": 0.4,
+   "name": "earlier this call",
+   "speed": "",
+   "cost": "~$0.10 / req",
+   "what": "Questions about earlier in this call search Rewind."
+  },
+  {
+   "id": "rt-saved",
+   "from": "router",
+   "to": "saved",
+   "status": "building",
+   "rate": 0.3,
+   "name": "earlier calls",
+   "speed": "building",
+   "cost": "",
+   "what": "Recall from saved calls. Being built tonight, so no data flows here yet."
+  },
+  {
+   "id": "srv-safe",
+   "from": "server",
+   "to": "safety",
+   "status": "working",
+   "rate": 0.8,
+   "name": "every transcript",
+   "speed": "",
+   "cost": "$0",
+   "what": "Every transcript and every spoken reply passes the gates."
+  },
+  {
+   "id": "safe-gem",
+   "from": "safety",
+   "to": "gemini",
+   "status": "working",
+   "rate": 0.25,
+   "tone": "danger",
+   "bend": 1.6,
+   "name": "mute + stop line",
+   "speed": "86 ms",
+   "cost": "",
+   "what": "On a hazard the gate mutes Gemini and the fixed stop line plays 86 ms after speech ends."
+  },
+  {
+   "id": "srv-guide",
+   "from": "server",
+   "to": "guide",
+   "status": "working",
+   "rate": 0.5,
+   "name": "transcript + frame",
+   "speed": "",
+   "cost": "$0",
+   "what": "The guide checks the user's words against the current step's rules."
+  },
+  {
+   "id": "guide-cap",
+   "from": "guide",
+   "to": "caption",
+   "both": true,
+   "status": "working",
+   "rate": 0.3,
+   "bend": 1.2,
+   "name": "valve check",
+   "speed": "",
+   "cost": "$0",
+   "what": "For the shutoff step the guide asks the trusted valve checker about the current frame."
+  },
+  {
+   "id": "guide-gem",
+   "from": "guide",
+   "to": "gemini",
+   "status": "working",
+   "rate": 0.4,
+   "name": "step to phrase",
+   "speed": "",
+   "cost": "",
+   "what": "The current step goes to Gemini to phrase. Gemini cannot move the step."
+  },
+  {
+   "id": "srv-ctx",
+   "from": "server",
+   "to": "context",
+   "status": "working",
+   "rate": 0.25,
+   "bend": 1.2,
+   "name": "every ~4 s",
+   "speed": "~4 s",
+   "cost": "tokens",
+   "what": "Every ~4 s the context builder gets the latest transcript and frames."
+  },
+  {
+   "id": "ctx-gem",
+   "from": "context",
+   "to": "gemini",
+   "status": "working",
+   "rate": 0.25,
+   "name": "scene note",
+   "speed": "",
+   "cost": "",
+   "what": "A short written scene note is handed to Gemini."
+  },
+  {
+   "id": "srv-yolo",
+   "from": "server",
+   "to": "yolo",
+   "both": true,
+   "status": "working",
+   "rate": 0.4,
+   "bend": 1.0,
+   "name": "frames to boxes",
+   "speed": "",
+   "cost": "$0",
+   "what": "Frames to the YOLO detector over Tailscale."
+  },
+  {
+   "id": "srv-cap",
+   "from": "server",
+   "to": "caption",
+   "status": "working",
+   "rate": 0.3,
+   "bend": 0.6,
+   "name": "frames to captions",
+   "speed": "",
+   "cost": "$0",
+   "what": "Frames to the caption model for memory."
+  },
+  {
+   "id": "srv-priv",
+   "from": "server",
+   "to": "private",
+   "both": true,
+   "status": "working",
+   "rate": 0.3,
+   "bend": 0.8,
+   "name": "Private mode audio",
+   "speed": "",
+   "cost": "$0",
+   "what": "In Private mode speech goes to Whisper and the reply comes back as Kokoro voice."
+  },
+  {
+   "id": "srv-recent",
+   "from": "server",
+   "to": "recent",
+   "status": "working",
+   "rate": 0.5,
+   "name": "turn log",
+   "speed": "",
+   "cost": "$0",
+   "what": "Each turn and caption is logged in call-local memory."
+  },
+  {
+   "id": "srv-rewind",
+   "from": "server",
+   "to": "rewind",
+   "status": "working",
+   "rate": 0.3,
+   "bend": 0.8,
+   "name": "silent clips",
+   "speed": "35 to 40 s",
+   "cost": "~$0.10 / req",
+   "what": "Busy moments become short silent clips, uploaded on each flush and searchable about 35 to 40 s after the event."
+  },
+  {
+   "id": "srv-saved",
+   "from": "server",
+   "to": "saved",
+   "status": "working",
+   "rate": 0.15,
+   "name": "save at call end",
+   "speed": "",
+   "cost": "$0",
+   "what": "With memory consent the call is saved, encrypted, at the end."
+  },
+  {
+   "id": "parts-srv",
+   "from": "parts",
+   "to": "server",
+   "status": "building",
+   "rate": 0.2,
+   "bend": 1.0,
+   "name": "part that fits",
+   "speed": "building",
+   "cost": "",
+   "what": "Part suggestions from the shelf. Being built tonight."
+  },
+  {
+   "id": "priv-gem",
+   "from": "privacy",
+   "to": "gemini",
+   "status": "working",
+   "kind": "control",
+   "name": "Google switch",
+   "speed": "",
+   "cost": "",
+   "what": "Switch: off means no frames or voice go to Google."
+  },
+  {
+   "id": "priv-ctx",
+   "from": "privacy",
+   "to": "context",
+   "status": "working",
+   "kind": "control",
+   "name": "Claude switch",
+   "speed": "",
+   "cost": "",
+   "what": "Switch: off means the context builder runs on a local model."
+  },
+  {
+   "id": "priv-rewind",
+   "from": "privacy",
+   "to": "rewind",
+   "status": "working",
+   "kind": "control",
+   "name": "TwelveLabs switch",
+   "speed": "",
+   "cost": "",
+   "what": "Switch: off means no clips leave the Mac."
+  }
+ ],
+ "flows": [
+  {
+   "id": "ask",
+   "name": "Ask a question",
+   "edges": [
+    "cap-srv",
+    "srv-rt",
+    "srv-ctx",
+    "ctx-gem",
+    "srv-gem",
+    "-srv-gem",
+    "-cap-srv"
+   ],
+   "say": "Voice and frames reach the server, the router picks a lane in 43 ms, Gemini answers with the latest scene note. First voice 0.6 to 1.1 s after you stop."
+  },
+  {
+   "id": "find",
+   "name": "Find an object",
+   "edges": [
+    "cap-srv",
+    "srv-rt",
+    "rt-ground",
+    "-cap-srv"
+   ],
+   "say": "\"Where is it?\" routes to grounding on the home GPU; the box is on your screen about 1.8 to 2.3 s after you name it."
+  },
+  {
+   "id": "hazard",
+   "name": "Hazard stop",
+   "edges": [
+    "cap-srv",
+    "srv-safe",
+    "safe-gem",
+    "-cap-srv"
+   ],
+   "say": "A coded gate catches the hazard, mutes Gemini and plays the stop line 86 ms after you stop speaking."
+  },
+  {
+   "id": "rewind",
+   "name": "Rewind",
+   "edges": [
+    "cap-srv",
+    "srv-rewind",
+    "srv-rt",
+    "rt-rewind",
+    "-cap-srv"
+   ],
+   "say": "Silent clips go to TwelveLabs and are searchable about 35 to 40 s later; \"what did I do earlier?\" routes there."
+  },
+  {
+   "id": "private",
+   "name": "Private mode",
+   "edges": [
+    "cap-srv",
+    "srv-priv",
+    "-srv-priv",
+    "-cap-srv"
+   ],
+   "say": "Every cloud switch off: Whisper, a local model and Kokoro at home. $0, speed not measured."
+  }
+ ]
+}
