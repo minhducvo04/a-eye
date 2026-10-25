@@ -10,7 +10,7 @@ import { callOwner, ownerHeaders, ownerQuery, resetCallOwner } from './call-owne
 
 import { paintDraw, applyDraw, pruneDraw, viewTransform, visibleOps, targetLabels, splitByTargets } from "./draw.js";
 import { writeFrame } from "./live.js";
-import { agoLine, countAt, countLine, createMemoryApi, placeFor, renderSplit } from "./memory.js";
+import { agoLine, countAt, countLine, createMemoryApi, pastCallLine, placeFor, renderSplit } from "./memory.js";
 import { forgetRewind, initialRewind, nextRewind, NOTICE as REWIND_NOTICE, PROMPTS as REWIND_PROMPTS, showsRewindChip } from "./rewind.js";
 import { sharpCanvasSize } from "./overlay.js";
 import {
@@ -952,7 +952,8 @@ function boot() {
     const labels = (hit.objects || []).map((o) => o.label).join(" ");
     const place = hit.place || placeFor(`${hit.query || ""} ${labels}`, memoryItems);
     const callNow = callStartedAt ? (Date.now() - callStartedAt) / 1000 : hit.t_s;
-    const line = hit.sure === false ? `Best guess · ${agoLine(hit.t_s, callNow, place)}` : agoLine(hit.t_s, callNow, place);
+    const line = hit.past_call ? pastCallLine(hit)
+      : hit.sure === false ? `Best guess · ${agoLine(hit.t_s, callNow, place)}` : agoLine(hit.t_s, callNow, place);
     const stream = cameraOn && video.srcObject ? video.srcObject : null;
     splitUpdate = renderSplit(document, rewindBody, { hit, line, stream });
     splitUpdate(liveObjects);

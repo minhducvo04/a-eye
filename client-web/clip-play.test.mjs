@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderSplit } from './memory.js';
+import { pastCallLine, renderSplit } from './memory.js';
 
 function page(nativeHls = false) {
   const timers = new Map();
@@ -79,4 +79,18 @@ test('native HLS seeks and loops within the hit; errors restore the flipbook', a
   update.dispose();
   assert.equal(timers.size, 0);
   assert.equal(video.playing, false);
+});
+
+test('past-call hit shows the video at once with a loading line, and labels the moment in that call', async () => {
+  const { doc, body, pane } = page(true);
+  const update = renderSplit(doc, body, { hit: { t_s: 49, start_s: 0, end_s: 6, past_call: true,
+    clip_url: 'https://media.invalid/saved.m3u8' }, line: pastCallLine({ t_s: 49 }) });
+  const video = pane().children.find(el => el.tag === 'video');
+  const loading = pane().children.find(el => el.className === 'memory-loading');
+  assert.equal(video.hidden, false);
+  assert.equal(loading.textContent, 'Loading the clip…');
+  assert.equal(pastCallLine({ t_s: 49 }), 'From your last call · 0:49 into that call');
+  video.events.error();
+  assert.equal(loading.textContent, 'Loading the clip…');
+  update.dispose();
 });
