@@ -6,6 +6,7 @@ import {
   deviceLabel,
   deviceOptions,
   devicesLocked,
+  flipFacing,
   isMissingDevice,
   loadChoice,
   micLine,
@@ -59,6 +60,18 @@ test("constraints keep the noise settings and pin the device", () => {
   assert.equal(videoConstraints("").facingMode, "environment");
   assert.deepEqual(videoConstraints("face").deviceId, { exact: "face" });
   assert.equal(videoConstraints("face").facingMode, undefined);
+});
+
+test("flip to cam: facing toggles and wins only when no device is pinned", () => {
+  assert.equal(flipFacing("environment"), "user");
+  assert.equal(flipFacing("user"), "environment");
+  assert.equal(flipFacing(""), "user");
+  assert.equal(videoConstraints("", "user").facingMode, "user");
+  assert.equal(videoConstraints("", "environment").facingMode, "environment");
+  assert.equal(videoConstraints("", "sideways").facingMode, "environment");
+  // A camera picked in Settings is exact: flip clears the pick instead of fighting it.
+  assert.deepEqual(videoConstraints("face", "user").deviceId, { exact: "face" });
+  assert.equal(videoConstraints("face", "user").facingMode, undefined);
 });
 
 test("missing device errors and the mic line", () => {

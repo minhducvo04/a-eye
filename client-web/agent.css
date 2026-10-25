@@ -301,6 +301,32 @@ svg .fill {
   padding-top: 8px;
 }
 
+/* Flip camera sits at the top right corner, where camera apps put it, clear of the pill and badges. */
+.call .top {
+  position: relative;
+}
+
+/* While it shows, keep the chips under the pill out from under it. */
+.call .top:has(.flip-camera:not(.hidden)) {
+  padding-inline: 52px;
+}
+
+.flip-camera {
+  position: absolute;
+  top: 2px; /* centred on the 32 px pill */
+  right: 0;
+  color: var(--text);
+}
+
+.flip-camera svg {
+  width: 22px;
+  height: 22px;
+}
+
+.flip-camera:active {
+  transform: scale(0.94);
+}
+
 .pill {
   display: inline-flex;
   align-items: center;

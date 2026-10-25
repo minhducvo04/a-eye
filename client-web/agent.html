@@ -32,6 +32,7 @@
     <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></symbol>
     <symbol id="i-dots" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/></symbol>
   <symbol id="i-bolt-off" viewBox="0 0 24 24"><path d="M13 3L6 13h5l-1 8 7-10h-5z"/><path d="M3.5 3.5l17 17"/></symbol>
+  <symbol id="i-flip" viewBox="0 0 24 24"><path d="M4 8h3l2-2.5h6L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><path d="M9.2 13.6a3 3 0 0 0 5.3 1.4M14.8 12.4a3 3 0 0 0-5.3-1.4"/><path d="M14.8 10v2.4h-2.4M9.2 16v-2.4h2.4"/></symbol>
   </svg>
 
   <main id="stage" class="stage">
@@ -84,6 +85,8 @@
         </div>
       </div>
       <div class="top">
+        <!-- Flip between the back and selfie camera (shown while the local camera is on). -->
+        <button type="button" id="flip-camera" class="glass round r44 flip-camera hidden" aria-label="Flip camera" title="Flip camera"><svg><use href="#i-flip"/></svg></button>
         <div class="pill glass">
           <span id="presence-dot" class="presence-dot" role="img" aria-label=""></span>
           <b>A-eye</b><span class="sep" aria-hidden="true">·</span><span id="pack-label">General</span><span class="sep" aria-hidden="true">·</span><span id="elapsed" class="digits">0:00</span>

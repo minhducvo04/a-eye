@@ -48,9 +48,18 @@ export function audioConstraints(base, deviceId) {
   return { audio };
 }
 
-export function videoConstraints(deviceId) {
+// Which way the camera looks when no device is pinned: the back camera ("environment") by default, the
+// selfie camera ("user") after Flip. Laptops with one webcam ignore facingMode, which is what we want.
+export const FACINGS = Object.freeze(["environment", "user"]);
+
+export function flipFacing(facing) {
+  return facing === "user" ? "environment" : "user";
+}
+
+export function videoConstraints(deviceId, facing) {
   const size = { width: { ideal: 1280 }, height: { ideal: 720 } };
-  return deviceId ? { deviceId: { exact: deviceId }, ...size } : { facingMode: "environment", ...size };
+  if (deviceId) return { deviceId: { exact: deviceId }, ...size };
+  return { facingMode: FACINGS.includes(facing) ? facing : "environment", ...size };
 }
 
 // A chosen device that is missing fails with one of these; the page then falls back to the default.

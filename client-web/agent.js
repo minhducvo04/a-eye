@@ -51,6 +51,7 @@ import {
   deviceLabel,
   deviceOptions,
   devicesLocked,
+  flipFacing,
   isMissingDevice,
   loadChoice,
   micLine,
@@ -136,6 +137,7 @@ function boot() {
   const captionSpeaker = document.getElementById("caption-speaker");
   const powerGate = document.getElementById("power-gate");
   const cameraIcon = document.getElementById("camera-icon");
+  const flipBtn = document.getElementById("flip-camera");
   const micIcon = document.getElementById("mic-icon");
   const backdropEl = document.getElementById("backdrop");
   const settingsEl = document.getElementById("settings");
@@ -223,6 +225,7 @@ function boot() {
   let mediaDevices = [];
   let micChoice = loadChoice(safeStorage(), "audioinput");
   let cameraChoice = loadChoice(safeStorage(), "videoinput");
+  let facing = "environment"; // back camera first; Flip switches to the selfie camera
   let speakerChoice = loadChoice(safeStorage(), "audiooutput");
   let deviceNotice = "";
   let deviceNoticeTimer = 0;
@@ -1387,7 +1390,7 @@ function boot() {
     let retryDefault = false;
     try {
       const stream = await requestLocalMedia(navigator.mediaDevices, headset, {
-        video: videoConstraints(cameraChoice),
+        video: videoConstraints(cameraChoice, facing),
         audio: false,
       });
       if (!pack) {
@@ -1483,6 +1486,7 @@ function boot() {
     startBtn.setAttribute("aria-pressed", cameraOn ? "true" : "false");
     startBtn.setAttribute("aria-label", cameraOn ? "Camera off" : "Camera on");
     cameraIcon.setAttribute("href", cameraOn ? "#i-camera" : "#i-camera-off");
+    if (flipBtn) flipBtn.classList.toggle("hidden", !cameraOn || headset);
   }
 
   // CallScreen.micButton: mic when listening, struck-through mic in the warn colour when muted.
@@ -2275,6 +2279,24 @@ function boot() {
     if (cameraOn || video.srcObject) stopCamera();
     else void startCamera();
   });
+  // Flip: the other way round. A camera pinned in Settings is dropped so facingMode decides again.
+  if (flipBtn) {
+    flipBtn.addEventListener("click", async () => {
+      if (!cameraOn || starting) return;
+      facing = flipFacing(facing);
+      if (cameraChoice) {
+        cameraChoice = "";
+        saveChoice(safeStorage(), "videoinput", "");
+        if (cameraPick) cameraPick.value = "";
+      }
+      flipBtn.disabled = true;
+      try {
+        await swapCamera();
+      } finally {
+        flipBtn.disabled = false;
+      }
+    });
+  }
   powerBtn.addEventListener("click", () => {
     const ok = send({
       v: 2,
@@ -2605,7 +2627,7 @@ function boot() {
     if (headset || !cameraOn || starting) return;
     starting = true;
     try {
-      const stream = await requestLocalMedia(navigator.mediaDevices, headset, { video: videoConstraints(cameraChoice), audio: false });
+      const stream = await requestLocalMedia(navigator.mediaDevices, headset, { video: videoConstraints(cameraChoice, facing), audio: false });
       if (!cameraOn || !pack) {
         for (const track of stream.getTracks()) track.stop();
         return;
