@@ -204,7 +204,9 @@ function playMemory(doc, pane, hit) {
   }
   if (hit.clip_url) {
     const candidate = doc.createElement('video');
-    if (candidate.canPlayType('application/vnd.apple.mpegurl')) {
+    const nativeHls = candidate.canPlayType('application/vnd.apple.mpegurl');
+    const HlsLib = globalThis.Hls;
+    if (nativeHls || (HlsLib && HlsLib.isSupported && HlsLib.isSupported())) {
       video = candidate;
       video.muted = true;
       video.playsInline = true;
@@ -243,7 +245,15 @@ function playMemory(doc, pane, hit) {
         play();
       });
       video.addEventListener('error', fallback);
-      video.src = hit.clip_url;
+      if (nativeHls) {
+        video.src = hit.clip_url;
+      } else {
+        // Chrome, Brave and Firefox cannot play HLS natively; hls.js streams it into the same video element.
+        const hls = new HlsLib();
+        hls.on(HlsLib.Events.ERROR, (_, data) => { if (data && data.fatal) fallback(); });
+        hls.loadSource(hit.clip_url);
+        hls.attachMedia(video);
+      }
       pane.append(video);
     }
   }

@@ -939,7 +939,12 @@ async def hit_media(rewind, hit):
     if retrieve is None or not rewind.cloud_allowed():
         return fields
     try:
-        video = await asyncio.wait_for(retrieve(rewind.index_id, hit['video_id']), timeout=2)
+        try:
+            video = await asyncio.wait_for(retrieve(rewind.index_id, hit['video_id']), timeout=2)
+        except Exception:
+            # Saved demo calls live in the shared index, not necessarily this call's index.
+            shared = await asyncio.wait_for(rewind.client.ensure_index(INDEX_NAME), timeout=2)
+            video = await asyncio.wait_for(retrieve(shared, hit['video_id']), timeout=2)
         url = (video.get('hls') or {}).get('video_url')
         if isinstance(url, str) and url.startswith('https://') and rewind.cloud_allowed():
             at = max(0, hit.get('video_t_s', 0))
