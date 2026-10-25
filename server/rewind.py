@@ -1,7 +1,10 @@
 """Rewind: a searchable memory of the call through TwelveLabs video search. Off by default.
 
-While Rewind is on, short clips are cut around change-triggered keyframes from frames held in memory. Each clip is
-encoded to a temporary MP4, uploaded to a dedicated TwelveLabs index and deleted locally right after the upload.
+While Rewind (Recall) is on, short clips are cut around change-triggered keyframes from frames held in memory. Each
+clip is encoded to an MP4 in memory (never a file on this host) and uploaded to a dedicated TwelveLabs index.
+Two modes per call (REWIND_MODE, or ?rewind_mode= on /ws2): 'live' uploads each clip as soon as it is cut so in-call
+search works; 'save' holds clips in memory and uploads them at call end only if the user keeps the call, else drops
+them. See docs/results/recall-pipeline.md.
 Clips are built from camera frames only (no audio). Search is for objects and moments: no face or person tagging.
 The API key stays on the server and is never logged.
 """
@@ -14,7 +17,6 @@ import json
 import os
 import re
 import subprocess
-import tempfile
 from time import monotonic, time
 
 import httpx
@@ -34,6 +36,31 @@ ACTIVITY_GAP_S = 2.0   # one activity clip start per this many seconds at most
 NEW_EVENT_GAP_S = 2.5  # a change after this much quiet starts a new clip instead of extending      # frames per second kept in the ring
 KEEP_FRAMES = 6       # frames per clip kept in memory after upload, for pointing
 MAX_CLIPS = 60        # per call
+LIVE, SAVE = 'live', 'save'
+_MODE_ALIASES = {'live': LIVE, 'on_the_fly': LIVE, 'fly': LIVE, 'save': SAVE, 'at_save': SAVE, 'on_save': SAVE}
+# TwelveLabs indexes a 4 to 12 s clip in about 7 to 15 s, so the first status poll waits 6 s and later ones back
+# off: polls at about 6, 9, 12, 15, 21, 33 s and then every 24 s. Our meter charges each poll as a request.
+POLL_S = '6,3,3,3,6,12,24'
+_sleep = asyncio.sleep     # tests swap this to count the waits
+
+
+def recall_mode(value=None):
+    """'live' (upload each clip as it is cut) or 'save' (upload at call end, only if kept). The value (a /ws2 query
+    setting) wins, then REWIND_MODE, then 'live'. Unknown words fall back to 'live'."""
+    for candidate in (value, os.environ.get('REWIND_MODE')):
+        mode = _MODE_ALIASES.get(str(candidate or '').strip().lower())
+        if mode:
+            return mode
+    return LIVE
+
+
+def poll_delays():
+    """Seconds to wait before each status poll; the last one repeats. REWIND_POLL_S overrides (comma list)."""
+    try:
+        delays = [max(0.0, float(x)) for x in os.environ.get('REWIND_POLL_S', POLL_S).split(',') if x.strip()]
+    except ValueError:
+        delays = []
+    return delays or [float(x) for x in POLL_S.split(',')]
 
 _QUESTION = re.compile(
     r"\b(when did i|when was|where did i (put|leave|place|set|drop)|where('s| is) the .+ i (put|left)|"
@@ -144,12 +171,12 @@ class TwelveLabsClient:
             response.raise_for_status()
             return response.json()['_id']
 
-    async def upload(self, index_id, path, metadata):
+    async def upload(self, index_id, video, metadata):
+        """video: the MP4 bytes, held in memory only."""
         async with self._client(timeout=120) as client:
-            with open(path, 'rb') as handle:
-                response = await client.post('/tasks', data={
-                    'index_id': index_id, 'user_metadata': json.dumps(metadata)},
-                    files={'video_file': ('clip.mp4', handle, 'video/mp4')})
+            response = await client.post('/tasks', data={
+                'index_id': index_id, 'user_metadata': json.dumps(metadata)},
+                files={'video_file': ('clip.mp4', bytes(video), 'video/mp4')})
             response.raise_for_status()
             body = response.json()
             return body['_id'], body.get('video_id')
@@ -195,20 +222,26 @@ class TwelveLabsClient:
             return response.json().get('data', [])
 
 
-def encode_mp4(frames, path):
-    """JPEG frames (bytes) -> H.264 MP4 at the real frame rate; at least 4 s and 360 px on the short side."""
-    duration = max(4.0, frames[-1][0] - frames[0][0] + 1 / SAMPLE_FPS)
+def clip_duration(frames):
+    return max(4.0, frames[-1][0] - frames[0][0] + 1 / SAMPLE_FPS)
+
+
+def encode_mp4(frames):
+    """JPEG frames (bytes) -> H.264 MP4 bytes at the real frame rate; at least 4 s and 360 px on the short side.
+    Frames go in on stdin and the MP4 comes out on stdout (fragmented MP4 needs no seekable file), so no media
+    file is ever written on this host."""
+    duration = clip_duration(frames)
     rate = max(1.0, len(frames) / duration)
     scale = ("scale='if(gt(iw,ih),-2,360)':'if(gt(iw,ih),360,-2)',"
              "scale='min(iw,1280)':-2,pad=ceil(iw/2)*2:ceil(ih/2)*2")
     command = ['ffmpeg', '-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', f'{rate:.4f}', '-i', '-',
-               '-vf', scale, '-t', f'{duration:.3f}', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-an', path]
+               '-vf', scale, '-t', f'{duration:.3f}', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-an',
+               '-movflags', 'frag_keyframe+empty_moov+default_base_moof', '-f', 'mp4', 'pipe:1']
     payload = b''.join(jpeg for _, jpeg in frames)
     # Pad the tail by repeating the last frame so a short clip still reaches 4 s.
     needed = int(duration * rate + 0.999) - len(frames)
     payload += frames[-1][1] * max(0, needed)
-    subprocess.run(command, input=payload, check=True, capture_output=True, timeout=60)
-    return duration
+    return subprocess.run(command, input=payload, check=True, capture_output=True, timeout=60).stdout
 
 
 def _kept_path(owner):
@@ -270,6 +303,7 @@ class Rewind:
         self.waits = set()
         self.end_task = None    # end-of-call cleanup, awaited by the recap route
         self.mode = None
+        self.recall_mode = recall_mode()   # 'live' or 'save'; ws2 sets it per call at hello
         self.owner = 'local'    # identity() of the caller that opened this call
         self.index_name = INDEX_NAME   # local memory attaches a per-person index: a-eye-<memory id>
         self.on_upload = None   # callback(index_id, video_id), e.g. the person's memory store
@@ -361,7 +395,7 @@ class Rewind:
                 clip.status = 'pending'
 
     async def flush(self, wait=False, timeout=600):
-        """Upload every finished clip. Temp files are removed right after each upload."""
+        """Upload every finished clip as MP4 bytes from memory; nothing is written to disk."""
         async with self.lock:
             ready = [c for c in self.clips if c.status == 'pending' and c.frames]
             if not ready:
@@ -378,13 +412,11 @@ class Rewind:
             for clip in ready:
                 clip.status = 'uploading'
                 started = monotonic()
-                handle, path = tempfile.mkstemp(suffix='.mp4', prefix='rewind-')
-                os.close(handle)
                 try:
-                    await asyncio.to_thread(self.encoder, clip.frames, path)
+                    video = await asyncio.to_thread(self.encoder, clip.frames)   # MP4 bytes in memory, no file
                     metadata = dict(call=self.call_tag(), start_s=round(clip.start_s, 2),
                                     end_s=round(clip.end_s, 2), started_at=int(self.started_wall))
-                    clip.task_id, clip.video_id = await self.client.upload(self.index_id, path, metadata)
+                    clip.task_id, clip.video_id = await self.client.upload(self.index_id, video, metadata)
                     clip.status = 'indexing'
                     if self.on_upload:
                         self.on_upload(self.index_id, clip.video_id)
@@ -397,8 +429,6 @@ class Rewind:
                     event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
                           error=type(exc).__name__,
                           where=f'{tb.tb_frame.f_code.co_filename.rsplit("/", 1)[-1]}:{tb.tb_lineno}' if tb else '')
-                finally:
-                    os.unlink(path)
                 # Keep a few frames for pointing at the answer; the rest leave memory now.
                 if len(clip.frames) > KEEP_FRAMES:
                     step = len(clip.frames) / KEEP_FRAMES
@@ -416,9 +446,14 @@ class Rewind:
                 task.add_done_callback(self.waits.discard)
         return ready
 
-    async def wait_ready(self, clip, timeout=600, every=3.0):
-        deadline = monotonic() + timeout
-        while monotonic() < deadline:
+    async def wait_ready(self, clip, timeout=600):
+        """Poll the upload task with backoff (poll_delays) until ready, failed or `timeout` seconds of waiting."""
+        delays, waited, n = poll_delays(), 0.0, 0
+        while waited < timeout:
+            delay = delays[min(n, len(delays) - 1)]
+            n += 1
+            await _sleep(delay)
+            waited += delay
             try:
                 status = (await self.client.task(clip.task_id)).get('status')
             except Exception:
@@ -430,9 +465,28 @@ class Rewind:
             if status == 'failed':
                 clip.status = 'failed'
                 return False
-            await asyncio.sleep(every)
         clip.status = 'failed'
         return False
+
+    def uploads_live(self):
+        """'live' mode uploads clips during the call; 'save' mode only at call end, when the call is kept."""
+        return self.on and self.recall_mode != SAVE
+
+    def close_due(self):
+        """A still camera sends no new frame, so an open clip past its end is closed here too."""
+        t = self.now_s()
+        for clip in self.clips:
+            if clip.status == 'open' and t > clip.end_s:
+                clip.status = 'pending'
+
+    def flush_soon(self):
+        """Live mode: start uploading finished clips in the background unless an upload is already running."""
+        if not self.uploads_live() or self.lock.locked() or not any(c.status == 'pending' for c in self.clips):
+            return None
+        task = asyncio.create_task(self.flush())
+        self.waits.add(task)
+        task.add_done_callback(self.waits.discard)
+        return task
 
     def call_tag(self):
         return datetime.fromtimestamp(self.started_wall, timezone.utc).strftime('%Y%m%dT%H%M%S')
@@ -502,11 +556,7 @@ class Rewind:
         if not self.on and not self.clips:
             return "Rewind is off, so I didn't keep clips of this call. Turn on Rewind to use it.", None
         query = query_from(text)
-        if self.on and any(c.status == 'pending' for c in self.clips):
-            # Upload the newest clips; this answer uses what is indexed now.
-            task = asyncio.create_task(self.flush())
-            self.waits.add(task)
-            task.add_done_callback(self.waits.discard)
+        self.flush_soon()      # live mode: upload the newest clips; this answer uses what is indexed now
         try:
             hits = await self.search(query, before_s=before_s) if before_s is not None else await self.search(query)
             if not hits and before_s is None and any(c.video_id for c in self.clips):
@@ -519,6 +569,9 @@ class Rewind:
             if any(c.status == 'failed' for c in self.clips):
                 return "Recording search is not available right now. Some clips could not be saved or indexed.", None
             busy = self.status()
+            if self.recall_mode == SAVE and busy['pending'] and not busy['ready']:
+                return ("This call's clips stay on this call and are processed only when you save it, so I can't "
+                        "search them yet."), None
             if busy['indexing'] or busy['pending']:
                 return "I'm still indexing the latest clips. Ask me again in a minute.", None
             return "I didn't find that moment in this call.", None
@@ -577,8 +630,9 @@ class Rewind:
 
     async def follow(self, session, every=None):
         """Sample the session's newest frame (from this socket or a paired phone camera) and upload finished
-        clips every few minutes while the call goes on. The end of the call is Registry.end."""
-        every = every or float(os.environ.get('REWIND_FLUSH_S', '60'))
+        clips as soon as they are cut (live mode only). The end of the call is Registry.end."""
+        # Live mode uploads each clip as soon as it is cut; REWIND_FLUSH_S (default 0) can batch uploads instead.
+        every = every if every is not None else float(os.environ.get('REWIND_FLUSH_S', '0'))
         self.mode = getattr(getattr(session, 'pack', None), 'id', None)
         self.session = session  # the live scene, for local memory's arrow to an object in view now
         if self.memories is not None:
@@ -616,13 +670,10 @@ class Rewind:
                 self.memory_activity_at = None
                 caption = (getattr(session, 'scene', None) or {}).get('caption') or 'something moved'
                 noting = asyncio.create_task(self._note(dict(caption=caption, objects=[]), frame['jpeg_b64']))
-            if self.on and self.clock() >= next_flush:
-                next_flush = self.clock() + every
-                try:
-                    await self.flush()
-                except Exception as exc:
-                    event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
-                          error=type(exc).__name__)
+            if self.on:
+                self.close_due()
+            if self.uploads_live() and self.clock() >= next_flush and self.flush_soon():
+                next_flush = self.clock() + every     # flush logs its own errors; the sampler never waits on it
             await asyncio.sleep(1 / SAMPLE_FPS / 2)
 
     async def _note(self, scene, jpeg_b64):
@@ -925,15 +976,9 @@ async def recap(rewind, mode=None, encoder=None):
         return dict(steps=[], skipped=[], mode=mode, ms=0, usage={},
                     note='Nothing to recap yet: no clips were uploaded while Rewind was on.')
     started = monotonic()
-    handle, path = tempfile.mkstemp(suffix='.mp4', prefix='recap-')
-    os.close(handle)
-    try:
-        timed = [(i * RECAP_STEP_S, jpeg) for i, (_, jpeg) in enumerate(frames)]
-        duration = await asyncio.to_thread(encoder or rewind.encoder, timed, path)
-        with open(path, 'rb') as handle:
-            video = handle.read()
-    finally:
-        os.unlink(path)
+    timed = [(i * RECAP_STEP_S, jpeg) for i, (_, jpeg) in enumerate(frames)]
+    video = await asyncio.to_thread(encoder or rewind.encoder, timed)    # MP4 bytes in memory, no file
+    duration = clip_duration(timed)
     text, usage = await rewind.client.analyze(video, recap_prompt(mode), schema=RECAP_SCHEMA)
     try:
         parsed = json.loads(text[text.find('{'):]) if '{' in text else {}
@@ -1030,7 +1075,7 @@ async def recap_call(session, app=None):
     rewind = rewind_for(session, app)
     if rewind is None or not rewind.clips:
         return dict(steps=[], skipped=[], say="Rewind is off, so there's nothing to recap.")
-    if rewind.on and any(c.status == 'pending' for c in rewind.clips):
+    if rewind.uploads_live() and any(c.status == 'pending' for c in rewind.clips):
         await rewind.flush()       # upload the newest finished clips first; recap uses uploaded clips only
     mode = getattr(getattr(session, 'pack', None), 'id', None)
     try:

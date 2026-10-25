@@ -18,8 +18,10 @@ UNREACHABLE_BOX = "http://127.0.0.1:9"
 @pytest.fixture(autouse=True)
 def _hermetic_env(monkeypatch, tmp_path):
     monkeypatch.setenv("CLOUD_BUDGET_PATH", str(tmp_path / "cloud-budget.sqlite3"))
-    for name in ("DAILY_CLOUD_CAP_USD", "TURNS_PER_MINUTE", "CALLS_PER_IP", "MAX_OPEN_SOCKETS"):
+    for name in ("DAILY_CLOUD_CAP_USD", "TURNS_PER_MINUTE", "CALLS_PER_IP", "MAX_OPEN_SOCKETS", "REWIND_MODE",
+                 "REWIND_FLUSH_S"):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("REWIND_POLL_S", "0")   # fakes are ready at once; the backoff test sets its own delays
     from server import cloud_meter, privacy
     original_local = cloud_meter.is_local
     from urllib.parse import urlsplit

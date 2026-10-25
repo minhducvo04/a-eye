@@ -716,6 +716,9 @@ async def websocket(ws: WebSocket):
                     session.session_id, on=incoming.get('rewind', False), owner=rewind_mod.identity(ws))
                 session.rewind.cloud_meter = meter
                 session.rewind.session = session
+                # Recall mode, like other query settings, leaves the frozen hello schema unchanged:
+                # ?rewind_mode=live (upload each clip as cut) or save (upload at call end only if kept).
+                session.rewind.recall_mode = rewind_mod.recall_mode(ws.query_params.get('rewind_mode'))
                 if getattr(ws.app.state, 'presenter', False) and private:
                     seed = getattr(ws.app.state, 'presenter_seed', None)
                     if seed:
