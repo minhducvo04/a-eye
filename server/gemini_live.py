@@ -541,8 +541,9 @@ class LiveBridge:
             return True
         self.observe_guide()
         if self.guide and self.guide.claims(text):
+            pending_plan = self.guide.pending_plan(text)
             await self.hold()
-            self.guide.schedule(text)
+            self.guide.schedule(text, pending_plan)
             return True
         if self.memory.allowed() and await self.memory.decide(text):
             await self.memory.hold()
@@ -793,10 +794,11 @@ class LiveBridge:
                 if (not output and not line and not scoped and self.guide and not self.safety_stopped
                         and self.guide.claims(self.question)):
                     # Code owns this turn (a task start, "done", "it's off"): Live's reply is never played.
+                    pending_plan = self.guide.pending_plan(self.question)
                     if not self.blocked:
                         await self.hold()
                     self.memory.yield_turn()
-                    self.guide.schedule(self.question)
+                    self.guide.schedule(self.question, pending_plan)
                 elif not output and not line and not scoped and not self.safety_stopped:
                     await self.memory.watch(self.question)
                 if output and not self.blocked and not self.pointed and spoken_target(

@@ -6,6 +6,7 @@ HOME_TASKS=1. Safety lines and growth numbers are spoken by fixed_say, never by 
 import asyncio
 import os
 import re
+from time import monotonic
 
 from server import cloud_vision, parts_shelf, pointer, privacy, safety, planner
 from server.packs.home import NEXT
@@ -25,6 +26,7 @@ OFF = re.compile(r"\b(?:(?:it['’]?s|it is|water(?: is)?|valve(?: is)?|tap(?: i
                  r"turned\s+(?:it|the valve|the water)\s+off)\b", re.I)
 CONTROL = re.compile(r'\b(walk me through it|try again|retry|forget my progress)\b', re.I)
 DEBOUNCE = .3
+PLAN_WAIT = 3.0
 RULE = ('Say only this step in your own words; do not skip ahead; do not say a step is done; '
         'the app decides when to move on. When the user says done or next, say nothing; the app checks and tells you.')
 
@@ -62,15 +64,24 @@ class LiveGuide:
         start = self._task_for(text)
         if start and (not guide or guide.completed or start != guide.task):
             return True
+        if self.pending_plan(text):
+            return True
         return bool(guide and not guide.completed and (NEXT.search(text) or
                     (self.kind == 'home' and OFF.search(text)) or CONTROL.search(text) or
                     (self.kind == 'ee' and re.fullmatch(r'power disconnected[.!]?', text.strip(), re.I))))
+
+    def pending_plan(self, text):
+        pending = self.planner.task
+        if (not self.guide and NEXT.search(text) and pending and not pending.done()
+                and self.planner.allowed()):
+            return pending
+        return None
 
     @staticmethod
     def _task_for(text):
         return task_for(text)
 
-    def schedule(self, text):
+    def schedule(self, text, pending_plan=None):
         if self._task_for(text):
             self.planner.cancel()
         # Replace only the debounce. Once checking, trailing transcription must
@@ -79,7 +90,9 @@ class LiveGuide:
             return
         if self.task and not self.task.done() and self.task is not asyncio.current_task():
             self.task.cancel()
-        self.task = asyncio.create_task(self.run(text))
+        # Capture before debounce: a plan that finishes meanwhile still starts at step 1.
+        pending_plan = pending_plan or self.pending_plan(text)
+        self.task = asyncio.create_task(self.run(text, pending_plan, monotonic() + PLAN_WAIT))
 
     async def close(self):
         await self.planner.close()
@@ -171,7 +184,7 @@ class LiveGuide:
         self.session.live_guide_note = (dict(task=guide.task, step=guide.index + 1, line=self.line,
                                              completed=guide.completed) if guide else None)
 
-    async def run(self, text):
+    async def run(self, text, pending_plan=None, deadline=None):
         await asyncio.sleep(DEBOUNCE)
         b = self.bridge
         if b.closed or b.safety_stopped:
@@ -180,9 +193,17 @@ class LiveGuide:
         # claims a guide turn and therefore does not call schedule again.
         if asyncio.current_task() is self.task and b.question.startswith(text):
             text = b.question
+        if pending_plan is not None and NEXT.search(text):
+            # Keep this wait replaceable by new input, unlike an active step check.
+            # asyncio.wait does not cancel the background build on timeout/cancellation.
+            await asyncio.wait({pending_plan}, timeout=max(0, deadline - monotonic()))
+            if b.question.startswith(text):
+                text = b.question
+            if b.closed or b.safety_stopped:
+                return
         self.running = True
         try:
-            await self._run(text)
+            await self._run(text, pending_plan)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -191,7 +212,7 @@ class LiveGuide:
         finally:
             self.running = False
 
-    async def _run(self, text):
+    async def _run(self, text, pending_plan=None):
         from server.agent import check_water_off
         from server.packs.electronics import LINES as EE_LINES
         from server.step_check import RETRY_LINE
@@ -200,6 +221,14 @@ class LiveGuide:
         if line:
             await b.stop(line)
             return
+        first_step = False
+        if pending_plan is not None and NEXT.search(text):
+            if (pending_plan is not self.planner.task or not self.planner.allowed()):
+                return
+            if not self.guide or self.kind != 'plan' or not NEXT.search(text):
+                await self._prompt(text)
+                return
+            first_step = True
         if not self.claims(text):
             # The transcript grew into an ordinary question: let Live answer it.
             await self._prompt(text)
@@ -234,7 +263,7 @@ class LiveGuide:
             if b.closed or b.safety_stopped:
                 return
         elif self.kind in ('ee', 'tie', 'plan'):
-            line = guide.reply(spoken)
+            line = guide.reply('' if first_step else spoken)
         else:
             testing = bool(b.app is not None and getattr(b.app.state, 'presenter', False) and s.checker_test_mode)
             fixture = s.checker_test_verdict

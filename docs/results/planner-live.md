@@ -117,3 +117,75 @@ Limits: worktree-only edits; no `.env` read, external network, real LLM call,
 raw media, push, merge or deployment. Actual Live/provider acceptance remains
 unverified. The immediate Gemini response still plays while planning runs in the
 background, and a next-step request before a plan finishes cannot advance it.
+
+## Fix-back on pkg/planner-live2 — 2026-10-25
+
+Base: `3749491` (the local merge of `pkg/planner-live`). Work and commit stay
+on `pkg/planner-live2`; no push, network permission change, or `.env` access.
+
+### Reproduction and intent
+
+The exact reported transcript is now exercised through `LiveBridge.handle`:
+
+> dad The wire on my headphones broke near the plug. How do I fix it?
+
+The packet regression also covers lowercase `dad` with lowercase `the`, `Dad,`,
+trailing spaces, and chunks beginning with a standalone `dad` delta. Each runs
+with `inputTranscription.finished` and with only `turnComplete`. It constructs
+the real app/default planner and replaces only the Anthropic SDK transport.
+It asserts two calls, normalized task, step 1 installation, and later step 2.
+
+Important evidence limit: all eight repair variants already passed against this
+checkout before the production edits. The reported exact-string `no_intent`
+failure was **not reproduced** here; the deployed process and its packet sequence
+were not inspected. It would be incorrect to attribute that failure to lowercase
+`dad` alone. Address normalization is now shared across repair, direct-task and
+learning intent, so punctuation and case do not select different intent paths.
+
+Additional Live packet cases cover `help me fix`, `can you teach me`, `how do I
+solder`, and `what does a capacitor do`. The last form now produces the reusable
+learning task `what a capacitor does`. Table observation, wrench recall and small
+talk request no plan. Existing scope, safety, privacy and personal-data gates stay
+in force.
+
+### Pending-plan next step
+
+An early `Okay, what is the next step?` now claims the existing guide hold and
+drops Gemini's free-form reply while waiting for the first plan. The wait runs
+outside the socket reader with a three-second deadline including guide debounce.
+If the plan arrives, the speaking prompt contains **step 1**, without advancing;
+the next ordinary next-step request advances to step 2.
+
+The pending plan is captured before the asynchronous hold and debounce, so a
+completion during either still starts at step 1. A coded-guide start can replace
+the wait. A safety stop prevents the held plan from speaking. On timeout or an
+invalid plan, the held question returns to Live; timeout does not cancel the
+background build or cause an unsolicited second answer when it later completes.
+Live's existing provider-idle wait can add up to three seconds before a new
+speaking prompt; the plan wait itself is bounded at three seconds.
+
+Changed files: `server/planner.py`, `server/live_guide.py`,
+`server/gemini_live.py`, `server/test_planner.py`, this report and `RESULT.md`.
+
+### Verification
+
+Before production edits, the new selected regressions reported 6 failed,
+15 passed: two learning-intent rejections and four missing pending-plan holds.
+The exact repair transcript and variants were among the passing cases.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py server/test_live_guide.py --tb=short` - PASS
+(88 passed in 4.38s; summary read). Includes the real three-second timeout,
+completion during hold/debounce, invalid plan, safety stop and coded replacement.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(1188 passed, 16 failed, 2 warnings in 54.62s; exit 1; summary and failure evidence
+read). The failed node IDs are the same sixteen listed in the original report
+above: fifteen denied loopback socket operations and the hazard test's downstream
+`KeyError: 'state'` after `live_start_failed` / `PermissionError`. The two warnings
+concern short synthetic JWT keys. No socket permissions were lifted.
+Final output: `.pytest_cache/planner-live2-full.log` (local, gitignored).
+
+Test: `git diff --check` - PASS.
+
+Limits: synthetic packets, fake provider transport and local execution only.
+No real provider call, physical-device playback, deployment or merge was tested.

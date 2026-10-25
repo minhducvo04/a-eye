@@ -49,7 +49,13 @@ def setup(monkeypatch, tmp_path, llm=None):
 
 
 @pytest.mark.parametrize('finished', [False, True])
-def test_real_live_repair_chunks_use_app_client_and_advance(monkeypatch, tmp_path, capsys, finished):
+@pytest.mark.parametrize('chunks', [
+    ('dad The wire on my headphones broke near the plug. How do I fix it?',),
+    ('dad the wire on my headphones broke near the plug. How do I fix it?   ',),
+    ('Dad, the wire on my headphones broke near the plug. How do I fix it?',),
+    ('dad', ' The wire on my', ' headphones broke', ' near the plug.', ' How do I', ' fix it?   '),
+])
+def test_real_live_repair_chunks_use_app_client_and_advance(monkeypatch, tmp_path, capsys, finished, chunks):
     from server import llm
     from server.app import create_app
 
@@ -84,8 +90,7 @@ def test_real_live_repair_chunks_use_app_client_and_advance(monkeypatch, tmp_pat
         # Actual app and default planner: only the provider transport is fake.
         b, emitted, fixed, wire = bridge_for(monkeypatch, app=create_app())
         try:
-            for chunk in ('Dad, the wire on my', ' headphones broke', ' near the plug.',
-                          ' How do I', ' fix it?'):
+            for chunk in chunks:
                 await b.handle({'serverContent': {'inputTranscription': {'text': chunk}}})
                 assert b.guide.planner.task is None and not fake.calls
             if finished:
@@ -94,8 +99,7 @@ def test_real_live_repair_chunks_use_app_client_and_advance(monkeypatch, tmp_pat
             assert b.guide.planner.task is not None, 'finished Live utterance must request a plan'
             await b.guide.planner.task
             assert len(fake.calls) == 2 and len(clients) == 1
-            assert fake.calls[0][1]['question'] == (
-                'Dad, the wire on my headphones broke near the plug. How do I fix it?')
+            assert fake.calls[0][1]['question'] == ''.join(chunks)
             assert fake.calls[0][1]['task'] == 'fix the wire on the headphones near the plug'
             assert 'Guide: plan 1/2' in details(emitted)
             assert b.guide.kind == 'plan' and b.guide.guide.index == 0
@@ -113,6 +117,137 @@ def test_real_live_repair_chunks_use_app_client_and_advance(monkeypatch, tmp_pat
     outcomes = [e['reason']['result'] for e in events if e['event'] == 'planner']
     assert outcomes == ['started', 'valid', 'rejected']
     assert 'headphones' not in json.dumps(events)
+
+
+@pytest.mark.parametrize('text,expected', [
+    ('dad help me fix my headphones', 'fix the headphones'),
+    ('Dad, can you teach me how to solder?', 'how to solder'),
+    ('how do I solder a wire?   ', 'solder a wire'),
+    ('what does a capacitor do', 'what a capacitor does'),
+    ('Dad, what does a capacitor do?   ', 'what a capacitor does'),
+    ('what is on the table', None),
+    ('where was my wrench', None),
+    ('hello dad', None),
+    ('how are you?', None),
+])
+def test_live_intent_packets(monkeypatch, tmp_path, text, expected):
+    async def trial():
+        b, emitted, fixed, wire, fake, store, points = setup(monkeypatch, tmp_path)
+        try:
+            await b.handle({'serverContent': {'inputTranscription': {'text': text, 'finished': True}}})
+            await b.handle({'serverContent': {'turnComplete': True}})
+            if expected:
+                assert b.guide.planner.task is not None
+                await b.guide.planner.task
+                assert len(fake.calls) == 2
+                assert b.guide.guide.task == expected and b.guide.guide.index == 0
+            else:
+                assert b.guide.planner.task is None and not fake.calls and not store.rows
+        finally:
+            await b.memory.close()
+            await b.guide.close()
+            await b.prefetch.close()
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('outcome', ['ready', 'debounce', 'timeout', 'invalid', 'safety'])
+def test_live_next_waits_for_pending_plan(monkeypatch, tmp_path, outcome):
+    async def trial():
+        started, release = asyncio.Event(), asyncio.Event()
+        fake = FakeLLM()
+
+        async def slow(system, evidence):
+            started.set()
+            await release.wait()
+            return '{}' if outcome == 'invalid' else await fake(system, evidence)
+
+        b, emitted, fixed, wire, _, store, points = setup(monkeypatch, tmp_path, slow)
+        if outcome == 'debounce':
+            monkeypatch.setattr('server.live_guide.DEBOUNCE', .05)
+        try:
+            await b.handle({'serverContent': {'inputTranscription': {
+                'text': 'dad The wire on my headphones broke near the plug. How do I fix it?',
+                'finished': True}, 'turnComplete': True}})
+            await asyncio.wait_for(started.wait(), .5)
+            pending = b.guide.planner.task
+            emitted.clear()
+            followup = asyncio.create_task(say_user(b, 'Okay, what is the next step?'))
+            await asyncio.sleep(.02)
+            assert b.blocked and b.guide.task is not None
+            assert not followup.done() and not prompts(wire)
+            assert not any(m['type'] in ('audio', 'say', 'reply_delta') for m in emitted)
+            if outcome == 'safety':
+                await b.stop('Stop and disconnect power.')
+            if outcome != 'timeout':
+                release.set()
+            await asyncio.wait_for(followup, 3.5)
+            if outcome in ('ready', 'debounce'):
+                assert b.guide.guide.index == 0
+                assert 'step 1 of 2' in prompts(wire)[-1]
+                assert plan()['steps'][0]['say'] in prompts(wire)[-1]
+                assert len(fake.calls) == 2 and not b.blocked and not fixed
+                b._reset_reply()
+                await say_user(b, 'next')
+                assert b.guide.guide.index == 1
+            elif outcome == 'safety':
+                assert b.safety_stopped and not prompts(wire)
+            else:
+                assert not b.guide.guide and not b.blocked
+                assert 'Okay, what is the next step?' in prompts(wire)[-1]
+                if outcome == 'timeout':
+                    assert not pending.done()  # waiting must not cancel the background build
+                    release.set()
+                    await pending
+                    assert b.guide.guide.index == 0
+                    assert len(prompts(wire)) == 1  # no unsolicited second answer
+        finally:
+            await b.guide.close()
+            await b.prefetch.close()
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('during_hold', [False, True])
+def test_pending_plan_completion_or_coded_replacement(monkeypatch, tmp_path, during_hold):
+    async def trial():
+        started, release = asyncio.Event(), asyncio.Event()
+        fake = FakeLLM()
+
+        async def slow(system, evidence):
+            started.set()
+            await release.wait()
+            return await fake(system, evidence)
+
+        b, emitted, fixed, wire, _, store, points = setup(monkeypatch, tmp_path, slow)
+        try:
+            await b.handle({'serverContent': {'inputTranscription': {
+                'text': 'help me fix my headphones', 'finished': True}, 'turnComplete': True}})
+            await started.wait()
+            pending = b.guide.planner.task
+            if during_hold:
+                hold = b.hold
+
+                async def finish_while_holding():
+                    await hold()
+                    release.set()
+                    await pending
+                monkeypatch.setattr(b, 'hold', finish_while_holding)
+                await say_user(b, 'Okay, what is the next step?')
+                assert b.guide.guide.index == 0 and 'step 1 of 2' in prompts(wire)[-1]
+            else:
+                await b.handle({'serverContent': {'inputTranscription': {'text': 'next'},
+                                                  'turnComplete': True}})
+                await asyncio.sleep(.02)
+                waiting = b.guide.task
+                assert not waiting.done()
+                b._reset_reply()
+                await say_user(b, 'help me with my tie')
+                assert waiting.cancelled() and pending.cancelled()
+                assert b.guide.kind == 'tie' and b.guide.guide.index == 0
+                assert 'step 1 of 8' in prompts(wire)[-1] and len(prompts(wire)) == 1
+        finally:
+            await b.guide.close()
+            await b.prefetch.close()
+    asyncio.run(trial())
 
 
 @pytest.mark.parametrize('text,expected', [
