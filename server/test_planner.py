@@ -789,13 +789,96 @@ def test_sdk_one_call_text_only_retries_off(monkeypatch, tmp_path, model, budget
                    and isinstance(c['messages'][0]['content'], str) for c in calls)
         assert all(o == dict(max_retries=0, timeout=float(budget or 20)) for o in options)
         assert calls[0]['max_tokens'] == 700
-        assert calls[0]['temperature'] == .1
+        assert 'temperature' not in calls[0]
         assert calls[0]['tool_choice'] == {'type': 'tool', 'name': 'submit_plan'}
         assert [t['name'] for t in calls[0]['tools']] == ['submit_plan']
         from jsonschema import validate
         validate(plan(), calls[0]['tools'][0]['input_schema'])
         await b.guide.close()
     asyncio.run(trial())
+
+
+@pytest.mark.parametrize('model,budget', [(None, None), ('fixture-model', '30')])
+def test_installed_sdk_request_with_mock_transport(monkeypatch, model, budget):
+    import anthropic
+    # Anthropic 2.x uses httpx2 and rejects httpx clients; use its transport types.
+    import httpx2 as httpx
+    from server import llm
+
+    requests, clients = [], []
+    constructor = anthropic.AsyncAnthropic
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json={
+            'id': 'msg_fixture', 'type': 'message', 'role': 'assistant',
+            'model': model or 'claude-haiku-5-5', 'stop_reason': 'tool_use',
+            'stop_sequence': None, 'usage': {'input_tokens': 10, 'output_tokens': 20},
+            'content': [{'type': 'tool_use', 'id': 'tool_fixture',
+                         'name': 'submit_plan', 'input': plan()}],
+        })
+
+    def client():
+        result = constructor(api_key='synthetic', base_url='https://planner.invalid',
+                             http_client=httpx.AsyncClient(
+                                 transport=httpx.MockTransport(respond), trust_env=False))
+        clients.append(result)
+        return result
+
+    monkeypatch.setenv('ANTHROPIC_API_KEY', 'synthetic')
+    if model:
+        monkeypatch.setenv('PLANNER_MODEL', model)
+    if budget:
+        monkeypatch.setenv('PLANNER_TIMEOUT_S', budget)
+    monkeypatch.setattr(llm, '_ANTHROPIC', {})
+    monkeypatch.setattr(llm.anthropic, 'AsyncAnthropic', client)
+
+    async def trial():
+        try:
+            result = await planner.claude(planner.PLAN, json.dumps({'task': plan()['task']}))
+            assert planner.validate(result, plan()['task']) == plan()
+            assert llm._shared_anthropic() is clients[0]
+        finally:
+            for instance in clients:
+                await instance.close()
+
+    asyncio.run(trial())
+    assert len(requests) == len(clients) == 1
+    request = requests[0]
+    assert request.method == 'POST' and request.url.path == '/v1/messages'
+    body = json.loads(request.content)
+    assert body['model'] == (model or 'claude-haiku-5-5')
+    assert body['max_tokens'] == 700 and 'temperature' not in body
+    assert body['tool_choice'] == {'type': 'tool', 'name': 'submit_plan'}
+    assert [tool['name'] for tool in body['tools']] == ['submit_plan']
+    assert body['tools'][0]['input_schema'] == planner.PLAN_SCHEMA
+    assert body['messages'] == [{'role': 'user', 'content': json.dumps({'task': plan()['task']})}]
+    assert request.extensions['timeout']['read'] == float(budget or 20)
+    assert request.headers['x-stainless-retry-count'] == '0'
+
+
+@pytest.mark.parametrize('error', [TypeError, ValueError])
+def test_planner_error_logs_class_only(monkeypatch, tmp_path, capsys, error):
+    async def fail(system, evidence):
+        raise error('synthetic-secret-and-private-evidence')
+
+    async def trial():
+        b, emitted, fixed, wire, fake, store, points = setup(monkeypatch, tmp_path, fail)
+        try:
+            b.guide.observe('help me fix my headphones')
+            await b.guide.planner.task
+            assert not store.rows and not b.guide.guide
+        finally:
+            await b.guide.close()
+
+    asyncio.run(trial())
+    output = capsys.readouterr().out
+    outcomes = [row['reason'] for line in output.splitlines()
+                if (row := json.loads(line))['event'] == 'planner']
+    assert outcomes[-1]['result'] == 'error'
+    assert outcomes[-1]['error_type'] == error.__name__
+    assert isinstance(outcomes[-1]['call_ms'], int)
+    assert 'synthetic-secret' not in output and 'headphones' not in output
 
 
 def test_recorded_headphone_repair_installs_and_reloads(monkeypatch, tmp_path):

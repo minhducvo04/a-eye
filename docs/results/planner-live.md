@@ -667,3 +667,91 @@ Limits: offline synthetic provider/Live packets only; no `.env` read, external
 network, real Haiku call, push, merge, deployment, or physical-device proof.
 Actual Haiku latency and eight-step output within 700 tokens remain unverified.
 Local commit only on `pkg/planner-live8`.
+
+
+## Planner Live round 9 — 2026-10-25
+
+Base: `a0d257d`, branch `pkg/planner-live9`. Reproduced the instant failure
+against the installed `anthropic 2.3.0`: `AsyncMessages.create` does not accept
+`temperature`. Both the default-model and override regressions raised TypeError
+before reaching the mock transport. Removed that argument rather than bypassing
+the SDK signature through extra_body. Single forced submit_plan, 700 tokens,
+zero retries and the configured deadline remain unchanged.
+
+Offline cause audit:
+
+- `tools` and `tool_choice` are valid parameters in the installed sync and async
+  messages.create signatures. The production request serializes both correctly.
+- `_shared_anthropic` creates AsyncAnthropic per event loop; awaiting create is
+  correct. No sync client or thread wrapper is involved in this request.
+- `with_options(max_retries=0, timeout=float)` is supported and returns an async
+  client. The real transport sees the configured read timeout and retry count 0.
+- The failure is an unsupported temperature keyword, before any server-side
+  temperature/tool-choice compatibility check could occur.
+- `claude-haiku-5-5` appears in the installed ModelParam literals. This establishes
+  SDK recognition only; live availability/account access is unverified.
+
+Unexpected planner failures now add only `reason.error_type` (exception class
+name), never the exception message/arguments. Tests cover TypeError and uncoded
+ValueError, no plan installation/cache on failure, and absence of synthetic
+private evidence in captured logs. Existing coded validation failures retain
+their reason codes.
+
+The new regression runs production planner.claude, _shared_anthropic,
+with_options, SDK argument binding, serialization and typed response parsing.
+Only construction supplies a fake HTTP transport and synthetic credential.
+Anthropic 2.3.0 uses `httpx2` and explicitly rejects original `httpx` client types,
+so this test uses `httpx2.MockTransport` (imported as httpx). It checks the actual
+POST body, forced tool/schema, text-only message, model override, 700-token limit,
+no temperature, configured timeout and first-request retry count. No sockets are
+used by this regression. The former **kwargs-only SDK fake missed this defect.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py -k 'installed_sdk_request or error_logs_class' --tb=short` - FAIL before fix
+(4 failed, 95 deselected in 0.82s; two unsupported-keyword failures and two missing
+error_type failures). Proof: `/private/tmp/planner-live9-before.log`.
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py -k 'installed_sdk_request or error_logs_class or sdk_one_call' --tb=short` - PASS
+(6 passed, 93 deselected in 0.81s; summary read).
+Proof: `/private/tmp/planner-live9-targeted.log`.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(1276 passed, 17 failed, 2 warnings in 102.70s; exit 1; summary and failure traces
+read). Fifteen failures are denied local socket operations; one is the existing
+hazard-state KeyError after Live startup PermissionError. The additional failure
+is test_triggering_turn_audio_flows_while_planner_stalls waiting 0.5 seconds for
+its fake planner to start. That test does not invoke the SDK. Its whole file
+passes on isolated recheck without edits; suite-level timing/order cause remains
+unresolved, and the full run is not claimed green. All server/test_planner.py
+cases, including the four new regression cases, passed in the full run.
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner_output.py --tb=short` - PASS
+(9 passed in 4.54s; summary read; no source changes after full run).
+Test: `git diff --check` - PASS.
+Logs: `/private/tmp/planner-live9-full.log`,
+`/private/tmp/planner-live9-output-recheck.log`.
+
+Failed node IDs:
+
+- `server/test_bg_context.py::test_live_publishes_context_while_next_build_waits_and_cancels_on_close`
+- `server/test_cloud_meter.py::test_real_websocket_send_boundary`
+- `server/test_gemini_live.py::test_fake_live_recent_step_transcripts_and_scene_stay_local`
+- `server/test_gemini_live.py::test_fake_live_wire_audio_tools_captions_and_revocation`
+- `server/test_gemini_live.py::test_reconnect_once_then_fallback_and_close`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[False-False]`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[True-False]`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[True-True]`
+- `server/test_limits.py::test_live_minutes_stop_idle_connection`
+- `server/test_live_prefetch.py::test_slow_tool_does_not_delay_audio`
+- `server/test_live_prefetch.py::test_streaming_prefetch_card_cache_and_idle_publication`
+- `server/test_live_streaming.py::test_fake_live_streams_before_complete_and_stops_mid_reply[False]`
+- `server/test_live_streaming.py::test_fake_live_streams_before_complete_and_stops_mid_reply[True]`
+- `server/test_live_streaming.py::test_ws2_hazard_sends_stop_caption_and_fixed_audio`
+- `server/test_planner_output.py::test_triggering_turn_audio_flows_while_planner_stalls`
+- `server/test_step_check.py::test_real_loopback_api_to_qwen_protocol_keeps_pictures_zero`
+- `scripts/test_ready.py::test_live_pair_request_on_fake_socket`
+
+Files changed: `server/planner.py`, `server/test_planner.py`,
+`docs/results/planner-live.md`, `RESULT.md`.
+Limits: no .env read, network access, real provider call, push, merge or deployment.
+The offline SDK failure is reproduced and fixed; the original live exception was
+not captured, so attribution of that specific call remains a strong inference.
+Live model acceptance and latency still need an authorized real call. Local
+commit only in this worktree.

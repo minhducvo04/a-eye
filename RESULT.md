@@ -509,3 +509,34 @@ Full log: `/private/tmp/planner-live8-full.log`. Details and failed node IDs:
 [planner-live report](docs/results/planner-live.md).
 Limits: no `.env` read, external network, real provider call, push or deployment.
 Real Haiku latency/output fit remains unverified. Local commit only.
+
+
+## planner-live9 — 2026-10-25
+
+Reproduced instant TypeError with installed anthropic 2.3.0: messages.create no
+longer accepts temperature. Removed it from the planner; forced tool output,
+async shared client, timeout, zero retries and token limit remain unchanged.
+Unexpected errors log exception class only. Added real SDK request/response
+regressions with httpx2.MockTransport (the installed SDK rejects httpx clients),
+plus privacy checks for TypeError and uncoded ValueError.
+
+Files changed: `server/planner.py`, `server/test_planner.py`,
+`docs/results/planner-live.md`, `RESULT.md`.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py -k 'installed_sdk_request or error_logs_class or sdk_one_call' --tb=short` - PASS
+(6 passed, 93 deselected in 0.81s; four new cases failed before fix).
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(1276 passed, 17 failed, 2 warnings in 102.70s; summary and failure traces read).
+Sixteen failures match prior denied-socket/downstream hazard failures. One
+additional planner-audio test hit its 0.5s startup deadline; its full file passed
+unchanged in isolation. Suite-level timing/order cause is unresolved.
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner_output.py --tb=short` - PASS
+(9 passed in 4.54s; summary read).
+Test: `git diff --check` - PASS.
+
+Proof: `/private/tmp/planner-live9-before.log`,
+`/private/tmp/planner-live9-targeted.log`, `/private/tmp/planner-live9-full.log`,
+`/private/tmp/planner-live9-output-recheck.log`.
+Limits: no .env read, network access, real provider call, push or deployment.
+SDK accepts the request offline; live provider acceptance remains unverified.
+Details: [round 9 report](docs/results/planner-live.md).
