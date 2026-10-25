@@ -26,7 +26,7 @@ from jsonschema import ValidationError
 
 from contracts import validate
 from market.search import search
-from server import ws2
+from server import parts_shelf, ws2
 from server import accounts
 from server.expert import check_local_model
 from server.routing import warm_router
@@ -45,6 +45,7 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None, *, pres
     async def lifespan(app):
         protect_transport_logs()
         warn_unconfigured()
+        parts_shelf.shelf()  # local data/kb read once at start; an empty shelf if the files are missing
         cleanup = asyncio.create_task(accounts.cleanup_loop(app))
         warmup = None if app.state.mock else asyncio.create_task(ws2.warm_brain(app))
         if not app.state.mock:
@@ -124,6 +125,16 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None, *, pres
     async def health():
         return {'ok': True}
 
+    @app.get('/api/personas')
+    async def persona_list():
+        from server import personas
+        return {'personas': personas.list_personas(), 'default': personas.DEFAULT}
+
+    @app.get('/api/features')
+    async def feature_list():
+        from server import features
+        return {'extra_modes': features.extra_modes(), 'shopping': features.shopping()}
+
     @app.post('/api/call-owner')
     async def call_owner(request: Request):
         # Access users keep their verified identity. Only token callers need a call capability.
@@ -172,6 +183,10 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None, *, pres
                 while request:
                     operation, payload = request
                     if operation == 'market':
+                        from server import features
+                        if not features.shopping():
+                            await send([session.say('Shopping is off.')])
+                            break
                         try:
                             result = await asyncio.to_thread(search, payload)
                             validate('market_response', result)

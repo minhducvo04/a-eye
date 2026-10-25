@@ -1,3 +1,4 @@
+import pytest
 from server import packs, safety
 from server.agent import Session
 from server.memory import Store
@@ -109,3 +110,8 @@ def test_repeat_repair_cannot_bypass_revoked_check():
     guide = HomeGuide(introduced=True, index=4, water_off_passed=True)
     guide.reply('water is still on')
     assert guide.reply('repeat that') == safety.WATER_OFF_LINE
+
+
+@pytest.fixture(autouse=True)
+def _enable_legacy_home_tasks(monkeypatch):
+    monkeypatch.setenv("HOME_TASKS", "1")

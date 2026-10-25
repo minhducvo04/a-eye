@@ -1,3 +1,4 @@
+import { wireFlipCamera } from "./flip-camera.js";
 // Safari call page. Speaks the v1 WebSocket contract. Frames stay in memory only
 // for the JPEG we are about to send; nothing is written to storage or disk.
 
@@ -300,6 +301,12 @@ function stopCamera() {
   cameraOn = false;
 }
 
+const flipCamera = wireFlipCamera({
+  video, button: document.getElementById("flip-camera"),
+  active: () => cameraOn, busy: () => starting,
+  onError: message => setCaption(message, true),
+});
+
 async function startCamera() {
   if (starting || cameraOn) return;
   if (!window.isSecureContext) {
@@ -313,7 +320,7 @@ async function startCamera() {
   starting = true;
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+      video: flipCamera.constraints({ facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }),
       audio: false,
     });
     video.srcObject = stream;
@@ -321,6 +328,7 @@ async function startCamera() {
     video.muted = true;
     await video.play();
     cameraOn = true;
+    void flipCamera.refresh();
     startBtn.disabled = true;
     pauseBtn.disabled = false;
     loop.start();

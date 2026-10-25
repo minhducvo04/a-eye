@@ -21,6 +21,126 @@ def jpeg():
     return base64.b64encode(out.getvalue()).decode()
 
 
+def test_fake_live_recent_step_transcripts_and_scene_stay_local(monkeypatch):
+    # The tool and prefetch path, as with LIVE_MEMORY_GATE=0 (the gate has its own tests in test_live_memory.py).
+    monkeypatch.setenv('LIVE_MEMORY_GATE', '0')
+    async def trial():
+        from server.ws2 import scene_loop
+        from server.test_ws2 import Vision
+        monkeypatch.setenv('GEMINI_API_KEY', 'synthetic-key')
+        privacy.set_call({'google': True})
+        wire, emitted = [], []
+        done = asyncio.Event()
+        question = 'what step was I just on?'
+        instruction = 'Step 3: place the resistor on row 12.'
+        async def fake(ws):
+            wire.append(json.loads(await ws.recv()))
+            await ws.send(json.dumps({'setupComplete': {}}))
+            await ws.send(json.dumps({'serverContent': {
+                'inputTranscription': {'text': 'Help with the resistor.'},
+                'outputTranscription': {'text': 'Step 3: place the '}}}))
+            await ws.send(json.dumps({'serverContent': {
+                'outputTranscription': {'text': 'resistor on row 12.'}, 'turnComplete': True}}))
+            async for raw in ws:
+                msg = json.loads(raw)
+                wire.append(msg)
+                if msg.get('realtimeInput', {}).get('text') == question:
+                    await ws.send(json.dumps({'toolCall': {'functionCalls': [
+                        dict(id='recent', name='recent_memory', args={'question': question})]}}))
+                if 'toolResponse' in msg:
+                    result = msg['toolResponse']['functionResponses'][0]['response']['result']
+                    await ws.send(json.dumps({'serverContent': {
+                        'outputTranscription': {'text': result}, 'turnComplete': True}}))
+        async def emit(msg):
+            emitted.append(msg)
+            if msg.get('type') == 'say' and 'the guide said' in msg['text']:
+                done.set()
+        async def discover():
+            return 'models/' + DOCUMENTED_MODEL
+        session = Session('recent-live')
+        async with serve(fake, '127.0.0.1', 0) as server:
+            bridge = LiveBridge(session, Vision(), None, emit, emit, discover=discover,
+                                endpoint=f'ws://127.0.0.1:{server.sockets[0].getsockname()[1]}')
+            # Memory settings must not attach a persistent backend to this Live log.
+            session.recent_memory.bind(SimpleNamespace(remembering=lambda: True), session.session_id)
+            assert session.recent_memory.store is None
+            assert await bridge.start()
+            scan = None
+            try:
+                for _ in range(100):
+                    if any(m.get('text') == instruction for m in emitted):
+                        break
+                    await asyncio.sleep(.01)
+                session.frame = dict(seq=1, jpeg_b64=jpeg())
+                scan = asyncio.create_task(scene_loop(session, bridge.vision, emit))
+                for _ in range(100):
+                    if any(e['kind'] == 'scene' for e in session.recent_memory.entries):
+                        break
+                    await asyncio.sleep(.01)
+                entries = list(session.recent_memory.entries)
+                assert any(e['kind'] == 'scene' and e['note'] for e in entries)
+                assert any(e['kind'] == 'user' and e['note'] == 'Help with the resistor.' for e in entries)
+                assert any(e['kind'] == 'helper' and e['note'] == instruction for e in entries)
+                await bridge.text(question)
+                await asyncio.wait_for(done.wait(), 2)
+                response = next(m['toolResponse']['functionResponses'][0]['response']
+                                for m in wire if 'toolResponse' in m)
+                assert set(response) == {'result', 'scheduling'}
+                assert response['scheduling'] == 'WHEN_IDLE'
+                assert 'the guide said' in response['result'] and instruction in response['result']
+                setup = json.dumps(wire[0])
+                assert all(key not in setup for key in ('additionalProperties', 'minLength', 'maxLength'))
+                assert 'observed_at' not in json.dumps(wire) and 'wall_t' not in json.dumps(wire)
+            finally:
+                if scan:
+                    scan.cancel()
+                    await asyncio.gather(scan, return_exceptions=True)
+                await bridge.close()
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('args', [{}, {'question': ''}, {'question': 'x' * 301},
+                                 {'question': 3}, {'question': 'step', 'extra': 'no'}])
+def test_recent_tool_strict_arguments(args):
+    async def trial():
+        privacy.set_call({'google': True})
+        async def emit(msg):
+            pass
+        bridge = LiveBridge(Session('s'), None, None, emit, emit)
+        assert await bridge.tool(dict(name='recent_memory', args=args)) == 'Invalid tool arguments.'
+    asyncio.run(trial())
+
+
+def test_recent_tool_temporal_routes_and_local_result_cards(tmp_path):
+    async def trial():
+        from scripts.recent_memory_bench import fixture
+        privacy.set_call({'google': True, 'twelvelabs': True})
+        evidence = fixture(tmp_path)
+        session = Session('s', recent_memory=evidence.recent_memory)
+        session.rewind = evidence.rewind
+        emitted = []
+        async def emit(msg):
+            emitted.append(msg)
+        bridge = LiveBridge(session, None, None, emit, emit)
+        async def recall(question):
+            return await bridge.tool(dict(name='recent_memory', args={'question': question}))
+        assert 'row 12' in await recall('Where was the red wire a minute ago?')
+        assert session.rewind.calls == 0
+        assert '0:30' in await recall('Where was the resistor earlier in this call?')
+        assert session.rewind.calls == 1
+        assert 'parts bin' in await recall('Where was the resistor yesterday?')
+        assert any(m['type'] == 'find_item' for m in emitted)
+        session.rewind.on = False
+        # Over 5 minutes with Rewind off: this call's notes only, never another call relabelled as then.
+        assert "can't confirm" in await recall('Where was the resistor 6 minutes ago?')
+        assert session.rewind.calls == 1
+        assert "can't confirm" in await recall('Where was the blue wire just now?')
+        privacy.update('google', False)
+        with pytest.raises(PermissionError):
+            await recall('What was step 3?')
+    asyncio.run(trial())
+
+
 def test_camera_precedes_realtime_question():
     async def trial():
         from time import monotonic
@@ -127,7 +247,12 @@ def test_fake_live_wire_audio_tools_captions_and_revocation(monkeypatch):
             setup = received[0]['setup']
             assert setup['generationConfig']['responseModalities'] == ['AUDIO']
             assert setup['realtimeInputConfig']['turnCoverage'] == 'TURN_INCLUDES_ALL_INPUT'
+            assert setup['sessionResumption'] == {}
+            assert setup['contextWindowCompression'] == {'slidingWindow': {}}
             assert 'live camera' in setup['systemInstruction']['parts'][0]['text']
+            from server import personas
+            assert personas.style_block(session.persona, live=True) in setup['systemInstruction']['parts'][0]['text']
+            assert setup['generationConfig']['speechConfig']['voiceConfig']['prebuiltVoiceConfig']['voiceName'] == session.persona['gemini_live_voice']
             await bridge.audio(base64.b64encode(b'\x00\x00' * 160).decode(), True)
             await bridge.video()
             await bridge.video()  # at most one picture per second
@@ -180,6 +305,145 @@ def test_reconnect_once_then_fallback_and_close(monkeypatch):
             assert fixed == [FALLBACK_LINE]
             await bridge.close()
             assert bridge.task.done()
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('go_away,stopped', [(False, False), (True, False), (True, True)])
+def test_reconnect_reuses_latest_resumable_handle(monkeypatch, go_away, stopped):
+    async def trial():
+        monkeypatch.setenv('GEMINI_API_KEY', 'synthetic-key')
+        monkeypatch.setenv('LIVE_CONTEXT_ENABLED', '0')
+        privacy.set_call({'google': True})
+        setups, fixed, emitted = [], [], []
+        resumed = asyncio.Event()
+        async def fake(ws):
+            setups.append(json.loads(await ws.recv())['setup'])
+            await ws.send('{"setupComplete": {}}')
+            if len(setups) == 1:
+                for update in [dict(resumable=True, newHandle='older'),
+                               dict(resumable=True, newHandle='latest'),
+                               dict(resumable=False, newHandle='')]:
+                    await ws.send(json.dumps({'sessionResumptionUpdate': update}))
+                if stopped:
+                    await ws.send(json.dumps({'serverContent': {'outputTranscription': {
+                        'text': 'Open the electrical panel.'}}}))
+                if go_away:
+                    await ws.send('{"goAway": {"timeLeft": "30s"}}')
+                    # The bridge must reconnect without waiting for server closure.
+                    await ws.wait_closed()
+                else:
+                    await ws.close()
+            else:
+                resumed.set()
+                await ws.wait_closed()
+        async def emit(msg):
+            emitted.append(msg)
+        async def speak(text):
+            fixed.append(text)
+        async def discover():
+            return 'models/fake'
+        async with serve(fake, '127.0.0.1', 0) as server:
+            bridge = LiveBridge(Session('resume', camera=False), None, None, emit, speak,
+                discover=discover, endpoint=f'ws://127.0.0.1:{server.sockets[0].getsockname()[1]}')
+            assert await bridge.start()
+            try:
+                await asyncio.wait_for(resumed.wait(), 2)
+                assert setups[0]['sessionResumption'] == {}
+                assert setups[1]['sessionResumption'] == ({} if stopped else {'handle': 'latest'})
+                assert bridge.active and bool(fixed) == stopped
+                if stopped:
+                    assert bridge.blocked and bridge.safety_stopped
+                    from server.test_live_streaming import audio_content
+                    await bridge.handle(audio_content('Stale reply.', turnComplete=True))
+                    assert not any(m['type'] == 'audio' for m in emitted)
+            finally:
+                await bridge.close()
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('healthy_seconds,expected_connections', [(59.9, 2), (60, 3), (121, 3)])
+def test_reconnect_budget_resets_after_healthy_minute(monkeypatch, healthy_seconds, expected_connections):
+    async def trial():
+        from server import gemini_live
+        monkeypatch.setenv('GEMINI_API_KEY', 'synthetic-key')
+        monkeypatch.setenv('LIVE_CONTEXT_ENABLED', '0')
+        privacy.set_call({'google': True})
+        clock, setups, fixed = [0.0], [], []
+        monkeypatch.setattr(gemini_live, 'monotonic', lambda: clock[0])
+        class Socket:
+            def __init__(self, index):
+                self.index, self.reads = index, 0
+            async def send(self, raw):
+                setups.append(json.loads(raw)['setup'])
+            async def recv(self):
+                self.reads += 1
+                if self.reads == 1:
+                    return '{"setupComplete": {}}'
+                if self.index == 1 and self.reads == 2:
+                    clock[0] += healthy_seconds
+                    return '{"sessionResumptionUpdate": {"resumable": true, "newHandle": "healthy"}}'
+                raise ConnectionError('synthetic disconnect')
+            async def close(self):
+                pass
+        async def connect(*args, **kwargs):
+            return Socket(len(setups))
+        async def emit(msg):
+            pass
+        async def speak(text):
+            fixed.append(text)
+        async def discover():
+            return 'models/fake'
+        monkeypatch.setattr(gemini_live, 'connect', connect)
+        bridge = LiveBridge(Session('reset', camera=False), None, None, emit, speak, discover=discover)
+        assert await bridge.start()
+        try:
+            await asyncio.wait_for(bridge.task, 2)
+            assert len(setups) == expected_connections
+            assert fixed == [gemini_live.FALLBACK_LINE]
+            if expected_connections == 3:
+                assert setups[-1]['sessionResumption'] == {'handle': 'healthy'}
+        finally:
+            await bridge.close()
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('rate', [16000, 24000])
+def test_first_audio_releases_at_buffered_250ms_and_stop_cuts_tail(monkeypatch, rate):
+    async def trial():
+        from server import gemini_live
+        privacy.set_call({'google': True})
+        # Audio can arrive faster than real time: no wall-clock delay is needed.
+        monkeypatch.setattr(gemini_live, 'monotonic', lambda: 0.0)
+        emitted, fixed = [], []
+        async def emit(msg):
+            emitted.append(msg)
+        async def speak(text):
+            fixed.append(text)
+        bridge = LiveBridge(Session('early', camera=False), None, None, emit, speak)
+        bridge.model = 'models/fake'
+        def audio(samples, text=None):
+            content = {'modelTurn': {'parts': [{'inlineData': {
+                'mimeType': f'audio/pcm;rate={rate}',
+                'data': base64.b64encode(b'\x01\x00' * samples).decode()}}]}}
+            if text:
+                content['outputTranscription'] = {'text': text}
+            return {'serverContent': content}
+        await bridge.handle(audio(rate // 4 - 1, 'A blue cup. '))
+        assert not any(m['type'] == 'audio' for m in emitted)
+        await bridge.handle(audio(1))
+        chunks = [m for m in emitted if m['type'] == 'audio']
+        assert chunks and sum(len(base64.b64decode(m['pcm16_b64'])) for m in chunks) == 8000
+        assert not bridge.audio_buffer
+        assert emitted.index(next(m for m in emitted if m['type'] == 'say')) < emitted.index(chunks[0])
+        await bridge.handle(audio(rate // 10, 'Open the electrical '))
+        await bridge.handle(audio(rate // 10, 'panel.'))
+        stopped_at = len(emitted)
+        assert fixed and bridge.blocked and not bridge.audio_buffer
+        await bridge.handle({'serverContent': {'interrupted': True}})
+        await bridge.handle(audio(rate))
+        await bridge.handle({'serverContent': {'turnComplete': True}})
+        assert not any(m['type'] == 'audio' for m in emitted[stopped_at:])
+        await bridge.close()
     asyncio.run(trial())
 
 
@@ -247,11 +511,14 @@ def test_point_uses_configured_backend_and_abstains(monkeypatch, source, cloud, 
         async def emit(msg):
             emitted.append(msg)
         bridge = LiveBridge(session, vision, None, emit, emit)
-        await bridge.tool(dict(name='point_at', args={'label': LABEL}))
+        # point_at is no longer offered to Live; the server boxes what Live names.
+        assert await bridge.tool(dict(name='point_at', args={'label': LABEL})) == 'Tool unavailable.'
+        session.scene = dict(caption='', objects=[dict(label=LABEL)])
+        await bridge._auto_point(f'Use the {LABEL} there.')
         assert bool(emitted) == expected
         if expected:
             assert [o['kind'] for o in emitted[0]['ops']] == ['clear', 'box', 'arrow']
-        session.frame_time -= 2
+        session.frame_time -= 4  # pointer budget is 3 s (owner: boxes must show on the demo link)
         emitted.clear()
         await bridge.tool(dict(name='point_at', args={'label': LABEL}))
         assert not emitted
@@ -269,11 +536,155 @@ def test_tool_hazard_and_pc_power_gate():
         async def fixed(line):
             lines.append(line)
         bridge = LiveBridge(Session('s', pack=packs.get('pc_build')), None, None, emit, fixed)
-        await bridge.tool(dict(name='point_at', args={'label': 'CPU fan'}))
+        await bridge.tool(dict(name='find_item', args={'name': 'CPU fan'}))
         assert lines == [POWER_LINE]
         bridge = LiveBridge(Session('s'), None, None, emit, fixed)
         await bridge.tool(dict(name='tag_item', args={'name': 'gas line', 'place': 'wall'}))
         assert 'gas line' in lines[-1]
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('owner', ['guide', 'memory', 'safety', 'barge'])
+def test_mic_chunk_preserves_code_owned_hold(monkeypatch, owner):
+    async def trial():
+        from server import agent, live_guide, live_memory
+        from server.packs.home import HomeGuide
+        from server.step_check import Verdict
+
+        monkeypatch.setenv('LIVE_GUIDE', '1')
+        monkeypatch.setenv('LIVE_MEMORY_GATE', '1')
+        monkeypatch.setenv('ROUTER', 'off')
+        monkeypatch.setattr(live_guide, 'DEBOUNCE', 0)
+        monkeypatch.setattr(live_memory, 'DEBOUNCE', 0)
+        privacy.set_call({'google': True})
+        emitted, fixed, wire = [], [], []
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def emit(msg):
+            emitted.append(msg)
+
+        async def speak(line):
+            fixed.append(line)
+
+        async def send(raw):
+            wire.append(json.loads(raw))
+
+        async def check(*args):
+            entered.set()
+            await release.wait()
+            return Verdict('closed', 1)
+
+        async def lookup(*args):
+            entered.set()
+            await release.wait()
+            return dict(source='recent', found=True, say='The mug was on the shelf.'), []
+
+        bridge = LiveBridge(Session('mic-hold', camera=False), None, None, emit, speak)
+        bridge.ws, bridge.active, bridge.model = SimpleNamespace(send=send), True, 'fake'
+        # VAD ends the input stream while code is still checking the user's turn.
+        await bridge.audio('AAA=', final=True)
+        if owner == 'guide':
+            monkeypatch.setenv('HOME_TASKS', '1')
+            monkeypatch.setattr(agent, 'check_water_off', check)
+            bridge.session.home_guide = HomeGuide(task='sink', index=2, introduced=True)
+            bridge.guide.kind = 'home'
+            question = "it's off"
+        elif owner == 'memory':
+            bridge._lookup_memory = lookup
+            question = 'Where was the mug a minute ago?'
+        else:
+            question = None
+        if question:
+            await bridge.handle({'serverContent': {'inputTranscription': {'text': question}}})
+            await asyncio.wait_for(entered.wait(), 1)
+        elif owner == 'safety':
+            await bridge.stop(bridge.stop_line('open the electrical panel'))
+        else:
+            await bridge.interrupt()
+        task = (bridge.guide.task if owner == 'guide' else
+                bridge.memory.task if owner == 'memory' else None)
+        version = bridge.memory.version
+        safety_line = bridge.safety_line
+        emitted.clear()
+        try:
+            await bridge.audio('AAA=')
+            await bridge.handle({'serverContent': {
+                'outputTranscription': {'text': 'Unverified provider reply.'},
+                'modelTurn': {'parts': [{'inlineData': {
+                    'mimeType': 'audio/pcm;rate=24000',
+                    'data': base64.b64encode(b'\x00\x00' * 6000).decode()}}]}}})
+            played = [m for m in emitted if m['type'] in ('audio', 'say', 'reply_delta')]
+            assert bool(played) == (owner == 'barge')
+            assert bridge.blocked == (owner != 'barge')
+            assert bridge.safety_stopped == (owner == 'safety')
+            assert bridge.safety_line == safety_line
+            assert bridge.memory.version == version
+            assert wire[-1]['realtimeInput']['audio']['data'] == 'AAA='
+            if task:
+                assert not task.done()
+                if owner == 'memory':
+                    assert bridge.memory.current(version)
+                else:
+                    assert not bridge.session.home_guide.water_off_passed
+                # Only the owner's completed check may release the held output.
+                await bridge.handle({'serverContent': {'turnComplete': True}})
+                release.set()
+                await asyncio.wait_for(task, 1)
+                assert not bridge.blocked
+                prompts = [m['clientContent'] for m in wire if 'clientContent' in m]
+                assert len(prompts) == 1 and prompts[0]['turnComplete']
+                prompt = prompts[0]['turns'][0]['parts'][0]['text']
+                assert ('step 4 of 7' if owner == 'guide' else 'The mug was on the shelf.') in prompt
+        finally:
+            release.set()
+            await bridge.guide.close()
+            await bridge.memory.close()
+            await bridge.prefetch.close()
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('stop', ['safety', 'closed'])
+@pytest.mark.parametrize('idle_result', ['idle', 'timeout'])
+def test_prompt_turn_rechecks_stop_after_provider_idle_wait(stop, idle_result):
+    async def trial():
+        privacy.set_call({'google': True})
+        wire, fixed = [], []
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def emit(msg):
+            pass
+
+        async def speak(line):
+            fixed.append(line)
+
+        async def send(raw):
+            wire.append(json.loads(raw))
+
+        async def wait_idle():
+            entered.set()
+            await release.wait()
+            if idle_result == 'timeout':
+                raise asyncio.TimeoutError
+            return True
+
+        bridge = LiveBridge(Session('prompt-stop', camera=False), None, None, emit, speak)
+        bridge.ws, bridge.active = SimpleNamespace(send=send), True
+        await bridge.hold()
+        bridge.provider_idle.wait = wait_idle
+        task = asyncio.create_task(bridge.prompt_turn('Say the checked step.'))
+        await asyncio.wait_for(entered.wait(), 1)
+        line = bridge.stop_line('open the electrical panel')
+        if stop == 'safety':
+            await bridge.stop(line)
+        else:
+            bridge.closed = True
+        release.set()
+        assert await asyncio.wait_for(task, 1) is False
+        assert bridge.blocked and not wire
+        if stop == 'safety':
+            assert bridge.safety_stopped and bridge.safety_line == line and fixed == [line]
+        else:
+            assert bridge.closed and not fixed
     asyncio.run(trial())
 
 
@@ -299,7 +710,7 @@ def test_output_safety_and_next_safe_question():
         assert await bridge.text('Describe the blue board')
         await bridge.handle({'serverContent': {'outputTranscription': {'text': 'A blue board.'}, 'turnComplete': True}})
         assert any(m['type'] == 'say' and m['text'] == 'A blue board.' for m in emitted)
-        assert any('clientContent' in m for m in wire)
+        assert wire == [{'realtimeInput': {'text': 'Describe the blue board'}}]
     asyncio.run(trial())
 
 

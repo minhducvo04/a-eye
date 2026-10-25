@@ -1,0 +1,58 @@
+{
+ "1536-name": {
+  "labels": 16,
+  "worst": 17.11,
+  "p5": 17.24,
+  "median": 18.15,
+  "zone_worst": 6.64
+ },
+ "1280-name": {
+  "labels": 16,
+  "worst": 17.16,
+  "p5": 17.65,
+  "median": 18.15,
+  "zone_worst": 6.54
+ },
+ "1280-speed": {
+  "labels": 20,
+  "worst": 13.25,
+  "p5": 13.46,
+  "median": 13.76,
+  "zone_worst": 6.64
+ },
+ "1280-cost": {
+  "labels": 18,
+  "worst": 9.49,
+  "p5": 10.61,
+  "median": 14.39,
+  "zone_worst": 6.64
+ },
+ "390-name": {
+  "labels": 16,
+  "worst": 18.08,
+  "p5": 18.13,
+  "median": 18.18,
+  "zone_worst": 6.73
+ },
+ "390-speed": {
+  "labels": 16,
+  "worst": 13.76,
+  "p5": 13.76,
+  "median": 13.78,
+  "zone_worst": null
+ },
+ "390-cost": {
+  "labels": 16,
+  "worst": 14.42,
+  "p5": 14.42,
+  "median": 18.18,
+  "zone_worst": 6.73
+ },
+ "390-cost-selected": {
+  "labels": 1,
+  "worst": 14.31,
+  "p5": 14.31,
+  "median": 14.31,
+  "zone_worst": null
+ }
+}

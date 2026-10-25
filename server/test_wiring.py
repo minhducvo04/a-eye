@@ -27,6 +27,7 @@ class FakeLLM:
 
 @pytest.mark.parametrize('budget', [100, 0])
 def test_market_in_safety(monkeypatch, budget):
+    monkeypatch.setenv('SHOPPING', '1')
     monkeypatch.setenv('MARKET_SOURCE', 'fixture')
     with TestClient(create_app(FakeVision())) as client:
         with client.websocket_connect('/ws') as ws:
@@ -90,6 +91,7 @@ def test_router_failure_falls_back_and_socket_survives():
 
 
 def test_unverified_market_preserves_active_step(monkeypatch):
+    monkeypatch.setenv('SHOPPING', '1')
     monkeypatch.setenv('MARKET_SOURCE', 'fixture')
     board = load_board('demo-b650')
     board.pop('specs')

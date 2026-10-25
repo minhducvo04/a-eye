@@ -95,8 +95,10 @@ def configured():
 
 def warn_unconfigured():
     if not configured():
-        event('auth_loopback_only', level='warning',
-              reason='No credentials: remote and proxied clients refused; configure authentication')
+        opened = os.environ.get('A_EYE_DEMO_OPEN') == '1'
+        event('auth_explicitly_open' if opened else 'auth_loopback_only', level='warning',
+              reason='No credentials: all clients allowed by A_EYE_DEMO_OPEN=1' if opened
+              else 'No credentials: remote and proxied clients refused; configure authentication or A_EYE_DEMO_OPEN=1')
 
 
 def rejected(reason):
@@ -117,7 +119,9 @@ def authorized(connection):
     audience = os.environ.get('CF_ACCESS_AUD', '')
     if not (expected or team or audience):
         peer = connection.client.host if connection.client else ''
-        return ((peer in ('127.0.0.1', '::1') and not proxied(connection))
+        # Owner decision 2026-10-24: open demo mode stays available, guarded by limits and the spend cap.
+        return (os.environ.get('A_EYE_DEMO_OPEN') == '1'
+                or (peer in ('127.0.0.1', '::1') and not proxied(connection))
                 or rejected('unconfigured_remote'))
     header = connection.headers.get('authorization', '')
     bearer = header[7:] if header.lower().startswith('bearer ') else ''

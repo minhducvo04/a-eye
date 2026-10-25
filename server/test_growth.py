@@ -1,3 +1,4 @@
+import pytest
 import asyncio
 
 from cryptography.fernet import Fernet
@@ -131,3 +132,8 @@ def test_authenticated_users_and_forget_over_websocket(tmp_path, monkeypatch):
                     turn(ws, sid, 'hinge')
                     assert session.home_guide.level == 1
         assert application.state.llm_v2.calls == []
+
+
+@pytest.fixture(autouse=True)
+def _enable_legacy_home_tasks(monkeypatch):
+    monkeypatch.setenv("HOME_TASKS", "1")

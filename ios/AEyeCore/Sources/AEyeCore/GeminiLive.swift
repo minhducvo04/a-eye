@@ -8,11 +8,13 @@ public enum LiveConfiguration {
         ["gemini-live", "general"].contains(mode) && google && !privateMode
     }
 
-    public static func url(_ base: URL, live: Bool, google: Bool, privateMode: Bool) -> URL? {
+    public static func url(_ base: URL, live: Bool, google: Bool, privateMode: Bool, engineering: Bool = false) -> URL? {
         guard !live || (google && !privateMode),
               var parts = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return nil }
         var items = (parts.queryItems ?? []).filter { $0.name != "mode" && $0.name != "google" }
-        if live {
+        if engineering {
+            items.append(URLQueryItem(name: "mode", value: "engineering"))
+        } else if live {
             items += [URLQueryItem(name: "mode", value: "gemini-live"), URLQueryItem(name: "google", value: "1")]
         }
         parts.queryItems = items.isEmpty ? nil : items
@@ -51,6 +53,10 @@ extension ClientMessage {
 
     public static func camera(sessionId: String, on: Bool) -> Data {
         wire(["v": 2, "type": "camera", "session_id": sessionId, "on": on])
+    }
+
+    public static func rewind(sessionId: String, on: Bool, keep: Bool) -> Data {
+        wire(["v": 2, "type": "rewind", "session_id": sessionId, "on": on, "keep": keep])
     }
 
     private static func wire(_ object: [String: Any]) -> Data {

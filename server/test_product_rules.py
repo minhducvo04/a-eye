@@ -8,6 +8,26 @@ from server.product_rules import CLAIMS, ROLE_WORDS, FALLBACK, NEUTRAL, SERIOUS,
 from server.test_agent import LLM, Vision, run
 
 
+@pytest.mark.parametrize('line', ["I'm A-Eye, an AI dad who helps you do things.",
+                                'A warm father persona.', 'One step at a time.'])
+def test_dad_persona_allowed_by_owner_decision_2026_10_24(line):
+    assert check(line) == line
+
+
+@pytest.mark.parametrize('line', ['I am your real dad.', "I'm your actual father.",
+                                'You only need me.', "I'm always here instead of your friends.",
+                                'Avoid real people.', 'Stop talking to your friends.',
+                                'Keep this between us.', 'I want to date you.'])
+def test_persona_does_not_allow_replacement_isolation_or_romance(line):
+    assert check(line) == FALLBACK
+
+
+@pytest.mark.parametrize('word', ['dad', 'father'])
+def test_dad_venting_still_neutral(word):
+    assert vent_reply(f'My {word} is awful') == NEUTRAL
+    assert vent_reply(f'My {word} threatened me') == SERIOUS
+
+
 @pytest.mark.parametrize('word', ROLE_WORDS)
 def test_role_words_are_input_only(word):
     assert not allowed(f'I can be your {word}.')
@@ -69,7 +89,8 @@ def test_caption_speech_and_draw_are_checked():
     assert check('Show the motherboard.') == 'Show the motherboard.'
 
 
-def test_factual_completion_once(tmp_path):
+def test_factual_completion_once(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME_TASKS", "1")
     from server.growth import GrowthLog
     from server.memory import Store, Cipher
     from server.packs.home import HomeGuide, TASKS
@@ -103,7 +124,8 @@ def test_blocked_claim_split_across_stream_tokens_never_reaches_caption(claim):
 @pytest.mark.parametrize('previous_tries,expected', [
     (3, 'Last time you used 3 tries; today, 1.'), (1, ''),
 ])
-def test_completion_only_emits_code_fact_without_model(tmp_path, previous_tries, expected):
+def test_completion_only_emits_code_fact_without_model(tmp_path, previous_tries, expected, monkeypatch):
+    monkeypatch.setenv("HOME_TASKS", "1")
     from server.growth import GrowthLog
     from server.memory import Store, Cipher
     from server.packs.home import TASKS

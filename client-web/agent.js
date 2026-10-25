@@ -1,8 +1,8 @@
+import { wireFlipCamera } from "./flip-camera.js";
 import { liveSettings } from './gemini-live.js';
 import { triggerClient } from './trigger.js';
 import { setupFamily } from './family-note.js';
 import { createValveCard } from './step-check.js';
-import { isHeadset, requestLocalMedia } from './headset.js';
 import { bootPairCamera, phoneMicRoute, setupPairCall } from './pair.js';
 import { callOwner, ownerHeaders, ownerQuery, resetCallOwner } from './call-owner.js';
 // Agent call page. Speaks the v2 WebSocket contract on /ws2.
@@ -11,7 +11,7 @@ import { callOwner, ownerHeaders, ownerQuery, resetCallOwner } from './call-owne
 import { paintDraw, applyDraw, pruneDraw, viewTransform, visibleOps, targetLabels, splitByTargets } from "./draw.js";
 import { writeFrame } from "./live.js";
 import { agoLine, countAt, countLine, createMemoryApi, placeFor, renderSplit } from "./memory.js";
-import { fetchRecap, forgetRewind, initialRewind, nextRewind, NOTICE as REWIND_NOTICE, PROMPTS as REWIND_PROMPTS, renderRecap, showsRewindChip } from "./rewind.js";
+import { forgetRewind, initialRewind, nextRewind, NOTICE as REWIND_NOTICE, PROMPTS as REWIND_PROMPTS, showsRewindChip } from "./rewind.js";
 import { sharpCanvasSize } from "./overlay.js";
 import {
   AUDIO_FALLBACK_MS,
@@ -51,7 +51,6 @@ import {
   deviceLabel,
   deviceOptions,
   devicesLocked,
-  flipFacing,
   isMissingDevice,
   loadChoice,
   micLine,
@@ -60,21 +59,23 @@ import {
   videoConstraints,
 } from "./devices.js";
 
-// Same names and order as ios/AEyeCore Modes.all; Live is centred at launch.
-const MODES = [
+// Same names and order as iOS. Sink is the hero; extras require the server flag.
+const CORE_MODES = [
+  { id: "plumbing", title: "Sink", pack: "home" },
   { id: "general", title: "General", pack: "general" },
+  { id: "memory", title: "Memory", pack: "memory" },
+];
+const EXTRA_MODES = [
   { id: "pc_build", title: "PC Build", pack: "pc_build" },
   { id: "cooking", title: "Cooking", pack: "cooking" },
   { id: "assemble", title: "Assembly", pack: "assemble" },
-  { id: "memory", title: "Memory", pack: "memory" },
   { id: "mechanic", title: "Mechanic", pack: null },
-  { id: "plumbing", title: "Sink", pack: "home" },
-  { id: "engineering", title: "Engineering", pack: null },
-  { id: "gemini-live", title: "Gemini Live", pack: "gemini-live" },
+  { id: "engineering", title: "Engineering", pack: "engineering" },
 ];
-const DEFAULT_MODE = MODES.findIndex((m) => m.id === "gemini-live");
+let MODES = CORE_MODES;
+const DEFAULT_MODE = 1; // One "Call" button: the dad call always starts in General (Gemini Live).
 const RING_SLOT = 84;
-const PACK_LABEL = Object.fromEntries(MODES.filter((m) => m.pack).map((m) => [m.pack, m.title]));
+const PACK_LABEL = Object.fromEntries([...CORE_MODES, ...EXTRA_MODES].filter((m) => m.pack).map((m) => [m.pack, m.title]));
 const PRESENCE_STATES = ["idle", "listening", "thinking", "speaking"];
 
 const FRAME_MS = 1000;
@@ -82,50 +83,14 @@ const BOARD_ID = "demo-b650";
 const TRACK_W = 320;
 
 function boot() {
-  const headset = isHeadset(location.search, navigator.userAgent);
-  if (!headset && bootPairCamera()) return;
-  document.body?.classList.toggle("headset", headset);
-  const headsetPanel = document.getElementById("headset-panel");
-  const headsetStatus = document.getElementById("headset-status");
-  headsetPanel?.classList.toggle("hidden", !headset);
+  if (bootPairCamera()) return;
   const picker = document.getElementById("picker");
   const stage = document.getElementById("stage");
   const video = document.getElementById("camera");
   const still = document.getElementById("still");
   const drawCanvas = document.getElementById("draw");
   const callEl = document.getElementById("call");
-  // Controls fold into one button after a short idle time so the caption has the lower screen.
-  const CONTROLS_HIDE_MS = 3000;
-  const controlsBar = document.getElementById("controls");
-  const controlsToggle = document.getElementById("controls-toggle");
-  let controlsTimer = 0;
-  function setControls(collapsed) {
-    callEl.classList.toggle("controls-collapsed", collapsed);
-    controlsToggle.setAttribute("aria-expanded", String(!collapsed));
-    controlsToggle.setAttribute("aria-label", collapsed ? "Show controls" : "Hide controls");
-    controlsToggle.setAttribute("title", collapsed ? "Show controls" : "Hide controls");
-  }
-  function armControls() {
-    window.clearTimeout(controlsTimer);
-    setControls(false);
-    controlsTimer = window.setTimeout(() => setControls(true), CONTROLS_HIDE_MS);
-  }
-  function stopControls() {
-    window.clearTimeout(controlsTimer);
-    setControls(false);
-  }
-  controlsToggle.addEventListener("click", (event) => {
-    event.stopPropagation();
-    if (callEl.classList.contains("controls-collapsed")) armControls();
-    else { window.clearTimeout(controlsTimer); setControls(true); }
-  });
-  // Using any control keeps the bar open a little longer; it folds again 3 s after the last touch.
-  for (const type of ["pointerdown", "focusin"]) {
-    controlsBar.addEventListener(type, (event) => {
-      if (event.target === controlsToggle || event.target?.closest?.("#controls-toggle")) return;
-      if (!callEl.classList.contains("controls-collapsed")) armControls();
-    });
-  }
+  // Call controls, especially End call, stay visible throughout the call.
   const ringEl = document.getElementById("ring");
   const ringTitle = document.getElementById("ring-title");
   const ringHint = document.getElementById("ring-hint");
@@ -137,7 +102,6 @@ function boot() {
   const captionSpeaker = document.getElementById("caption-speaker");
   const powerGate = document.getElementById("power-gate");
   const cameraIcon = document.getElementById("camera-icon");
-  const flipBtn = document.getElementById("flip-camera");
   const micIcon = document.getElementById("mic-icon");
   const backdropEl = document.getElementById("backdrop");
   const settingsEl = document.getElementById("settings");
@@ -167,9 +131,8 @@ function boot() {
   const scanEl = document.getElementById("scan");
   const scanBand = scanEl.querySelector(".scan-band");
   const scanPath = document.getElementById("scan-path");
-  const typedEl = document.getElementById("typed");
   const micBtn = document.getElementById("mic");
-  const holdBtn = document.getElementById("hold");
+  const holdToggle = document.getElementById("hold-toggle");
   const sensEl = document.getElementById("sensitivity");
   const ambientEl = document.getElementById("ambient");
   // Hold to talk is the reliable mode in a loud hall; ?hold=1 forces it, a noisy calibration turns it on.
@@ -205,12 +168,13 @@ function boot() {
     return body;
   } }) : { consume: () => false, complete() {} };
   const params = new URLSearchParams(location.search);
-  // Server voice (Cartesia when keyed, else Kokoro on the box) by default; the browser voice is the last resort.
-  // ?tts=cartesia means server TTS with a Cartesia voice from /api/voices.
+  // Server fallback uses Kokoro; browser speech is the last resort.
   const storedVoice = (() => { try { return safeStorage()?.getItem("aeye.voice") || ""; } catch { return ""; } })();
-  const wantCartesia = params.get("tts") === "cartesia";
-  let tts = !wantCartesia && (params.get("tts") === "browser" || storedVoice === "browser") ? "browser" : "server";
-  let ttsVoice = storedVoice && storedVoice !== "browser" ? storedVoice : "";
+  let tts = (params.get("tts") === "browser" || storedVoice === "browser") ? "browser" : "server";
+  let ttsVoice = storedVoice && storedVoice !== "browser" && !storedVoice.startsWith("cartesia:") ? storedVoice : "";
+  const personaPick = document.getElementById("persona-pick");
+  let persona = (() => { try { return safeStorage()?.getItem("aeye.persona") || "chill-dad"; } catch { return "chill-dad"; } })();
+  let personaVoices = {};
   const voicePick = document.getElementById("voice-pick");
   let stt = params.get("stt") === "server" ? "server" : "browser";
   let beforeLiveAudio = null;
@@ -225,7 +189,6 @@ function boot() {
   let mediaDevices = [];
   let micChoice = loadChoice(safeStorage(), "audioinput");
   let cameraChoice = loadChoice(safeStorage(), "videoinput");
-  let facing = "environment"; // back camera first; Flip switches to the selfie camera
   let speakerChoice = loadChoice(safeStorage(), "audiooutput");
   let deviceNotice = "";
   let deviceNoticeTimer = 0;
@@ -264,11 +227,13 @@ function boot() {
       setText('proof-pictures-sent', `Pictures sent: ${proof.pictures_sent ?? 'unknown'}`);
       setText('proof-cloud-calls', `Cloud AI calls: ${proof.cloud_ai_calls ?? 'unknown'}`);
       setText('proof-cloud-bytes', `Bytes to cloud: ${proof.bytes_to_cloud ?? 'unknown'}`);
+      setText('proof-context', 'used: ' + (proof.context_sources?.join(', ') || 'none'));
     } catch {
       setText('proof-pictures', 'Pictures saved: unknown');
       setText('proof-pictures-sent', 'Pictures sent: unknown');
       setText('proof-cloud-calls', 'Cloud AI calls: unknown');
       setText('proof-cloud-bytes', 'Bytes to cloud: unknown');
+      setText('proof-context', 'used: unknown');
     }
   }
   refreshProof();
@@ -285,13 +250,13 @@ function boot() {
   // Private mode: hello.private makes the server keep everything local; the page uses server STT (browser
   // recognition can send audio to Google), the server voice (Kokoro) and keeps Rewind off.
   let privateMode = (() => { try { return safeStorage()?.getItem("aeye.private") === "1"; } catch { return false; } })();
-  // Home first: four cloud switches. Claude, Cartesia and Google default on; TwelveLabs stays off.
+  // The default talker and Claude fallback are enabled; Rewind requires per-call consent.
   // The TwelveLabs switch and the Rewind toggle are one consent.
-  const CLOUD_DEFAULTS = { claude: true, cartesia: true, twelvelabs: false, google: true };
+  const CLOUD_DEFAULTS = { claude: true, cartesia: false, twelvelabs: false, google: true };
   let cloud = (() => {
     try {
       const saved = JSON.parse(safeStorage()?.getItem("aeye.cloud") || "null");
-      return { ...CLOUD_DEFAULTS, ...(saved && typeof saved === "object" ? saved : {}), twelvelabs: false };
+      return { ...CLOUD_DEFAULTS, ...(saved && typeof saved === "object" ? saved : {}), cartesia: false, twelvelabs: false };
     } catch {
       return { ...CLOUD_DEFAULTS };
     }
@@ -299,7 +264,6 @@ function boot() {
   const cloudBoxes = {
     google: document.getElementById("cloud-google"),
     claude: document.getElementById("cloud-claude"),
-    cartesia: document.getElementById("cloud-cartesia"),
     twelvelabs: document.getElementById("cloud-twelvelabs"),
   };
   const leavesList = document.getElementById("leaves-list");
@@ -328,7 +292,7 @@ function boot() {
   const memoryCountEl = document.getElementById("memory-count");
   const memoryActions = document.getElementById("memory-actions");
   let powerConfirmed = false;
-  // ?mode=memory centres a mode at launch (demo and caregiver links); otherwise PC Build, as iOS.
+  // ?mode=memory centres a mode at launch (demo and caregiver links); otherwise Sink, as iOS.
   // Shared-token calls have private, temporary owners; cross-call caregiver settings need personal sign-in.
   const caregiverLink = document.getElementById("caregiver-link");
   if (caregiverLink && params.get("token")) {
@@ -336,7 +300,7 @@ function boot() {
     caregiverLink.setAttribute('aria-disabled', 'true');
     caregiverLink.textContent = 'Caregiver settings require personal sign-in';
   }
-  const askedMode = MODES.findIndex((m) => m.id === params.get("mode"));
+  const askedMode = MODES.findIndex((m) => m.id === (params.get("mode") === "gemini-live" ? "general" : params.get("mode")));
   let ringIndex = askedMode >= 0 ? askedMode : DEFAULT_MODE;
   let voice = null;
   let listening = false;
@@ -369,7 +333,7 @@ function boot() {
       sensitivity: Number(sensEl && sensEl.value) || 5,
       onAmbient: (reading) => {
         if (ambientEl) ambientEl.textContent = `Noise ${dbfs(reading.rms)} dB${reading.noisy ? " (loud)" : ""}`;
-        if (reading.noisy && reading.calibrated && !holdMode) void enableHold();
+        // Owner decision: never switch to hold to talk on its own; hands-free stays on. The Settings toggle still works.
       },
       onFinal: (text) => {
         if (voice?.isInputBlocked()) return;
@@ -485,11 +449,12 @@ function boot() {
     const scheme = location.protocol === "https:" ? "wss:" : "ws:";
     const token = new URLSearchParams(location.search).get("token");
     const base = `${scheme}//${location.host}/ws2${token ? `?token=${encodeURIComponent(token)}${ownerQuery()}` : ""}`;
+    if (pack === 'engineering') return `${base}${base.includes('?') ? '&' : '?'}mode=engineering`;
     return liveSettings(pack, cloud.google, privateMode).allowed ? `${base}${base.includes("?") ? "&" : "?"}mode=gemini-live&google=${cloud.google && !privateMode ? "1" : "0"}` : base;
   }
 
   function reducedMotion() {
-    return headset || Boolean(reducedQuery && reducedQuery.matches);
+    return Boolean(reducedQuery && reducedQuery.matches);
   }
 
   function send(message) {
@@ -583,8 +548,9 @@ function boot() {
     const hello = {
       v: 2,
       type: "hello",
+      persona,
       session_id: sessionId,
-      pack: pack === "gemini-live" ? "general" : pack,
+      pack: ["gemini-live", "engineering"].includes(pack) ? "general" : pack,
       client: "web",
       tts,
       stt,
@@ -702,6 +668,7 @@ function boot() {
       if (message.stage === 'received') document.getElementById('proof-safety')?.classList.add('hidden');
       if (message.detail === 'Stopped by code') document.getElementById('proof-safety')?.classList.remove('hidden');
       if (message.detail === 'Home: complete') family.complete('sink');
+      if (message.detail === 'Engineering: complete') family.complete('ee_led');
       if (message.detail === 'Home: sink') { pack = 'home'; packLabel.textContent = 'Sink'; }
       if (message.detail?.startsWith('Brain: ')) setText('proof-brain', message.detail);
       wait = waitAfterTurn(wait, message, now);
@@ -745,10 +712,12 @@ function boot() {
     if (message.type === "agent_state") {
       if (homeStartPending && message.state === 'listening') {
         homeStartPending = false;
-        sendUser('sink', 'typed');
+        sendUser(pack === 'engineering' ? 'light an LED' : 'sink', 'typed');
       }
       // Phone speech barged in on the server: stop this laptop's playback as its own VAD would.
-      if (micRoute.phone && message.state === "listening") stopLocalPlayback();
+      // Gemini Live interruption (the user talked over it) also arrives as listening: cut queued audio at once.
+      const liveCall = liveSettings(pack, cloud.google, privateMode).allowed;
+      if ((micRoute.phone || liveCall) && message.state === "listening") stopLocalPlayback();
       wait = waitAfterAgentState(wait, message.agent, message.state, now);
       applyAgentState(message.agent, message.state);
       ui.dispatch({ type: "agent_state", agent: message.agent, state: message.state });
@@ -810,12 +779,6 @@ function boot() {
       if (memorySource !== "memory" && Number.isInteger(message.clips)) setMemoryCount(message.clips);
       else void refreshMemory();
       showRewind(Boolean(message.on));
-      return;
-    }
-    if (message.type === "rewind_recap") {
-      rewindEl.classList.remove("wide");
-      renderRecap(document, rewindBody, message);
-      openSheet(rewindEl);
       return;
     }
     // A find answer. TODO(rewind builder): a local `find_item` with the same fields (+ `place`) lands here too.
@@ -916,6 +879,8 @@ function boot() {
 
   function showRewind(on) {
     rewindOn = on;
+    const keep = document.getElementById("rewind-keep");
+    if (keep && !on) keep.checked = false;
     if (rewindToggle) rewindToggle.checked = on;
     if (rewindBadge) rewindBadge.classList.toggle("hidden", !on);
     if (rewindBtn) {
@@ -955,16 +920,31 @@ function boot() {
     rewindChip.setAttribute("aria-expanded", open ? "true" : "false");
   }
 
-  // Recap over HTTP: the Recap chip during a call, and the end-of-call sheet when Rewind was on.
-  async function showRecap(id) {
-    rewindEl.classList.remove("wide");
-    renderRecap(document, rewindBody, { pending: true });
-    openSheet(rewindEl);
-    try {
-      renderRecap(document, rewindBody, await fetchRecap(id));
-    } catch {
-      renderRecap(document, rewindBody, { steps: [], say: "The recap isn't available right now." });
+  let recallSaveGeneration = 0;
+  const recallSaveEl = document.getElementById("recall-save-status");
+  function showRecallSave(text = "") {
+    if (!recallSaveEl) return;
+    recallSaveEl.textContent = text;
+    recallSaveEl.classList.toggle("hidden", !text);
+  }
+
+  async function watchRecallSave(id, generation) {
+    for (let attempt = 0; attempt < 300; attempt++) {
+      if (generation !== recallSaveGeneration) return;
+      try {
+        const response = await apiFetch(`/api/rewind/status?session_id=${encodeURIComponent(id)}`);
+        if (!response.ok) throw new Error("Recall status unavailable");
+        const status = await response.json();
+        if (generation !== recallSaveGeneration) return;
+        if (status.save_status === "saved") {
+          showRecallSave("Saved. Your next call can recall this one.");
+          return;
+        }
+        if (status.save_status === "unavailable") break;
+      } catch { /* Retry temporary failures without claiming the call is saved. */ }
+      await new Promise(resolve => window.setTimeout(resolve, 2000));
     }
+    if (generation === recallSaveGeneration) showRecallSave();
   }
 
   function showFind(hit) {
@@ -981,6 +961,7 @@ function boot() {
 
   // "Remembering 12 things today"; the number counts down when something is forgotten.
   function setMemoryCount(next) {
+    if (!memoryEl) return;
     const from = memoryShown;
     memoryCount = Math.max(0, Number(next) || 0);
     const started = performance.now();
@@ -1374,8 +1355,14 @@ function boot() {
     }
   }
 
+  const flipCamera = wireFlipCamera({
+    video, button: document.getElementById("flip-camera"),
+    active: () => cameraOn, busy: () => starting,
+    onError: showProblem, onSwitch: () => commitTracker("draw"),
+  });
+
   async function startCamera() {
-    if (headset || starting || cameraOn) return;
+    if (starting || cameraOn) return;
     if (!window.isSecureContext) {
       ui.dispatch({ type: "https" });
       renderCall();
@@ -1389,8 +1376,8 @@ function boot() {
     starting = true;
     let retryDefault = false;
     try {
-      const stream = await requestLocalMedia(navigator.mediaDevices, headset, {
-        video: videoConstraints(cameraChoice, facing),
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: flipCamera.constraints(videoConstraints(cameraChoice)),
         audio: false,
       });
       if (!pack) {
@@ -1404,6 +1391,7 @@ function boot() {
       video.muted = true;
       // On before play(): a play() that never settles must not leave a live camera the button can't stop.
       cameraOn = true;
+      void flipCamera.refresh();
       await video.play().catch(() => {});
       if (video.srcObject !== stream) return;
       renderCamera();
@@ -1486,7 +1474,6 @@ function boot() {
     startBtn.setAttribute("aria-pressed", cameraOn ? "true" : "false");
     startBtn.setAttribute("aria-label", cameraOn ? "Camera off" : "Camera on");
     cameraIcon.setAttribute("href", cameraOn ? "#i-camera" : "#i-camera-off");
-    if (flipBtn) flipBtn.classList.toggle("hidden", !cameraOn || headset);
   }
 
   // CallScreen.micButton: mic when listening, struck-through mic in the warn colour when muted.
@@ -1499,6 +1486,10 @@ function boot() {
     micIcon.setAttribute("href", on ? "#i-mic" : "#i-mic-off");
     micBtn.setAttribute("aria-label", on ? "Stop microphone" : "Start microphone");
     micBtn.title = on ? "Mic is on. Tap to turn it off." : "Mic is off. Tap to turn it on.";
+    if (holdMode) {
+      micBtn.setAttribute("aria-label", holdPressed ? "Listening, release to send" : "Hold to talk");
+      micBtn.title = "Press and hold to talk";
+    }
     renderMicLine();
     renderListen(ui.getState());
   }
@@ -1593,7 +1584,8 @@ function boot() {
     applyAudioPrefs();
     if (tts === "server") {
       try {
-        const reply = await apiFetch(`/api/voice_sample?voice=${encodeURIComponent(ttsVoice)}&session_id=${encodeURIComponent(sessionId)}`);
+        const sampleVoice = ttsVoice || personaVoices[persona] || "";
+        const reply = await apiFetch(`/api/voice_sample?voice=${encodeURIComponent(sampleVoice)}&session_id=${encodeURIComponent(sessionId)}`);
         if (reply.ok) {
           const sample = await reply.json();
           voice.playPcm("test-voice", sample.pcm16_b64, true);
@@ -1606,6 +1598,37 @@ function boot() {
     voice.speak("test-voice", TEST_LINE);
   }
 
+  async function loadProductSettings() {
+    try {
+      const response = await apiFetch("/api/features");
+      if (response.ok) {
+        const flags = await response.json();
+        MODES = flags.extra_modes === true ? [...CORE_MODES, ...EXTRA_MODES] : CORE_MODES;
+        const wanted = params.get("mode") === "gemini-live" ? "general" : params.get("mode");
+        const found = MODES.findIndex(m => m.id === wanted);
+        ringIndex = found >= 0 ? found : DEFAULT_MODE;
+        renderRing();
+        scrollRingTo(ringIndex, false);
+      }
+    } catch { /* Core modes stay available when discovery is offline. */ }
+    if (!personaPick) return;
+    try {
+      const response = await apiFetch("/api/personas");
+      if (!response.ok) return;
+      const registry = await response.json();
+      personaVoices = Object.fromEntries(registry.personas.map(row => [row.id, row.tts_voice]));
+      if (!registry.personas.some(row => row.id === persona)) persona = registry.default;
+      personaPick.textContent = "";
+      for (const row of registry.personas) {
+        const option = document.createElement("option");
+        option.value = row.id;
+        option.textContent = row.display_name;
+        personaPick.append(option);
+      }
+      personaPick.value = persona;
+    } catch { /* Keep the shipped default; the server validates every selection. */ }
+  }
+
   async function loadVoices() {
     if (!voicePick) return;
     let listed = [];
@@ -1616,7 +1639,11 @@ function boot() {
       listed = [];
     }
     voicePick.textContent = "";
-    for (const item of listed) {
+    const personaOption = document.createElement("option");
+    personaOption.value = "";
+    personaOption.textContent = "Persona voice";
+    voicePick.append(personaOption);
+    for (const item of listed.filter(item => item.engine !== "cartesia" && !item.id.startsWith("cartesia:"))) {
       const option = document.createElement("option");
       option.value = item.id;
       option.textContent = item.label + (item.default ? " (default)" : "");
@@ -1626,16 +1653,7 @@ function boot() {
     browserOption.value = "browser";
     browserOption.textContent = "Browser voice (robotic)";
     voicePick.append(browserOption);
-    const fallback = (listed.find((item) => item.default) || listed[0] || { id: "browser" }).id;
-    if (wantCartesia && !String(ttsVoice).startsWith("cartesia:")) {
-      const cartesia = listed.find((item) => item.engine === "cartesia" && item.default)
-        || listed.find((item) => item.engine === "cartesia");
-      if (cartesia) {
-        ttsVoice = cartesia.id;
-        sendHello();
-      }
-    }
-    voicePick.value = tts === "browser" ? "browser" : (ttsVoice || fallback);
+    voicePick.value = tts === "browser" ? "browser" : ttsVoice;
   }
 
   function onVoicePick() {
@@ -1653,7 +1671,7 @@ function boot() {
   }
 
   async function choosePack(next) {
-    if (!PACK_LABEL[next] || pack) return;
+    if (!MODES.some(m => m.pack === next) || pack) return;
     if (next === 'gemini-live' && !cloud.google && !privateMode) {
       const notice = document.getElementById('live-start-notice');
       notice.textContent = 'To start Gemini Live, turn on Gemini Live (Google) below. It sends microphone audio and downscaled camera video to Google. You can also choose General with Google off.';
@@ -1665,10 +1683,13 @@ function boot() {
     document.getElementById('live-start-notice').classList.add('hidden');
     pack = next;
     renderLeaves();
-    homeStartPending = next === 'home';
+    homeStartPending = next === 'home' || next === 'engineering';
     document.getElementById('guide-presenter')?.classList.add('hidden');
+    recallSaveGeneration++;
+    showRecallSave();
     ended = false;
     sessionId = randomId();
+    setText('proof-context', 'used: none');
     resetCallOwner();
     try { await callOwner(); }
     catch { pack = null; showProblem('Could not create a private call. Please try again.'); return; }
@@ -1686,10 +1707,12 @@ function boot() {
     elapsedEl.textContent = "0:00";
     memoryShown = 0;
     setMemoryCount(0);
-    window.clearInterval(memoryTimer);
-    memoryTimer = window.setInterval(() => void refreshMemory(), 10000);
-    void memoryApi.settings().then((s) => { memoryItems = s.items; }, () => {});
-    packLabel.textContent = PACK_LABEL[next];
+    if (memoryEl) {
+      window.clearInterval(memoryTimer);
+      memoryTimer = window.setInterval(() => void refreshMemory(), 10000);
+      void memoryApi.settings().then((s) => { memoryItems = s.items; }, () => {});
+    }
+    packLabel.textContent = "A-Eye";
     if (document.body && document.body.dataset) document.body.dataset.mode = next; // calm Memory look in CSS
     link = "connecting";
     renderPresence();
@@ -1697,7 +1720,6 @@ function boot() {
     ui.dispatch({ type: "pack", pack: next });
     picker.classList.add("hidden");
     callEl.classList.remove("hidden");
-    armControls();
     voice = await rebuildVoice();
     if (voice && !voice.supported.stt && stt !== "server") {
       stt = "server";
@@ -1720,10 +1742,9 @@ function boot() {
   }
 
   function renderHold() {
-    if (!holdBtn) return;
-    holdBtn.classList.toggle("hold-default", holdMode);
-    holdBtn.setAttribute("aria-pressed", holdPressed ? "true" : "false");
-    holdBtn.setAttribute("aria-label", holdPressed ? "Listening, release to send" : "Hold to talk");
+    if (holdToggle) holdToggle.checked = holdMode;
+    micBtn.classList.toggle("hold-default", holdMode);
+    renderMic();
   }
 
   // CallController.end: back to the mode ring with the same mode selected.
@@ -1732,7 +1753,7 @@ function boot() {
     stopTrigger?.();
     if (!pack) return;
     window.clearInterval(memoryTimer);
-    memoryEl.classList.add("hidden");
+    memoryEl?.classList.add("hidden");
     ended = true;
     if (cameraOn || video.srcObject) stopCamera();
     holdPressed = false;
@@ -1759,24 +1780,24 @@ function boot() {
     agents = { helper: "idle", shopper: "idle" };
     wait = null;
     micRoute = { phone: false, resume: false };
-    if (headset) {
-      headsetPanel.classList.remove("connected");
-      document.getElementById("headset-sound").textContent = "Enable sound";
-      headsetStatus.textContent = "Waiting for your phone camera";
-      document.getElementById("headset-help").classList.remove("hidden");
-    }
     document.getElementById("phone-chip")?.classList.add("hidden");
     renderWait(Date.now());
     hideStill();
     closeSheets();
     permissionEl.classList.add("hidden");
     overlayEl.classList.add("hidden");
-    stopControls();
     callEl.classList.add("hidden");
     picker.classList.remove("hidden");
     renderLink();
     paint(Date.now());
-    if (rewindOn) void showRecap(sessionId);   // end-of-call recap; the server uploads the last clips first
+    const keepRecall = rewindOn && !privateMode && Boolean(document.getElementById("rewind-keep")?.checked);
+    rewind = initialRewind();
+    cloud.twelvelabs = false;
+    showRewind(false);
+    renderPrivate();
+    const saveGeneration = ++recallSaveGeneration;
+    showRecallSave(keepRecall ? "Saving this call for Recall, about 30 s" : "");
+    if (keepRecall) void watchRecallSave(sessionId, saveGeneration);
   }
 
   function ringButtons() {
@@ -1785,14 +1806,18 @@ function boot() {
 
   // ModeRing.swift: centred item 78 px with a white ring, neighbours 52 / 42 / 34 and fading.
   function renderRing() {
-    ringButtons().forEach((button, i) => {
+    if (!ringEl || !ringTitle) return; // Legacy guide UI is not part of the dad call.
+    ringButtons().forEach((button) => {
+      const i = MODES.findIndex(m => m.id === button.getAttribute("data-mode"));
+      button.classList.toggle("hidden", i < 0);
+      if (i < 0) return;
       const dist = Math.min(Math.abs(i - ringIndex), 3);
       button.setAttribute("data-dist", String(dist));
       button.setAttribute("aria-current", dist === 0 ? "true" : "false");
     });
     const mode = MODES[ringIndex];
     ringTitle.textContent = mode.title;
-    ringHint.textContent = mode.pack ? "tap to start" : "coming soon";
+    ringHint.textContent = mode.pack ? "Call" : "coming soon";
     ringHint.disabled = !mode.pack;
   }
 
@@ -1816,7 +1841,7 @@ function boot() {
   }
 
   async function onHoldDown() {
-    if (holdPressed) return;
+    if (!pack || !holdMode || holdPressed) return;
     holdPressed = true;
     renderHold();
     if (voice) void voice.unlockAudio();
@@ -1840,6 +1865,9 @@ function boot() {
     for (const [name, box] of Object.entries(cloudBoxes)) {
       if (box) box.checked = !privateMode && Boolean(cloud[name]);
     }
+    rewindBtn.disabled = privateMode;
+    const keep = document.getElementById("rewind-keep");
+    if (keep) keep.disabled = privateMode;
     renderLeaves();
   }
 
@@ -1850,8 +1878,7 @@ function boot() {
     const lines = [];
     if (on("google")) lines.push(liveSettings(pack, true, privateMode).notice);
     if (on("claude")) lines.push("Your question and a written note about the scene go to Claude. Sometimes one small close-up photo.");
-    if (on("cartesia")) lines.push("A-eye's reply sentence goes to Cartesia, which turns it into speech.");
-    if (on("twelvelabs") && rewindOn) lines.push("Short silent video clips go to TwelveLabs. They are deleted when the call ends.");
+    if (on("twelvelabs") && rewindOn) lines.push("Silent clips go to TwelveLabs; deleted at call end unless Remember this call is on.");
     if (stt !== "server") lines.push("Your speech goes to your browser's speech service (in Chrome, that is Google).");
     if (!lines.length) lines.push("Nothing leaves your home right now.");
     leavesList.textContent = "";
@@ -1938,7 +1965,7 @@ function boot() {
     muteBtn.setAttribute("aria-pressed", st.muted ? "true" : "false");
     muteBtn.textContent = st.muted ? "Unmute" : "Mute";
     if (document.activeElement !== volumeEl) volumeEl.value = String(st.volume);
-    overlayEl.classList.toggle("hidden", headset || !st.showStart);
+    overlayEl.classList.toggle("hidden", !st.showStart);
     if (sttLabel) sttLabel.textContent = stt === "server" ? "Whisper" : "Browser";
     renderMic();
   }
@@ -2090,7 +2117,7 @@ function boot() {
 
   // Tap the centred mode to start; a coming-soon mode shakes. With a mouse there is no swipe, so tapping a side
   // mode that works starts it directly (iOS only scrolls it to the centre).
-  ringHint.addEventListener('click', () => void choosePack(MODES[ringIndex].pack));
+  ringHint.addEventListener('click', () => void choosePack('general'));
   picker.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-mode]");
     if (!button) return;
@@ -2132,21 +2159,6 @@ function boot() {
     settingsEl.scrollTop = 0;
     document.getElementById("pair-request")?.click?.();
   });
-  document.getElementById("headset-sound")?.addEventListener("click", () => {
-    if (!voice) return;
-    voice.primeSpeech();
-    void voice.unlockAudio();
-    ui.dispatch({ type: "tap_start" });
-    applyAudioPrefs();
-    document.getElementById("headset-sound").textContent = "Sound enabled";
-  });
-  document.getElementById("headset-pair")?.addEventListener("click", () => {
-    document.getElementById("pair-call").click();
-  });
-  if (headset) {
-    startBtn.disabled = true;
-    cameraPick.disabled = true;
-  }
   // Wheel and trackpad: if the browser did not scroll natively (seen in Brave), scroll it ourselves next frame.
   // Passive listeners only, no preventDefault; deltaX and deltaY both count. The ring turns a vertical wheel sideways.
   function wheelScroll(el, horizontal) {
@@ -2199,7 +2211,7 @@ function boot() {
     });
   }
   document.addEventListener?.("keydown", (event) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    if (!ringEl || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
     if (picker.classList.contains("hidden") || (ringEl && ringEl.contains(event.target))) return;
     if (event.target && /^(INPUT|SELECT|TEXTAREA)$/.test(event.target.tagName || "")) return;
     if (!settingsEl.classList.contains("hidden")) return;
@@ -2224,23 +2236,24 @@ function boot() {
   }
   if (rewindEl) document.getElementById("rewind-dismiss").addEventListener("click", closeSheets);
   const keepBox = document.getElementById("rewind-keep");
-  if (keepBox) keepBox.addEventListener("change", sendRewind);
-  memoryCountEl.addEventListener("click", () => {
+  if (keepBox) keepBox.addEventListener("change", () => {
+    if (keepBox.checked && !rewindOn) setRewind(true);
+    else sendRewind();
+  });
+  memoryCountEl?.addEventListener("click", () => {
     const open = memoryActions.classList.contains("hidden");
     memoryActions.classList.toggle("hidden", !open);
     memoryCountEl.setAttribute("aria-expanded", open ? "true" : "false");
   });
-  document.getElementById("forget-last").addEventListener("click", () => void forgetMemory("last"));
+  document.getElementById("forget-last")?.addEventListener("click", () => void forgetMemory("last"));
   // Disconnect the paired phone; a remembered phone then waits for the next call (server: Call.kick).
   document.getElementById("phone-kick").addEventListener("click", () => {
     send({ v: 2, type: "pair_request", session_id: sessionId, kick: true });
   });
-  document.getElementById("forget-today").addEventListener("click", () => void forgetMemory("today"));
+  document.getElementById("forget-today")?.addEventListener("click", () => void forgetMemory("today"));
   const forgetBtn = document.getElementById("rewind-forget");
   if (forgetBtn) forgetBtn.addEventListener("click", () => void forgetRewind(sessionId).then(
     (r) => showProblem(`Forgot ${r.deleted} clip${r.deleted === 1 ? "" : "s"}.`), () => showProblem("Nothing to forget.")));
-  const recapBtn = document.getElementById("rewind-recap");
-  if (recapBtn) recapBtn.addEventListener("click", () => void showRecap(sessionId));
   if (rewindToggle) {
     rewindToggle.addEventListener("change", () => setRewind(rewindToggle.checked));
   }
@@ -2252,15 +2265,9 @@ function boot() {
     button.textContent = prompt.label;
     button.addEventListener("click", () => {
       togglePrompts(false);
-      if (!typedEl) {
-        ui.dispatch({ type: "final", text: prompt.text, now: Date.now() });
-        renderCall();
-        sendUser(prompt.text, "typed");
-        return;
-      }
-      typedEl.value = prompt.text;
-      typedEl.focus();
-      typedEl.setSelectionRange(prompt.text.length, prompt.text.length);
+      ui.dispatch({ type: "final", text: prompt.text, now: Date.now() });
+      renderCall();
+      sendUser(prompt.text, "typed");
     });
     rewindPrompts.append(button);
   }
@@ -2279,24 +2286,6 @@ function boot() {
     if (cameraOn || video.srcObject) stopCamera();
     else void startCamera();
   });
-  // Flip: the other way round. A camera pinned in Settings is dropped so facingMode decides again.
-  if (flipBtn) {
-    flipBtn.addEventListener("click", async () => {
-      if (!cameraOn || starting) return;
-      facing = flipFacing(facing);
-      if (cameraChoice) {
-        cameraChoice = "";
-        saveChoice(safeStorage(), "videoinput", "");
-        if (cameraPick) cameraPick.value = "";
-      }
-      flipBtn.disabled = true;
-      try {
-        await swapCamera();
-      } finally {
-        flipBtn.disabled = false;
-      }
-    });
-  }
   powerBtn.addEventListener("click", () => {
     const ok = send({
       v: 2,
@@ -2315,37 +2304,35 @@ function boot() {
   document.getElementById("upload").addEventListener("change", (event) => {
     onUpload(event);
   });
-  document.getElementById("composer")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const text = typedEl.value;
-    typedEl.value = "";
-    const clean = String(text || "").trim();
-    if (!clean) return;
-    ui.dispatch({ type: "final", text: clean, now: Date.now() });
-    renderCall();
-    sendUser(clean, "typed");
-  });
   micBtn.addEventListener("click", () => {
-    onMic();
+    if (!holdMode) onMic();
   });
-  if (holdBtn) {
-    holdBtn.addEventListener("pointerdown", (event) => {
-      event.preventDefault();
-      if (typeof holdBtn.setPointerCapture === "function") holdBtn.setPointerCapture(event.pointerId);
-      void onHoldDown();
-    });
-    for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) holdBtn.addEventListener(name, onHoldUp);
-    holdBtn.addEventListener("contextmenu", (event) => event.preventDefault());
-  }
+  if (holdToggle) holdToggle.addEventListener("change", async () => {
+    if (holdToggle.checked) await enableHold();
+    else {
+      onHoldUp();
+      holdMode = false;
+      voice?.setHoldMode(false);
+      renderHold();
+    }
+  });
+  micBtn.addEventListener("pointerdown", (event) => {
+    if (!holdMode) return;
+    event.preventDefault();
+    micBtn.setPointerCapture?.(event.pointerId);
+    void onHoldDown();
+  });
+  for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) micBtn.addEventListener(name, onHoldUp);
+  micBtn.addEventListener("contextmenu", (event) => { if (holdMode) event.preventDefault(); });
   const typingTarget = (el) => el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
   window.addEventListener("keydown", (event) => {
-    if (event.code !== "Space" || event.repeat || typingTarget(document.activeElement)) return;
+    if (!pack || !holdMode || event.code !== "Space" || event.repeat || typingTarget(document.activeElement)) return;
     if (backdropEl && !backdropEl.classList.contains("hidden")) return; // a sheet is open: Space scrolls it
     event.preventDefault();
     void onHoldDown();
   });
   window.addEventListener("keyup", (event) => {
-    if (event.code !== "Space" || typingTarget(document.activeElement)) return;
+    if (!pack || !holdMode || event.code !== "Space" || typingTarget(document.activeElement)) return;
     event.preventDefault();
     onHoldUp();
   });
@@ -2366,6 +2353,18 @@ function boot() {
     ui.dispatch({ type: "volume", volume: Number(volumeEl.value) });
     applyAudioPrefs();
   });
+  if (personaPick) personaPick.addEventListener("change", () => {
+    if (pack) endCall();
+    persona = personaPick.value;
+    ttsVoice = "";
+    tts = "server";
+    if (voicePick) voicePick.value = "";
+    try {
+      safeStorage()?.setItem("aeye.persona", persona);
+      safeStorage()?.removeItem("aeye.voice");
+    } catch { /* Convenience storage only. */ }
+  });
+  void loadProductSettings();
   if (voicePick) {
     voicePick.addEventListener("change", onVoicePick);
     void loadVoices();
@@ -2469,9 +2468,9 @@ function boot() {
   async function allowDevices() {
     if (micRoute.phone) return;
     const md = navigator.mediaDevices;
-    for (const ask of (headset ? [{ audio: true }] : [{ audio: true, video: true }, { audio: true }, { video: true }])) {
+    for (const ask of [{ audio: true, video: true }, { audio: true }, { video: true }]) {
       try {
-        const stream = await requestLocalMedia(md, headset, ask);
+        const stream = await md.getUserMedia(ask);
         for (const track of stream.getTracks()) track.stop();
         break;
       } catch (err) {
@@ -2496,14 +2495,6 @@ function boot() {
     const { route, action } = phoneMicRoute(micRoute, message, ui.getState().micOn);
     micRoute = route;
     if (micRoute.phone) micPreview.stop();
-    if (headset) {
-      headsetPanel.classList.toggle("connected", micRoute.phone);
-      headsetStatus.textContent = micRoute.phone
-        ? (message.state === "camera" && !message.camera_on ? "Phone camera paused" : "Phone camera connected")
-        : "Waiting for your phone camera";
-      document.getElementById("headset-help").classList.toggle("hidden", micRoute.phone);
-      if (message.state === "left") document.getElementById("pair-status").textContent = "Phone disconnected. Waiting for your phone camera.";
-    }
     const phoneChip = document.getElementById("phone-chip");
     if (phoneChip) phoneChip.classList.toggle("hidden", !micRoute.phone);
     if (action === "stop_local" && voice) {
@@ -2624,16 +2615,17 @@ function boot() {
 
   // Live camera switch: open the new device, then stop the old tracks. The call and frames keep going.
   async function swapCamera() {
-    if (headset || !cameraOn || starting) return;
+    if (!cameraOn || starting || flipCamera.busy()) return;
     starting = true;
     try {
-      const stream = await requestLocalMedia(navigator.mediaDevices, headset, { video: videoConstraints(cameraChoice, facing), audio: false });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: flipCamera.constraints(videoConstraints(cameraChoice)), audio: false });
       if (!cameraOn || !pack) {
         for (const track of stream.getTracks()) track.stop();
         return;
       }
       const old = video.srcObject;
       video.srcObject = stream;
+      flipCamera.preview();
       if (old && typeof old.getTracks === "function") for (const track of old.getTracks()) track.stop();
       await video.play().catch(() => {});
       paint(Date.now());

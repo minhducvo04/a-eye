@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import { nextTurnState, statusLine, createEarlyFinal } from './turn.js';
 
 test('pipeline stages, timestamps, and server timing', () => {
@@ -78,19 +79,27 @@ test('early final uses latest interim at 700ms and never sends a late correction
   assert.equal(sent.length, 2);
 });
 
-for (const [headset, home, live, policy] of [[false, false], [true, false], [false, true], [false, false, true], [false, false, true, "general"], [false, false, true, "optout"], [false, false, true, "private"]]) test(live ? `${policy || 'live'}: Live defaults to Google and uses existing hello and caption messages` : home ? 'sink selection and presenter controls use real client contracts' : headset ? 'headset call never acquires local video through camera or permission controls' : 'call page toggles camera, keeps voice-only hello, retries text, reconnects, and renders streamed replies', async () => {
+for (const [home, live, policy] of [[false, false, "engineering"], [false], [true], [false, true], [false, true, "general"], [false, true, "optout"], [false, true, "private"], [false, true, "single-call"], [false, true, "old-memory-link"], [false, true, "recall-off"]]) test(live ? `${policy || 'live'}: Live defaults to Google and uses existing hello and caption messages` : home ? 'sink selection and presenter controls use real client contracts' : 'call page toggles camera, keeps voice-only hello, retries text, reconnects, and renders streamed replies', async () => {
   const saved = new Map();
   const put = (key, value) => { saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { value, configurable: true, writable: true }); };
   const nodes = new Map(), intervals = new Map(), timeouts = new Map();
   let timerId = 0, stops = 0, gets = 0;
   const constraints = [];
   let proofAvailable = true, familyReply = null;
+  let recallSaveStatus = "saving";
+  const recallRequests = [];
   let recognition;
   const synth = { getVoices: () => [{ localService: true, lang: "en-US" }], cancel() {}, speak(u) { this.current = u; } };
   const proofRequests = [];
   let presenterEnabled = false;
   const presenterRequests = [];
   put('fetch', async (path, options) => {
+    if (path.startsWith('/api/rewind/')) {
+      recallRequests.push(path);
+      return { ok: true, json: async () => ({ save_status: recallSaveStatus }) };
+    }
+    if (path === '/api/features') return { ok: true, json: async () => ({ extra_modes: policy === 'engineering', shopping: false }) };
+    if (path === '/api/personas') return { ok: true, json: async () => ({ default: 'chill-dad', personas: [{ id: 'chill-dad', display_name: 'Chill dad' }, { id: 'funny-dad', display_name: 'Funny dad' }] }) };
     if (path.startsWith('/api/dad-demo?')) {
       presenterRequests.push(options);
       const body = options?.body ? JSON.parse(options.body) : null;
@@ -102,7 +111,8 @@ for (const [headset, home, live, policy] of [[false, false], [true, false], [fal
     };
     if (!path.startsWith('/api/proof?')) throw new Error('Fixture unavailable');
     proofRequests.push(path);
-    return { ok: proofAvailable, json: async () => ({ pictures_saved: 0, cloud_ai_calls: 3, bytes_to_cloud: 125 }) };
+    return { ok: proofAvailable, json: async () => ({ pictures_saved: 0, cloud_ai_calls: 3, bytes_to_cloud: 125,
+      context_sources: ['camera', 'memory', 'places', 'growth'] }) };
   });
   const context = new Proxy({}, { get: (_obj, key) => key === 'measureText' ? () => ({ width: 20 }) : key === 'createRadialGradient' ? () => ({ addColorStop() {} }) : () => {} });
   class Element {
@@ -118,6 +128,13 @@ for (const [headset, home, live, policy] of [[false, false], [true, false], [fal
     play() { return Promise.resolve(); }
   }
   const node = id => { if (!nodes.has(id)) nodes.set(id, new Element()); return nodes.get(id); };
+  const ringModes = ['plumbing', 'general', 'memory', 'pc_build', 'cooking', 'assemble', 'mechanic', 'engineering'];
+  node('ring').querySelectorAll = () => node('ring').children;
+  for (const id of ringModes) {
+    const button = new Element();
+    button.setAttribute('data-mode', id);
+    node('ring').append(button);
+  }
   class Socket {
     static OPEN = 1; static CONNECTING = 0; static all = [];
     constructor(url) { this.url = url; this.readyState = 0; this.handlers = {}; this.messages = []; Socket.all.push(this); }
@@ -128,13 +145,15 @@ for (const [headset, home, live, policy] of [[false, false], [true, false], [fal
     close() { this.readyState = 3; this.handlers.close(); }
   }
   const settle = async () => { for (let i = 0; i < 8; i++) await new Promise(resolve => setImmediate(resolve)); };
-  put('document', { getElementById: node, createElement: () => new Element(), createTextNode: text => ({ textContent: text }), hidden: false });
+  const currentPage = policy === 'single-call' || policy === 'old-memory-link' || policy === 'recall-off';
+  const htmlIds = new Set([...readFileSync(new URL('./agent.html', import.meta.url), 'utf8').matchAll(/id="([^"]+)"/g)].map(m => m[1]));
+  put('document', { getElementById: id => currentPage && !htmlIds.has(id) ? null : node(id), createElement: () => new Element(), createTextNode: text => ({ textContent: text }), hidden: false });
   put('window', { isSecureContext: true, innerWidth: 390, innerHeight: 844, devicePixelRatio: 1, matchMedia: () => ({ matches: true }), addEventListener() {}, requestAnimationFrame() { return 1; }, setInterval(fn, ms) { intervals.set(++timerId, { fn, ms }); return timerId; }, clearInterval(id) { intervals.delete(id); }, setTimeout(fn, ms) { timeouts.set(++timerId, { fn, ms }); return timerId; }, clearTimeout(id) { timeouts.delete(id); } });
   put('localStorage', policy === 'optout' || policy === 'private' ? {
     getItem: key => key === 'aeye.cloud' && policy === 'optout' ? JSON.stringify({ google: false }) : key === 'aeye.private' && policy === 'private' ? '1' : null,
     setItem() {}, removeItem() {},
   } : null);
-  put('location', { search: headset ? '?device=headset' : '', protocol: 'https:', host: 'example.test' });
+  put('location', { search: policy === 'old-memory-link' ? '?mode=memory&tts=cartesia' : '', protocol: 'https:', host: 'example.test' });
   put('navigator', { mediaDevices: { enumerateDevices: async () => [], getUserMedia: async c => { constraints.push(c); gets++; return { getTracks: () => [{ stop() { stops++; } }] }; } } });
   put('SpeechRecognition', class { constructor() { recognition = this; } start() {} stop() {} });
   put('speechSynthesis', synth);
@@ -145,31 +164,26 @@ for (const [headset, home, live, policy] of [[false, false], [true, false], [fal
   let now = 1000;
   Date.now = () => now;
   try {
-    await import(`./agent.js?headset-test=${headset}&home=${home}&live=${live}&policy=${policy}`);
-    assert.equal(node('ring-title').textContent, 'Gemini Live', 'Live is selected at launch');
-    const choose = () => node('picker').handlers.click({ target: { closest: () => ({ getAttribute: name => policy === 'general' ? 'general' : live ? 'gemini-live' : home ? (name === 'data-pack' ? 'home' : 'plumbing') : 'general' }) } });
+    await import(`./agent.js?home=${home}&live=${live}&policy=${policy}`);
+    if (!currentPage) assert.equal(node('ring-title').textContent, 'General', 'the one Call button starts the dad call (General) at launch');
+    await settle();
+    if (!currentPage) assert.deepEqual(node('ring').children.filter(b => !b.classList.contains('hidden')).map(b => b.getAttribute('data-mode')), policy === 'engineering' ? ringModes : ringModes.slice(0, 3));
+    const choose = () => node('picker').handlers.click({ target: { closest: () => ({ getAttribute: name => policy === 'engineering' ? 'engineering' : policy === 'general' ? 'general' : live ? 'general' : home ? (name === 'data-pack' ? 'home' : 'plumbing') : 'general' }) } });
     if (!live && !home) {
       node('cloud-google').checked = false;
       node('cloud-google').handlers.change();
     }
-    choose();
+    if (home || policy === 'engineering') choose();
+    else node('ring-hint').handlers.click();
     await settle();
-    if (policy === 'optout') {
-      assert.equal(Socket.all.length, 0, 'Live opt-out must not silently start a different transport');
-      assert.equal(node('settings').classList.contains('hidden'), false);
-      assert.equal(node('live-start-notice').classList.contains('hidden'), false);
-      assert.match(node('live-start-notice').textContent, /turn on Gemini Live \(Google\)/);
-      node('cloud-google').checked = true;
-      node('cloud-google').handlers.change();
-      node('ring-hint').handlers.click();
-      await settle();
-      assert.equal(node('live-start-notice').classList.contains('hidden'), true);
-    }
     const socket = Socket.all[0];
     assert.ok(socket);
     socket.open();
     assert.equal(socket.messages[0].camera, false);
-    if (policy === 'private') {
+    if (currentPage) assert.equal(socket.messages[0].pack, 'general', 'the one Call button starts General, including old mode links');
+    assert.equal(socket.messages[0].persona, 'chill-dad');
+    assert.equal(socket.messages[0].cloud?.cartesia ?? false, false, 'web calls never enable the retired voice provider');
+    if (policy === 'private' || policy === 'optout') {
       assert.equal(new URL(socket.url).searchParams.get('mode'), null);
       assert.equal(socket.messages[0].pack, 'general');
       assert.equal(Boolean(socket.messages[0].private), policy === 'private');
@@ -184,9 +198,63 @@ for (const [headset, home, live, policy] of [[false, false], [true, false], [fal
       assert.equal(socket.messages[0].tts, 'server');
       socket.message({ type: 'say', agent: 'helper', utterance_id: 'live', text: 'A blue board.' });
       assert.equal(node('replies').children[0].textContent, 'A blue board.');
+      if (currentPage) {
+        node('rewind-keep').checked = true;
+        node('rewind-keep').handlers.change();
+        assert.deepEqual({ on: socket.messages.at(-1).on, keep: socket.messages.at(-1).keep }, { on: true, keep: true });
+        node('rewind-btn').handlers.click();
+        assert.equal(node('rewind-keep').checked, false, 'turning off Rewind clears retention');
+        node('rewind-keep').checked = true;
+        node('rewind-keep').handlers.change();
+        assert.equal(socket.messages.at(-1).keep, true);
+        if (policy === 'recall-off') node('rewind-btn').handlers.click();
+        if (policy === 'old-memory-link') {
+          node('rewind-keep').checked = false;
+          node('rewind-keep').handlers.change();
+        }
+      }
+      if (currentPage) {
+        node('rewind-sheet').classList.add('hidden'); // Initial HTML state in the lightweight DOM fixture.
+        socket.message({ type: 'rewind_recap', steps: [{ t_s: 156, text: 'Placed board' }], skipped: ['RAM'] });
+        assert.equal(node('rewind-sheet').classList.contains('hidden'), true, 'recap messages no longer open a sheet');
+      }
       node('cloud-google').checked = false;
       node('cloud-google').handlers.change();
       assert.equal(socket.readyState, 3, 'revoking Google closes its session');
+      if (currentPage) {
+        assert.equal(node('rewind-keep').checked, false, 'ending resets retention for the next call');
+        await settle();
+        assert.equal(recallRequests.some(path => path.includes('/recap')), false, 'hang-up never requests Pegasus');
+        assert.equal(node('rewind-sheet').classList.contains('hidden'), true, 'hang-up does not open the recap sheet');
+        if (policy === 'single-call') {
+          assert.equal(node('recall-save-status').textContent, 'Saving this call for Recall, about 30 s');
+          assert.equal(node('recall-save-status').classList.contains('hidden'), false);
+          recallSaveStatus = 'saved';
+          for (const [id, timer] of [...timeouts]) if (timer.ms === 2000) { timeouts.delete(id); timer.fn(); }
+          await settle();
+          assert.equal(node('recall-save-status').textContent, 'Saved. Your next call can recall this one.');
+        } else {
+          assert.equal(recallRequests.length, 0, 'unkept calls do not poll');
+          assert.equal(node('recall-save-status').classList.contains('hidden'), true);
+        }
+        assert.equal(node('rewind-btn').attrs['aria-pressed'], 'false');
+        node('private-toggle').checked = true;
+        await node('private-toggle').handlers.change();
+        assert.equal(node('rewind-keep').disabled, true);
+        assert.equal(node('rewind-btn').disabled, true);
+        await settle();
+      }
+      return;
+    }
+    if (policy === 'engineering') {
+      assert.equal(new URL(socket.url).searchParams.get('mode'), 'engineering');
+      assert.equal(socket.messages[0].pack, 'general');
+      socket.message({ type: 'agent_state', agent: 'helper', state: 'listening' });
+      assert.equal(socket.messages[1].text, 'light an LED');
+      socket.message({ type: 'agent_state', agent: 'helper', state: 'listening' });
+      assert.equal(socket.messages.length, 2);
+      socket.message({ type: 'turn', stage: 'speaking', detail: 'Engineering: complete' });
+      assert.equal(Boolean(node('family-panel').open), false);
       return;
     }
     if (home) {
@@ -208,6 +276,15 @@ for (const [headset, home, live, policy] of [[false, false], [true, false], [fal
       assert.equal(socket.messages.at(-1).source, 'typed');
       socket.message({ type: 'turn', stage: 'speaking', detail: 'Home: complete' });
       assert.equal(Boolean(node('family-panel').open), false, 'no contact means no sharing suggestion');
+      node('persona-pick').value = 'funny-dad';
+      node('persona-pick').handlers.change();
+      assert.equal(socket.readyState, 3, 'persona changes end the active call');
+      if (home || policy === 'engineering') choose();
+      else node('ring-hint').handlers.click();
+      await settle();
+      Socket.all[1].open();
+      assert.equal(Socket.all[1].messages[0].persona, 'funny-dad');
+      assert.equal(Socket.all[1].messages[0].voice, undefined, 'persona voice is selected by the server');
       return;
     }
     const proofPoll = [...intervals.values()].find(timer => timer.fn.name === 'refreshProof');
@@ -215,6 +292,7 @@ for (const [headset, home, live, policy] of [[false, false], [true, false], [fal
     assert.ok(proofRequests.at(-1).includes(encodeURIComponent(socket.messages[0].session_id)));
     assert.equal(node('proof-cloud-calls').textContent, 'Cloud AI calls: 3');
     assert.equal(node('proof-cloud-bytes').textContent, 'Bytes to cloud: 125');
+    assert.equal(node('proof-context').textContent, 'used: camera, memory, places, growth');
     proofAvailable = false;
     await proofPoll.fn();
     assert.equal(node('proof-cloud-calls').textContent, 'Cloud AI calls: unknown');
@@ -229,25 +307,6 @@ for (const [headset, home, live, policy] of [[false, false], [true, false], [fal
     assert.equal(node('valve-check').textContent, 'Checking the valve...');
     socket.message({ type: 'turn', stage: 'thinking', turn_id: 'next', detail: 'Valve: closed' });
     assert.match(node('valve-check').textContent, /^Water is off/);
-    if (headset) {
-      node('start-camera').handlers.click();
-      node('permission-retry').handlers.click();
-      await settle();
-      assert.equal(gets, 0);
-      node('devices-allow').handlers.click();
-      await settle();
-      assert.equal(constraints.some(c => c.video), false);
-      socket.message({ type: 'pair_status', role: 'call', state: 'joined' });
-      assert.equal(node('headset-status').textContent, 'Phone camera connected');
-      const before = gets;
-      node('devices-allow').handlers.click();
-      await settle();
-      assert.equal(gets, before);
-      socket.message({ type: 'pair_status', role: 'call', state: 'left' });
-      assert.equal(node('headset-status').textContent, 'Waiting for your phone camera');
-      node('end-call').handlers.click();
-      return;
-    }
     node('start-camera').handlers.click();
     await settle();
     assert.equal(gets, 1);
@@ -261,8 +320,9 @@ for (const [headset, home, live, policy] of [[false, false], [true, false], [fal
     node('start-camera').handlers.click();
     await settle();
     assert.equal(gets, 2);
-    node('typed').value = 'hello';
-    node('composer').handlers.submit({ preventDefault() {} });
+    node('mic').handlers.click();
+    await settle();
+    recognition.onresult({ resultIndex: 0, results: Object.assign([{ 0: { transcript: 'hello' }, isFinal: true, length: 1 }], { length: 1 }) });
     assert.equal(socket.messages.at(-1).type, 'user_text');
     assert.match(node('pipeline').textContent, /^Sent/);
     now += 2000;
@@ -300,9 +360,8 @@ for (const [headset, home, live, policy] of [[false, false], [true, false], [fal
     assert.equal([...timeouts.values()].at(-1).ms, 1000);
     [...timeouts.values()].at(-1).fn();
     Socket.all[3].open();
-    // Actual call-page wiring: contact commands cannot reach the WebSocket during local speech.
-    node('mic').handlers.click();
-    await settle();
+    // The mic is already on from the voice question above.
+    // Contact commands cannot reach the WebSocket during local speech.
     familyReply = { id: 'command-reply', name: 'Fixture Friend', text: 'stop' };
     const familyPoll = [...intervals.values()].find(t => t.fn.name === 'refresh');
     const reading = familyPoll.fn();
@@ -325,7 +384,7 @@ for (const [headset, home, live, policy] of [[false, false], [true, false], [fal
     assert.ok([...timeouts.keys()].every(id => id <= lastTimer), 'End call does not schedule a reconnect');
     assert.equal(node('call').classList.contains('hidden'), true);
   } finally {
-    if (home || live) node('end-call').handlers.click();
+    if (home || live || policy === 'engineering') node('end-call').handlers.click();
     Date.now = realNow;
     for (const [key, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; }
   }

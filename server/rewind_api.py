@@ -16,7 +16,7 @@ def public(hit):
 async def status(request: Request, session_id: str = ''):
     rewind = registry(request.app).for_question(session_id or None, identity(request))
     return dict(rewind.status() if rewind else dict(on=False, clips=0, ready=0, indexing=0, pending=0),
-                notice=NOTICE)
+                notice=NOTICE, save_status=rewind.save_status() if rewind else None)
 
 
 async def body(request):

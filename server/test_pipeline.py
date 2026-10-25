@@ -94,6 +94,43 @@ def test_server_stt(text):
         assert not any(m.get('detail') == "Didn't catch that" for m in messages)
 
 
+def test_private_audio_turn_answers_from_local_caption_without_talker():
+    from voice.adapter import VoiceAdapter
+
+    class LocalVision(Vision):
+        async def call(self, operation, payload):
+            validate('scene_request', payload)
+            return dict(SCENE, caption='A blue mug on the table.', source='ollama')
+
+    class LocalVoice(VoiceAdapter):
+        async def say(self, uid, text):
+            yield b'\x01\x00' * 160
+
+    class Box:
+        async def stt(self, pcm):
+            return 'what is on the table?'
+
+        async def aclose(self):
+            pass
+
+    application = app(LocalVision(), LocalVoice())
+    application.state.box_v2 = Box()
+    with TestClient(application) as client, client.websocket_connect('/ws2') as ws:
+        send(ws, 'hello', pack='general', private=True)
+        read(ws)
+        ws.send_json(FRAME)
+        while read(ws)['type'] != 'track':
+            pass
+        started = monotonic()
+        send(ws, 'audio_in', seq=1, pcm16_b64='AAA=', final=True)
+        messages = finish(ws)
+        assert monotonic() - started < .5
+        assert messages[-1]['stage'] == 'done'
+        assert any(m['type'] == 'say' and 'blue mug' in m['text'] for m in messages)
+        assert any(m['type'] == 'audio' and m['pcm16_b64'] for m in messages)
+        assert not application.state.llm_v2.calls
+
+
 def test_timeout_backup_same_turn(monkeypatch):
     import httpx
     from contextlib import asynccontextmanager

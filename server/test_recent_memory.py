@@ -18,7 +18,7 @@ def test_window_step_and_specific_time():
     assert 'Soldering iron' in log.find('what did I just do?')['say']
     assert log.find('where did I put the blue wire?') is None
     assert 'image_b64' not in repr(log.entries)
-    log.prune(181)
+    log.prune(661)  # the RAM log keeps 10 minutes
     assert len(log.entries) == 2
     log.clear()
     assert not log.entries
@@ -29,14 +29,37 @@ def test_temporal_routes():
         ('what did I just do?', True, 'recent'),
         ('where did I put the wire a minute ago?', True, 'recent'),
         ('what was step 3?', False, 'recent'),
+        ('what step was I just on?', True, 'recent'),
         ('what happened earlier in this call?', True, 'rewind'),
         ('what happened earlier in this call?', False, 'recent'),
         ('where was the resistor yesterday?', True, 'long-term'),
         ('what did I do last time?', False, 'long-term'),
-        ('where was the wire 3 minutes ago?', True, 'rewind'),
+        ('where was the wire 3 minutes ago?', True, 'recent'),
+        ('where was the wire 6 minutes ago?', True, 'rewind'),
         ('where does this resistor go?', True, None),
     ]:
         assert source_for(text, on) == want
+
+
+def test_start_of_call_selects_opening_scene_not_latest_or_transcript():
+    log = RecentMemory(clock=lambda: 60, started=0)
+    log.add(scene('A blue mug on the table', 'the object'), 1)
+    log.add(scene('A red apple on the table', 'the object'), 25)
+    log.note_transcript('You showed a wrench.', 'helper')
+    hit = log.find('what did I show you at the start of this call?')
+    assert hit and hit['t_s'] == 1 and 'mug' in hit['say'] and 'apple' not in hit['say']
+    assert log.find('did you see my wrench earlier?') is None
+    log.prune(602)
+    assert log.find('what did I show you at the start of this call?') is None
+
+
+def test_generic_opening_caption_does_not_inherit_live_mug_claim():
+    log = RecentMemory(clock=lambda: 60, started=0)
+    log.add(scene('An object on the table', 'the object'), 1)
+    log.note_transcript('I see a blue mug.', 'helper')
+    hit = log.find('what did I show you at the start of this call?')
+    assert hit and 'object' in hit['say'] and 'mug' not in hit['say']
+    assert log.find('did you see a mug earlier?') is None
 
 
 def test_recent_never_calls_cloud_and_no_wrong_time_fallback():
@@ -62,10 +85,12 @@ def test_rewind_age_filter_and_off_switch(monkeypatch):
 
     async def check():
         rewind = Rewind('fixture', client=Client(), clock=lambda: 100)
+        rewind.set_on(True)
         rewind.clips = [Clip(10, 15, video_id='old', status='ready'),
                         Clip(85, 90, video_id='new', status='ready')]
         hits = await rewind.search('resistor', before_s=80)
         assert [h['video_id'] for h in hits] == ['old']
+        rewind.set_on(False)
         log = RecentMemory(clock=lambda: 100, started=0)
         session = SimpleNamespace(recent_memory=log, rewind=rewind)
         async def forbidden(*args, **kwargs):
@@ -110,6 +135,8 @@ def test_ws_recent_answer_without_brain_and_cleanup(monkeypatch):
 
 def test_fixture_sources_and_honest_fallback(tmp_path, monkeypatch):
     from scripts.recent_memory_bench import benchmark, fixture
+    from server.privacy import set_call
+    set_call(rewind=True)  # The fake recording path models an explicitly opted-in call.
 
     async def check():
         monkeypatch.delenv('LOCAL_ONLY', raising=False)
@@ -120,6 +147,10 @@ def test_fixture_sources_and_honest_fallback(tmp_path, monkeypatch):
         async def unavailable(*args, **kwargs):
             return 'Indexing', None
         session.rewind.answer = unavailable
+        result = await answer(session, 'Where was the resistor earlier in this call?')
+        # Rewind has nothing yet: this call's own notes come before an earlier call.
+        assert result['source'] == 'recent' and result['say'].startswith('From my notes of this call')
+        session.recent_memory.entries.clear()
         result = await answer(session, 'Where was the resistor earlier in this call?')
         assert result['source'] == 'long-term'
         assert 'earlier call' in result['say'] and 'parts bin' in result['say']
@@ -136,3 +167,67 @@ def test_step_instruction_not_claimed_as_completed_action():
     assert log.find('what did I just do?') is None
     log.add(scene('Red wire on tray', 'red wire'), 100)
     assert log.entries[-1]['step'].startswith('Step 3:')
+
+
+def test_live_transcripts_are_not_scene_evidence_and_steps_expire():
+    now = [100]
+    log = RecentMemory(clock=lambda: now[0], started=0)
+    log.note_transcript('I placed the resistor.', 'user')
+    assert log.find('what step was I just on?') is None
+    log.note_transcript('Step 3: place resistor on row 12.', 'helper')
+    assert 'guide said' in log.find('what step was I just on?')['say']
+    assert log.find('what did I just do?') is None
+    now[0] = 701
+    assert log.find('what step was I just on?') is None
+    assert not log.entries
+
+
+def test_two_minutes_ago_plurals_and_synonyms():
+    log = RecentMemory(clock=lambda: 130, started=0)
+    log.add(scene('Wrench set on the towels', 'wrench'), 10)
+    log.add(scene('Cup on the shelf', 'cup'), 100)
+    assert 'towels' in log.find('where did I put the wrench two minutes ago?')['say']
+    assert 'shelf' in log.find('where did I leave the mug?')['say']
+    assert 'towels' in log.find('what did I do with the wrenches?')['say']
+    assert log.find('where did I put the screwdriver a minute ago?') is None
+
+
+def test_where_was_mug_a_minute_ago_uses_last_caption_not_current_desk():
+    """Mug at t=0, desk without mug at t=40 s, "where was the mug a minute ago?" at t=70 s."""
+    log = RecentMemory(clock=lambda: 70, started=0)
+    log.add(scene('A travel mug on the desk next to the keyboard'), 0)
+    log.add(scene('A wooden desk with a keyboard and monitor'), 40)
+    hit = log.find('Where was the mug a minute ago?')
+    assert hit and hit['found']
+    assert 'on the desk next to the keyboard' in hit['say']
+    assert '70' in hit['say'] or 'minute' in hit['say']
+    assert log.find('Where was the screwdriver a minute ago?') is None
+
+    async def check():
+        session = SimpleNamespace(recent_memory=log, rewind=None, private=False)
+        result = await answer(session, 'Where was the mug a minute ago?')
+        assert result['found'] and 'on the desk next to the keyboard' in result['say']
+        missed = await answer(session, 'Where was the screwdriver a minute ago?')
+        assert not missed['found'] and "didn't see that in my notes" in missed['say']
+        fresh = RecentMemory(clock=lambda: 70, started=0)
+        fresh.add(scene('A travel mug in the current camera view'), 68)
+        session.recent_memory = fresh
+        now_cam = await answer(session, 'Where was the mug a minute ago?')
+        assert not now_cam['found'] and "didn't see that in my notes" in now_cam['say']
+    asyncio.run(check())
+
+
+def test_last_week_reads_task_history_and_never_invents_one():
+    from datetime import datetime, timedelta, timezone
+
+    async def check(entries):
+        log = RecentMemory(clock=lambda: 10, started=0)
+        session = SimpleNamespace(recent_memory=log, rewind=None, growth=SimpleNamespace(entries=entries))
+        return await answer(session, 'What did we fix last week?')
+    five_days = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+    result = asyncio.run(check([dict(task='sink', date=five_days, completed=True)]))
+    assert result['source'] == 'history' and 'sink' in result['say'] and 'finished it' in result['say']
+    result = asyncio.run(check([]))
+    assert not result['found'] and "don't have a saved task from last week" in result['say']
+    old = (datetime.now(timezone.utc) - timedelta(days=40)).isoformat()
+    assert not asyncio.run(check([dict(task='hinge', date=old, completed=True)]))['found']

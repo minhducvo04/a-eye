@@ -209,6 +209,8 @@ async def scene_loop(session, vision, send, gate=None):
                     session.scene_time = monotonic()
                     session.scene_memory.add(scene, observed_at)
                     session.recent_memory.add(scene, observed_at)
+                    if session.live_context:
+                        session.live_context.request()
                     await send(message('track', seq=frame['seq'], objects=scene['objects']))
                 except Exception:
                     event('dependency_error', session.session_id, dependency='vision', level='error')
@@ -271,7 +273,8 @@ async def websocket(ws: WebSocket):
 
     async def send(msg):
         validate('server_message_v2', msg)
-        if session and msg['type'] == 'say' and msg.get('agent') == 'helper':
+        if (session and session.ee_guide is None and msg['type'] == 'say' and msg.get('agent') == 'helper'
+                and not (live and live.active)):
             session.recent_memory.note_step(msg['text'])
         if msg['type'] == 'metrics' and 'turn_id' in msg:
             event('turn_end', session.session_id if session else None,
@@ -371,14 +374,28 @@ async def websocket(ws: WebSocket):
         event('turn_start', session.session_id)
         try:
             await lifecycle.stage('thinking', text=text)
+            context = session.context_agent
+            context_block = ''
+            if context:
+                from server.context_agent import DISMISS, classic_provider
+                if DISMISS.fullmatch(text):
+                    deleted = context.dismiss(text)
+                    await emit(say("Okay, I deleted that follow-up." if deleted else
+                                   "There isn't a follow-up to delete."))
+                    await lifecycle.stage('done')
+                    return
+                if not session.pack.refuse(text):
+                    context.ingest(text)
+                context_block = await context.collect(text, provider=classic_provider())
             # Talker + thinker: a Haiku-class talker speaks while the planner (no GPU gate) draws in parallel.
             duo = (isinstance(llm, LLMClient) and os.environ.get('BRAIN_MODE', 'duo') == 'duo'
                    and bool(os.environ.get('ANTHROPIC_API_KEY')) and claude_allowed())
             # ROUTER=on: the router decides first (and logs its label); the regex is the fallback only when the
             # router is off or unsure. Past/object questions and spoken forget go to memory and Rewind.
-            home_turn = session.home_guide is not None or (session.pack.id == 'general' and
-                re.fullmatch(r'(?:fix (?:the |a )?)?sink[.!]?', text.strip(), re.I))
-            fixed_turn = home_turn or bool(session.pack.refuse(text)) or bool(
+            from server.task_scope import task_for, home_enabled
+            guide_turn = ((home_enabled() and session.home_guide is not None) or
+                          session.tie_guide is not None or task_for(text) is not None)
+            fixed_turn = guide_turn or session.ee_guide is not None or bool(session.pack.refuse(text)) or bool(
                 re.fullmatch(r'forget my progress[.!]?', text.strip(), re.I))
             temporal = recent_memory.source_for(text, bool(getattr(session, 'rewind', None) and session.rewind.on))
             if not fixed_turn and not forget_request(text) and temporal:
@@ -404,7 +421,7 @@ async def websocket(ws: WebSocket):
                 messages = await run_turn(session, text, vision=vision, llm=TurnBrain(),
                                           started_at=lifecycle.started, turn_id=lifecycle.id,
                                           planner=llm if duo else None, stt_ms=getattr(lifecycle, 'stt_ms', None),
-                                          app=ws.app, route=label)
+                                          app=ws.app, route=label, context_block=context_block)
                 slow = slow_part(next((m for m in reversed(messages or []) if m['type'] == 'metrics'), {}))
                 if slow:
                     await lifecycle.stage('done', detail=slow)
@@ -557,17 +574,20 @@ async def websocket(ws: WebSocket):
         if voice:
             audio_tasks[notice['utterance_id']] = asyncio.create_task(audio(notice))
 
-    async def end_rewind():
+    async def end_rewind(end_call=True):
         nonlocal rewind_task
         if rewind_task:
             rewind_task.cancel()
             await asyncio.gather(rewind_task, return_exceptions=True)
             rewind_task = None
+        if end_call and session is not None and getattr(session, 'rewind', None):
+            # Snapshot kept-call text before clearing the call-local notes below.
+            rewind_mod.registry(ws.app).end(session.rewind, session=session)
         if session is not None:
             session.recent_memory.clear()
             session.scene_memory.entries.clear()
-        if session is not None and getattr(session, 'rewind', None):
-            rewind_mod.registry(ws.app).end(session.session_id)   # uploads the rest after the call
+            if session.context_agent:
+                session.context_agent.block = ''
 
     async def cancel_yolo():
         nonlocal yolo_task
@@ -630,8 +650,12 @@ async def websocket(ws: WebSocket):
                     await pairing.camera_socket(ws, incoming)
                     return
                 try:
-                    new_session = Session(incoming['session_id'], packs.get(incoming['pack']),
+                    pack_id = ('engineering' if ws.query_params.get('mode') == 'engineering'
+                               and incoming['pack'] == 'general' else incoming['pack'])
+                    new_session = Session(incoming['session_id'], packs.get(pack_id),
                                           incoming.get('board_id', 'demo-b650'), incoming.get('tts', 'browser'))
+                    from server import personas
+                    new_session.persona = personas.get(incoming.get('persona'))
                 except (OSError, ValueError, ValidationError, KeyError):
                     await send(message('error', code='bad_message', message='Unknown or invalid board or pack.'))
                     continue
@@ -643,7 +667,8 @@ async def websocket(ws: WebSocket):
                 await cancel_scene()
                 await cancel_yolo()
                 await close_voice()
-                await end_rewind()
+                same_call = session is not None and session.session_id == new_session.session_id
+                await end_rewind(end_call=not same_call)
                 reset_audio()
                 # Private mode (hello.private): local brain, Kokoro, server STT (browser STT may send audio to
                 # Google), no crops, no Rewind cloud. Every task started from here on inherits it.
@@ -676,7 +701,7 @@ async def websocket(ws: WebSocket):
                 voice = None
                 if session.tts == 'server':
                     factory = getattr(ws.app.state, 'voice_factory_v2', adapter.make_adapter)
-                    picked = incoming.get('voice') or new_session.pack.voice or None
+                    picked = personas.tts_voice(session.persona, incoming.get('voice'), session.pack.voice)
                     candidate = await asyncio.to_thread(
                         factory, **({'voice': picked} if factory is adapter.make_adapter else {}))
                     if not isinstance(candidate, FakeAdapter):
@@ -694,12 +719,20 @@ async def websocket(ws: WebSocket):
                     session.session_id, on=incoming.get('rewind', False), owner=rewind_mod.identity(ws))
                 session.rewind.cloud_meter = meter
                 session.rewind.session = session
+                # Recall mode, like other query settings, leaves the frozen hello schema unchanged:
+                # ?rewind_mode=live (upload each clip as cut) or save (upload at call end only if kept).
+                session.rewind.recall_mode = rewind_mod.recall_mode(ws.query_params.get('rewind_mode'))
                 if getattr(ws.app.state, 'presenter', False) and private:
                     seed = getattr(ws.app.state, 'presenter_seed', None)
                     if seed:
                         seed(session.session_id, rewind_mod.identity(ws))
                 from server.growth import for_owner as growth_for_owner
                 session.growth = growth_for_owner(ws.app, rewind_mod.identity(ws))
+                from server.context_agent import attach, classic_provider
+                context = await asyncio.to_thread(attach, session, ws.app, rewind_mod.identity(ws))
+                provider = 'google' if ws.query_params.get('mode') == 'gemini-live' else classic_provider()
+                if provider != 'google':
+                    await context.collect(provider=provider)
                 rewind_task = asyncio.create_task(session.rewind.follow(session))
                 if session.rewind.on:
                     await send(rewind_mod.state_message(session.rewind))
@@ -708,6 +741,9 @@ async def websocket(ws: WebSocket):
                     await open_live()
                 hello_ready = True
                 await send(state('listening'))
+                opener = context.followup(provider=provider)
+                if opener:
+                    await emit(say(opener))
                 if getattr(ws.app.state, 'presenter', False) and private and session.pack.id == 'home':
                     await send(message('turn', turn_id='presenter', stage='done', detail='Presenter available',
                                        at_ms=int(time() * 1000)))
@@ -818,7 +854,9 @@ async def websocket(ws: WebSocket):
                     await emit(say('Thanks. What are we working on?'))
             elif kind == 'rewind':
                 privacy.update(privacy.TWELVELABS, incoming['on'])  # the Rewind toggle is the video-search consent
-                session.rewind.set_on(incoming['on'])
+                stopping = session.rewind.set_on(incoming['on'])
+                if stopping is not None:
+                    await stopping
                 session.rewind.keep = incoming.get('keep', session.rewind.keep)
                 await send(rewind_mod.state_message(session.rewind))
                 if live and live.active:

@@ -231,3 +231,8 @@ def test_activation_requires_real_positive_evidence_and_safe_threshold(tmp_path,
         changed['methods']['qwen'][field] = value
         path.write_text(json.dumps(changed))
         assert configured_checker().method is None
+
+
+@pytest.fixture(autouse=True)
+def _enable_legacy_home_tasks(monkeypatch):
+    monkeypatch.setenv("HOME_TASKS", "1")

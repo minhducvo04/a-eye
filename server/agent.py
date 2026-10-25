@@ -21,10 +21,10 @@ from server.privacy import claude_allowed, local_only
 
 from contracts import schema, validate
 from market.search import search
-from server import packs, shopping
+from server import packs, shopping, personas, features
 from server.logs import event
 from server.keyframes import KeyframeGate, SceneMemory
-from server.recent_memory import RecentMemory
+from server.recent_memory import RecentMemory, current_view_question
 from server.boards import load_board
 from server.packs.pc_build import board_prompt
 
@@ -62,18 +62,29 @@ class Session:
     expert_failures: dict = field(default_factory=dict, repr=False)
     expert_step: str = ''
     home_guide: object = field(default=None, repr=False)
+    ee_guide: object = field(default=None, repr=False)
+    tie_guide: object = field(default=None, repr=False)
     growth: object = field(default=None, repr=False)
+    context_agent: object = field(default=None, repr=False)
+    live_context: object = field(default=None, repr=False)
     step_checker: object = field(default=None, repr=False)
     private: bool = False
     checker_test_mode: bool = False
     checker_test_verdict: tuple | None = field(default=None, repr=False)
     board: dict = field(init=False)
+    persona: dict = field(default_factory=personas.get)
 
     def __post_init__(self):
         self.board = load_board(self.board_id)
+        from server.task_scope import home_enabled
+        if self.pack.id == 'home' and not home_enabled():
+            self.pack = packs.get('general')
         if self.pack.id == 'home':
             from server.packs.home import HomeGuide
             self.home_guide = HomeGuide()
+        if self.pack.id == 'engineering':
+            from server.packs.electronics import ElectronicsGuide
+            self.ee_guide = ElectronicsGuide()
 
 
 def message(kind, **fields):
@@ -348,8 +359,43 @@ async def plan_scene(session, planner, base_system, user, scene, seq, text, emit
     note = head.get('note') if isinstance(head.get('note'), str) else ''
     return clean, safe_speech(note)[:160], head.get('speak') is True
 
+async def check_water_off(session, store, testing=False, fixture=None):
+    """The trusted valve verdict for the current frame. Missing camera, checker or error is never a pass."""
+    from server.step_check import FRESH_FRAME_AGE, MAX_AGE, Verdict, configured_checker
+    from server.step_check_api import load_references
+    result = Verdict()
+    try:
+        if testing:
+            if fixture and monotonic() - fixture[1] <= 15:
+                result = Verdict(fixture[0], 1.0)
+        elif session.camera and session.frame:
+            import base64
+            checker = session.step_checker
+            if checker is None:
+                checker = session.step_checker = configured_checker()
+            # Transcription/debounce may have spent most of the image's age budget.
+            # The camera receiver can supply a newer frame while this turn waits.
+            deadline = monotonic() + MAX_AGE
+            while session.camera:
+                frame, captured_at = session.frame, session.frame_time
+                if frame and 0 <= monotonic() - captured_at <= FRESH_FRAME_AGE:
+                    break
+                if monotonic() >= deadline:
+                    return result
+                await asyncio.sleep(.02)
+            if not session.camera:
+                return result
+            result = await checker.check(base64.b64decode(frame['jpeg_b64'], validate=True),
+                                         *load_references(store), captured_at=captured_at)
+        if not session.camera and not testing:
+            result = Verdict()
+    except Exception:
+        result = Verdict()
+    return result
+
+
 async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None, planner=None, stt_ms=None,
-                   app=None, route=None):
+                   app=None, route=None, context_block=None):
     """One voice turn. With planner set (talker + thinker mode), llm only talks and planner draws in parallel."""
     usage = []
     TURN_USAGE.set(usage)
@@ -375,22 +421,120 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         await emit(message('turn', turn_id=turn_id, stage='speaking', detail=detail,
                            at_ms=int(time() * 1000)))
 
-    # Closed-set task selection is deterministic, including the spoken single word "sink".
-    if session.pack.id == 'general' and re.fullmatch(r'(?:fix (?:the |a )?)?sink[.!]?', text.strip(), re.I):
+    from server.task_scope import task_for, home_enabled, refuse_home
+    # A product-scope answer is separate from pack safety and only inspects user input.
+    scope_reply = refuse_home(text) if not (session.pack.requires_power_off and not session.power_off) else None
+    chosen = task_for(text) if not session.pack.refuse(text) else None
+    if not home_enabled():
+        session.home_guide = None
+    if chosen and chosen.startswith('ee_') and session.pack.id in ('general', 'engineering', 'home'):
+        from server.packs.electronics import ElectronicsGuide
+        session.pack = packs.get('engineering')
+        session.home_guide, session.tie_guide = None, None
+        if session.ee_guide is None:
+            session.ee_guide = ElectronicsGuide(task=chosen, growth=session.growth)
+    elif chosen == 'tie' and session.pack.id in ('general', 'engineering', 'home'):
+        from server.packs.tie import TieGuide
+        session.pack = packs.get('general')
+        session.home_guide, session.ee_guide = None, None
+        if session.tie_guide is None:
+            session.tie_guide = TieGuide(growth=session.growth)
+    elif chosen in ('sink', 'hinge', 'breaker') and home_enabled() and session.pack.id == 'general':
         from server.packs.home import HomeGuide
         session.pack = packs.get('home')
-        session.home_guide = HomeGuide()
-        await proof('Home: sink')
+        session.home_guide = HomeGuide(task=chosen)
+        session.ee_guide, session.tie_guide = None, None
+        await proof(f'Home: {chosen}')
         if app is not None and getattr(app.state, 'presenter', False) and session.private:
             await proof('Presenter available')
     forgetting = bool(re.fullmatch(r'forget my progress[.!]?', text.strip(), re.I))
+    if session.tie_guide is not None:
+        from server.packs.tie import TieGuide
+        guide = session.tie_guide
+        guide.growth = session.growth
+        if forgetting:
+            if session.growth:
+                session.growth.forget()
+            session.tie_guide = TieGuide(growth=session.growth)
+            answer = 'Your progress has been forgotten.'
+        else:
+            answer = session.pack.refuse(text) or scope_reply or guide.reply(text)
+        if answer:
+            msg = say(answer)
+            msg.update(turn_id=turn_id, part=0, final=True)
+            session.recent_memory.note_step(answer)
+            await emit(message('reply_delta', agent='helper', turn_id=turn_id, text=answer))
+            await emit(msg)
+            if session.speak:
+                async for audio in session.speak(msg):
+                    await emit(audio)
+            if answer.startswith('Step ') and guide.target:
+                drawing = await pointer.ground(session, vision, guide.target)
+                if drawing:
+                    await emit(drawing)
+        remember()
+        return messages
+    if session.ee_guide is not None:
+        from server.packs.electronics import ElectronicsGuide, LINES as EE_LINES, refuse as ee_refuse
+        from server import recent_memory
+        guide = session.ee_guide
+        guide.growth = session.growth
+        stop = ee_refuse(text) or session.pack.refuse(text)
+        # Only a fresh caption of this exact frame may supply an observed stop.
+        if (not stop and session.camera and session.frame and session.scene
+                and session.scene_seq == session.frame['seq']
+                and monotonic() - session.frame_time < pointer.BUDGET_S
+                and session.scene.get('source') == 'ollama'):
+            from server.packs.electronics import USB
+            observed = ee_refuse(session.scene.get('caption', ''))
+            if observed == USB:
+                guide.usb_off = False
+                if guide.task == 'ee_multimeter' or (guide.task == 'ee_led' and guide.index < 5):
+                    stop = observed
+            else:
+                stop = observed
+        if forgetting:
+            if session.growth:
+                session.growth.forget()
+            session.ee_guide = ElectronicsGuide(task=guide.task, growth=session.growth, usb_off=guide.usb_off)
+            answer = 'Your progress has been forgotten.'
+        elif not stop and scope_reply:
+            answer = scope_reply
+        elif not stop and (recent_memory.source_for(text) or re.search(
+                r'\bwhere did i (put|leave)\b', text, re.I)):
+            answer = (await recent_memory.answer(session, text, vision))['say']
+        elif stop:
+            answer = guide.stop(stop)
+        else:
+            was_completed = guide.completed
+            answer = guide.reply(text)
+            if guide.completed and not was_completed:
+                await proof('Engineering: complete' if guide.task == 'ee_led' else 'Engineering: practice complete')
+        from server.safety import LINES
+        if answer in EE_LINES or answer in LINES:
+            await proof('Stopped by code')
+        if answer:
+            msg = say(answer)
+            msg.update(turn_id=turn_id, part=0, final=True)
+            session.recent_memory.note_step(answer)
+            await emit(message('reply_delta', agent='helper', turn_id=turn_id, text=answer))
+            await emit(msg)
+            if session.speak:
+                async for audio in session.speak(msg):
+                    await emit(audio)
+            if answer.startswith('Step ') and guide.target:
+                drawing = await pointer.ground(session, vision, guide.target)
+                if drawing:
+                    await emit(drawing)
+        remember()
+        return messages
     if forgetting:
         if session.growth:
             session.growth.forget()
         if session.home_guide:
             from server.packs.home import HomeGuide
             session.home_guide = HomeGuide(task=session.home_guide.task, growth=session.growth)
-    refusal = 'Your progress has been forgotten.' if forgetting else session.pack.refuse(text)
+    refusal = 'Your progress has been forgotten.' if forgetting else session.pack.refuse(text) or scope_reply
     if session.home_guide is not None and not forgetting:
         session.home_guide.growth = session.growth
         was_completed = session.home_guide.completed
@@ -408,26 +552,10 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         refusal = session.home_guide.reply(text, store)
         from server.safety import WATER_OFF_LINE
         if refusal == WATER_OFF_LINE and not session.pack.refuse(text):
-            from server.step_check import Verdict, configured_checker, RETRY_LINE
-            from server.step_check_api import load_references
+            from server.step_check import RETRY_LINE
             await emit(message('turn', turn_id=turn_id, stage='thinking', detail='Valve: checking',
                                at_ms=int(time() * 1000)))
-            result = Verdict()
-            try:
-                if testing:
-                    if fixture and monotonic() - fixture[1] <= 15:
-                        result = Verdict(fixture[0], 1.0)
-                elif session.camera and session.frame:
-                    import base64
-                    checker = session.step_checker
-                    if checker is None:
-                        checker = session.step_checker = configured_checker()
-                    result = await checker.check(base64.b64decode(session.frame['jpeg_b64'], validate=True),
-                                                 *load_references(store), captured_at=session.frame_time)
-                if not session.camera and not testing:
-                    result = Verdict()
-            except Exception:
-                result = Verdict()
+            result = await check_water_off(session, store, testing, fixture)
             # No await between granting the gate and consuming it. Cancellation cannot leave a pass.
             try:
                 session.home_guide.water_off_passed = result.passed
@@ -468,7 +596,7 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         lookup = asyncio.create_task(shopping.shopping_turn(session, text, vision, source))
         part = 0
         try:
-            if claude_allowed() and session.camera and session.frame:
+            if features.shopping() and claude_allowed() and session.camera and session.frame:
                 ack = say('Let me compare the offers.', 'shopper')
                 ack.update(turn_id=turn_id, part=0, final=False)
                 await emit(ack)
@@ -514,8 +642,33 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
     # Cached grounding avoids putting a slow refresh on the voice critical path.
     if fresh and session.scene is not None:
         scene, seq = session.scene, session.scene_seq
-    system = session.pack.system_prompt + (
+    if ((session.private or local_only()) and session.pack.id == 'general'
+            and current_view_question(text) and fresh and session.scene is not None
+            and monotonic() - session.scene_time <= 10 and scene.get('source') == 'ollama'):
+        # A simple scene description already exists locally. Sending the same note through the
+        # 35B CPU talker pays prompt prefill and JSON generation before it can say a single word.
+        # Attribute the cached note rather than claiming a fresh observation of a changed view.
+        caption = safe_speech(scene.get('caption', ''))
+        if caption and caption.lower() not in ('unsure', 'could not describe the frame.'):
+            answer = 'My latest camera note says: ' + caption
+            if session.pack.guard:
+                answer = session.pack.guard(answer, text, True)
+            msg = say(answer)
+            msg.update(turn_id=turn_id, part=0, final=True)
+            await proof('Local camera note')
+            await emit(message('reply_delta', agent='helper', turn_id=turn_id, text=answer))
+            await emit(msg)
+            if session.speak:
+                async for audio in session.speak(msg):
+                    await emit(audio)
+            remember()
+            return messages
+    system = session.pack.system_prompt + personas.style_block(session.persona) + (
         " memory lists earlier views, oldest last; only the entry marked now is what the camera shows.")
+    if session.context_agent:
+        from server.context_agent import classic_provider
+        system += (context_block if context_block is not None else
+                   await session.context_agent.collect(text, provider=classic_provider()))
     duo = planner is not None
     pointing = session.pack.id == 'general'
     if not session.camera:
@@ -554,6 +707,7 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
     first_audio = None
     first_say_at = None
     tts_ms = None
+    reply_deadline = None
 
     async def audio_worker():
         nonlocal first_audio
@@ -585,6 +739,8 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
             await proof('Stopped by code')
         if not value:
             return
+        if reply_deadline is not None:
+            reply_deadline.reschedule(None)  # JSON metadata alone is not a reply.
         msg = say(value, agent)
         await emit(message('reply_delta', agent=agent, turn_id=turn_id,
                            text=(' ' if reply_text else '') + msg['text']))
@@ -668,7 +824,10 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
             return messages
         if private_expert:
             await speech('Private mode: I will answer with the local model.')
-        async with aclosing(llm.stream(system, user, **tool_options)) as stream:
+        local_wait = (float(os.environ.get('LOCAL_REPLY_S', '3'))
+                      if session.private or local_only() else None)
+        async with asyncio.timeout(local_wait) as reply_deadline, aclosing(
+                llm.stream(system, user, **tool_options)) as stream:
             async for delta in stream:
                 if first_token is None:
                     first_token = (monotonic() - brain_started) * 1000
@@ -741,6 +900,7 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                 if pending and buffer.strip():
                     await speech(pending, agent=turn['agent'])
                     pending = None
+        reply_deadline = None
         if not header:
             turn = dict(agent='helper', draw=[])
             if session.camera:
@@ -752,7 +912,9 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                 await speech(pending, agent=turn['agent'])
             pending = tail
         # Hard rule in code: a shopping question always brings in the shopper, even if the model forgot.
-        if not turn.get('market_category'):
+        if not features.shopping():
+            turn.pop('market_category', None)
+        if features.shopping() and not turn.get('market_category'):
             category = shopping_category(text)
             if category:
                 turn['market_category'] = category
@@ -776,7 +938,7 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                 planned, note, speak_note = None, '', False
             stalled = bool(_FILLER.search(reply_text))
             event('planner', session.session_id, ms=(monotonic() - planned_at) * 1000)
-            if planned and planned.get('market_category') and not turn.get('market_category'):
+            if features.shopping() and planned and planned.get('market_category') and not turn.get('market_category'):
                 turn['market_category'] = planned['market_category']
             # Repeating the talker is worse than silence: then the planner only draws.
             if note and (speak_note or stalled) and not repeats(note, reply_text):
@@ -803,6 +965,16 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                 answer = "I couldn't confirm anything fits."
             await emit(state('speaking', 'shopper'))
             await speech(answer, final=True, agent='shopper')
+        if worker:
+            await queue.put(None)
+            await worker
+    except TimeoutError:
+        if reply_deadline is None or not reply_deadline.expired() or first_say_at is not None:
+            raise
+        reply_deadline = None
+        brain.clear()  # Do not label an availability fallback as successful model speech.
+        await proof('Local brain timed out')
+        await speech('The local brain is taking too long. Please try again.', final=True)
         if worker:
             await queue.put(None)
             await worker

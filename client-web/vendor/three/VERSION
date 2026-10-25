@@ -1,0 +1,5 @@
+three.js 0.186.1 (MIT, see LICENSE), vendored 2026-10-25 for client-web/map.html, copied unmodified from the Kyra repo's web/vendor/three (itself jsDelivr Terser builds of the npm package):
+  three.module.js  <- https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.min.js
+  three.core.js    <- https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.min.js
+  addons/controls/OrbitControls.js <- https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/controls/OrbitControls.min.js
+map.html maps the bare specifier "three" to three.module.js with an import map.

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>A-Eye system map</title>
+<link rel="stylesheet" href="map.css">
+<script type="importmap">{"imports": {"three": "./vendor/three/three.module.js"}}</script>
+</head>
+<body>
+<div id="stage" aria-hidden="true"></div>
+<div id="labels" aria-hidden="true"></div>
+
+<header class="bar">
+  <div class="brand">
+    <h1>A-Eye <span>system map</span></h1>
+    <p id="tagline" class="tagline"></p>
+    <div id="chips" class="chips" aria-label="Headline numbers"></div>
+  </div>
+  <div class="controls">
+    <div class="seg" role="radiogroup" aria-label="Labels show">
+      <button role="radio" data-mode="name" aria-checked="true">Name</button>
+      <button role="radio" data-mode="speed" aria-checked="false">Speed</button>
+      <button role="radio" data-mode="cost" aria-checked="false">Cost</button>
+    </div>
+    <button id="scaleBtn" class="ghost" aria-controls="panel">Scale</button>
+    <button id="indexBtn" class="ghost" aria-controls="panel">Index</button>
+  </div>
+  <nav class="flows" id="flows" aria-label="Play a data flow"></nav>
+  <p id="flowSay" class="say">Drag to orbit, scroll to zoom. Click any node or line.</p>
+</header>
+
+<footer class="legend" id="legend">
+  <span><i class="dot ok"></i>working</span>
+  <span><i class="dash"></i>switch</span>
+  <span id="modeNote"></span>
+</footer>
+
+<aside id="panel" class="panel" aria-live="polite" hidden>
+  <button class="close" id="closeBtn" aria-label="Close panel">&times;</button>
+  <div id="panelBody"></div>
+</aside>
+
+<div id="tip" class="tip" hidden></div>
+<noscript><p class="nojs">This map needs JavaScript and WebGL.</p></noscript>
+<script type="module" src="map.js"></script>
+</body>
+</html>

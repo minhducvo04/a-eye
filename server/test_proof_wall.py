@@ -87,7 +87,8 @@ def test_readonly_count_and_auth(tmp_path, monkeypatch):
     assert client.get('/api/proof').status_code == 401
     assert client.get('/api/proof?token=wrong').status_code == 401
     response = client.get('/api/proof', headers={'Authorization': 'Bearer fixture-token'})
-    assert response.json() == dict(pictures_saved=1, pictures_sent=None, cloud_ai_calls=None, bytes_to_cloud=None)
+    assert response.json() == dict(pictures_saved=1, pictures_sent=None, cloud_ai_calls=None,
+                                   bytes_to_cloud=None, context_sources=[])
     assert response.headers['cache-control'] == 'no-store'
     assert sorted(p.name for p in tmp_path.iterdir()) == ['crop.JPG', 'link.png', 'note.txt']
 
@@ -166,7 +167,11 @@ def test_call_proof_owner_and_repeated_hello(tmp_path, monkeypatch):
             def counters(response):
                 return {k: response.json()[k] for k in expected}
             assert counters(client.get('/api/proof?session_id=owned')) == expected
+            call.session.context_agent.sources = ['camera', 'memory', 'places', 'growth']
+            assert client.get('/api/proof?session_id=owned').json()['context_sources'] == [
+                'camera', 'memory', 'places', 'growth']
             other = dict(headers, **{'X-Aeye-Owner': mint_owner()})
+            assert client.get('/api/proof?session_id=owned', headers=other).json()['context_sources'] == []
             assert counters(client.get('/api/proof?session_id=owned', headers=other)) == dict.fromkeys(expected)
             ws.send_json(dict(hello, private=True))
             while ws.receive_json().get('type') != 'agent_state':

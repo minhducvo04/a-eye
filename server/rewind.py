@@ -1,7 +1,10 @@
 """Rewind: a searchable memory of the call through TwelveLabs video search. Off by default.
 
-While Rewind is on, short clips are cut around change-triggered keyframes from frames held in memory. Each clip is
-encoded to a temporary MP4, uploaded to a dedicated TwelveLabs index and deleted locally right after the upload.
+While Rewind (Recall) is on, short clips are cut around change-triggered keyframes from frames held in memory. Each
+clip is encoded to an MP4 in memory (never a file on this host) and uploaded to a dedicated TwelveLabs index.
+Two modes per call (REWIND_MODE, or ?rewind_mode= on /ws2): 'live' uploads each clip as soon as it is cut so in-call
+search works; 'save' holds clips in memory and uploads them at call end only if the user keeps the call, else drops
+them. See docs/results/recall-pipeline.md.
 Clips are built from camera frames only (no audio). Search is for objects and moments: no face or person tagging.
 The API key stays on the server and is never logged.
 """
@@ -10,11 +13,11 @@ import base64
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from functools import wraps
 import json
 import os
 import re
 import subprocess
-import tempfile
 from time import monotonic, time
 
 import httpx
@@ -34,6 +37,31 @@ ACTIVITY_GAP_S = 2.0   # one activity clip start per this many seconds at most
 NEW_EVENT_GAP_S = 2.5  # a change after this much quiet starts a new clip instead of extending      # frames per second kept in the ring
 KEEP_FRAMES = 6       # frames per clip kept in memory after upload, for pointing
 MAX_CLIPS = 60        # per call
+LIVE, SAVE = 'live', 'save'
+_MODE_ALIASES = {'live': LIVE, 'on_the_fly': LIVE, 'fly': LIVE, 'save': SAVE, 'at_save': SAVE, 'on_save': SAVE}
+# TwelveLabs indexes a 4 to 12 s clip in about 7 to 15 s, so the first status poll waits 6 s and later ones back
+# off: polls at about 6, 9, 12, 15, 21, 33 s and then every 24 s. Our meter charges each poll as a request.
+POLL_S = '6,3,3,3,6,12,24'
+_sleep = asyncio.sleep     # tests swap this to count the waits
+
+
+def recall_mode(value=None):
+    """'live' (upload each clip as it is cut) or 'save' (upload at call end, only if kept). The value (a /ws2 query
+    setting) wins, then REWIND_MODE, then 'live'. Unknown words fall back to 'live'."""
+    for candidate in (value, os.environ.get('REWIND_MODE')):
+        mode = _MODE_ALIASES.get(str(candidate or '').strip().lower())
+        if mode:
+            return mode
+    return LIVE
+
+
+def poll_delays():
+    """Seconds to wait before each status poll; the last one repeats. REWIND_POLL_S overrides (comma list)."""
+    try:
+        delays = [max(0.0, float(x)) for x in os.environ.get('REWIND_POLL_S', POLL_S).split(',') if x.strip()]
+    except ValueError:
+        delays = []
+    return delays or [float(x) for x in POLL_S.split(',')]
 
 _QUESTION = re.compile(
     r"\b(when did i|when was|where did i (put|leave|place|set|drop)|where('s| is) the .+ i (put|left)|"
@@ -81,6 +109,21 @@ def local_only():
     """TwelveLabs is off for this call: its switch is off, Private mode, or LOCAL_ONLY=1 (server/privacy.py)."""
     from server.privacy import twelvelabs_allowed
     return not twelvelabs_allowed()
+
+
+def _call_cloud(function):
+    """HTTP tasks have no hello context: use the Rewind's own mutable consent switches."""
+    @wraps(function)
+    async def bound(rewind, *args, **kwargs):
+        from server import privacy
+        switches = privacy.SWITCHES.set(rewind.cloud_switches)
+        private = privacy.PRIVATE.set(privacy.PRIVATE.get() or rewind.private)
+        try:
+            return await function(rewind, *args, **kwargs)
+        finally:
+            privacy.PRIVATE.reset(private)
+            privacy.SWITCHES.reset(switches)
+    return bound
 
 
 def identity(connection):
@@ -144,12 +187,12 @@ class TwelveLabsClient:
             response.raise_for_status()
             return response.json()['_id']
 
-    async def upload(self, index_id, path, metadata):
+    async def upload(self, index_id, video, metadata):
+        """video: the MP4 bytes, held in memory only."""
         async with self._client(timeout=120) as client:
-            with open(path, 'rb') as handle:
-                response = await client.post('/tasks', data={
-                    'index_id': index_id, 'user_metadata': json.dumps(metadata)},
-                    files={'video_file': ('clip.mp4', handle, 'video/mp4')})
+            response = await client.post('/tasks', data={
+                'index_id': index_id, 'user_metadata': json.dumps(metadata)},
+                files={'video_file': ('clip.mp4', bytes(video), 'video/mp4')})
             response.raise_for_status()
             body = response.json()
             return body['_id'], body.get('video_id')
@@ -195,20 +238,88 @@ class TwelveLabsClient:
             return response.json().get('data', [])
 
 
-def encode_mp4(frames, path):
-    """JPEG frames (bytes) -> H.264 MP4 at the real frame rate; at least 4 s and 360 px on the short side."""
-    duration = max(4.0, frames[-1][0] - frames[0][0] + 1 / SAMPLE_FPS)
+def clip_duration(frames):
+    return max(4.0, frames[-1][0] - frames[0][0] + 1 / SAMPLE_FPS)
+
+
+def encode_mp4(frames):
+    """JPEG frames (bytes) -> H.264 MP4 bytes at the real frame rate; at least 4 s and 360 px on the short side.
+    Frames go in on stdin and the MP4 comes out on stdout (fragmented MP4 needs no seekable file), so no media
+    file is ever written on this host."""
+    duration = clip_duration(frames)
     rate = max(1.0, len(frames) / duration)
     scale = ("scale='if(gt(iw,ih),-2,360)':'if(gt(iw,ih),360,-2)',"
              "scale='min(iw,1280)':-2,pad=ceil(iw/2)*2:ceil(ih/2)*2")
     command = ['ffmpeg', '-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', f'{rate:.4f}', '-i', '-',
-               '-vf', scale, '-t', f'{duration:.3f}', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-an', path]
+               '-vf', scale, '-t', f'{duration:.3f}', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-an',
+               '-movflags', 'frag_keyframe+empty_moov+default_base_moof', '-f', 'mp4', 'pipe:1']
     payload = b''.join(jpeg for _, jpeg in frames)
     # Pad the tail by repeating the last frame so a short clip still reaches 4 s.
     needed = int(duration * rate + 0.999) - len(frames)
     payload += frames[-1][1] * max(0, needed)
-    subprocess.run(command, input=payload, check=True, capture_output=True, timeout=60)
-    return duration
+    return subprocess.run(command, input=payload, check=True, capture_output=True, timeout=60).stdout
+
+
+def _kept_path(owner):
+    # Kept-call index: video ids, call times and a bounded text summary; never media.
+    from server.memory import person_id, root
+    return root() / person_id(owner) / 'rewind_kept.json'
+
+
+def kept_calls(owner):
+    try:
+        return json.loads(_kept_path(owner).read_text())
+    except (OSError, ValueError):
+        return []
+
+
+def shared_demo_library():
+    # Owner decision 2026-10-25: in open demo mode the team shares one saved-call library (A_EYE_DEMO_SHARED_MEMORY=1).
+    return os.environ.get('A_EYE_DEMO_SHARED_MEMORY') == '1'
+
+
+def past_call_line(hit):
+    ago = max(0, time() - (hit.get('call_started_wall') or time()))
+    when = (f"{round(ago / 60)} minutes ago" if ago < 5400 else f"{round(ago / 3600)} hours ago"
+            if ago < 172800 else f"{round(ago / 86400)} days ago")
+    return f"I found it in a call you saved from about {when}, {fmt_offset(hit['t_s'])} into that call."
+
+
+def call_summary(rewind):
+    """Snapshot only observed captions and user questions, never helper claims or media."""
+    log = getattr(getattr(rewind, 'session', None), 'recent_memory', None)
+    captions, questions = [], []
+    for entry in reversed(list(getattr(log, 'entries', []))):
+        note = ' '.join(str(entry.get('note') or '').split())
+        if not note:
+            continue
+        if entry.get('kind') == 'scene' and note not in captions and len(captions) < 12:
+            captions.append(note)
+        elif entry.get('kind') in ('user', 'helper') and note not in questions and len(questions) < 16:
+            questions.append(note)
+    asked = (' Talked about: ' + '; '.join(reversed(questions)))[:900] if questions else ''
+    return '; '.join(reversed(captions))[:1500 - len(asked)] + asked
+
+
+async def _keep_and_record(rewind, summary=None):
+    """'Remember this call': upload the rest, then remember the call's videos so later calls can search them."""
+    summary = call_summary(rewind) if summary is None else summary
+    await rewind.flush(wait=True)
+    # Live uploads may already be indexing when there are no pending clips to flush.
+    while waits := [task for task in rewind.waits if not task.done()]:
+        await asyncio.gather(*waits, return_exceptions=True)
+    if rewind.owner == 'local' and not shared_demo_library():
+        return  # Open demo callers have call-scoped recall unless the owner shares one demo library.
+    clips = [dict(video_id=c.video_id, start_s=c.start_s, key_s=c.key_s) for c in rewind.clips if c.video_id]
+    if not clips:
+        return
+    calls = [c for c in kept_calls(rewind.owner) if c.get('session_id') != rewind.session_id]
+    calls.append(dict(session_id=rewind.session_id, started_wall=rewind.started_wall, clips=clips,
+                      summary=summary[:1500]))
+    path = _kept_path(rewind.owner)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(calls[-50:]))
+    rewind.saved = True
 
 
 @dataclass
@@ -233,6 +344,9 @@ class Rewind:
         self.wall = wall
         self.encoder = encoder
         self.on = False
+        self.cloud_switches = None
+        self.private = False
+        self.ended = False
         self.started = clock()
         self.started_wall = wall()
         self.ring = deque()
@@ -242,8 +356,10 @@ class Rewind:
         self.lock = asyncio.Lock()
         self.uploads = []       # (task_id, upload_ms) for the report and status
         self.waits = set()
-        self.end_task = None    # end-of-call cleanup, awaited by the recap route
+        self.saved = False
+        self.end_task = None    # end-of-call upload/indexing or deletion
         self.mode = None
+        self.recall_mode = recall_mode()   # 'live' or 'save'; ws2 sets it per call at hello
         self.owner = 'local'    # identity() of the caller that opened this call
         self.index_name = INDEX_NAME   # local memory attaches a per-person index: a-eye-<memory id>
         self.on_upload = None   # callback(index_id, video_id), e.g. the person's memory store
@@ -251,7 +367,7 @@ class Rewind:
         self.memories = None        # server.memory.Memories, set by the registry, for auto attach
         self.memory_activity_at = None
         self.session = None
-        self.keep = False       # True: the user keeps the TwelveLabs videos after the call
+        self.keep = shared_demo_library()  # owner demo: every call kept; else True only when the user ticks Remember
         self.deleted = []       # video ids deleted from TwelveLabs (ids only)
         self.last_sig = None    # newest frame signature (32x32 gray), for local activity
         self.last_activity = float('-inf')
@@ -260,11 +376,27 @@ class Rewind:
         return self.clock() - self.started
 
     def set_on(self, value):
-        self.on = bool(value) and not local_only()   # LOCAL_ONLY=1 keeps Rewind cloud off
+        from server import privacy
+        switches = privacy.SWITCHES.get()
+        self.cloud_switches = switches if switches is not None else dict(privacy.DEFAULTS, twelvelabs=bool(value))
+        self.private = privacy.PRIVATE.get()
+        self.on = bool(value) and self.cloud_switches[privacy.TWELVELABS] and not privacy.local_only()
         if not self.on:
             self.ring.clear()
-            # Unsent clips are dropped when the user turns Rewind off.
-            self.clips = [c for c in self.clips if c.status not in ('open', 'pending')]
+            # Stop sampling immediately; pruning shares the upload lock so no video id is lost.
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return asyncio.run(self._drop_unsent())
+            return loop.create_task(self._drop_unsent())
+
+    async def _drop_unsent(self):
+        async with self.lock:
+            if not self.on:
+                self.clips = [c for c in self.clips if c.video_id or c.status not in ('open', 'pending')]
+
+    def cloud_allowed(self):
+        return self.on and (not self.ended or self.keep) and not local_only()
 
     def add_frame(self, jpeg_b64):
         if not self.on:
@@ -334,9 +466,12 @@ class Rewind:
             if clip.status == 'open':
                 clip.status = 'pending'
 
+    @_call_cloud
     async def flush(self, wait=False, timeout=600):
-        """Upload every finished clip. Temp files are removed right after each upload."""
+        """Upload every finished clip as MP4 bytes from memory; nothing is written to disk."""
         async with self.lock:
+            if not self.cloud_allowed():
+                return []
             ready = [c for c in self.clips if c.status == 'pending' and c.frames]
             if not ready:
                 return []
@@ -350,15 +485,18 @@ class Rewind:
                           error=type(exc).__name__)
                     return []
             for clip in ready:
+                if not self.cloud_allowed():
+                    break
                 clip.status = 'uploading'
                 started = monotonic()
-                handle, path = tempfile.mkstemp(suffix='.mp4', prefix='rewind-')
-                os.close(handle)
                 try:
-                    await asyncio.to_thread(self.encoder, clip.frames, path)
+                    video = await asyncio.to_thread(self.encoder, clip.frames)   # MP4 bytes in memory, no file
+                    if not self.cloud_allowed():
+                        clip.status = 'pending'
+                        break
                     metadata = dict(call=self.call_tag(), start_s=round(clip.start_s, 2),
                                     end_s=round(clip.end_s, 2), started_at=int(self.started_wall))
-                    clip.task_id, clip.video_id = await self.client.upload(self.index_id, path, metadata)
+                    clip.task_id, clip.video_id = await self.client.upload(self.index_id, video, metadata)
                     clip.status = 'indexing'
                     if self.on_upload:
                         self.on_upload(self.index_id, clip.video_id)
@@ -371,8 +509,6 @@ class Rewind:
                     event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
                           error=type(exc).__name__,
                           where=f'{tb.tb_frame.f_code.co_filename.rsplit("/", 1)[-1]}:{tb.tb_lineno}' if tb else '')
-                finally:
-                    os.unlink(path)
                 # Keep a few frames for pointing at the answer; the rest leave memory now.
                 if len(clip.frames) > KEEP_FRAMES:
                     step = len(clip.frames) / KEEP_FRAMES
@@ -390,26 +526,71 @@ class Rewind:
                 task.add_done_callback(self.waits.discard)
         return ready
 
-    async def wait_ready(self, clip, timeout=600, every=3.0):
-        deadline = monotonic() + timeout
-        while monotonic() < deadline:
+    @_call_cloud
+    async def wait_ready(self, clip, timeout=600):
+        """Poll the upload task with backoff (poll_delays) until ready, failed or `timeout` seconds of waiting."""
+        delays, waited, n = poll_delays(), 0.0, 0
+        errors = 0
+        while waited < timeout:
+            delay = delays[min(n, len(delays) - 1)]
+            n += 1
+            await _sleep(delay)
+            waited += delay
+            if not self.cloud_allowed():
+                return False
             try:
                 status = (await self.client.task(clip.task_id)).get('status')
+            except httpx.TransportError:
+                errors += 1
+                if errors <= 3:
+                    continue
+                clip.status = 'failed'
+                return False
             except Exception:
                 clip.status = 'failed'
                 return False
+            errors = 0
             if status == 'ready':
                 clip.status = 'ready'
                 return True
             if status == 'failed':
                 clip.status = 'failed'
                 return False
-            await asyncio.sleep(every)
         clip.status = 'failed'
         return False
 
+    def uploads_live(self):
+        """'live' mode uploads clips during the call; 'save' mode only at call end, when the call is kept."""
+        return self.on and self.recall_mode != SAVE
+
+    def close_due(self):
+        """A still camera sends no new frame, so an open clip past its end is closed here too."""
+        t = self.now_s()
+        for clip in self.clips:
+            if clip.status == 'open' and t > clip.end_s:
+                clip.status = 'pending'
+
+    def flush_soon(self):
+        """Live mode: start uploading finished clips in the background unless an upload is already running."""
+        if not self.uploads_live() or self.lock.locked() or not any(c.status == 'pending' for c in self.clips):
+            return None
+        task = asyncio.create_task(self.flush())
+        self.waits.add(task)
+        task.add_done_callback(self.waits.discard)
+        return task
+
     def call_tag(self):
         return datetime.fromtimestamp(self.started_wall, timezone.utc).strftime('%Y%m%dT%H%M%S')
+
+    def save_status(self):
+        """Only confirm retention after every clip is indexed and the library entry is written."""
+        if not self.ended or not self.keep or not self.on or self.private:
+            return None
+        if self.end_task is not None and not self.end_task.done():
+            return 'saving'
+        if self.saved and self.clips and all(c.status == 'ready' for c in self.clips):
+            return 'saved'
+        return 'unavailable'
 
     def status(self):
         counts = {}
@@ -419,12 +600,39 @@ class Rewind:
                     indexing=counts.get('indexing', 0) + counts.get('uploading', 0),
                     pending=counts.get('pending', 0) + counts.get('open', 0))
 
+    @_call_cloud
+    async def search_kept(self, query, limit=3):
+        """Hits in this owner's earlier kept calls ("Remember this call"), newest call first."""
+        if not self.cloud_allowed() or (self.owner == 'local' and not shared_demo_library()):
+            return []
+        past = {c['video_id']: (call, c) for call in kept_calls(self.owner)
+                if call.get('session_id') != self.session_id for c in call.get('clips', [])}
+        if not past:
+            return []
+        if self.index_id is None:
+            self.index_id = await self.client.ensure_index(self.index_name)
+        rows = await self.client.search(self.index_id, query, video_ids=list(past), limit=limit)
+        hits = []
+        for row in sorted(rows, key=lambda r: r.get('rank', 99)):
+            hit = past.get(row.get('video_id'))
+            if hit is None:
+                continue
+            call, clip = hit
+            at = clip['start_s'] + float(row.get('start', 0))
+            hits.append(dict(t_s=round(at, 1), start_s=round(at, 1), end_s=round(clip['start_s'] + float(row.get('end', 0)), 1),
+                             rank=row.get('rank'), video_id=row.get('video_id'), frame=None, candidates=[],
+                             past_call=True, call_started_wall=call.get('started_wall')))
+        return hits
+
+    @_call_cloud
     async def search(self, query, limit=3, before_s=None):
         """Hits in this call, best first: call time, clip window and the nearest kept frame."""
+        if not self.cloud_allowed():
+            return []
         clips = {c.video_id: c for c in self.clips if c.video_id and c.status == 'ready'
                  and (before_s is None or c.end_s <= before_s)}
         if not clips:
-            return []
+            return await self.search_kept(query, limit) if before_s is None else []
         rows = await self.client.search(self.index_id, query, video_ids=list(clips), limit=limit)
         hits = []
         for row in sorted(rows, key=lambda r: r.get('rank', 99)):
@@ -457,13 +665,11 @@ class Rewind:
         if not self.on and not self.clips:
             return "Rewind is off, so I didn't keep clips of this call. Turn on Rewind to use it.", None
         query = query_from(text)
-        if self.on and any(c.status == 'pending' for c in self.clips):
-            # Upload the newest clips; this answer uses what is indexed now.
-            task = asyncio.create_task(self.flush())
-            self.waits.add(task)
-            task.add_done_callback(self.waits.discard)
+        self.flush_soon()      # live mode: upload the newest clips; this answer uses what is indexed now
         try:
             hits = await self.search(query, before_s=before_s) if before_s is not None else await self.search(query)
+            if not hits and before_s is None and any(c.video_id for c in self.clips):
+                hits = await self.search_kept(query)   # nothing in this call: try the calls you saved
         except Exception as exc:
             event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
                   error=type(exc).__name__)
@@ -472,6 +678,9 @@ class Rewind:
             if any(c.status == 'failed' for c in self.clips):
                 return "Recording search is not available right now. Some clips could not be saved or indexed.", None
             busy = self.status()
+            if self.recall_mode == SAVE and busy['pending'] and not busy['ready']:
+                return ("This call's clips stay on this call and are processed only when you save it, so I can't "
+                        "search them yet."), None
             if busy['indexing'] or busy['pending']:
                 return "I'm still indexing the latest clips. Ask me again in a minute.", None
             return "I didn't find that moment in this call.", None
@@ -484,14 +693,19 @@ class Rewind:
                     break
         hit.pop('candidates', None)
         hit['alternatives'] = [h['t_s'] for h in hits[1:2]]
+        if hit.get('past_call'):
+            return past_call_line(hit), hit
         if hit['sure']:
             return f"That was {fmt_offset(hit['t_s'])}. Here's the clip.", hit
         times = ' or '.join(fmt_offset(t) for t in [hit['t_s']] + hit['alternatives'])
         return f"I'm not sure I saw it. Maybe {times}. Here's my best guess.", hit
 
     async def forget(self, local=True):
-        """Delete this call's TwelveLabs videos (logs ids only). local=True also drops every clip and frame;
-        local=False (call end) keeps the in-memory frames so the end-of-call recap can still run."""
+        """Wait for in-flight uploads before deleting; deletion never needs cloud/spend consent."""
+        async with self.lock:
+            return await self._forget_locked(local)
+
+    async def _forget_locked(self, local):
         for task in list(self.waits):
             task.cancel()
         await asyncio.gather(*self.waits, return_exceptions=True)
@@ -499,7 +713,7 @@ class Rewind:
         for clip in self.clips:
             if clip.video_id and self.index_id:
                 try:
-                    await self.client.delete_video(self.index_id, clip.video_id)
+                    await self.client.delete_video(self.index_id, clip.video_id, force=True)
                     self.deleted.append(clip.video_id)
                     print(json.dumps(dict(ts=datetime.now(timezone.utc).isoformat(), level='info',
                                           event='rewind_deleted', video_id=clip.video_id)), flush=True)
@@ -507,14 +721,12 @@ class Rewind:
                     failed.append(clip)
                     event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
                           error=type(exc).__name__)
+        for clip in self.clips:
+            clip.frames = []
+            if clip not in failed:
+                clip.status, clip.video_id = 'deleted', None
         if local:
-            self.clips = failed        # only clips whose cloud copy could not be deleted stay listed
-            for clip in failed:
-                clip.frames = []
-        else:
-            for clip in self.clips:
-                if clip not in failed and clip.video_id:
-                    clip.status, clip.video_id = 'deleted', None
+            self.clips = failed        # keep failed deletion ids so cleanup can retry
         self.ring.clear()
         return dict(deleted=len(self.deleted), failed=len(failed))
 
@@ -525,8 +737,9 @@ class Rewind:
 
     async def follow(self, session, every=None):
         """Sample the session's newest frame (from this socket or a paired phone camera) and upload finished
-        clips every few minutes while the call goes on. The end of the call is Registry.end."""
-        every = every or float(os.environ.get('REWIND_FLUSH_S', '60'))
+        clips as soon as they are cut (live mode only). The end of the call is Registry.end."""
+        # Live mode uploads each clip as soon as it is cut; REWIND_FLUSH_S (default 0) can batch uploads instead.
+        every = every if every is not None else float(os.environ.get('REWIND_FLUSH_S', '0'))
         self.mode = getattr(getattr(session, 'pack', None), 'id', None)
         self.session = session  # the live scene, for local memory's arrow to an object in view now
         if self.memories is not None:
@@ -564,13 +777,10 @@ class Rewind:
                 self.memory_activity_at = None
                 caption = (getattr(session, 'scene', None) or {}).get('caption') or 'something moved'
                 noting = asyncio.create_task(self._note(dict(caption=caption, objects=[]), frame['jpeg_b64']))
-            if self.on and self.clock() >= next_flush:
-                next_flush = self.clock() + every
-                try:
-                    await self.flush()
-                except Exception as exc:
-                    event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
-                          error=type(exc).__name__)
+            if self.on:
+                self.close_due()
+            if self.uploads_live() and self.clock() >= next_flush and self.flush_soon():
+                next_flush = self.clock() + every     # flush logs its own errors; the sampler never waits on it
             await asyncio.sleep(1 / SAMPLE_FPS / 2)
 
     async def _note(self, scene, jpeg_b64):
@@ -595,6 +805,9 @@ class Registry:
         if self.encoder is not None:
             kwargs.setdefault('encoder', self.encoder)
         old = self.calls.get(session_id)
+        if old is not None and old.owner == owner and not old.ended:
+            old.set_on(on)
+            return old
         rewind = Rewind(session_id, client=self.client, **kwargs)
         rewind.owner = owner
         rewind.memories = self.memories
@@ -627,21 +840,29 @@ class Registry:
         task.add_done_callback(self.background.discard)
         return task
 
-    def end(self, session_id):
+    def end(self, rewind, session=None):
         """End of call: delete the call's TwelveLabs videos unless the user keeps them (then upload the rest)."""
-        rewind = self.calls.get(session_id)
+        # String callers are retained for local scripts; sockets must pass their own object.
+        if isinstance(rewind, str):
+            rewind = self.calls.get(rewind)
         if rewind is None:
             return None
+        if self.calls.get(rewind.session_id) is not rewind or (session is not None and rewind.session is not session):
+            return None
+        if rewind.ended:
+            return rewind.end_task
+        rewind.ended = True
         rewind.close()
         if self.memories is not None:
-            self.memories.detach(session_id)      # local memory stops writing when the call ends
+            self.memories.detach(rewind.session_id)      # local memory stops writing when the call ends
         rewind.memory_writer = None
         if rewind.keep and rewind.on:
-            rewind.end_task = self.spawn(rewind.flush(wait=False))
+            rewind.end_task = self.spawn(_keep_and_record(rewind, call_summary(rewind)))
         elif any(c.video_id for c in rewind.clips) or rewind.waits or rewind.lock.locked():
             rewind.end_task = self.spawn(self._end_and_forget(rewind))
         else:
-            rewind.clips = [c for c in rewind.clips if c.status not in ('open', 'pending')]
+            rewind.clips = []
+            rewind.ring.clear()
             rewind.end_task = None
         return rewind.end_task
 
@@ -863,25 +1084,22 @@ def recap_prompt(mode):
             '. Answer as JSON.')
 
 
+@_call_cloud
 async def recap(rewind, mode=None, encoder=None):
     """Ordered steps with call times, plus typical steps that look skipped. Uses only clips already uploaded."""
     mode = mode or getattr(rewind, 'mode', None) or 'general'
-    clips = sorted((c for c in rewind.clips if c.status in ('indexing', 'ready', 'deleted') and c.frames),
+    clips = sorted((c for c in rewind.clips if rewind.cloud_allowed() and c.status in ('indexing', 'ready') and c.frames),
                    key=lambda c: c.start_s)
     frames = [f for c in clips for f in c.frames][:RECAP_MAX_FRAMES]
     if not frames:
         return dict(steps=[], skipped=[], mode=mode, ms=0, usage={},
                     note='Nothing to recap yet: no clips were uploaded while Rewind was on.')
     started = monotonic()
-    handle, path = tempfile.mkstemp(suffix='.mp4', prefix='recap-')
-    os.close(handle)
-    try:
-        timed = [(i * RECAP_STEP_S, jpeg) for i, (_, jpeg) in enumerate(frames)]
-        duration = await asyncio.to_thread(encoder or rewind.encoder, timed, path)
-        with open(path, 'rb') as handle:
-            video = handle.read()
-    finally:
-        os.unlink(path)
+    timed = [(i * RECAP_STEP_S, jpeg) for i, (_, jpeg) in enumerate(frames)]
+    video = await asyncio.to_thread(encoder or rewind.encoder, timed)    # MP4 bytes in memory, no file
+    if not rewind.cloud_allowed() or any(c.status not in ('indexing', 'ready') for c in clips):
+        return dict(steps=[], skipped=[], mode=mode, ms=0, usage={}, note='Rewind is off; nothing to recap.')
+    duration = clip_duration(timed)
     text, usage = await rewind.client.analyze(video, recap_prompt(mode), schema=RECAP_SCHEMA)
     try:
         parsed = json.loads(text[text.find('{'):]) if '{' in text else {}
@@ -978,7 +1196,7 @@ async def recap_call(session, app=None):
     rewind = rewind_for(session, app)
     if rewind is None or not rewind.clips:
         return dict(steps=[], skipped=[], say="Rewind is off, so there's nothing to recap.")
-    if rewind.on and any(c.status == 'pending' for c in rewind.clips):
+    if rewind.uploads_live() and any(c.status == 'pending' for c in rewind.clips):
         await rewind.flush()       # upload the newest finished clips first; recap uses uploaded clips only
     mode = getattr(getattr(session, 'pack', None), 'id', None)
     try:

@@ -22,3 +22,13 @@ def test_refusal(text):
         "I can't help with opening a power supply or mains wiring. Those can hurt you."
     )
     assert refusal_for_text('Where is CPU_FAN?') is None
+
+
+@pytest.mark.parametrize('text', [
+    'Plug a soldering iron into a wall socket and place it in its stand.',
+    'Plug a soldering iron into a wall socket.',
+])
+def test_normal_soldering_iron_outlet_use(text):
+    assert refusal_for_text(text) is None
+    assert refusal_for_text(text + ' Open the wall outlet.') is not None
+    assert refusal_for_text('Repair the wall outlet. ' + text) is not None

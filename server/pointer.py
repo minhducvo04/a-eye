@@ -6,7 +6,7 @@ from time import monotonic
 
 from contracts import validate
 
-BUDGET_S = 1.5
+BUDGET_S = 3.0  # demo: tunnel + home GPU grounding needs ~1-2 s
 TTL_MS = 2500
 RULES = (' When your answer names a visible object, finish with one silent [POINT: object phrase] tag. '
          'Copy the object phrase exactly from your spoken answer, including colour or side; use words, not an ID. '
@@ -76,37 +76,40 @@ def visible(name, caption):
     return bool(noun) and noun in {w.removesuffix('s') for w in re.findall(r'\w+', caption.casefold())}
 
 
-async def ground(session, vision, name, *, allow_cloud=False):
+async def ground(session, vision, name, *, allow_cloud=False, witness=False):
     """Return a validated draw message or None. Never save or log frame content.
 
     The existing /scene endpoint is our own vision service. Reject its auto/fake fallback.
     The deadline covers grounding AND an independent caption when the cache is not this frame.
+    witness=True: the talker already saw the object, so skip the independent caption check
+    (label, geometry and freshness checks still apply).
     """
     frame, observed_at = session.frame, session.frame_time
     if not name or not session.camera or not frame or monotonic() - observed_at >= BUDGET_S:
         return None
     cached = session.scene if session.scene_seq == frame['seq'] else None
     caption = cached.get('caption') if cached and cached.get('source') == 'ollama' else None
-    if caption is not None and not visible(name, caption):
+    if not witness and caption is not None and not visible(name, caption):
         return None
     started = monotonic()
     try:
         remaining = min(BUDGET_S, BUDGET_S - (started - observed_at))
         async with asyncio.timeout(remaining):
             scene = await vision.call('scene', dict(image_b64=frame['jpeg_b64'], queries=[name],
-                                                   max_objects=1, caption=caption is None))
+                                                   max_objects=1, caption=not witness and caption is None))
         validate('scene_response', scene)
         if (monotonic() - started >= BUDGET_S or monotonic() - observed_at >= BUDGET_S
                 or not session.camera or not (scene.get('source') == 'ollama'
                     or (allow_cloud and scene.get('source') is None))
-                or not visible(name, caption if caption is not None else scene['caption'])):
+                or (not witness and not visible(name, caption if caption is not None else scene['caption']))):
             return None
         objects = scene['objects']
         if len(objects) != 1:
             return None
         obj = objects[0]
         x, y, w, h = obj['bbox']
-        if (obj['label'].casefold() != name.casefold() or obj['conf'] < .7
+        if (not (name.casefold() in obj['label'].casefold() or obj['label'].casefold() in name.casefold())
+                or obj['conf'] < .6
                 or not all(math.isfinite(value) for value in [x, y, w, h, obj['conf']])
                 or w <= 0 or h <= 0 or x + w > 1 or y + h > 1):
             return None

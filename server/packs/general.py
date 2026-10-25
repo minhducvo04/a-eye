@@ -14,5 +14,7 @@ def refuse(text):
     return None
 
 
-PACK = Pack('general', 'General helper', 'You are a general visual helper.' + STYLE,
+PACK = Pack('general', 'General helper',
+            'Help with electronics learning and repair, USB-powered Arduino projects, and tying a tie. '
+            'The coded guides own task steps.' + STYLE,
             ('the object',), False, refuse)

@@ -38,7 +38,11 @@ TASKS = {
         'Move your fingers clear and gently test the door. Show the hinge and the gap as the door closes.',
     ),
 }
-_NEXT = re.compile(r"\b(next|done|continue|ready)\b", re.I)
+# A whole completion/request clause, including "the water is off, next".
+# Narration ("next to") and negation ("not done") are not completion intent.
+NEXT = re.compile(r"(?:^|[,;.!?]\s*)(?:(?:ok(?:ay)?|please)[, ]+)?"
+                  r"(?:next(?: step)?|done|continue|ready|i(?:['’]m| am) done|what(?:['’]s| is) (?:the )?next(?: step)?)"
+                  r"\s*[.!?]*\s*$", re.I)
 HINTS = {
     'sink': ('Show the leak and floor.', 'Locate the shutoff.', TASKS['sink'][2],
              'Check the fitting instructions.', 'Hand-snug only if permitted; otherwise stop for a plumber.',
@@ -49,6 +53,10 @@ HINTS = {
               'Clear your fingers; test the door.'),
 }
 
+# What each step asks the camera to show; the Live guide boxes it when the step is given.
+TARGETS = {'sink': ('tap', 'valve', 'valve', 'supply line', 'connection', 'label', 'towel'),
+           'hinge': ('hinge', 'screw', 'hinge'),
+           'breaker': ('appliance', 'label', 'label')}
 
 @dataclass
 class HomeGuide:
@@ -79,6 +87,9 @@ class HomeGuide:
         self.save()
 
     def reply(self, text, store=None):
+        from server.task_scope import home_enabled, SCOPE_LINE
+        if not home_enabled():
+            return safety.before(text) or refuse(text) or SCOPE_LINE
         if self.growth and self.epoch != self.growth.epoch:
             self.run_id, self.introduced, self.completed = '', False, False
             self.index, self.hints, self.tries = 0, 0, 1
@@ -114,7 +125,7 @@ class HomeGuide:
             self.full_steps = True
         if re.fullmatch(r'(try again|retry)[.!]?', text.strip(), re.I):
             self.tries += 1
-        if not changed and self.introduced and _NEXT.search(text):
+        if not changed and self.introduced and NEXT.search(text.strip()):
             if self.task == 'sink' and self.index >= 2:
                 stop = safety.plumbing_stop(self.water_off_passed)
                 if stop:
@@ -153,7 +164,7 @@ class HomeGuide:
 
 
 PACK = Pack('home', 'Home skills',
-            'Help someone aged 16 or older with a dripping sink supply line or tap, a read-only breaker guide, '
-            'or a loose cabinet hinge. Support independent practice. Use local home facts only with consent; '
-            'a saved valve location is not proof that water is off. The deterministic guide owns spoken steps.' + STYLE,
+            'Legacy home practice, available only when explicitly enabled. Support independent practice. '
+            'Use saved facts only with consent; saved locations are not safety proof. '
+            'The deterministic guide owns spoken steps.' + STYLE,
             ('the shutoff valve', 'the dripping connection', 'the cabinet hinge'), False, refuse)

@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#000000">
   <title>A-eye</title>
-  <link rel="stylesheet" href="agent.css">
+  <link rel="stylesheet" href="agent.css?v=1792942394">
 </head>
 <body>
   <!-- Icons: stand-ins for the iOS app's SF Symbols. -->
@@ -18,7 +18,9 @@
     <symbol id="i-car" viewBox="0 0 24 24"><path d="M4 16v-4l2.2-5h11.6L20 12v4z"/><path d="M4 12h16"/><circle cx="7.5" cy="16.5" r="1.8"/><circle cx="16.5" cy="16.5" r="1.8"/></symbol>
     <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3c3.6 4.6 6 7.8 6 11a6 6 0 0 1-12 0c0-3.2 2.4-6.4 6-11z"/></symbol>
     <symbol id="i-gears" viewBox="0 0 24 24"><circle cx="9" cy="10" r="2.6"/><path d="M9 4.5v2M9 13.5v2M3.5 10h2M12.5 10h2M5.1 6.1l1.4 1.4M11.5 12.5l1.4 1.4M5.1 13.9l1.4-1.4M11.5 7.5l1.4-1.4"/><circle cx="17" cy="17" r="2"/><path d="M17 13.5v1.3M17 19.2v1.3M13.5 17h1.3M19.2 17h1.3"/></symbol>
-    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8M5.5 18.5l1.8-1.8M16.7 7.3l1.8-1.8"/></symbol>
+    <!-- Tabler Icons settings, MIT, Copyright (c) 2020-2026 Paweł Kuna.
+         Source and full license: vendor/tabler-settings-LICENSE.txt -->
+    <symbol id="i-gear" viewBox="0 0 24 24"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></symbol>
     <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
     <symbol id="i-mic-off" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M4 4l16 16"/></symbol>
     <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-2.5h6L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></symbol>
@@ -32,7 +34,6 @@
     <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></symbol>
     <symbol id="i-dots" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/></symbol>
   <symbol id="i-bolt-off" viewBox="0 0 24 24"><path d="M13 3L6 13h5l-1 8 7-10h-5z"/><path d="M3.5 3.5l17 17"/></symbol>
-  <symbol id="i-flip" viewBox="0 0 24 24"><path d="M4 8h3l2-2.5h6L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><path d="M9.2 13.6a3 3 0 0 0 5.3 1.4M14.8 12.4a3 3 0 0 0-5.3-1.4"/><path d="M14.8 10v2.4h-2.4M9.2 16v-2.4h2.4"/></symbol>
   </svg>
 
   <main id="stage" class="stage">
@@ -42,61 +43,31 @@
     <!-- ScanSweep.swift: viewfinder brackets and a sweep while the helper reads the picture. -->
     <div id="scan" class="scan hidden" aria-hidden="true"><div class="scan-band"></div><svg class="scan-brackets"><path id="scan-path"/></svg></div>
 
-    <!-- Camera screen: gear top left, mode ring at the bottom (RootView.cameraChrome + ModeRing.swift). -->
-    <section id="picker" class="ring-screen" aria-label="Choose a mode">
-      <div class="ring-top">
-        <button type="button" class="glass round r44 open-settings" aria-label="Settings"><svg><use href="#i-gear"/></svg></button>
-        <p class="wordmark" aria-hidden="true">A-eye</p>
-      </div>
-      <!-- First run: what A-eye is and the privacy promise, before anything starts. -->
+    <section id="picker" class="start-screen" aria-label="Start a call">
+      <header class="start-header">
+        <p class="start-wordmark">A-eye</p>
+        <button type="button" class="round r44 open-settings" aria-label="Settings"><svg aria-hidden="true"><use href="#i-gear"/></svg></button>
+      </header>
       <div class="intro">
-        <h1 class="intro-title">I look, point, and remember.</h1>
-        <p class="intro-text">Show me what you are working on, or ask where you left something. Choose a helper below to start.</p>
-        <p class="intro-note"><svg aria-hidden="true"><use href="#i-shield"/></svg>Video and pictures are not saved unless you turn on Rewind or the memory aid.</p>
-      </div>
-      <div class="ring-bottom">
-        <div class="ring-label" aria-live="polite">
-          <p id="ring-title" class="ring-title">Memory</p>
-          <button type="button" id="ring-hint" class="ring-hint">tap to start</button>
-        </div>
-        <div id="ring" class="ring">
-          <button type="button" data-mode="general" data-pack="general" aria-label="General"><span class="disc"><svg><use href="#i-sparkles"/></svg></span><span class="ring-name" aria-hidden="true">General</span></button>
-          <button type="button" data-mode="pc_build" data-pack="pc_build" aria-label="PC Build"><span class="disc"><svg><use href="#i-desktop"/></svg></span><span class="ring-name" aria-hidden="true">PC Build</span></button>
-          <button type="button" data-mode="cooking" data-pack="cooking" aria-label="Cooking"><span class="disc"><svg><use href="#i-pan"/></svg></span><span class="ring-name" aria-hidden="true">Cooking</span></button>
-          <button type="button" data-mode="assemble" data-pack="assemble" aria-label="Assembly"><span class="disc"><svg><use href="#i-hammer"/></svg></span><span class="ring-name" aria-hidden="true">Assembly</span></button>
-          <button type="button" data-mode="memory" data-pack="memory" aria-label="Memory"><span class="disc"><svg><use href="#i-pin"/></svg></span><span class="ring-name" aria-hidden="true">Memory</span></button>
-          <button type="button" data-mode="mechanic" aria-label="Mechanic, coming soon"><span class="disc"><svg><use href="#i-car"/></svg></span><span class="ring-name" aria-hidden="true">Mechanic</span></button>
-          <button type="button" data-mode="plumbing" data-pack="home" aria-label="Sink"><span class="disc"><svg><use href="#i-drop"/></svg></span><span class="ring-name" aria-hidden="true">Sink</span></button>
-          <button type="button" data-mode="engineering" aria-label="Engineering, coming soon"><span class="disc"><svg><use href="#i-gears"/></svg></span><span class="ring-name" aria-hidden="true">Engineering</span></button>
-          <button type="button" data-mode="gemini-live" data-pack="gemini-live" aria-label="Gemini Live"><span class="disc"><svg><use href="#i-sparkles"/></svg></span><span class="ring-name" aria-hidden="true">Gemini Live</span></button>
-        </div>
+        <h1 class="intro-title">Call <span class="intro-verb">it</span></h1>
+        <p class="intro-note">A companion call that watches, guides, and remembers as you learn.</p>
+        <button type="button" id="ring-hint" class="call-start">Call</button>
+        <p id="recall-save-status" class="chip glass soft hidden" role="status" aria-live="polite"></p>
       </div>
     </section>
 
     <!-- Call screen (CallScreen.swift): pill on top, caption card, power gate, input, bottom bar. -->
     <section id="call" class="call hidden" aria-label="Call">
-      <div id="headset-panel" class="headset-panel hidden">
-        <h1 id="headset-status" role="status">Waiting for your phone camera</h1>
-        <button type="button" id="headset-sound" class="glass">Enable sound</button>
-        <div id="headset-help">
-          <p>Keep your remembered phone page open. It joins this call automatically.</p>
-          <button type="button" id="headset-pair" class="glass">Pair phone · show QR</button>
-          <p>Vision Pro uses your phone camera, never its own.</p>
-        </div>
-      </div>
       <div class="top">
-        <!-- Flip between the back and selfie camera (shown while the local camera is on). -->
-        <button type="button" id="flip-camera" class="glass round r44 flip-camera hidden" aria-label="Flip camera" title="Flip camera"><svg><use href="#i-flip"/></svg></button>
         <div class="pill glass">
           <span id="presence-dot" class="presence-dot" role="img" aria-label=""></span>
-          <b>A-eye</b><span class="sep" aria-hidden="true">·</span><span id="pack-label">General</span><span class="sep" aria-hidden="true">·</span><span id="elapsed" class="digits">0:00</span>
+          <b>Dad</b><span class="sep" aria-hidden="true">·</span><span id="pack-label">A-Eye</span><span class="sep" aria-hidden="true">·</span><span id="elapsed" class="digits">0:00</span>
         </div>
-        <!-- Status badges under the pill (one style): Private, Rewind on (+ Recap), Expert. -->
+        <!-- Status badges under the pill (one style): Private, Rewind on, Expert. -->
         <div class="badges">
           <span id="private-badge" class="badge private hidden" title="Nothing leaves our own machines">Private</span>
           <span id="rewind-badge" class="rewind-badge hidden">
             <span class="badge rewind" title="Clips of this call are uploaded to TwelveLabs">Rewind on</span>
-            <button type="button" id="rewind-recap" class="badge action" aria-label="Recap this call">Recap</button>
           </span>
           <span id="expert-badge" class="badge expert hidden" title="A stronger model is checking this answer">Expert</span>
         </div>
@@ -114,14 +85,6 @@
           <strong id="guide-test-label" class="hidden">TEST MODE · simulated valve, no repair proof</strong>
           <button id="guide-pass" type="button" disabled>Test pass + next</button>
           <button id="guide-stop" type="button">Test outlet stop</button>
-        </div>
-        <!-- Memory aid: what is remembered today, and the two Forget buttons. -->
-        <div id="memory" class="memory hidden">
-          <button type="button" id="memory-count" class="chip glass soft" aria-expanded="false" aria-controls="memory-actions">Nothing remembered today</button>
-          <div id="memory-actions" class="memory-actions hidden">
-            <button type="button" id="forget-last" class="chip glass">Forget that</button>
-            <button type="button" id="forget-today" class="chip glass warn-text">Forget today</button>
-          </div>
         </div>
         <p id="mic-line" class="pipeline mic-line" aria-live="off">Mic off · Default</p>
       </div>
@@ -141,26 +104,25 @@
           <canvas id="wave" class="wave" aria-hidden="true"></canvas>
           <p id="interim" class="listen-text" aria-hidden="true">LISTENING</p>
         </div>
-        <div id="power-gate" class="power-gate hidden">
-          <button type="button" id="power-off" class="power-btn"><svg aria-hidden="true"><use href="#i-bolt-off"/></svg>Power is off</button>
-          <p>Switch the PSU off and unplug it first.</p>
-        </div>
         <!-- Rewind on with kept clips: starter questions for the call memory. -->
         <div id="rewind-ask" class="rewind-ask hidden">
           <button type="button" id="rewind-chip" class="rewind-ask-chip glass" aria-expanded="false" aria-controls="rewind-prompts"><svg aria-hidden="true"><use href="#i-rewind"/></svg>Rewind</button>
           <div id="rewind-prompts" class="rewind-prompts hidden" role="group" aria-label="Ask Rewind"></div>
         </div>
-        <!-- Controls fold into one button at the right edge 3 s after the call starts (and after each use), so the
-             caption keeps the lower part of the screen. The dots button opens them again. -->
+        <div id="power-gate" class="power-gate hidden">
+          <button type="button" id="power-off" class="power-btn"><svg aria-hidden="true"><use href="#i-bolt-off"/></svg>Power is off</button>
+          <p>Switch the PSU off and unplug it first.</p>
+        </div>
         <div id="controls" class="bottom">
-          <button type="button" id="controls-toggle" class="glass round r56" aria-expanded="true" aria-label="Hide controls" title="Hide controls"><svg><use href="#i-dots"/></svg></button>
           <button type="button" id="start-camera" class="glass round r56" aria-pressed="false" aria-label="Camera on"><svg><use id="camera-icon" href="#i-camera-off"/></svg></button>
-          <button type="button" id="pair-call" class="glass round r56" aria-label="Use my phone" title="Use my phone (camera + mic)"><svg><use href="#i-phone"/></svg></button>
+          <button type="button" id="flip-camera" class="glass round r56" hidden aria-label="Flip camera" title="Flip camera"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-2h6l2 2h3v12H4zM8 13a4 4 0 0 1 7-1l1 1m0-3v3h-3M16 16a4 4 0 0 1-7 1l-1-1m0 3v-3h3"/></svg></button>
           <button type="button" id="mic" class="glass round r56" aria-pressed="false" aria-label="Start microphone"><svg><use id="mic-icon" href="#i-mic-off"/></svg></button>
           <button type="button" id="end-call" class="round r68 end" aria-label="End call"><svg><use href="#i-phone-down"/></svg></button>
-          <button type="button" id="rewind-btn" class="glass round r56" aria-pressed="false" aria-label="Rewind off" title="Rewind: keep clips of this call to ask about later"><svg><use href="#i-rewind"/></svg></button>
-          <button type="button" id="hold" class="glass round r56" aria-pressed="false" aria-label="Hold to talk" title="Hold to talk (Space)"><svg><use href="#i-hand"/></svg></button>
           <button type="button" class="glass round r56 open-settings" aria-label="Settings"><svg><use href="#i-gear"/></svg></button>
+          <div class="memory-controls" role="group" aria-label="Memory controls">
+            <button type="button" id="rewind-btn" class="memory-control glass" aria-pressed="false" aria-label="Rewind off" aria-describedby="rewind-notice"><svg aria-hidden="true"><use href="#i-rewind"/></svg><span>Rewind<small>This call</small></span></button>
+            <label class="memory-control save-call glass"><input id="rewind-keep" type="checkbox" aria-describedby="rewind-notice"><span>Remember this call<small>Save after the call</small></span></label>
+          </div>
         </div>
       </div>
     </section>
@@ -211,6 +173,8 @@
     </div>
     <p id="live-start-notice" class="permission-text hidden" role="alert"></p>
 
+    <!-- Host side of phone pairing (another device is the camera). Kept hidden until an external camera device needs it. -->
+    <div class="pair-host hidden">
     <p class="group-title">Phone camera</p>
     <div class="group">
       <button type="button" id="pair-request" class="row text-btn">Use my phone (camera + mic)</button>
@@ -226,48 +190,38 @@
       <p><b>Phone</b> — Open the pairing link or scan the QR; tap Start and remember this phone.</p>
       <p><b>Laptop</b> — Open A-eye in your browser, start a call and enable camera and mic.</p>
       <p><b>Raspberry Pi device</b> — Configure the A-eye server address using docs/device.md, then press its button.</p>
-      <p><b>Vision Pro (browser or app)</b> — In Safari open agent.html?device=headset and use your remembered phone; in the native app connect to your A-eye server.</p>
+    </div>
+
     </div>
 
     <p class="group-title">Privacy</p>
     <div class="group">
       <label class="row">Private mode <input id="private-toggle" type="checkbox" role="switch" aria-describedby="private-notice"></label>
-      <label class="row"><span>Smarter answers (Claude)<span class="leak">Sends your question and a written scene note, sometimes one small close-up</span></span><input id="cloud-claude" type="checkbox" role="switch"></label>
-      <label class="row"><span>Gemini Live (Google)<span class="leak">In Live and General, sends microphone audio and downscaled camera video to Google</span></span><input id="cloud-google" type="checkbox" role="switch"></label>
-      <label class="row"><span>Natural voice (Cartesia)<span class="leak">Sends only A-eye's reply sentence</span></span><input id="cloud-cartesia" type="checkbox" role="switch"></label>
-      <label class="row"><span>Video memory search (TwelveLabs)<span class="leak">Uploads short silent clips; deleted at call end</span></span><input id="cloud-twelvelabs" type="checkbox" role="switch"></label>
+      <label class="row">Smarter answers (Claude)<input id="cloud-claude" type="checkbox" role="switch" aria-describedby="privacy-notes"></label>
+      <label class="row">Gemini Live voice<input id="cloud-google" type="checkbox" role="switch" aria-describedby="privacy-notes"></label>
     </div>
-    <p id="private-notice" class="group-foot">Private mode turns all three off: the local brain answers, Kokoro speaks, speech is recognized on our GPU box, and Rewind stays off.</p>
-    <p class="group-title">What leaves your home</p>
-    <div class="group"><ul id="leaves-list" class="leaves" aria-live="polite"></ul></div>
 
-    <p class="group-title">Rewind</p>
-    <div class="group">
-      <label class="row">Rewind <input id="rewind-toggle" type="checkbox" role="switch" aria-describedby="rewind-notice"></label>
-      <label class="row">Keep clips after the call <input id="rewind-keep" type="checkbox" role="switch"></label>
-      <button type="button" id="rewind-forget" class="row text-btn">Forget this call's clips</button>
-    </div>
-    <p id="rewind-notice" class="group-foot">When on, short video clips of this call are uploaded to TwelveLabs so you can ask about them later. They are deleted from TwelveLabs when the call ends unless you keep them.</p>
+    <p class="group-title">Dad persona</p>
+    <div class="group"><label class="row">Persona <select id="persona-pick" class="voice-pick" aria-label="Dad persona"><option value="chill-dad">Chill dad</option></select></label></div>
 
     <p class="group-title">Voice</p>
     <div class="group">
-      <label class="row">Voice <select id="voice-pick" class="voice-pick" aria-label="Voice"></select></label>
+      <label class="row">Kokoro voice <select id="voice-pick" class="voice-pick" aria-label="Voice"></select></label>
       <div class="row"><button type="button" id="test-voice" class="text-btn">Test voice</button><button type="button" id="mute" class="text-btn" aria-pressed="false">Mute</button></div>
+      <label class="row">Hold to talk<input id="hold-toggle" type="checkbox" role="switch" aria-describedby="hold-note"></label>
       <label class="row">Volume <input id="volume" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume"></label>
     </div>
 
     <p class="group-title">Photo</p>
     <div class="group">
-      <label class="row file-btn">Upload a photo instead of the camera<input id="upload" type="file" accept="image/*"></label>
+      <label class="row file-btn">Upload photo<input id="upload" type="file" accept="image/*"></label>
     </div>
 
-    <p class="group-title">Memory aid</p>
+    <p class="group-title">Account</p>
     <div class="group">
-      <a id="caregiver-link" class="row text-btn link-row" href="caregiver.html" target="_blank" rel="noopener">Caregiver settings<span aria-hidden="true">›</span></a>
       <a class="row text-btn link-row" href="signin.html">Sign in or choose Guest<span aria-hidden="true">›</span></a>
       <a class="row text-btn link-row" href="my-data.html" target="_blank" rel="noopener">My data<span aria-hidden="true">›</span></a>
     </div>
-    <p class="group-foot">Things and their homes, rooms, and how long to keep. Set it up together.</p>
 
     <details id="settings-advanced" class="advanced">
       <summary class="advanced-summary">Advanced</summary>
@@ -290,6 +244,7 @@
       <div class="group">
         <p id="conn-status" class="row">Not in a call</p>
         <p id="server-host" class="row mono"></p>
+        <p class="row"><span id="proof-context" class="chip glass soft" aria-live="polite">used: none</span></p>
       </div>
       <p class="group-foot">The web page always talks to the server that served it.</p>
       <p class="group-title">Transcript</p>
@@ -298,9 +253,15 @@
         <ol id="transcript-list" class="transcript-list hidden"></ol>
       </div>
     </details>
-    <p class="group-foot sheet-foot">Camera frames go to this server and are not saved unless Rewind or the memory aid is on. Outside Private mode, the cloud model may see a small crop of the picture.</p>
+    <footer id="privacy-notes" class="settings-notes">
+      <p id="private-notice">Private mode keeps processing local and turns Rewind off.</p>
+      <p id="hold-note">Hold Space or the microphone to talk. Turn off for hands-free voice.</p>
+      <p>Calls use Gemini Live, with Claude as fallback. Persona or privacy changes end the current call.</p>
+      <p id="rewind-notice">Rewind uploads silent clips to TwelveLabs. Clips are deleted at call end unless “Remember this call” is on.</p>
+      <details><summary>What is shared</summary><ul id="leaves-list" class="leaves" aria-live="polite"></ul></details>
+    </footer>
   </section>
 
-  <script type="module" src="agent.js"></script>
+  <script type="module" src="agent.js?v=1792942394"></script>
 </body>
 </html>

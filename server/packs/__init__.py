@@ -29,6 +29,8 @@ def with_safety(pack):
     own_refuse, own_guard = pack.refuse, pack.guard
 
     def refuse(text):
+        # Home tasks are simply not started (task_scope.task_for); a scope redirect is not a safety stop,
+        # and as a stop it latched on scene captions and muted Live for the whole call.
         return safety.before(text) or own_refuse(text) or vent_reply(text)
 
     def guard(text, question='', first=False):
@@ -41,6 +43,9 @@ def with_safety(pack):
 
 
 def get(pack_id):
-    from . import general, pc_build, cooking, assemble, memory, home
+    from server.task_scope import home_enabled
+    from . import general, pc_build, cooking, assemble, memory, home, electronics
+    if pack_id == 'home' and not home_enabled():
+        pack_id = 'general'
     return with_safety({p.id: p for p in (general.PACK, pc_build.PACK, cooking.PACK, assemble.PACK,
-                                          memory.PACK, home.PACK)}[pack_id])
+                                          memory.PACK, home.PACK, electronics.PACK)}[pack_id])

@@ -18,7 +18,7 @@ private nonisolated final class SynthesizerDelegateProxy: NSObject, AVSpeechSynt
     }
 }
 
-/// Speaks each `say` line with the system voice (the app sends `tts:"browser"`). A new line cuts off the old one.
+/// Native fallback speech and echo tracking for both native and server TTS.
 @MainActor
 final class SpeechOut: NSObject {
     /// Set while a line is being spoken; nil otherwise.
@@ -62,6 +62,13 @@ final class SpeechOut: NSObject {
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
+    }
+
+    func trackServerSpeech(text: String, utteranceId: String) {
+        stop()
+        speakingUtteranceId = utteranceId
+        speakingText = text
+        startedAt = Date()
     }
 
     /// The text the mic may be hearing as an echo: the line being spoken, or the one that ended within

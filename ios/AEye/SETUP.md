@@ -63,7 +63,7 @@ The sources were written without a compiler. Likely spots:
 - **PC Build is centred** in the ring at launch, with "PC Build" and "tap to start" above it.
 - Swiping the ring snaps one item to the centre each time, with a haptic tick. The centre item has the white ring
   and is the largest; neighbours shrink and fade.
-- Mechanic, Plumbing and Engineering say "coming soon". Tapping one shakes it and gives a warning haptic.
+- Mechanic says "coming soon". Sink and Engineering start their deterministic guides.
 - Settings > AEye > Camera off, relaunch: the "Camera access is off" notice with an Open Settings button appears,
   not a black screen.
 
