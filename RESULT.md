@@ -566,3 +566,30 @@ Proof: `/private/tmp/planner-live9-before.log`,
 Limits: no .env read, network access, real provider call, push or deployment.
 SDK accepts the request offline; live provider acceptance remains unverified.
 Details: [round 9 report](docs/results/planner-live.md).
+
+
+## fix-false-stop — 2026-10-25
+
+Reproduced live_power false positives in streamed soldering speech and a Live
+context summary, plus a hot-tip warning false stop and a latched next voice turn.
+The supplied reply prefix alone passes; the original triggering packet remains
+unconfirmed. Narrowed electrical-state matching, retained real hazard stops,
+and let new user transcripts recover from rejected model speech while stale
+provider output remains blocked.
+
+Files changed: `server/safety.py`, `server/gemini_live.py`,
+`server/test_false_stop.py`, `docs/results/fix-false-stop.md`, `RESULT.md`.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_false_stop.py server/test_recall_review.py server/test_home_safety.py eval/swap/test_checker_regressions.py --tb=short` - PASS
+(103 passed in 1.62s).
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(1291 passed, 16 failed, 2 warnings in 100.95s; summary and failure traces read).
+Fifteen denied socket binds; one downstream missing state after Live startup
+PermissionError. Matches the existing socket-related failures. Local log:
+`.pytest-false-stop.log`. No production changes after this run.
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_false_stop.py --tb=short` - PASS
+(15 passed; final regression matrix adds recovery without a provider boundary).
+Test: `git diff --check` - PASS.
+
+Limits: no `.env` read, network access, provider call, push, merge, deployment,
+or physical-device proof. Full report: [fix-false-stop](docs/results/fix-false-stop.md).

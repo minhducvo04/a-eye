@@ -217,6 +217,7 @@ class LiveBridge:
         self.blocked = False
         self.safety_stopped = False
         self.safety_line = None
+        self.safety_new_input = False
         self.scope_redirected = False
 
     def _reset_output(self):
@@ -528,6 +529,8 @@ class LiveBridge:
                 # A new mic utterance, unlike model output/turnComplete, ends
                 # the previous planner transcript's opportunity to grow.
                 self.reset_guide_input()
+                if self.safety_stopped:
+                    self.safety_new_input = True
             # A mic chunk after VAD ends is not permission to release a coded
             # hold or safety stop. Only the owner may finish/cancel its work.
             held = self.scope_redirected or self.memory.held or any(
@@ -614,11 +617,14 @@ class LiveBridge:
         # caption from fixed_say also cancels playback on non-phone clients.
         await self.send(state('listening'))
 
-    async def stop(self, line):
+    async def stop(self, line, *, output=False):
         if self.safety_stopped:
             return
         self.safety_stopped = True
         self.safety_line = line
+        # Output has ended the user's question. Only a subsequent transcript
+        # (not late output, PCM, or interruption acknowledgements) may reopen it.
+        self.safety_new_input = output
         self.memory.yield_turn()
         self.cancel_tools()
         if self.prefetch.task:
@@ -645,9 +651,10 @@ class LiveBridge:
             return
         # Recheck the question before releasing anything, including audio-only
         # responses in packs with a power-off gate.
-        line = self.stop_line(self.question) or self.stop_line(self.output, True)
+        input_line = self.stop_line(self.question)
+        line = input_line or self.stop_line(self.output, True)
         if line:
-            await self.stop(line)
+            await self.stop(line, output=not input_line)
             return
         size = int(self.rate * AUDIO_CHUNK_SECONDS) * 2
         if not final and len(self.audio_buffer) < size:
@@ -797,6 +804,10 @@ class LiveBridge:
         for field, output in (('inputTranscription', False), ('outputTranscription', True)):
             text = content.get(field, {}).get('text', '')
             if text:
+                if not output and self.safety_stopped and self.safety_new_input:
+                    self._reset_reply()
+                    self.input_turn_open = False
+                    self.reset_guide_input()
                 if not output and not self.input_turn_open:
                     if self.scope_redirected and not self.safety_stopped:
                         self._reset_reply()
@@ -815,7 +826,7 @@ class LiveBridge:
                     raise ValueError('Live transcript too long')
                 line = self.stop_line(getattr(self, attr), output)
                 if line:
-                    await self.stop(line)
+                    await self.stop(line, output=output)
                 scoped = not output and not line and await self.redirect_scope(self.question)
                 if (not output and not line and not scoped and self.guide and not self.safety_stopped
                         and self.guide.claims(self.question)):
@@ -887,7 +898,7 @@ class LiveBridge:
             if not self.blocked and self.output.strip():
                 line = self.stop_line(self.output, True)
                 if line:
-                    await self.stop(line)
+                    await self.stop(line, output=True)
                 else:
                     self.session.recent_memory.note_transcript(self.output.strip(), 'helper')
             if not self.blocked:
