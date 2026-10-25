@@ -366,7 +366,10 @@ def test_point_uses_configured_backend_and_abstains(monkeypatch, source, cloud, 
         async def emit(msg):
             emitted.append(msg)
         bridge = LiveBridge(session, vision, None, emit, emit)
-        await bridge.tool(dict(name='point_at', args={'label': LABEL}))
+        # point_at is no longer offered to Live; the server boxes what Live names.
+        assert await bridge.tool(dict(name='point_at', args={'label': LABEL})) == 'Tool unavailable.'
+        session.scene = dict(caption='', objects=[dict(label=LABEL)])
+        await bridge._auto_point(f'Use the {LABEL} there.')
         assert bool(emitted) == expected
         if expected:
             assert [o['kind'] for o in emitted[0]['ops']] == ['clear', 'box', 'arrow']
@@ -388,7 +391,7 @@ def test_tool_hazard_and_pc_power_gate():
         async def fixed(line):
             lines.append(line)
         bridge = LiveBridge(Session('s', pack=packs.get('pc_build')), None, None, emit, fixed)
-        await bridge.tool(dict(name='point_at', args={'label': 'CPU fan'}))
+        await bridge.tool(dict(name='find_item', args={'name': 'CPU fan'}))
         assert lines == [POWER_LINE]
         bridge = LiveBridge(Session('s'), None, None, emit, fixed)
         await bridge.tool(dict(name='tag_item', args={'name': 'gas line', 'place': 'wall'}))

@@ -62,6 +62,8 @@ GATES = (
     _stop('unsafe_ladder', _pair(_LADDER, _UNSAFE),
           "Stop and don't reach or climb higher. Get help to come down safely and use stable access."),
     _stop('water_on', _re(_WATER_ON), WATER_OFF_LINE),
+    _stop('hot_tool', _re(r"\b(touch\w*|grab\w*|hold\w*|pick\w* up)\b.{0,40}\b(hot|soldering)\b.{0,30}\b(tip|iron|metal)\b"),
+          "Do not touch the hot soldering iron tip; leave it in its stand."),
     Gate('hot_oil',
          _re(r"\b(oil|grease|fat|pan)\b.{0,40}\b(smok\w*|on fire|fire|flames?|flaming|burning)\b|"
              r"\b(smok\w*|fire|flames?|flaming)\b.{0,30}\b(oil|grease|fat|pan)\b|\bgrease fire\b"),

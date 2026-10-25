@@ -76,30 +76,32 @@ def visible(name, caption):
     return bool(noun) and noun in {w.removesuffix('s') for w in re.findall(r'\w+', caption.casefold())}
 
 
-async def ground(session, vision, name, *, allow_cloud=False):
+async def ground(session, vision, name, *, allow_cloud=False, witness=False):
     """Return a validated draw message or None. Never save or log frame content.
 
     The existing /scene endpoint is our own vision service. Reject its auto/fake fallback.
     The deadline covers grounding AND an independent caption when the cache is not this frame.
+    witness=True: the talker already saw the object, so skip the independent caption check
+    (label, geometry and freshness checks still apply).
     """
     frame, observed_at = session.frame, session.frame_time
     if not name or not session.camera or not frame or monotonic() - observed_at >= BUDGET_S:
         return None
     cached = session.scene if session.scene_seq == frame['seq'] else None
     caption = cached.get('caption') if cached and cached.get('source') == 'ollama' else None
-    if caption is not None and not visible(name, caption):
+    if not witness and caption is not None and not visible(name, caption):
         return None
     started = monotonic()
     try:
         remaining = min(BUDGET_S, BUDGET_S - (started - observed_at))
         async with asyncio.timeout(remaining):
             scene = await vision.call('scene', dict(image_b64=frame['jpeg_b64'], queries=[name],
-                                                   max_objects=1, caption=caption is None))
+                                                   max_objects=1, caption=not witness and caption is None))
         validate('scene_response', scene)
         if (monotonic() - started >= BUDGET_S or monotonic() - observed_at >= BUDGET_S
                 or not session.camera or not (scene.get('source') == 'ollama'
                     or (allow_cloud and scene.get('source') is None))
-                or not visible(name, caption if caption is not None else scene['caption'])):
+                or (not witness and not visible(name, caption if caption is not None else scene['caption']))):
             return None
         objects = scene['objects']
         if len(objects) != 1:

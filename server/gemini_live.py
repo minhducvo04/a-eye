@@ -6,6 +6,7 @@ The documented preference must also appear in the key's runtime model catalogue.
 """
 import asyncio
 import base64
+import re
 import json
 import logging
 import os
@@ -107,7 +108,41 @@ def declarations(rewind_on):
         # Tool arguments are still validated strictly in code before any tool runs.
         type='object', properties={p: dict(type='string') for p in fields},
         required=list(fields)))
-        for name, fields in TOOL_ARGS.items() if name != 'rewind_search' or rewind_on]
+        for name, fields in TOOL_ARGS.items()
+        # point_at is not offered: a blocking tool reply made Live speak every pointed answer twice.
+        # The server boxes the object Live names from its transcript instead (_auto_point).
+        if name != 'point_at' and (name != 'rewind_search' or rewind_on)]
+
+
+_GENERIC = set("""the a an this that these those it its object objects thing things item items something image photo
+picture frame camera scene view background foreground table desk surface wall floor room person people hand hands
+someone left right top bottom middle center front back side here there some one two very with and from into onto
+your you our their his her what which where when how just like looks appears shows showing visible""".split())
+
+_ADJECTIVES = set('''red orange yellow green blue purple pink black white gray grey brown silver gold clear
+big small large little long short tall round square tiny open closed new old metal plastic wooden'''.split())
+
+
+def spoken_target(text, scene):
+    """The visible thing Live just named: a scene label it said, else a caption noun it said."""
+    spoken = ' ' + ' '.join(re.findall(r'\w+', text.casefold())) + ' '
+    labels = [o.get('label', '') for o in scene.get('objects', []) if o.get('label')]
+    for label in sorted(labels, key=len, reverse=True):
+        words = ' '.join(re.findall(r'\w+', label.casefold()))
+        if words and words not in _GENERIC and f' {words} ' in spoken:
+            return label
+    caption_words = [w for w in re.findall(r'[a-z]+', (scene.get('caption') or '').casefold())
+                     if len(w) > 2 and w not in _GENERIC]
+    said = lambda w: f' {w} ' in spoken or f' {w}s ' in spoken
+    for i, word in enumerate(caption_words):
+        if word in _ADJECTIVES:
+            continue
+        form = next((f for f in (word, word.removesuffix('s')) if said(f)), None)
+        if form:
+            before = caption_words[i - 1] if i else ''
+            # Keep a spoken colour or size ("the red wire"): grounding uses it to pick the right one.
+            return f'{before} {form}' if before in _ADJECTIVES and said(before) else form
+    return None
 
 
 def pcm16(data, rate):
@@ -169,12 +204,10 @@ class LiveBridge:
         # Live does not always call point_at: box the first object it named that the scene already lists.
         try:
             scene = getattr(self.session, 'scene', None) or {}
-            labels = [o.get('label', '') for o in scene.get('objects', []) if o.get('label')]
-            spoken = text.casefold()
-            label = next((l for l in sorted(labels, key=len, reverse=True) if l.casefold() in spoken), None)
+            label = spoken_target(text, scene)
             if not label:
                 return
-            draw = await pointer.ground(self.session, self.vision, label,
+            draw = await pointer.ground(self.session, self.vision, label, witness=True,
                                         allow_cloud=cloud_vision.enabled() and privacy.google_allowed())
             if draw and privacy.google_allowed() and not self.closed:
                 await self.send(draw)
@@ -217,10 +250,8 @@ class LiveBridge:
                                 logger=WIRE_LOGGER)
         try:
             setup = live_setup(self.model, self.session.pack.system_prompt + personas.style_block(self.session.persona) +
-                    ' Whenever your answer names, recommends, compares or chooses a specific object that is visible in the '
-                    'camera (for example "use the red wire", "this valve", "the left one"), call point_at with a short '
-                    'label for that object while you speak, so a box and arrow appear on it. When you choose between '
-                    'options, point at the one you chose. Do not point at things you cannot see. '
+                    ' When you talk about a specific visible object, name it plainly with a short noun (for example '
+                    '"the red wire", "the valve", "the mug"); the app draws a box on what you name. '
                     'Use local memory tools only when requested. '
                     'Use recent_memory for questions about previous steps or observations, preserving the full time scope. '
                     'Never claim a memory is saved or deleted before a tool confirms it. '
@@ -506,6 +537,11 @@ class LiveBridge:
                 line = self.stop_line(getattr(self, attr), output)
                 if line and not self.blocked:
                     await self.stop(line)
+                if output and not self.blocked and not self.pointed and spoken_target(
+                        self.output, getattr(self.session, 'scene', None) or {}):
+                    # Box the object as soon as Live names it, not after the reply ends.
+                    self.pointed = True
+                    asyncio.create_task(self._auto_point(self.output))
                 if output and not self.blocked:
                     await self.send(message('reply_delta', agent='helper', turn_id=self.turn_id, text=text))
                     if self.speaking and text.strip():
