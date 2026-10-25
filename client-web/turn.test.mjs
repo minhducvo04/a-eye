@@ -79,7 +79,7 @@ test('early final uses latest interim at 700ms and never sends a late correction
   assert.equal(sent.length, 2);
 });
 
-for (const [home, live, policy] of [[false, false, "engineering"], [false], [true], [false, true], [false, true, "general"], [false, true, "optout"], [false, true, "private"], [false, true, "single-call"], [false, true, "old-memory-link"], [false, true, "recall-off"]]) test(live ? `${policy || 'live'}: Live defaults to Google and uses existing hello and caption messages` : home ? 'sink selection and presenter controls use real client contracts' : 'call page toggles camera, keeps voice-only hello, retries text, reconnects, and renders streamed replies', async () => {
+for (const [home, live, policy] of [[false, true, "shared-demo"], [false, false, "engineering"], [false], [true], [false, true], [false, true, "general"], [false, true, "optout"], [false, true, "private"], [false, true, "single-call"], [false, true, "old-memory-link"], [false, true, "recall-off"]]) test(live ? `${policy || 'live'}: Live defaults to Google and uses existing hello and caption messages` : home ? 'sink selection and presenter controls use real client contracts' : 'call page toggles camera, keeps voice-only hello, retries text, reconnects, and renders streamed replies', async () => {
   const saved = new Map();
   const put = (key, value) => { saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { value, configurable: true, writable: true }); };
   const nodes = new Map(), intervals = new Map(), timeouts = new Map();
@@ -98,7 +98,7 @@ for (const [home, live, policy] of [[false, false, "engineering"], [false], [tru
       recallRequests.push(path);
       return { ok: true, json: async () => ({ save_status: recallSaveStatus }) };
     }
-    if (path === '/api/features') return { ok: true, json: async () => ({ extra_modes: policy === 'engineering', shopping: false }) };
+    if (path === '/api/features') return { ok: true, json: async () => ({ extra_modes: policy === 'engineering', shopping: false, demo_shared_memory: policy === 'shared-demo' || policy === 'private' }) };
     if (path === '/api/personas') return { ok: true, json: async () => ({ default: 'chill-dad', personas: [{ id: 'chill-dad', display_name: 'Chill dad' }, { id: 'funny-dad', display_name: 'Funny dad' }] }) };
     if (path.startsWith('/api/dad-demo?')) {
       presenterRequests.push(options);
@@ -145,7 +145,7 @@ for (const [home, live, policy] of [[false, false, "engineering"], [false], [tru
     close() { this.readyState = 3; this.handlers.close(); }
   }
   const settle = async () => { for (let i = 0; i < 8; i++) await new Promise(resolve => setImmediate(resolve)); };
-  const currentPage = policy === 'single-call' || policy === 'old-memory-link' || policy === 'recall-off';
+  const currentPage = policy === 'shared-demo' || policy === 'single-call' || policy === 'old-memory-link' || policy === 'recall-off';
   const htmlIds = new Set([...readFileSync(new URL('./agent.html', import.meta.url), 'utf8').matchAll(/id="([^"]+)"/g)].map(m => m[1]));
   put('document', { getElementById: id => currentPage && !htmlIds.has(id) ? null : node(id), createElement: () => new Element(), createTextNode: text => ({ textContent: text }), hidden: false });
   put('window', { isSecureContext: true, innerWidth: 390, innerHeight: 844, devicePixelRatio: 1, matchMedia: () => ({ matches: true }), addEventListener() {}, requestAnimationFrame() { return 1; }, setInterval(fn, ms) { intervals.set(++timerId, { fn, ms }); return timerId; }, clearInterval(id) { intervals.delete(id); }, setTimeout(fn, ms) { timeouts.set(++timerId, { fn, ms }); return timerId; }, clearTimeout(id) { timeouts.delete(id); } });
@@ -183,6 +183,27 @@ for (const [home, live, policy] of [[false, false, "engineering"], [false], [tru
     if (currentPage) assert.equal(socket.messages[0].pack, 'general', 'the one Call button starts General, including old mode links');
     assert.equal(socket.messages[0].persona, 'chill-dad');
     assert.equal(socket.messages[0].cloud?.cartesia ?? false, false, 'web calls never enable the retired voice provider');
+    assert.equal(Boolean(socket.messages[0].rewind), policy === 'shared-demo');
+    assert.equal(Boolean(socket.messages[0].cloud?.twelvelabs), policy === 'shared-demo');
+    if (policy === 'shared-demo') {
+      assert.equal(node('rewind-badge').classList.contains('hidden'), false);
+      assert.equal(node('rewind-btn').attrs['aria-pressed'], 'true');
+      assert.equal(node('rewind-keep').checked, true);
+      node('rewind-btn').handlers.click();
+      assert.equal(socket.messages.at(-1).on, false);
+      assert.equal(node('rewind-badge').classList.contains('hidden'), true);
+      node('end-call').handlers.click();
+      node('ring-hint').handlers.click();
+      await settle();
+      const second = Socket.all.at(-1);
+      second.open();
+      assert.equal(second.messages[0].rewind, true, 'each new demo call defaults on again');
+      assert.equal(second.messages[0].cloud.twelvelabs, true);
+      assert.equal(node('rewind-badge').classList.contains('hidden'), false);
+      node('end-call').handlers.click();
+      await settle();
+      return;
+    }
     if (policy === 'private' || policy === 'optout') {
       assert.equal(new URL(socket.url).searchParams.get('mode'), null);
       assert.equal(socket.messages[0].pack, 'general');

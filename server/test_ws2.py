@@ -22,6 +22,15 @@ def app(vision=None, voice=None):
     return result
 
 
+@pytest.mark.parametrize('shared,local,expected', [('1', '0', True), ('0', '0', False),
+                                                 ('1', '1', False)])
+def test_features_shared_demo_memory(monkeypatch, shared, local, expected):
+    monkeypatch.setenv('A_EYE_DEMO_SHARED_MEMORY', shared)
+    monkeypatch.setenv('LOCAL_ONLY', local)
+    with TestClient(app()) as client:
+        assert client.get('/api/features').json()['demo_shared_memory'] is expected
+
+
 def send(ws, kind, **fields):
     ws.send_json(dict(v=2, type=kind, session_id='s', **fields))
 
