@@ -950,7 +950,7 @@ def clip_frames(rewind, hit):
 
 
 @_call_cloud
-async def hit_media(rewind, hit):
+async def hit_media(rewind, hit, cutter=None):
     """Client-only playback fields. Saved-video retrieval is optional and bounded to two seconds."""
     fields = {}
     if hit.get('frame'):
@@ -960,10 +960,14 @@ async def hit_media(rewind, hit):
             pass
     if not hit.get('past_call'):
         fields.update(await asyncio.to_thread(clip_frames, rewind, hit))
+        clip_id = await asyncio.to_thread(store_clip, rewind, hit, lambda *_: call_clip(rewind, hit))
+        if clip_id:
+            fields['clip_mp4'] = f'/api/rewind/clip/{clip_id}.mp4'
         return fields
     retrieve = getattr(rewind.client, 'retrieve_video', None)
     if retrieve is None or not rewind.cloud_allowed():
         return fields
+    cutter = cutter or cut_clip
     try:
         try:
             video = await asyncio.wait_for(retrieve(rewind.index_id, hit['video_id']), timeout=2)
@@ -975,9 +979,62 @@ async def hit_media(rewind, hit):
         if isinstance(url, str) and url.startswith('https://') and rewind.cloud_allowed():
             at = max(0, hit.get('video_t_s', 0))
             fields.update(clip_url=url, start_s=max(0, at - 3), end_s=at + 3)
+            clip_id = await asyncio.to_thread(store_clip, url, fields['start_s'], cutter)
+            if clip_id:
+                fields['clip_mp4'] = f'/api/rewind/clip/{clip_id}.mp4'
     except Exception:
         pass  # Missing HLS, timeout or provider failure must never hide the existing hit.
     return fields
+
+
+# Found moments cut to a small MP4 by the server so the card plays a plain <video src>, no HLS in the browser.
+CLIP_LIMIT = 20
+_clips = {}
+
+
+def cut_clip(url, start_s, seconds=6):
+    """ffmpeg cuts `seconds` of the HLS stream from start_s into MP4 bytes; raises on failure or timeout."""
+    import tempfile
+    fd, path = tempfile.mkstemp(suffix='.mp4')
+    os.close(fd)
+    try:
+        subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-ss', f'{start_s:.2f}', '-i', url, '-t', str(seconds),
+                        '-c:v', 'libx264', '-preset', 'ultrafast', '-an', '-movflags', '+faststart', path],
+                       check=True, capture_output=True, timeout=6)
+        with open(path, 'rb') as handle:
+            return handle.read()
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def call_clip(rewind, hit):
+    """This call's frames around the hit, encoded in memory with the Rewind's encoder (no file persists)."""
+    at = hit['t_s']
+    timed = sorted({t: jpeg for clip in rewind.clips for t, jpeg in clip.frames
+                    if at - 3 <= t <= at + 3}.items())
+    return rewind.encoder(timed) if timed else None
+
+
+def store_clip(url, start_s, cutter=cut_clip):
+    """Cut and keep the clip in memory under a random id (newest wins, CLIP_LIMIT entries); None on failure."""
+    try:
+        data = cutter(url, start_s)
+    except Exception:
+        return None
+    if not data:
+        return None
+    clip_id = os.urandom(8).hex()
+    _clips[clip_id] = data
+    while len(_clips) > CLIP_LIMIT:
+        del _clips[next(iter(_clips))]
+    return clip_id
+
+
+def clip_bytes(clip_id):
+    return _clips.get(clip_id)
 
 
 _ITEM = re.compile(r"\b(where (are|is|did i (put|leave)|have i (put|left)) (my|the)|where'?s my|have you seen (my|the))\b",
@@ -1023,7 +1080,7 @@ def hit_message(result, turn_id=None):
                   if result.get('box') else [])
     if turn_id:
         fields['turn_id'] = turn_id
-    for key in ('frame_b64', 'frames_b64', 'fps', 'clip_url'):
+    for key in ('frame_b64', 'frames_b64', 'fps', 'clip_url', 'clip_mp4'):
         if result.get(key):
             fields[key] = result[key]
     return message('rewind_hit', **fields)

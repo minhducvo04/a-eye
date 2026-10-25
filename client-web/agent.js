@@ -1,18 +1,18 @@
-import { wireFlipCamera } from "./flip-camera.js?v=1792947000";
-import { liveSettings } from './gemini-live.js?v=1792947000';
-import { triggerClient } from './trigger.js?v=1792947000';
-import { setupFamily } from './family-note.js?v=1792947000';
-import { createValveCard } from './step-check.js?v=1792947000';
-import { bootPairCamera, phoneMicRoute, setupPairCall } from './pair.js?v=1792947000';
-import { callOwner, ownerHeaders, ownerQuery, resetCallOwner } from './call-owner.js?v=1792947000';
+import { wireFlipCamera } from "./flip-camera.js?v=1792947100";
+import { liveSettings } from './gemini-live.js?v=1792947100';
+import { triggerClient } from './trigger.js?v=1792947100';
+import { setupFamily } from './family-note.js?v=1792947100';
+import { createValveCard } from './step-check.js?v=1792947100';
+import { bootPairCamera, phoneMicRoute, setupPairCall } from './pair.js?v=1792947100';
+import { callOwner, ownerHeaders, ownerQuery, resetCallOwner } from './call-owner.js?v=1792947100';
 // Agent call page. Speaks the v2 WebSocket contract on /ws2.
 // Frames exist only as the JPEG about to be sent. Nothing is written to storage.
 
-import { paintDraw, applyDraw, pruneDraw, viewTransform, visibleOps, targetLabels, splitByTargets } from "./draw.js?v=1792947000";
-import { writeFrame } from "./live.js?v=1792947000";
-import { agoLine, countAt, countLine, createMemoryApi, pastCallLine, placeFor, renderSplit } from "./memory.js?v=1792947000";
-import { forgetRewind, initialRewind, nextRewind, NOTICE as REWIND_NOTICE, PROMPTS as REWIND_PROMPTS, showsRewindChip } from "./rewind.js?v=1792947000";
-import { sharpCanvasSize } from "./overlay.js?v=1792947000";
+import { paintDraw, applyDraw, pruneDraw, viewTransform, visibleOps, targetLabels, splitByTargets } from "./draw.js?v=1792947100";
+import { writeFrame } from "./live.js?v=1792947100";
+import { agoLine, countAt, countLine, createMemoryApi, pastCallLine, placeFor, renderSplit } from "./memory.js?v=1792947100";
+import { forgetRewind, initialRewind, nextRewind, NOTICE as REWIND_NOTICE, PROMPTS as REWIND_PROMPTS, showsRewindChip } from "./rewind.js?v=1792947100";
+import { sharpCanvasSize } from "./overlay.js?v=1792947100";
 import {
   AUDIO_FALLBACK_MS,
   ERROR_HTTPS,
@@ -20,7 +20,7 @@ import {
   createCallUi,
   fallbackDecision,
   replyLines,
-} from "./ui.js?v=1792947000";
+} from "./ui.js?v=1792947100";
 import {
   bargeSpeech,
   dbfs,
@@ -39,12 +39,12 @@ import {
   noteTrackerMs,
   pushSay,
   shouldTrack,
-} from "./realtime.js?v=1792947000";
-import { applyAnchors, createTracker, toGray } from "./track.js?v=1792947000";
+} from "./realtime.js?v=1792947100";
+import { applyAnchors, createTracker, toGray } from "./track.js?v=1792947100";
 
-import { nextTurnState, statusLine } from "./turn.js?v=1792947000";
-import { appendingLevel, LEVEL_HISTORY_COUNT, listeningLine, normalizedLevel, poolLevel, smoothedLevel, waveBars } from "./listen.js?v=1792947000";
-import { capitalized, visibleWait, waitAfterAgentState, waitAfterTurn, waitCopy, waitPercent, waitProgress } from "./wait.js?v=1792947000";
+import { nextTurnState, statusLine } from "./turn.js?v=1792947100";
+import { appendingLevel, LEVEL_HISTORY_COUNT, listeningLine, normalizedLevel, poolLevel, smoothedLevel, waveBars } from "./listen.js?v=1792947100";
+import { capitalized, visibleWait, waitAfterAgentState, waitAfterTurn, waitCopy, waitPercent, waitProgress } from "./wait.js?v=1792947100";
 import {
   chooseDevice,
   createLevelPreview,
@@ -57,7 +57,7 @@ import {
   saveChoice,
   sinkSupported,
   videoConstraints,
-} from "./devices.js?v=1792947000";
+} from "./devices.js?v=1792947100";
 
 // Same names and order as iOS. Sink is the hero; extras require the server flag.
 const CORE_MODES = [
@@ -2664,7 +2664,7 @@ function boot() {
 
   async function rebuildVoice() {
     try {
-      const mod = await import("./voice.js?v=1792947000");
+      const mod = await import("./voice.js?v=1792947100");
       if (voice && typeof voice.stopListening === "function") voice.stopListening();
       if (!mod || typeof mod.createVoice !== "function") return null;
       const next = mod.createVoice(voiceOptions());

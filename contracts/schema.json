@@ -3096,6 +3096,10 @@
      "pattern": "^https://",
      "maxLength": 8192
     },
+    "clip_mp4": {
+     "type": "string",
+     "pattern": "^/api/rewind/clip/[0-9a-f]+\\.mp4$"
+    },
     "past_call": {
      "type": "boolean"
     },

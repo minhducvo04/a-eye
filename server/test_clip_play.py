@@ -5,6 +5,7 @@ import io
 from types import SimpleNamespace
 
 import httpx
+from fastapi.testclient import TestClient
 import pytest
 from PIL import Image
 
@@ -135,3 +136,43 @@ def test_live_memory_uses_clip_media_for_both_scopes(tmp_path, monkeypatch):
         assert (cards[0]['t_s'], cards[0]['start_s'], cards[0]['end_s']) == (23, 0, 6)
 
     asyncio.run(trial())
+
+
+def test_this_call_hit_serves_clip_mp4_from_memory():
+    from server.app import create_app
+    call = current_call()
+    call.encoder = lambda timed: b'MP4' + bytes([len(timed)])
+    fields = asyncio.run(rw.hit_media(call, dict(t_s=5, frame=None)))
+    assert fields['clip_mp4'].startswith('/api/rewind/clip/') and fields['clip_mp4'].endswith('.mp4')
+    card = rw.hit_message(dict(sure=True, call_time_s=5, label='keys', box=None, alternatives=[], **fields))
+    assert card['clip_mp4'] == fields['clip_mp4'] and card['frames_b64']
+    with TestClient(create_app(static_dir='/nonexistent')) as client:
+        got = client.get(fields['clip_mp4'])
+        assert got.status_code == 200 and got.headers['content-type'] == 'video/mp4'
+        assert got.content[:3] == b'MP4' and got.content[3] == 25     # 6 s window at 4 fps + the edges
+        assert client.get('/api/rewind/clip/nope.mp4').status_code == 404
+
+
+def test_past_call_hit_cuts_hls_to_mp4_with_fake_ffmpeg():
+    cuts = []
+
+    def reply(request):
+        return httpx.Response(200, json={'hls': {'video_url': 'https://media.invalid/clip.m3u8'}})
+
+    def cutter(url, start_s):
+        cuts.append((url, start_s))
+        return b'CUT'
+
+    call = rw.Rewind('current', client=rw.TwelveLabsClient(key='fake', transport=httpx.MockTransport(reply)))
+    call.set_on(True)
+    call.index_id = 'index'
+    fields = asyncio.run(rw.hit_media(call, dict(past_call=True, video_id='old', t_s=103, video_t_s=9, frame=None),
+                                      cutter=cutter))
+    assert cuts == [('https://media.invalid/clip.m3u8', 6)]
+    assert fields['clip_url'] and rw.clip_bytes(fields['clip_mp4'].split('/')[-1][:-4]) == b'CUT'
+
+
+def test_clip_store_keeps_newest_twenty():
+    ids = [rw.store_clip('u', 0, lambda *_: b'x') for _ in range(25)]
+    assert rw.clip_bytes(ids[0]) is None and rw.clip_bytes(ids[-1]) == b'x' and len(rw._clips) == 20
+    assert rw.store_clip('u', 0, lambda *_: (_ for _ in ()).throw(RuntimeError('ffmpeg'))) is None

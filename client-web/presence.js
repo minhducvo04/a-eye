@@ -1,7 +1,7 @@
 // Agent presence: two orbs. nextPresence / glideTarget / layoutOrbs are pure.
 // paintPresence is the only function that touches a canvas.
 
-import { coverTransform } from "./overlay.js?v=1792947000";
+import { coverTransform } from "./overlay.js?v=1792947100";
 
 export const ORB_SIZE = 54;
 export const SCREEN_MARGIN = 18;

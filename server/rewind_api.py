@@ -1,15 +1,23 @@
 """Rewind HTTP routes under /api (token-checked by the app middleware). The TwelveLabs key stays server-side."""
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from server import cloud_meter
-from server.rewind import NOTICE, identity, registry
+from server.rewind import NOTICE, clip_bytes, identity, registry
 
 _rewind = APIRouter(prefix='/api/rewind')
 
 
 def public(hit):
     return {k: hit[k] for k in ('t_s', 'start_s', 'end_s', 'rank') if k in hit}
+
+
+@_rewind.get('/clip/{clip_id}.mp4')
+async def clip(clip_id: str):
+    data = clip_bytes(clip_id)
+    if data is None:
+        return JSONResponse({'error': 'unknown_clip'}, status_code=404)
+    return Response(content=data, media_type='video/mp4')
 
 
 @_rewind.get('/status')

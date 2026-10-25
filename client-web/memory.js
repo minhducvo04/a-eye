@@ -10,7 +10,7 @@
 //   PUT  /api/memory/settings  settings     -> settings (server checks consents and refused rooms again)
 //   find answers: v2 `rewind_hit` today; a local `find_item` later with the same fields plus `place`.
 
-import { fmtCallTime } from "./rewind.js?v=1792947000";
+import { fmtCallTime } from "./rewind.js?v=1792947100";
 
 export const REFUSED_ROOMS = Object.freeze(["bedroom", "bathroom"]);
 export const ROOMS = Object.freeze(["kitchen", "living room", "hallway", "entryway", "office", "garage", "bedroom", "bathroom"]);
@@ -122,7 +122,7 @@ export function cleanSettings(s) {
 // /api/memory route is called (a 404 would also be a console error): the count is this call's Rewind clips,
 // Forget is this call's Rewind forget, and settings live in an in-page preview store (`preview: true`).
 // TODO(rewind builder): add `features: { memory: true }` to /api/status when the routes above exist.
-import { ownerHeaders } from './call-owner.js?v=1792947000';
+import { ownerHeaders } from './call-owner.js?v=1792947100';
 
 export function createMemoryApi({ fetch: doFetch = globalThis.fetch, search = globalThis.location ? globalThis.location.search : "" } = {}) {
   const token = new URLSearchParams(search).get("token");
@@ -207,7 +207,36 @@ function playMemory(doc, pane, hit) {
     pane.append(img);
     startFrames();
   }
-  if (hit.clip_url) {
+  if (hit.clip_mp4) {
+    // The server already cut the moment to a small MP4: a plain <video src>, no HLS in the browser.
+    video = doc.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+    video.setAttribute('playsinline', '');
+    video.loop = true;
+    video.autoplay = true;
+    video.preload = 'auto';
+    video.hidden = false;
+    const loading = doc.createElement('p');
+    loading.className = 'memory-loading';
+    loading.textContent = 'Loading the clip…';
+    video.src = hit.clip_mp4;
+    pane.append(video, loading);
+    video.addEventListener('playing', () => {
+      if (disposed) return;
+      loading.remove();
+      if (img) img.hidden = true;
+      stopFrames();
+    });
+    video.addEventListener('error', () => {
+      if (disposed) return;
+      failed = true;
+      video.hidden = true;
+      loading.remove();
+      startFrames();
+    });
+    video.play?.().catch?.(() => {});
+  } else if (hit.clip_url) {
     const candidate = doc.createElement('video');
     const HlsLib = globalThis.Hls;
     const hlsJs = Boolean(HlsLib && HlsLib.isSupported && HlsLib.isSupported());
