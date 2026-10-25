@@ -332,6 +332,7 @@ function lookHtml(w) {
   else if (w.type === 'cards') inner = `<div class="cards">${w.cards.map((c) => `<div class="card t-${c.tone || ''}"><b>${esc(c.head)}</b>${esc(c.body)}</div>`).join('')}</div>`;
   else if (w.type === 'scopes') inner = `<div class="scopes">${w.rows.map((r) => `<div class="scope"><i style="background:${tone(r.tone)}"></i><span>${esc(r.label)}<br><small>${esc(r.who)}</small></span><span class="st ${r.status}">${esc(r.status)}</span></div>`).join('')}</div>`;
   else if (w.type === 'switches') inner = w.rows.map((r) => `<div class="sw"><span>${esc(r.label)}</span><small>${esc(r.sends)}</small><button data-go="${r.node}">Show</button></div>`).join('');
+  else if (w.type === 'split') inner = `<p class="sec">Stays on our machines</p><ul class="facts">${w.stay.map((t) => `<li>${esc(t)}</li>`).join('')}</ul><p class="sec">Goes to the cloud</p><ul class="facts">${w.go.map(([k, v]) => `<li><b>${esc(k)}</b>${esc(v)}</li>`).join('')}</ul>`;
   else if (w.type === 'stat') inner = `<div class="stat">${esc(w.value)}<small>${esc(w.unit)}</small></div>`;
   return `<section class="look"><h3>${esc(w.title)}</h3>${inner}${w.foot ? `<p class="foot">${esc(w.foot)}</p>` : ''}</section>`;
 }
@@ -369,6 +370,10 @@ function indexPanel() {
   }
   return s + `<p class="sec" style="margin-top:14px">About the numbers</p><p class="kind">${esc(data.measured_note)} ${esc(data.cost_note)}</p>`;
 }
+function scalePanel() {
+  const sc = data.scale;
+  return `<h2>${esc(sc.title)}</h2><p class="note-build">${esc(sc.note)}</p><ul class="facts">${sc.rows.map((r) => `<li><b>${esc(r.label)}</b>${r.value ? esc(r.value) : '<span class="pending">numbers coming</span>'}</li>`).join('')}</ul>`;
+}
 function openPanel(html) {
   body.innerHTML = html;
   panel.hidden = false;
@@ -383,6 +388,7 @@ panel.addEventListener('click', (ev) => {
   else if (t.dataset.edge) select({ kind: 'edge', id: t.dataset.edge });
 });
 document.getElementById('closeBtn').addEventListener('click', closePanel);
+document.getElementById('scaleBtn').addEventListener('click', () => { selected = null; applyFocus(); openPanel(scalePanel()); });
 document.getElementById('indexBtn').addEventListener('click', () => { selected = null; applyFocus(); openPanel(indexPanel()); });
 
 // ---------- camera framing ----------
@@ -728,6 +734,7 @@ if (startFlow) setFlow(startFlow);
 const sel = params.get('select');
 if (sel && (nodes[sel] || edges[sel])) { REDUCED || (tween = null); select({ kind: nodes[sel] ? 'node' : 'edge', id: sel }); }
 if (params.get('panel') === 'index') openPanel(indexPanel());
+if (params.get('panel') === 'scale') openPanel(scalePanel());
 // play "Ask a question" once on a plain load to lead the eye (never under reduced motion)
 if (!REDUCED && !location.search) setFlow(data.flows.find((f) => f.id === 'ask'), true);
 requestAnimationFrame(tick);

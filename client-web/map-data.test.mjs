@@ -44,6 +44,14 @@ test('measured numbers match tonight\'s runs and cloud costs say estimate', () =
   for (const id of ['gemini', 'rewind']) assert.match(nodes.get(id).cost, /est\./, id);
 });
 
+test('final focus: no home-repair words anywhere on the map', () => {
+  for (const f of ['map-data.json', 'map.html', 'map.js']) {
+    assert.doesNotMatch(readFileSync(new URL('./' + f, import.meta.url), 'utf8'), /\b(sinks?|faucets?|valves?|plumb\w*|hinges?|breakers?)\b/i, f);
+  }
+  assert.ok(data.flows.some((f) => f.id === 'guest'));
+  assert.ok(data.scale.rows.some((r) => r.value === null));
+});
+
 test('visible text has no em or en dashes', () => {
   assert.doesNotMatch(readFileSync(new URL('./map-data.json', import.meta.url), 'utf8'), /[–—]/);
   assert.doesNotMatch(readFileSync(new URL('./map.html', import.meta.url), 'utf8'), /[–—]/);

@@ -319,10 +319,10 @@
    "speed": "86 ms stop line",
    "cost": "$0 (code)",
    "kind": "Coded rules (server/safety.py)",
-   "what": "Plain code, no model. A question about a known hazard gets a fixed line and no model is asked. A reply that calls a hazard fine is replaced. On a hazard it mutes Gemini and speaks the stop line 86 ms after speech ends.",
+   "what": "Plain code, no model. A question about a known hazard gets a fixed line and no model is asked; a reply that calls a hazard fine is replaced. Touching the hot soldering iron tip, wiring with USB plugged in, or mains power each get a fixed line. On a hazard it mutes Gemini and speaks the stop line 86 ms after speech ends.",
    "code": [
     "server/safety.py",
-    "server/gates.py"
+    "server/packs/electronics.py"
    ],
    "facts": [
     [
@@ -330,8 +330,12 @@
      "86 ms after speech, Gemini muted (measured)"
     ],
     [
+     "Examples",
+     "\"Do not touch the hot soldering iron tip; leave it in its stand.\" / \"Unplug the USB first.\""
+    ],
+    [
      "Why code",
-     "a local model once told a user heavily smoking oil was fine"
+     "the model never decides what is safe; fixed lines are spoken by code"
     ]
    ],
    "look": {
@@ -371,16 +375,25 @@
    "name": "Step guide",
    "speed": "not measured",
    "cost": "$0 (code)",
-   "kind": "Coded step guide (server/live_guide.py)",
-   "what": "Code owns the task and the current step; Gemini only phrases it. A step moves only when the guide's rules pass. The shutoff step also needs the valve checker to see the valve off in the current frame: saying \"it's off\" is refused.",
+   "kind": "Coded electronics guide (server/packs/electronics.py, server/live_guide.py)",
+   "what": "Code owns the task and the current step; Gemini only phrases it. Coded tasks: the Arduino LED build (7 steps), resistor bands and LED polarity. Every wiring step starts with USB unplugged. A step moves only when the guide's rules pass on what the son says; confirmations are spoken reports, not visual proof.",
    "code": [
+    "server/packs/electronics.py",
     "server/live_guide.py",
     "server/steps.py"
    ],
    "facts": [
     [
-     "Valve check",
-     "refuses spoken \"it's off\" without a frame that shows it"
+     "Coded tasks",
+     "Arduino LED build (7 steps), resistor bands (2), LED polarity (2)"
+    ],
+    [
+     "USB rule",
+     "\"Unplug the USB first\" before wiring; a 220 ohm resistor in series before USB"
+    ],
+    [
+     "Out of scope",
+     "mains power and wall outlets get a fixed stop line"
     ],
     [
      "Who speaks steps",
@@ -389,28 +402,41 @@
    ],
    "look": {
     "type": "cards",
-    "title": "How a step advances",
+    "title": "What the son can learn",
     "cards": [
      {
-      "head": "User says",
-      "body": "\"Done, it's off.\""
-     },
-     {
-      "head": "Guide asks the valve checker",
-      "body": "Current frame only, Qwen 2.5-VL on the home GPU."
-     },
-     {
-      "head": "No proof in the frame",
-      "body": "Step stays. Fixed retry line is spoken.",
-      "tone": "danger"
-     },
-     {
-      "head": "Proof in the frame",
-      "body": "Step moves on.",
+      "head": "Arduino LED build",
+      "body": "7 coded steps: parts, LED rows, 220 ohm to GND, pin 9, GND, USB, Blink upload.",
       "tone": "server"
+     },
+     {
+      "head": "Resistor bands",
+      "body": "2 coded steps: read from the end opposite the tolerance band; red red brown is 220 ohms.",
+      "tone": "server"
+     },
+     {
+      "head": "LED polarity",
+      "body": "2 coded steps: long leg is plus, flat rim is minus.",
+      "tone": "server"
+     },
+     {
+      "head": "Multimeter",
+      "body": "Part card for checking unclear bands; no coded steps yet.",
+      "tone": "building"
+     },
+     {
+      "head": "Soldering",
+      "body": "Hot-iron safety gate and part card; no coded steps yet.",
+      "tone": "building"
+     },
+     {
+      "head": "Tying a tie",
+      "body": "No coded steps on main yet.",
+      "tone": "building"
      }
     ]
-   }
+   },
+   "building": "Multimeter, soldering and tying a tie have no coded steps on main yet (part cards and the hot-iron gate exist)."
   },
   {
    "id": "context",
@@ -513,14 +539,14 @@
    ],
    "size": 0.5,
    "status": "working",
-   "name": "Captions + valve check",
+   "name": "Captions",
    "speed": "not measured",
    "cost": "$0 (local)",
    "kind": "Qwen 2.5-VL 7B on the home GPU",
-   "what": "Writes short captions of frames for memory and runs the trusted valve checker the step guide relies on.",
+   "what": "Writes short captions of frames so recent memory can answer \"what did I just do?\".",
    "code": [
     "server/cloud_vision.py",
-    "server/step_check.py"
+    "server/vision_client.py"
    ],
    "facts": [
     [
@@ -574,11 +600,11 @@
    ],
    "size": 0.5,
    "status": "working",
-   "name": "Private mode voice",
+   "name": "Guest / local mode",
    "speed": "not measured",
-   "cost": "$0 (local)",
-   "kind": "Whisper + Kokoro (boxsvc) + local brain",
-   "what": "In Private mode every cloud switch is off: Whisper turns speech into text, a local model answers and Kokoro speaks, all at home.",
+   "cost": "$0 cloud",
+   "kind": "Whisper + Kokoro (boxsvc) + local brain + local vision",
+   "what": "Guest / local mode turns every cloud switch off. Whisper turns speech into text, a local model answers, local vision finds parts, and Kokoro speaks, all on our own machines. $0 cloud.",
    "code": [
     "boxsvc/engines.py",
     "server/brain_local.py",
@@ -804,20 +830,20 @@
    "speed": "not measured",
    "cost": "$0 (local)",
    "kind": "Team SpacetimeDB, Apify scrape",
-   "what": "10,001 Amazon tool and electronics listings scraped with Apify by Shivam into the team SpacetimeDB. 39 guide cards link to real product rows, and the step guide adds a short \"parts for this step\" note to Gemini's context.",
+   "what": "20 electronics cards (Arduino UNO, breadboard, LED, 220 ohm resistor, multimeter, soldering iron and more), 11 of them linked to real products from Shivam's Apify scrape in the team SpacetimeDB. The guide adds a short \"parts for this step\" note to Gemini's context.",
    "code": [
-    "market/apify.py",
-    "market/compat.py",
-    "server/live_guide.py"
+    "server/parts_shelf.py",
+    "data/kb/cards.json",
+    "market/apify.py"
    ],
    "facts": [
     [
-     "Listings",
-     "10,001"
+     "Electronics cards",
+     "20, 11 linked to product rows (data/kb/cards.json)"
     ],
     [
-     "Guide cards",
-     "39, linked to real product rows (data/kb)"
+     "Scrape",
+     "10,001 Amazon tool and electronics listings (Apify, team SpacetimeDB)"
     ],
     [
      "In the call",
@@ -831,9 +857,9 @@
    "look": {
     "type": "stat",
     "title": "Parts shelf",
-    "value": "10,001",
-    "unit": "listings",
-    "foot": "The cloud of points around this node has one point per listing. Positions are decorative."
+    "value": "20",
+    "unit": "electronics cards, 11 linked to products",
+    "foot": "The point cloud around this node has one point per scraped listing (10,001). Positions are decorative."
    }
   },
   {
@@ -851,7 +877,7 @@
    "speed": "applies per call",
    "cost": "$0",
    "kind": "Per-call cloud switches (server/privacy.py)",
-   "what": "Every cloud path has a named switch checked in code on every server path. Private mode turns them all off and the call runs at home.",
+   "what": "Every cloud path has a named switch checked in code on every server path. Guest / local mode turns them all off and the call runs at home.",
    "code": [
     "server/privacy.py"
    ],
@@ -861,36 +887,39 @@
      "Google, Claude, TwelveLabs, Cartesia"
     ],
     [
-     "Private mode",
-     "all off; Whisper, local brain, Kokoro"
+     "Guest / local",
+     "all off; Whisper, local brain, Kokoro, local vision"
     ]
    ],
    "look": {
-    "type": "switches",
-    "title": "What leaves home, and what turns it off",
-    "rows": [
-     {
-      "label": "Google (Gemini)",
-      "sends": "downscaled camera frames and voice",
-      "node": "gemini"
-     },
-     {
-      "label": "Claude",
-      "sends": "question and a written scene note",
-      "node": "context"
-     },
-     {
-      "label": "TwelveLabs",
-      "sends": "short silent clips, deleted at call end",
-      "node": "rewind"
-     },
-     {
-      "label": "Private mode",
-      "sends": "nothing: every switch off",
-      "node": "private"
-     }
+    "type": "split",
+    "title": "Normal call: what stays home, what goes out",
+    "stay": [
+     "Saved calls and recent memory (encrypted on disk when keyed)",
+     "Router, safety gates and step guide (code on the Mac)",
+     "Grounding, captions and YOLO on the home GPU",
+     "Parts cards (data/kb)",
+     "Whisper, Kokoro and the local brain in Guest / local mode"
     ],
-    "foot": "Paraphrased from server/privacy.py WHAT_LEAVES."
+    "go": [
+     [
+      "Google (Gemini Live)",
+      "downscaled camera frames and voice"
+     ],
+     [
+      "Claude",
+      "the question and a written scene note, sometimes one small close-up"
+     ],
+     [
+      "TwelveLabs (if on)",
+      "short silent clips, deleted at call end"
+     ],
+     [
+      "Cartesia (if on)",
+      "only the reply sentence"
+     ]
+    ],
+    "foot": "Guest / local mode sends nothing out. Wording paraphrased from server/privacy.py WHAT_LEAVES."
    }
   }
  ],
@@ -1001,7 +1030,7 @@
    "name": "mute + stop line",
    "speed": "86 ms",
    "cost": "",
-   "what": "On a hazard the gate mutes Gemini and the fixed stop line plays 86 ms after speech ends."
+   "what": "On a hazard (hot soldering iron, live USB) the gate mutes Gemini and the fixed stop line plays 86 ms after speech ends."
   },
   {
    "id": "srv-guide",
@@ -1013,19 +1042,6 @@
    "speed": "",
    "cost": "$0",
    "what": "The guide checks the user's words against the current step's rules."
-  },
-  {
-   "id": "guide-cap",
-   "from": "guide",
-   "to": "caption",
-   "both": true,
-   "status": "working",
-   "rate": 0.3,
-   "bend": 1.2,
-   "name": "valve check",
-   "speed": "",
-   "cost": "$0",
-   "what": "For the shutoff step the guide asks the trusted valve checker about the current frame."
   },
   {
    "id": "guide-gem",
@@ -1094,10 +1110,10 @@
    "status": "working",
    "rate": 0.3,
    "bend": 0.8,
-   "name": "Private mode audio",
+   "name": "Guest / local audio",
    "speed": "",
    "cost": "$0",
-   "what": "In Private mode speech goes to Whisper and the reply comes back as Kokoro voice."
+   "what": "In Guest / local mode speech goes to Whisper and the reply comes back as Kokoro voice, all at home."
   },
   {
    "id": "srv-recent",
@@ -1214,7 +1230,7 @@
     "safe-gem",
     "-cap-srv"
    ],
-   "say": "A coded gate catches the hazard, mutes Gemini and plays the stop line 86 ms after you stop speaking."
+   "say": "\"Can I touch the iron tip?\" A coded gate catches it, mutes Gemini and plays the stop line 86 ms after you stop speaking."
   },
   {
    "id": "rewind",
@@ -1229,19 +1245,21 @@
    "say": "Silent clips go to TwelveLabs and are searchable about 35 to 40 s later; \"what did I do earlier?\" routes there."
   },
   {
-   "id": "private",
-   "name": "Private mode",
+   "id": "guest",
+   "name": "Guest / local",
    "edges": [
     "cap-srv",
+    "srv-rt",
+    "rt-ground",
     "srv-priv",
     "-srv-priv",
     "-cap-srv"
    ],
-   "say": "Every cloud switch off: Whisper, a local model and Kokoro at home. $0, speed not measured."
+   "say": "Guest / local: local vision, Whisper, a local brain and Kokoro on our own machines. Nothing leaves home; $0 cloud. Speed not measured."
   }
  ],
  "headline": {
-  "say": "A-Eye sees through your phone camera and talks you through hands-on jobs, while coded safety gates can cut the model off mid sentence.",
+  "say": "A-Eye lets a dad guide his son through fixing and learning electronics, and tying a tie: it sees through the phone camera, talks each step, and coded gates stop it at a hot soldering iron or live USB.",
   "chips": [
    {
     "text": "voice in 0.6 to 1.1 s",
@@ -1257,6 +1275,32 @@
     "text": "~$1.40 per 2.5 min call (est.)",
     "tone": "cost",
     "node": "gemini"
+   }
+  ]
+ },
+ "scale": {
+  "title": "Scale",
+  "note": "Numbers coming: the team's scale sheet lands in about 30 minutes. Nothing below is measured yet.",
+  "rows": [
+   {
+    "label": "Concurrent calls per Mac server",
+    "value": null
+   },
+   {
+    "label": "Calls per home GPU box",
+    "value": null
+   },
+   {
+    "label": "Cloud cost per 100 normal calls",
+    "value": null
+   },
+   {
+    "label": "Guest / local calls per GPU box",
+    "value": null
+   },
+   {
+    "label": "Cards and listings on the parts shelf",
+    "value": "20 electronics cards; 10,001 listings"
    }
   ]
  }

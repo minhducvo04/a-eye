@@ -4,6 +4,21 @@ Interactive 3D map of the A-Eye system for judges, served at `/map.html` next to
 per call, all driven by one JSON file. Branch `pkg/system-map`; the commit sha is in the git log of that branch (this
 file is part of that commit).
 
+## Product focus round (owner, 2026-10-25)
+
+1. Electronics plus a tie: the headline, step guide and parts shelf now follow the dad guiding his son. The step guide
+   panel lists the coded tasks on main (Arduino LED build 7 steps, resistor bands 2, LED polarity 2) and marks
+   multimeter, soldering and tying a tie as having no coded steps yet. The valve checker panel and its line are gone;
+   the GPU node is Captions. Hazard examples are the hot soldering iron and live USB (`server/safety.py`,
+   `server/packs/electronics.py`). Parts shelf: 20 electronics cards, 11 linked to products (`data/kb/cards.json`),
+   from the 10,001-listing Apify scrape.
+2. "Guest / local" flow replaces Private mode: camera to server, router, local grounding, Whisper / local brain /
+   Kokoro and back, $0 cloud. The Privacy switches panel shows what stays on our machines and what goes to the cloud
+   in a normal call (`1280-privacy-panel.png`, `390-privacy-panel.png`, `1280-flow-guest.png`).
+3. Scale panel (header button) with placeholder rows marked "numbers coming" (`1280-scale.png`, `390-scale.png`).
+4. A test fails if sink, faucet, valve, plumbing, hinge or breaker appear in the map data, page or script. Panels now
+   open below the header controls on desktop.
+
 ## Polish round (after SIGN-OFF WITH NOTES, 8 of 10, on b035759)
 
 1. Ambient pulse heads 1.6x the first build (2.4 vs 1.5), thin tails that fade out over the last 10% of each line, so
