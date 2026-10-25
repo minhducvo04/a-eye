@@ -1,0 +1,205 @@
+{
+  "right_source": 20,
+  "total": 20,
+  "answer_checks": 20,
+  "latency": {
+    "recent": {
+      "n": 10,
+      "p50_ms": 0.013,
+      "max_ms": 0.07
+    },
+    "rewind": {
+      "n": 5,
+      "p50_ms": 0.004,
+      "max_ms": 0.005
+    },
+    "long-term": {
+      "n": 5,
+      "p50_ms": 0.483,
+      "max_ms": 0.938
+    }
+  },
+  "rows": [
+    {
+      "question": "What did I just do?",
+      "expected": "recent",
+      "selected": "recent",
+      "source": "recent",
+      "ms": 0.07,
+      "correct": true,
+      "answer_ok": true
+    },
+    {
+      "question": "Where did I put the red wire a minute ago?",
+      "expected": "recent",
+      "selected": "recent",
+      "source": "recent",
+      "ms": 0.026,
+      "correct": true,
+      "answer_ok": true
+    },
+    {
+      "question": "What was step 3?",
+      "expected": "recent",
+      "selected": "recent",
+      "source": "recent",
+      "ms": 0.031,
+      "correct": true,
+      "answer_ok": true
+    },
+    {
+      "question": "Where was the multimeter two minutes ago?",
+      "expected": "recent",
+      "selected": "recent",
+      "source": "recent",
+      "ms": 0.014,
+      "correct": true,
+      "answer_ok": true
+    },
+    {
+      "question": "Where was the resistor 30 seconds ago?",
+      "expected": "recent",
+      "selected": "recent",
+      "source": "recent",
+      "ms": 0.012,
+      "correct": true,
+      "answer_ok": true
+    },
+    {
+      "question": "Where was the soldering iron just now?",
+      "expected": "recent",
+      "selected": "recent",
+      "source": "recent",
+      "ms": 0.01,
+      "correct": true,
+      "answer_ok": true
+    },
+    {
+      "question": "What did I do 60 seconds ago?",
+      "expected": "recent",
+      "selected": "recent",
+      "source": "recent",
+      "ms": 0.006,
+      "correct": true,
+      "answer_ok": true
+    },
+    {
+      "question": "Where was the resistor earlier in this call?",
+      "expected": "recent",
+      "selected": "recent",
+      "source": "recent",
+      "ms": 0.046,
+      "correct": true,
+      "answer_ok": true
+    },
+    {
+      "question": "What was step 4?",
+      "expected": "recent",
+      "selected": "recent",
+      "source": "recent",
+      "ms": 0.005,
+      "correct": true,
+      "answer_ok": true
+    },
+    {
+      "question": "Where was the multimeter 120 seconds ago?",
+      "expected": "recent",
+      "selected": "recent",
+      "source": "recent",
+      "ms": 0.01,
+      "correct": true,
+      "answer_ok": true
+    },
+    {
+      "question": "Where was the resistor earlier in this call?",
+      "expected": "rewind",
+      "selected": "rewind",
+      "source": "rewind",
+      "ms": 0.005,
+      "correct": true,
+      "answer_ok": true
+    },
+    {
+      "question": "Where was the wire 3 minutes ago?",
+      "expected": "rewind",
+      "selected": "rewind",
+      "source": "rewind",
+      "ms": 0.004,
+      "correct": true,
+      "answer_ok": true
+    },
+    {
+      "question": "Where was the soldering iron earlier?",
+      "expected": "rewind",
+      "selected": "rewind",
+      "source": "rewind",
+      "ms": 0.004,
+      "correct": true,
+      "answer_ok": true
+    },
+    {
+      "question": "Where was the multimeter at the start of this call?",
+      "expected": "rewind",
+      "selected": "rewind",
+      "source": "rewind",
+      "ms": 0.004,
+      "correct": true,
+      "answer_ok": true
+    },
+    {
+      "question": "Where was the breadboard before?",
+      "expected": "rewind",
+      "selected": "rewind",
+      "source": "rewind",
+      "ms": 0.003,
+      "correct": true,
+      "answer_ok": true
+    },
+    {
+      "question": "Where was the resistor yesterday?",
+      "expected": "long-term",
+      "selected": "long-term",
+      "source": "long-term",
+      "ms": 0.938,
+      "correct": true,
+      "answer_ok": true
+    },
+    {
+      "question": "Where was the red wire last time?",
+      "expected": "long-term",
+      "selected": "long-term",
+      "source": "long-term",
+      "ms": 0.483,
+      "correct": true,
+      "answer_ok": true
+    },
+    {
+      "question": "Where was the multimeter last call?",
+      "expected": "long-term",
+      "selected": "long-term",
+      "source": "long-term",
+      "ms": 0.344,
+      "correct": true,
+      "answer_ok": true
+    },
+    {
+      "question": "Where was the soldering iron yesterday?",
+      "expected": "long-term",
+      "selected": "long-term",
+      "source": "long-term",
+      "ms": 0.709,
+      "correct": true,
+      "answer_ok": true
+    },
+    {
+      "question": "Where was the breadboard in the previous call?",
+      "expected": "long-term",
+      "selected": "long-term",
+      "source": "long-term",
+      "ms": 0.315,
+      "correct": true,
+      "answer_ok": true
+    }
+  ],
+  "limitation": "Rewind adapter is a deterministic stub; no TwelveLabs/network/TTS latency measured."
+}

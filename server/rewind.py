@@ -413,9 +413,10 @@ class Rewind:
                     indexing=counts.get('indexing', 0) + counts.get('uploading', 0),
                     pending=counts.get('pending', 0) + counts.get('open', 0))
 
-    async def search(self, query, limit=3):
+    async def search(self, query, limit=3, before_s=None):
         """Hits in this call, best first: call time, clip window and the nearest kept frame."""
-        clips = {c.video_id: c for c in self.clips if c.video_id and c.status == 'ready'}
+        clips = {c.video_id: c for c in self.clips if c.video_id and c.status == 'ready'
+                 and (before_s is None or c.end_s <= before_s)}
         if not clips:
             return []
         rows = await self.client.search(self.index_id, query, video_ids=list(clips), limit=limit)
@@ -427,6 +428,8 @@ class Rewind:
             start, end = clip.start_s + float(row.get('start', 0)), clip.start_s + float(row.get('end', 0))
             # The change that opened the clip is the moment; fall back to the hit start.
             at = clip.key_s if start <= clip.key_s <= end else start
+            if before_s is not None and at > before_s:
+                continue
             # The first kept frame at or after the moment: a frame just before a change shows the old scene.
             after = [f for f in clip.frames if f[0] >= at - 1e-6]
             frame = (after[0] if after else clip.frames[-1])[1] if clip.frames else None
@@ -441,7 +444,7 @@ class Rewind:
                              video_id=clip.video_id, frame=frame, candidates=candidates))
         return hits
 
-    async def answer(self, text, vision=None):
+    async def answer(self, text, vision=None, before_s=None):
         """Spoken line plus the best hit (or None). TwelveLabs gives rank but no score, so the rank-1 frame is
         checked by our own vision host (no extra cloud call) before the talker claims it; that check also gives
         the box the caller draws on the hit frame."""
@@ -454,7 +457,7 @@ class Rewind:
             self.waits.add(task)
             task.add_done_callback(self.waits.discard)
         try:
-            hits = await self.search(query)
+            hits = await self.search(query, before_s=before_s) if before_s is not None else await self.search(query)
         except Exception as exc:
             event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
                   error=type(exc).__name__)
@@ -533,6 +536,8 @@ class Rewind:
         noting = None
         self.memory_activity_at = None
         while True:
+            if getattr(session, 'recent_memory', None) is not None:
+                session.recent_memory.prune()
             frame = session.frame if session.camera else None
             if frame is not None and frame.get('seq') != seq:
                 seq = frame.get('seq')

@@ -24,6 +24,7 @@ from market.search import search
 from server import packs, shopping
 from server.logs import event
 from server.keyframes import KeyframeGate, SceneMemory
+from server.recent_memory import RecentMemory
 from server.boards import load_board
 from server.packs.pc_build import board_prompt
 
@@ -45,6 +46,7 @@ class Session:
     emit: object = field(default=None, repr=False)
     scene: dict | None = field(default=None, repr=False)
     scene_memory: SceneMemory = field(default_factory=SceneMemory, repr=False)
+    recent_memory: RecentMemory = field(default_factory=RecentMemory, repr=False)
     keyframe_gate: KeyframeGate = field(default_factory=KeyframeGate, repr=False)
     scene_scans: int = 0
     scene_skips: int = 0
