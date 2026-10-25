@@ -13,7 +13,7 @@ from server import parts_shelf, privacy, safety
 from server.logs import event
 from server.packs import electronics
 from server.packs.home import NEXT
-from server.task_scope import refuse_home, task_for
+from server.task_scope import SCOPE_LINE, refuse_home, task_for
 
 TIMEOUT = 12
 FIELDS = {'say', 'show', 'target', 'check', 'safety'}
@@ -97,7 +97,7 @@ def enabled():
     return os.getenv('PLANNER', '1') != '0'
 
 
-def unsafe_gate(text, *, output=False):
+def unsafe_gate(text, *, output=False, led_build=True):
     # A hot-tip warning is valid output, but user intent to touch it still stops.
     # Preserve the other conservative request gates, including live-power work.
     for gate in safety.GATES:
@@ -107,7 +107,7 @@ def unsafe_gate(text, *, output=False):
     if gate:
         return gate.id
     line = electronics.refuse(text)
-    if line:
+    if line and (led_build or line not in {electronics.MAINS, electronics.SERIES, electronics.USB}):
         return {electronics.HOT: 'hot_tool', electronics.MAINS: 'mains',
                 electronics.SERIES: 'series_resistor', electronics.USB: 'usb_power',
                 electronics.RESISTANCE: 'powered_resistance'}[line]
@@ -121,9 +121,28 @@ def unsafe(text):
 
 
 class UnsafePlan(ValueError):
-    def __init__(self, gate):
-        super().__init__('unsafe')
+    def __init__(self, gate, cause='unsafe'):
+        super().__init__(cause)
         self.gate = gate
+
+
+SAFETY_LINES = {gate.id: gate.line for gate in safety.GATES} | {
+    'mains': electronics.MAINS, 'series_resistor': electronics.SERIES,
+    'usb_power': electronics.USB, 'powered_resistance': electronics.RESISTANCE,
+    'home_scope': SCOPE_LINE,
+    'power_off': 'Disconnect device power before handling wires or components.',
+    'ventilation': next(g.line for g in safety.GATES if g.id == 'solder_fumes'),
+}
+
+
+def safety_step(line):
+    # Clear every model field, so a dangerous instruction cannot survive in metadata.
+    return dict(say=line, show='Pause here and follow the safety instruction.',
+                target='', check='', safety='')
+
+
+def is_safety_step(step):
+    return step.get('say') in SAFETY_LINES.values() and step == safety_step(step['say'])
 
 
 def task_request(text):
@@ -144,7 +163,7 @@ def task_decision(text):
     if explicit(text, False) or OBSERVATION.search(text):
         return None, 'observation'
     if unsafe(text):
-        return None, 'unsafe'
+        return None, 'unsafe_task'
     # Gemini can transcribe the address as "dad The ...", without punctuation.
     request = ADDRESS.sub('', text, count=1).strip()
     match = INTENT.fullmatch(request)
@@ -201,6 +220,11 @@ def validate(value, task):
         raise ValueError('schema')
     if len(steps) > 8:
         raise ValueError('too_many_steps')
+    led_build = task == 'ee_led' or bool(re.search(r'\bled\b', task, re.I) and re.search(
+        r'\b(build|light|blink\w*|wir\w*|connect\w*|dim)\b', task, re.I))
+    gate = unsafe_gate(task, led_build=led_build)
+    if gate:
+        raise UnsafePlan(gate, 'unsafe_task')
     normalized = []
     texts = [task]
     for step in steps:
@@ -208,6 +232,11 @@ def validate(value, task):
                 or set(step) - FIELDS):
             raise ValueError('schema')
         step = {**dict.fromkeys(OPTIONAL_FIELDS, ''), **step}
+        # Only the complete code-owned replacement bypasses model speech limits
+        # and hazard matching on repeated validation (including cache reload).
+        if isinstance(step['say'], str) and is_safety_step(step):
+            normalized.append(step)
+            continue
         for key, text in step.items():
             if not isinstance(text, str):
                 raise ValueError('schema')
@@ -224,20 +253,16 @@ def validate(value, task):
         texts.extend(step.values())
         joined = ' '.join(step[key] for key in ('say', 'show', 'target', 'check', 'safety'))
         texts.extend((joined, task + ' ' + joined))
-        normalized.append(step)
+        gate = next((gate for text in [*step.values(), joined, task + ' ' + joined]
+                     if (gate := unsafe_gate(text, output=True, led_build=led_build))), None)
+        normalized.append(safety_step(SAFETY_LINES[gate]) if gate else step)
     steps = normalized
-    gate = unsafe_gate(task)
-    if gate:
-        raise UnsafePlan(gate)
-    for text in texts:
-        gate = unsafe_gate(text, output=True)
-        if gate:
-            raise UnsafePlan(gate)
     # Preparation must be audible before the first hazardous action. A late step,
     # a negated precaution, or safety text that the guide never speaks is not enough.
     first = steps[0]['say']
-    all_text = ' '.join(texts)
-    wiring = any(WIRING.search(step['say']) and COMPONENT.search(step['say']) for step in steps)
+    active = [step for step in steps if not is_safety_step(step)]
+    all_text = ' '.join([task] + [text for step in active for text in step.values()]) if active else ''
+    wiring = any(WIRING.search(step['say']) and COMPONENT.search(step['say']) for step in active)
     for required, pattern in ((wiring, POWER_OFF), (bool(SOLDER.search(all_text)), VENTILATION)):
         if not required:
             continue
@@ -245,7 +270,12 @@ def validate(value, task):
         action = (WIRING if pattern is POWER_OFF else SOLDER_ACTION).search(first)
         if (not preparation or re.search(r"\b(?:not|never|don't|skip|without)\b", first[:preparation.end()], re.I)
                 or (action and action.start() < preparation.start())):
-            raise UnsafePlan('power_off' if pattern is POWER_OFF else 'ventilation')
+            gate = 'power_off' if pattern is POWER_OFF else 'ventilation'
+            affected = [i for i, step in enumerate(steps) if not is_safety_step(step) and (
+                (WIRING.search(step['say']) and COMPONENT.search(step['say'])) if pattern is POWER_OFF
+                else SOLDER.search(' '.join(step.values())) or SOLDER_ACTION.search(step['say']))]
+            for i in affected or [0]:
+                steps[i] = safety_step(SAFETY_LINES[gate])
     if any(PERSONAL.search(text) or PERSON_CONTEXT.search(text) or NAMED_PERSON.search(text) for text in texts):
         raise ValueError('personal')
     return dict(task=task, steps=steps)  # fresh dicts; no caller can mutate an accepted cache entry
@@ -413,7 +443,7 @@ class BackgroundPlanner:
             self.cancel()
         if rejection or not self.allowed():
             outcome = {'result': 'rejected', 'cause': rejection or 'disabled', 'chars': len(text)}
-            if rejection == 'unsafe':
+            if rejection == 'unsafe_task':
                 outcome['gate'] = unsafe_gate(text)
             event('planner', reason=outcome)
             return False
@@ -479,7 +509,7 @@ class BackgroundPlanner:
             reason = 'cancelled'
             raise
         except UnsafePlan as exc:
-            reason, gate_id = 'unsafe', exc.gate
+            reason, gate_id = str(exc), exc.gate
         except ValueError as exc:
             reason = str(exc) if str(exc) in SCHEMA_ERRORS | {'unsafe', 'personal', 'disabled', 'no_client'} else 'error'
         except Exception:

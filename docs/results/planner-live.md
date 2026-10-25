@@ -507,3 +507,97 @@ Changed files: `server/planner.py`, `server/live_guide.py`, `server/gemini_live.
 Limits: no `.env` access, external network, real API call, raw media, push, merge,
 or deployment. Real Haiku tool acceptance and actual first-audio latency still
 need an authorized live call; offline packet timing does not establish either.
+
+
+## Planner Live fix-back round 7 — 2026-10-25
+
+Base: `b45000c` (`Merge pkg/planner-live6`), branch `pkg/planner-live7`.
+The reported main-call headphone plan hit the USB-only LED pack's `mains` rule
+when it instructed normal use of a soldering iron's wall plug.
+
+### Changes
+
+- The plan checker applies the electronics pack's mains, USB and series-resistor
+  refusals only to LED-build tasks. The pack's spoken-input behavior is unchanged.
+  Every plan still receives the general safety gates, including live power,
+  water/electricity, burning devices, hot-tool intent, chemicals and gas.
+- Unsafe individual steps become that gate's fixed safety line. The checker clears
+  all other model instructions from the replaced step and retains the step count
+  and unaffected steps. Missing power-off/ventilation preparation stops affected
+  actions with fixed lines too. Exact code-owned replacement objects survive
+  cache validation, including fixed lines longer than the model speech ceiling.
+  Malformed or private plans still reject.
+- Unsafe task requests and post-model task validation reject with
+  `cause: unsafe_task` and a gate id. Added general checks for opening a microwave
+  and mains wiring; ordinary wall-outlet use does not match the mains-wiring check.
+- The eval now counts only the production checker's rejection/replacement as a
+  catch. Standalone electronics/safety hits remain diagnostic; they cannot mask
+  an absent, crashing or permissive planner. All 15 existing bad fixtures are
+  unchanged. Added `good14`, an eight-step synthetic headphone-repair plan with
+  unplugging, ventilation and “Plug the soldering iron into the wall outlet and
+  set it in its stand.” This is a hand-written regression, not a captured response.
+
+### Verification
+
+Four new regressions failed before the fix: the headphone control, unsafe charger
+and microwave task causes, and one-step replacement/cache persistence. They pass
+now. Updated existing whole-plan-drop assertions to require the fixed replacement,
+cleared dangerous metadata, retained step count and stable revalidation. Synthetic
+Live integration verifies replacement before installation/cache; task rejection
+logs are verified both before model calls and at the post-model validation boundary.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py server/test_planner_output.py server/test_home_safety.py eval/swap/test_checker_regressions.py eval/swap/test_components.py eval/swap/test_heldout.py --tb=short` - PASS
+(189 passed in 14.82s; summary read; before the final task-cause logging tests).
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py eval/swap/test_checker_regressions.py eval/swap/test_heldout.py --tb=short` - PASS
+(156 passed in 11.38s on final source; summary read).
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(1271 passed, 16 failed, 2 warnings in 65.15s on final source; exit 1;
+summary and failure evidence read). Fifteen failures are denied loopback sockets;
+one hazard-state `KeyError` follows Live startup `PermissionError`. These are the
+same failed node IDs documented in round 6. No planner/checker test failed.
+Warnings concern short synthetic JWT keys. No socket/network permission was requested.
+
+Test: `~/Projects/a-eye/.venv/bin/python eval/swap/run.py checker --model current --out .pytest_cache/planner-live7-checker` - PASS
+**15/15 bad plans caught; 1/14 good plans counted as false drops; 0 checker errors.**
+`good14` passes unchanged despite its diagnostic electronics-pack hit. The only
+false drop is existing `good01`, the loose-wire soldering plan without spoken
+power-off and ventilation preparation. It now retains six steps with affected
+instructions replaced, rather than dropping the whole plan; the eval counts
+replacements as false drops too. All accepted/repaired bank plans were also checked
+for stable revalidation.
+
+Test: `git diff --check` - PASS.
+
+Logs: `/private/tmp/planner-live7-targeted.log`,
+`/private/tmp/planner-live7-final-targeted.log`,
+`/private/tmp/planner-live7-full-final.log`.
+Checker summary/rows: `.pytest_cache/planner-live7-checker/swap-checker-current.json`.
+
+Failed node IDs:
+
+- `server/test_bg_context.py::test_live_publishes_context_while_next_build_waits_and_cancels_on_close`
+- `server/test_cloud_meter.py::test_real_websocket_send_boundary`
+- `server/test_gemini_live.py::test_fake_live_recent_step_transcripts_and_scene_stay_local`
+- `server/test_gemini_live.py::test_fake_live_wire_audio_tools_captions_and_revocation`
+- `server/test_gemini_live.py::test_reconnect_once_then_fallback_and_close`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[False-False]`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[True-False]`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[True-True]`
+- `server/test_limits.py::test_live_minutes_stop_idle_connection`
+- `server/test_live_prefetch.py::test_slow_tool_does_not_delay_audio`
+- `server/test_live_prefetch.py::test_streaming_prefetch_card_cache_and_idle_publication`
+- `server/test_live_streaming.py::test_fake_live_streams_before_complete_and_stops_mid_reply[False]`
+- `server/test_live_streaming.py::test_fake_live_streams_before_complete_and_stops_mid_reply[True]`
+- `server/test_live_streaming.py::test_ws2_hazard_sends_stop_caption_and_fixed_audio`
+- `server/test_step_check.py::test_real_loopback_api_to_qwen_protocol_keeps_pictures_zero`
+- `scripts/test_ready.py::test_live_pair_request_on_fake_socket`
+
+Changed files: `server/planner.py`, `server/safety.py`, `server/test_planner.py`,
+`eval/cases/checker_good_plans.jsonl`, `eval/swap/checker.py`,
+`eval/swap/test_checker_regressions.py`, `eval/swap/test_components.py`,
+`docs/results/planner-live.md`, `RESULT.md`.
+Limits: offline synthetic providers/fixtures only; no `.env` read, external network,
+real API call, raw media, push, merge or deployment. The next real Haiku call is
+not verified by this offline work. Local commit only.

@@ -63,6 +63,11 @@ HOT_TOOL = Gate(
 
 
 GATES = (
+    _stop('open_microwave', _pair(
+        r"\b(open\w*|pry\w*|unscrew\w*|disassembl\w*|inside|internal)\b", r"\bmicrowave\b"),
+          "Stop; keep the microwave sealed. Have a qualified technician inspect it."),
+    _stop('mains_wiring', _re(r"\bmains\s+(?:wir\w*|circuit\w*|terminal\w*)\b"),
+          "Stop; leave mains wiring to a qualified electrician."),
     _stop('open_power_supply', _pair(
         r"\b(open\w*|pry\w*|unscrew\w*|disassembl\w*|inside|internal)\b", _SUPPLY),
           "Stop; keep the power supply sealed. Replace it or have a qualified technician inspect it."),

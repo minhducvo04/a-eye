@@ -155,7 +155,7 @@ def test_live_intent_packets(monkeypatch, tmp_path, text, expected):
                 assert b.guide.guide.task == expected and b.guide.guide.index == 0
                 if result:
                     assert b.guide.guide.plan == result
-                    assert planner.check_plan(plan(expected)) is None  # missing soldering preparation still drops
+                    assert planner.is_safety_step(planner.check_plan(plan(expected))['steps'][0])  # missing preparation stops the step
             else:
                 assert b.guide.planner.task is None and not fake.calls and not store.rows
         finally:
@@ -479,16 +479,16 @@ def test_schema_reject(change):
 @pytest.mark.parametrize('field,text', [
     ('say', 'Hold the hot soldering iron tip.'),
     ('show', 'Open the electrical panel.'),
-    ('target', 'wall outlet'),
-    ('check', 'The resistor is not in series.'),
     ('safety', 'Keep cooking with smoking oil.'),
     ('say', 'Fix the leaking sink.'),
 ])
-def test_unsafe_any_field_reject(field, text):
+def test_unsafe_any_field_replaces_step(field, text):
     value = plan()
     value['steps'][0][field] = text
-    with pytest.raises(ValueError, match='unsafe'):
-        planner.validate(value, value['task'])
+    checked = planner.validate(value, value['task'])
+    assert len(checked['steps']) == len(value['steps'])
+    assert planner.is_safety_step(checked['steps'][0])
+    assert checked['steps'][1] == value['steps'][1]
     assert planner.validate(plan(), value['task']) == plan()
 
 
@@ -643,20 +643,45 @@ def test_revoked_consent_between_calls(monkeypatch, tmp_path):
     asyncio.run(trial())
 
 
-def test_bad_plan_falls_back_without_cache_or_speech(monkeypatch, tmp_path, capsys):
+def test_bad_step_replaced_before_install_and_cache(monkeypatch, tmp_path, capsys):
     async def trial():
         bad = plan()
         bad['steps'][1]['check'] = 'Grab the hot soldering iron tip.'
         b, emitted, fixed, wire, fake, store, points = setup(monkeypatch, tmp_path, FakeLLM(bad))
         b.guide.observe('help me fix my headphones')
         await b.guide.planner.task
-        assert len(fake.calls) == 2 and not b.guide.guide and not b.blocked
-        assert not store.rows and not store.path.exists() and not wire and not fixed and not points
+        assert len(fake.calls) == 2 and b.guide.guide and not b.blocked
+        checked = b.guide.guide.plan
+        assert len(checked['steps']) == 2 and checked['steps'][0] == bad['steps'][0]
+        assert checked['steps'][1]['say'] == planner.SAFETY_LINES['hot_tool']
+        assert checked['steps'][1]['check'] == ''
+        assert planner.PlanCache(store.path).get(bad['task']) == checked
     asyncio.run(trial())
     events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert any(e['event'] == 'planner' and e['reason']['result'] == 'rejected'
-               and e['reason']['cause'] == 'unsafe' and e['reason']['gate'] == 'hot_tool' for e in events)
+    assert any(e['event'] == 'planner' and e['reason']['result'] == 'valid' for e in events)
     assert 'Grab' not in json.dumps(events) and 'headphones' not in json.dumps(events)
+
+
+@pytest.mark.parametrize('task,gate', [
+    ('open a laptop charger', 'open_power_supply'),
+    ('open a microwave', 'open_microwave'),
+])
+def test_unsafe_task_logs_cause_without_model_or_cache(monkeypatch, tmp_path, capsys, task, gate):
+    async def trial():
+        b, emitted, fixed, wire, fake, store, points = setup(monkeypatch, tmp_path)
+        assert b.guide.planner.observe('help me ' + task) is False
+        assert not fake.calls and not store.rows and not b.guide.guide
+        # Exercise the post-model boundary too, independently of the intent gate.
+        b.guide.planner.complete = FakeLLM(plan(task))
+        b.guide.planner.request = task
+        await b.guide.planner.build(task, 'synthetic request')
+        assert not store.rows and not b.guide.guide
+    asyncio.run(trial())
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    rejected = [e['reason'] for e in events if e['event'] == 'planner' and e['reason']['result'] == 'rejected']
+    assert len(rejected) == 2
+    assert all(r['cause'] == 'unsafe_task' and r['gate'] == gate for r in rejected)
+    assert task not in json.dumps(events)
 
 
 def test_cache_rechecks_home_scope(monkeypatch, tmp_path):

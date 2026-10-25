@@ -452,3 +452,34 @@ are linked/listed in [the round 6 report](docs/results/planner-live.md).
 Limits: fixtures are synthetic Haiku-like records; no real provider acceptance
 or physical audio timing claim. No `.env` read, network escalation, push, merge,
 or deployment. Local commit only on `pkg/planner-live6`.
+
+
+## planner-live7 — 2026-10-25
+
+LED-only mains/USB/series refusals now apply only to LED-build plans. General
+safety gates remain universal. Unsafe steps become fixed safety lines with their
+metadata cleared and count preserved; unsafe tasks reject with `unsafe_task`.
+Replacements survive cache reload. Added the realistic headphone wall-outlet
+control, plus microwave/mains-wiring general guards and production-only eval scoring.
+
+Files changed: `server/planner.py`, `server/safety.py`, `server/test_planner.py`,
+`eval/cases/checker_good_plans.jsonl`, `eval/swap/checker.py`,
+`eval/swap/test_checker_regressions.py`, `eval/swap/test_components.py`,
+`docs/results/planner-live.md`, `RESULT.md`.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py eval/swap/test_checker_regressions.py eval/swap/test_heldout.py --tb=short` - PASS
+(156 passed in 11.38s; final source; summary read).
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(1271 passed, 16 failed, 2 warnings in 65.15s; final source; summary read).
+The same 16 socket-related failures as round 6: 15 PermissionErrors plus a
+hazard-state KeyError after Live startup PermissionError. No planner/checker failures.
+Test: `~/Projects/a-eye/.venv/bin/python eval/swap/run.py checker --model current --out .pytest_cache/planner-live7-checker` - PASS
+(15/15 bad caught, 1/14 false drops, 0 errors). Headphone `good14` passes unchanged;
+existing `good01` lacks required preparation and is repaired, counted as a false drop.
+Test: `git diff --check` - PASS.
+
+Four new regressions failed before the fix. Broader focused checks passed 189 tests
+before the final task-cause logging additions. Logs, failed node IDs and behavior
+are recorded in [the round 7 report](docs/results/planner-live.md).
+Limits: no `.env` read, external network, real provider call, raw media, push,
+merge or deployment. Local commit on `pkg/planner-live7` only.

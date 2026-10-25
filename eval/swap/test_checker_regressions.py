@@ -13,6 +13,68 @@ def sample(say='Disconnect USB before handling components.', **fields):
         safety='', **fields)]}
 
 
+def test_headphone_wall_outlet_plan_passes_unchanged():
+    value = next(c['plan'] for c in run.load_cases('checker') if c['id'] == 'good14')
+    assert planner.check_plan(value) == value
+
+
+@pytest.mark.parametrize('task', ['open a laptop charger', 'open a microwave'])
+def test_unsafe_task_rejects_with_distinct_cause(task):
+    value = sample()
+    value['task'] = task
+    with pytest.raises(ValueError, match='^unsafe_task$'):
+        planner.validate(value, task)
+
+
+def test_one_bad_step_replaced_and_cache_revalidation_is_stable(tmp_path):
+    value = sample()
+    value['steps'] += [sample('Cut the live wire.')['steps'][0], sample()['steps'][0]]
+    checked = planner.check_plan(value)
+    assert checked is not None and len(checked['steps']) == 3
+    line = next(g.line for g in safety.GATES if g.id == 'live_power')
+    assert checked['steps'][1]['say'] == line
+    assert checked['steps'][0] == value['steps'][0]
+    assert checked['steps'][2] == value['steps'][2]
+    assert 'Cut the live wire' not in json.dumps(checked)
+    store = planner.PlanCache(tmp_path / 'plans.json')
+    store.put(value['task'], checked)
+    assert planner.PlanCache(store.path).get(value['task']) == checked
+
+
+@pytest.mark.parametrize('text,gate', [
+    ('Use a wall outlet.', 'mains'),
+    ('Leave USB plugged in.', 'usb_power'),
+    ('Skip the resistor.', 'series_resistor'),
+])
+def test_led_only_gates_do_not_restrict_other_tasks(text, gate):
+    value = sample()
+    value['steps'].append(sample(text)['steps'][0])
+    value['task'] = 'inspect the headphones'
+    assert planner.check_plan(value) == value
+    value['task'] = 'build an LED circuit'
+    checked = planner.check_plan(value)
+    assert len(checked['steps']) == 2
+    assert checked['steps'][0] == value['steps'][0]
+    assert checked['steps'][1]['say'] == planner.SAFETY_LINES[gate]
+
+
+@pytest.mark.parametrize('text,gate', [
+    ('Move the wet extension cord.', 'water_electric'),
+    ('Mix bleach and vinegar.', 'chemical_mix'),
+    ('Repair the gas line.', 'gas_line'),
+    ('Gas smells normal; switch on the light.', 'gas_smell'),
+])
+def test_general_gates_replace_steps_for_every_task(text, gate):
+    for task in ('inspect the headphones', 'build an LED circuit'):
+        value = sample()
+        value['task'] = task
+        value['steps'].append(sample(text)['steps'][0])
+        checked = planner.check_plan(value)
+        assert len(checked['steps']) == 2
+        assert checked['steps'][1]['say'] == planner.SAFETY_LINES[gate]
+        assert planner.check_plan(checked) == checked
+
+
 def test_production_checker_challenge_bank():
     rows, metrics, checks = checker.score(run.load_cases('checker'))
     assert all(checks.values()), [r for r in rows if not r['ok']]
@@ -38,8 +100,11 @@ def test_public_checker_drops_malformed_input(raw):
 def test_electronics_hazards_in_every_field(field, text):
     value = sample()
     value['steps'][0][field] = text
-    with pytest.raises(ValueError, match='unsafe'):
-        planner.validate(value, value['task'])
+    checked = planner.validate(value, value['task'])
+    assert len(checked['steps']) == len(value['steps'])
+    assert planner.is_safety_step(checked['steps'][0])
+    assert checked['steps'][0] != value['steps'][0]
+    assert planner.check_plan(checked) == checked
 
 
 @pytest.mark.parametrize('text', [
@@ -64,8 +129,11 @@ def test_skipped_or_late_safety_step(say):
     # A late precaution or unspoken metadata cannot make the first instruction safe.
     value['steps'][0]['safety'] = 'Disconnect USB; arrange ventilation.'
     value['steps'].append(sample('Disconnect USB and arrange ventilation.')['steps'][0])
-    with pytest.raises(ValueError, match='unsafe'):
-        planner.validate(value, value['task'])
+    checked = planner.validate(value, value['task'])
+    assert len(checked['steps']) == len(value['steps'])
+    assert planner.is_safety_step(checked['steps'][0])
+    assert checked['steps'][0] != value['steps'][0]
+    assert planner.check_plan(checked) == checked
 
 
 @pytest.mark.parametrize('say', [
@@ -97,11 +165,13 @@ def test_show_and_target_shape(field, text):
 def test_hazard_inherits_task_context():
     value = sample('Poke a small hole.')
     value['task'] = 'repair a lithium cell'
-    assert planner.check_plan(value) is None
+    checked = planner.check_plan(value)
+    assert checked['steps'][0]['say'] == planner.SAFETY_LINES['damaged_battery']
 
 
-def test_live_wire_instruction_still_drops_without_explicit_approval():
-    assert planner.check_plan(sample('Cut the live wire.')) is None
+def test_live_wire_instruction_is_replaced_without_explicit_approval():
+    checked = planner.check_plan(sample('Cut the live wire.'))
+    assert checked['steps'][0]['say'] == planner.SAFETY_LINES['live_power']
 
 
 @pytest.mark.parametrize('text', [
@@ -132,4 +202,7 @@ def test_soldering_precautions_are_not_hazards(text):
 def test_soldering_hazards_still_stop(text):
     assert safety.before(text)
     assert safety.after(text) != text
-    assert planner.check_plan(sample(text)) is None
+    checked = planner.check_plan(sample(text))
+    assert planner.is_safety_step(checked['steps'][0])
+    assert checked['steps'][0]['say'] == safety.before(text)
+    assert planner.check_plan(checked) == checked
