@@ -316,3 +316,31 @@ See its docs/results report.
 ## evals
 
 See its docs/results report.
+
+## Planner Live fix-back — 2026-10-25
+
+Branch `pkg/planner-live2`, base `3749491`. Shared Dad-address normalization,
+capacitor learning intent, and a three-second guide hold for next-step requests
+while a plan is building. A plan arriving during the hold starts at step 1;
+later next-step requests advance normally. Timeout leaves the build running.
+Safety and coded-guide replacement are covered.
+
+The exact reported lowercase `dad The wire ... How do I fix it?` and all seven
+other repair packet variants passed even before these edits. The deployed
+`no_intent` failure is not reproduced in this checkout; no live-provider claim.
+
+Files changed: `server/planner.py`, `server/live_guide.py`,
+`server/gemini_live.py`, `server/test_planner.py`,
+`docs/results/planner-live.md`, `RESULT.md`.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py server/test_live_guide.py --tb=short` - PASS
+(88 passed in 4.38s; summary read).
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(1188 passed, 16 failed, 2 warnings in 54.62s; summary and failure evidence read).
+Fifteen failures are sandbox-denied sockets; the hazard test fails downstream of
+fake Live startup denied by `PermissionError`. Final local log:
+`.pytest_cache/planner-live2-full.log`.
+Test: `git diff --check` - PASS.
+
+Limits: no `.env` read, network permission change, real provider call, push,
+merge or deployment. Full details: [planner-live](docs/results/planner-live.md).

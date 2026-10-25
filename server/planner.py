@@ -17,17 +17,19 @@ from server.task_scope import refuse_home, task_for
 
 TIMEOUT = 12
 FIELDS = {'say', 'show', 'target', 'check', 'safety'}
+ADDRESS = re.compile(r'^(?:hey )?dad\b[,! ]*', re.I)
 INTENT = re.compile(
-    r"^(?:(?:hey )?dad[,! ]+)?(?:please )?(?:"
+    r"^(?:please )?(?:"
     r"(?:can|could|would) you (?:please )?(?:help me (?:to )?|teach me |show me how to )|"
     r"help me (?:to )?|teach me |show me how to |how (?:do i|can i|to) |"
     r"i (?:want|would like) to (?:learn (?:how to )?)?|let['’]s )(.+)$", re.I)
 # Spoken repair requests commonly name the problem before asking how to fix "it".
 # Resolve that pronoun only from a bounded breakage clause in this same utterance.
 REPAIR = re.compile(
-    r"^(?:(?:hey )?dad[,! ]+)?((?:the|my|our|a|an) .+?) "
+    r"^((?:the|my|our|a|an) .+?) "
     r"(?:broke|(?:is|are) broken)([^.!?]*)[.!]\s*"
     r"how (?:do|can) i (fix|repair) (?:it|this|that)[.!?]*$", re.I)
+LEARN = re.compile(r'^what does ((?:a|an|the) [a-z][a-z -]{0,60}) do[.!?]*$', re.I)
 OBSERVATION = re.compile(r"\b(?:where|when)\b|\b(?:what (?:am i|is this|is that)|"
                          r"right now|currently|earlier|yesterday|last time|did i|did we)\b|"
                          r"\b(?:what|which)\b.{0,40}\b(?:holding|looking at|seeing|this|that|these|those)\b", re.I)
@@ -83,12 +85,17 @@ def task_decision(text):
         return None, 'observation'
     if unsafe(text):
         return None, 'unsafe'
-    match = INTENT.fullmatch(text)
-    repair = REPAIR.fullmatch(text) if not match else None
+    # Gemini can transcribe the address as "dad The ...", without punctuation.
+    request = ADDRESS.sub('', text, count=1).strip()
+    match = INTENT.fullmatch(request)
+    repair = REPAIR.fullmatch(request) if not match else None
+    learn = LEARN.fullmatch(request) if not match and not repair else None
     if match:
         requested = match[1].strip(' .!?')
     elif repair:
         requested = f'{repair[3]} {repair[1]}{repair[2]}'.strip()
+    elif learn:
+        requested = f'what {learn[1]} does'
     else:
         return None, 'no_intent'
     if PERSON_CONTEXT.search(requested) or NAMED_PERSON.search(requested):
