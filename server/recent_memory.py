@@ -8,6 +8,7 @@ from time import monotonic, time
 AGE = re.compile(r'\b(a|an|one|two|three|\d+)\s+(seconds?|minutes?) ago\b', re.I)
 LONG = re.compile(r'\b(yesterday|last time|last call|previous call|last week|days? ago)\b', re.I)
 STEP = re.compile(r'\bstep\s+(\d+)\b', re.I)
+CURRENT_STEP = re.compile(r'\b(?:what|which) step\b', re.I)
 STOP = set('what where when did do i my the a an was were is are it put leave left see saw just now ago '
            'minute minutes second seconds one two three earlier in this call happened recently please '
            'you remember last time yesterday picked up'.split())
@@ -30,7 +31,7 @@ def source_for(text, rewind_on=False):
     if age is not None:
         return 'recent' if age <= 120 else 'rewind'
     if re.search(r'\b(just now|just do|just did|recently)\b', text, re.I) or (
-            STEP.search(text) and re.search(r'\b(was|did|earlier)\b', text, re.I)):
+            (STEP.search(text) or CURRENT_STEP.search(text)) and re.search(r'\b(was|did|earlier)\b', text, re.I)):
         return 'recent'
     if re.search(r'\b(earlier|before|start of (?:the|this) call)\b', text, re.I):
         return 'rewind' if rewind_on else 'recent'
@@ -52,8 +53,11 @@ class RecentMemory:
         self.step = ''
         self.store = None
         self.call_id = None
+        self.ram_only = False
 
     def bind(self, store, call_id):
+        if self.ram_only:
+            store = None
         if self.store is not None and (store is None or call_id != self.call_id):
             self._clear_persisted()
         self.store, self.call_id = store, call_id
@@ -90,6 +94,12 @@ class RecentMemory:
             self.step = text[:1000]
             self.add(dict(caption='', objects=[]), self.clock(), self.step, kind='instruction')
 
+    def note_transcript(self, text, role):
+        if text.strip():
+            if role == 'helper':
+                self.note_step(text)
+            self.add(dict(caption=text.strip(), objects=[]), self.clock(), kind=role)
+
     def add(self, scene, observed_at, step=None, kind='scene'):
         self.prune(observed_at)
         entry = dict(observed_at=observed_at, t_s=max(0, observed_at - self.started),
@@ -108,9 +118,12 @@ class RecentMemory:
             entries = [e for e in self.store.recent_records(self.call_id)
                        if self.clock() - e['observed_at'] <= 120]
         step = STEP.search(question)
+        current_step = CURRENT_STEP.search(question)
         target = words(AGE.sub('', question))
         if step:
             entries = [e for e in entries if (m := STEP.search(e['step'])) and m[1] == step[1]]
+        elif current_step:
+            entries = [e for e in entries if e['kind'] == 'instruction' and e['step']]
         else:
             entries = [e for e in entries if e['kind'] == 'scene']
             if target:
@@ -123,10 +136,10 @@ class RecentMemory:
             return None
         hit = (min(entries, key=lambda e: abs(self.clock() - e['observed_at'] - age))
                if age is not None else entries[-1])
-        note = hit['step'] if step else hit['note'] or ', '.join(hit['labels'])
+        note = hit['step'] if step or current_step else hit['note'] or ', '.join(hit['labels'])
         return dict(source='recent', found=True, t_s=hit['t_s'],
                     say=f"At {int(hit['t_s']) // 60}:{int(hit['t_s']) % 60:02d} in this call, "
-                        f"{'the guide said' if step else 'the scene note was'}: {note}")
+                        f"{'the guide said' if step or current_step else 'the scene note was'}: {note}")
 
 
 async def long_term(session, question):

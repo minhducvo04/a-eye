@@ -29,6 +29,7 @@ def test_temporal_routes():
         ('what did I just do?', True, 'recent'),
         ('where did I put the wire a minute ago?', True, 'recent'),
         ('what was step 3?', False, 'recent'),
+        ('what step was I just on?', True, 'recent'),
         ('what happened earlier in this call?', True, 'rewind'),
         ('what happened earlier in this call?', False, 'recent'),
         ('where was the resistor yesterday?', True, 'long-term'),
@@ -136,3 +137,16 @@ def test_step_instruction_not_claimed_as_completed_action():
     assert log.find('what did I just do?') is None
     log.add(scene('Red wire on tray', 'red wire'), 100)
     assert log.entries[-1]['step'].startswith('Step 3:')
+
+
+def test_live_transcripts_are_not_scene_evidence_and_steps_expire():
+    now = [100]
+    log = RecentMemory(clock=lambda: now[0], started=0)
+    log.note_transcript('I placed the resistor.', 'user')
+    assert log.find('what step was I just on?') is None
+    log.note_transcript('Step 3: place resistor on row 12.', 'helper')
+    assert 'guide said' in log.find('what step was I just on?')['say']
+    assert log.find('what did I just do?') is None
+    now[0] = 221
+    assert log.find('what step was I just on?') is None
+    assert not log.entries

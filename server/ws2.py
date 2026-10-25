@@ -271,7 +271,7 @@ async def websocket(ws: WebSocket):
 
     async def send(msg):
         validate('server_message_v2', msg)
-        if session and msg['type'] == 'say' and msg.get('agent') == 'helper':
+        if session and msg['type'] == 'say' and msg.get('agent') == 'helper' and not (live and live.active):
             session.recent_memory.note_step(msg['text'])
         if msg['type'] == 'metrics' and 'turn_id' in msg:
             event('turn_end', session.session_id if session else None,

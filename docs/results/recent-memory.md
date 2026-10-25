@@ -19,7 +19,7 @@ Implemented on the classic `/ws2` turn path; changes are uncommitted. The 20-que
 
 Rewind queries from this route require the switch on, cloud allowed, and Private mode off. Only ready clips ending at least 20 seconds ago are submitted in the current-call video filter; returned moments are checked again against the cutoff. Existing local vision confirmation still decides whether a Rewind hit is sure. Uncertain hits do not become asserted answers. Long-term recall requires the existing remembering/consent settings and preserves its result card and crop safeguards.
 
-The existing unqualified model-tool and recap paths remain in place. This package adds deterministic temporal source selection, not a retrained classifier. Gemini Live's separate streaming dialogue path is not changed.
+The existing unqualified model-tool and recap paths remain in place. This package adds deterministic temporal source selection, not a retrained classifier. Gemini Live now uses the same answer function through `recent_memory(question)`; see the Live integration note below.
 
 ## Measurement
 
@@ -68,3 +68,11 @@ Test: `$HOME/Projects/a-eye/.venv/bin/python -m scripts.recent_memory_bench` - P
 Test: synthetic real loopback `/ws2` probe - PASS (first answer 3.78 ms).
 
 Test: `git diff --check` - PASS.
+
+## Gemini Live integration — 2026-10-24
+
+Live declares `recent_memory(question)` in the supported Gemini schema subset and validates required strings, lengths and extra keys in code. It calls the same `answer()` function as classic recall, preserving recent/Rewind/long-term routing, consent checks, abstention, and earlier-call provenance. Local long-term result cards remain on the client connection; only the bounded `say` text is returned to Google.
+
+Completed, safety-checked Live input/output transcripts enter the existing 120-second log as user/helper entries. Numbered helper instructions establish a step; “what step was I just on?” retrieves the last numbered instruction without asserting completion. Transcript entries are not scene evidence. The existing scene loop runs during Live calls and supplies scene notes; no extra vision request is added. Live marks this log RAM-only, preventing memory-settings refreshes from binding it to persistent storage. Classic storage settings are unchanged. Existing call teardown and expiry apply.
+
+The synthetic fake Live server sends a split numbered instruction, receives a recent-memory tool call, and speaks the returned recent-log answer. This uses real loopback WebSockets and the real scene loop with synthetic vision. It is not a real Google tool-selection or physical-device playback test. Test summaries are in the current `RESULT.md` entry.
