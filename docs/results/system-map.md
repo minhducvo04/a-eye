@@ -4,6 +4,20 @@ Interactive 3D map of the A-Eye system for judges, served at `/map.html` next to
 per call, all driven by one JSON file. Branch `pkg/system-map`; the commit sha is in the git log of that branch (this
 file is part of that commit).
 
+## Numbers round (team numbers sheet, 2026-10-25)
+
+1. Scale panel filled from the sheet: per-user caps, what breaks first at 10 / 100 / 1,000 / 100,000 users, monthly
+   cost per active user, with the provider source links in the panel footnote (`1280-scale.png`, `390-scale.png`).
+2. Every flow now has Path, Data that leaves, Latency, Cost and How long it runs. On desktop the flow opens a panel;
+   on a phone the bottom card has a "Path, cost, runtime" button (`1280-flow-hazard.png`, `390-flow-guest.png`).
+3. Nodes carry list price (estimate) next to our meter: Gemini $0.016 to $0.025 / min list vs $0.10 meter; Haiku notes
+   $0.003 / min list vs $0.15 meter; Rewind busy minute $0.033 list. Router 45.7 ms p50, recent-memory and saved-call
+   lookups (fixtures), Guest / local first audio 1630 ms, Rewind flush 0 at 11 to 20 s marked estimate, all as the
+   sheet marks them. The headline cost chip now reads "(meter)".
+4. Step guide lists the coded multimeter (6 steps) and four-in-hand tie (8 steps) from `server/packs/` on main;
+   soldering stays gate-only. The sheet's pre-refocus home-repair section was not used, and its card count (39) is
+   superseded by main's 20 electronics cards.
+
 ## Product focus round (owner, 2026-10-25)
 
 1. Electronics plus a tie: the headline, step guide and parts shelf now follow the dad guiding his son. The step guide

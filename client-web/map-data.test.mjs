@@ -38,7 +38,7 @@ test('measured numbers match tonight\'s runs and cloud costs say estimate', () =
   assert.match(nodes.get('gemini').speed, /0\.6 to 1\.1 s/);
   assert.match(nodes.get('ground').speed, /1\.8 to 2\.3 s/);
   assert.match(nodes.get('safety').speed, /86 ms/);
-  assert.match(nodes.get('router').speed, /45 ms/);
+  assert.match(nodes.get('router').speed, /45\.7 ms/);
   assert.ok(nodes.get('router').facts.some(([, v]) => /86% of 300/.test(v)));
   assert.match(nodes.get('rewind').speed, /35 to 40 s/);
   for (const id of ['gemini', 'rewind']) assert.match(nodes.get(id).cost, /est\./, id);
@@ -49,7 +49,9 @@ test('final focus: no home-repair words anywhere on the map', () => {
     assert.doesNotMatch(readFileSync(new URL('./' + f, import.meta.url), 'utf8'), /\b(sinks?|faucets?|valves?|plumb\w*|hinges?|breakers?)\b/i, f);
   }
   assert.ok(data.flows.some((f) => f.id === 'guest'));
-  assert.ok(data.scale.rows.some((r) => r.value === null));
+  assert.ok(data.scale.sections.length >= 3);
+  for (const [, u] of data.scale.sources) assert.match(u, /^https:\/\//);
+  for (const f of data.flows) assert.ok(f.detail && f.detail.latency && f.detail.cost, f.id);
 });
 
 test('visible text has no em or en dashes', () => {

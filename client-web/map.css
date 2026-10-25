@@ -122,6 +122,8 @@ button:focus-visible { outline: 2px solid var(--label-speed); outline-offset: 2p
 .sw:first-of-type { border-top: 0; }
 .sw small { color: var(--muted); grid-column: 1; }
 .sw button { grid-row: 1 / span 2; grid-column: 2; align-self: center; font: 600 12px var(--font); color: var(--label-speed); background: none; border: 1px solid var(--rim-hi); border-radius: 999px; padding: 5px 10px; cursor: pointer; min-height: 30px; }
+.src a { color: var(--label-speed); text-decoration: underline; text-underline-offset: 2px; }
+.say .more { pointer-events: auto; font: 600 12px var(--font); color: var(--label-speed); background: none; border: 1px solid var(--rim-hi); border-radius: 999px; padding: 3px 9px; margin-left: 4px; cursor: pointer; }
 .pending { color: var(--build); font-weight: 600; }
 .stat { font-size: 40px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; }
 .stat small { font-size: 14px; color: var(--muted); font-weight: 500; letter-spacing: 0; margin-left: 6px; }

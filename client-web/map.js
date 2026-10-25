@@ -348,7 +348,7 @@ function nodePanel(n) {
     ${lookHtml(n.look)}
     ${n.facts ? `<ul class="facts">${n.facts.map(([k, v]) => `<li><b>${esc(k)}</b>${esc(v)}</li>`).join('')}</ul>` : ''}
     <p class="sec">Connections</p><div class="links">${links.map((e) => `<button data-edge="${e.id}">${esc(nodes[e.from === n.id ? e.to : e.from].name)}: ${esc(e.name)}</button>`).join('')}</div>
-    <p class="sec">Code</p><ul class="code">${n.code.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>`;
+    <p class="sec">Code</p><ul class="code">${n.code.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>${linksHtml(n.links)}`;
 }
 function edgePanel(e) {
   const a = nodes[e.from], b = nodes[e.to];
@@ -370,9 +370,15 @@ function indexPanel() {
   }
   return s + `<p class="sec" style="margin-top:14px">About the numbers</p><p class="kind">${esc(data.measured_note)} ${esc(data.cost_note)}</p>`;
 }
+const linksHtml = (list) => list && list.length ? `<p class="sec">Sources</p><ul class="code src">${list.map(([t, u]) => `<li><a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a></li>`).join('')}</ul>` : '';
 function scalePanel() {
   const sc = data.scale;
-  return `<h2>${esc(sc.title)}</h2><p class="note-build">${esc(sc.note)}</p><ul class="facts">${sc.rows.map((r) => `<li><b>${esc(r.label)}</b>${r.value ? esc(r.value) : '<span class="pending">numbers coming</span>'}</li>`).join('')}</ul>`;
+  return `<h2>${esc(sc.title)}</h2><p class="kind">${esc(sc.note)}</p>${sc.sections.map((x) => `<p class="sec">${esc(x.head)}</p><ul class="facts">${x.rows.map(([k, v]) => `<li><b>${esc(k)}</b>${esc(v)}</li>`).join('')}</ul>`).join('')}${linksHtml(sc.sources)}`;
+}
+function flowPanel(f) {
+  const x = f.detail || {};
+  const rows = [['Path', x.path], ['Data that leaves', x.out], ['Latency', x.latency], ['Cost', x.cost], ['How long it runs', x.runs]].filter(([, v]) => v);
+  return `<h2>${esc(f.name)}</h2><p class="kind">Data flow, playing on the map</p><p>${esc(f.say)}</p><ul class="facts">${rows.map(([k, v]) => `<li><b>${esc(k)}</b>${esc(v)}</li>`).join('')}</ul><p class="kind">${esc(data.cost_note)}</p>`;
 }
 function openPanel(html) {
   body.innerHTML = html;
@@ -478,7 +484,8 @@ for (const c of data.headline.chips) {
   b.addEventListener('click', () => select({ kind: 'node', id: c.node }));
   document.getElementById('chips').appendChild(b);
 }
-function markFlows() { for (const b of flowsEl.children) b.setAttribute('aria-pressed', String(!!flow && b.dataset.flow === flow.id)); sayEl.textContent = flow ? flow.say : defaultSay; document.body.classList.toggle('flowing', !!flow); }
+function markFlows() { for (const b of flowsEl.children) b.setAttribute('aria-pressed', String(!!flow && b.dataset.flow === flow.id)); sayEl.textContent = flow ? flow.say : defaultSay;
+  if (flow && flow.detail && innerWidth <= 760) { const d = document.createElement('button'); d.className = 'more'; d.textContent = 'Path, cost, runtime'; d.addEventListener('click', () => openPanel(flowPanel(flow))); sayEl.append(' ', d); } document.body.classList.toggle('flowing', !!flow); }
 function setFlow(f, once = false) {
   flow = f;
   selected = null;
@@ -488,6 +495,7 @@ function setFlow(f, once = false) {
   applyFocus();
   flowPackets.length = 0;
   if (f) flowPackets.push({ step: 0, t: 0, wait: once ? 0.8 : 0.2, once });
+  if (f && !once && innerWidth > 760) openPanel(flowPanel(f));
 }
 
 // ---------- mode switch ----------
