@@ -15,6 +15,94 @@ from server.agent import Session
 from server.gemini_live import LiveBridge, discover_model, DOCUMENTED_MODEL
 
 
+@pytest.mark.parametrize('evidence', ['none', 'fresh', 'stale', 'other_question'])
+def test_memory_claim_guard_cuts_reply_and_runs_code_lookup(monkeypatch, capsys, evidence):
+    from server import live_memory
+    from server.test_live_memory import bridge_for, played
+    monkeypatch.setattr(live_memory, 'DEBOUNCE', 0)
+
+    async def trial():
+        bridge, emitted, fixed, wire = bridge_for()
+        question = 'Was I holding a neck pillow in our last call?'
+        bridge.question = bridge.guide_question = question
+        lookups = []
+
+        async def lookup(text, scope=None):
+            lookups.append((text, scope))
+            return dict(source='unavailable', found=False, say='No matching saved moment was found.'), []
+
+        bridge._lookup_memory = lookup
+        if evidence != 'none':
+            # Produce evidence through the real code-owned turn, including its delivery.
+            async def found(text, scope=None):
+                return dict(source='recent', found=True, say='A pillow was visible.'), []
+            bridge._lookup_memory = found
+            await bridge.memory.hold()
+            bridge.memory.schedule(question)
+            await bridge.memory.task
+            bridge._lookup_memory = lookup
+            if evidence == 'stale':
+                bridge.memory.evidence_at -= 11
+            elif evidence == 'other_question':
+                bridge.new_input_turn()
+                bridge.question = bridge.guide_question = 'Was there a blue pillow in our last call?'
+            emitted.clear()
+        claim = "I've reviewed our records and there's no clip"
+        await bridge.handle({'serverContent': {'outputTranscription': {'text': claim},
+                                               'turnComplete': True}})
+        if bridge.memory.task:
+            await bridge.memory.task
+        assert not bridge.safety_stopped and bridge.safety_line is None
+        if evidence == 'fresh':
+            assert not lookups and any(m.get('text') == claim for m in played(emitted))
+        else:
+            assert lookups == [(bridge.guide_question, 'long-term')]
+            assert bridge.blocked and not played(emitted)
+            assert fixed == ['No matching saved moment was found.']
+            assert await bridge.text('Describe the blue board')
+            assert not bridge.blocked and not bridge.safety_stopped
+        await bridge.memory.close()
+        await bridge.prefetch.close()
+    asyncio.run(trial())
+    rows = [json.loads(line) for line in capsys.readouterr().out.splitlines() if '"event":"claim_guard"' in line]
+    assert len(rows) == (0 if evidence == 'fresh' else 1)
+    if rows:
+        assert rows[0]['reason'] == 'records_check'
+        assert 'pillow' not in json.dumps(rows) and 'reviewed' not in json.dumps(rows)
+
+
+@pytest.mark.parametrize('phrase', ["checked my memory", "checked the clips", "no clip of",
+                                    "I don't have any clips", "can't find that in our calls",
+                                    "found a clip"])
+def test_memory_claim_guard_streaming_cut(monkeypatch, phrase):
+    from server.test_live_memory import bridge_for
+
+    async def trial():
+        bridge, emitted, fixed, wire = bridge_for()
+        bridge.question = bridge.guide_question = 'What about the neck pillow?'
+        calls = []
+        async def lookup(question, scope=None):
+            calls.append((question, scope))
+            return dict(source='unavailable', found=False, say='No saved match.'), []
+        bridge._lookup_memory = lookup
+        first, last = phrase.rsplit(' ', 1)
+        await bridge.handle({'serverContent': {'outputTranscription': {'text': first + ' '}}})
+        emitted.clear()
+        blob = dict(mimeType='audio/pcm;rate=24000',
+                    data=base64.b64encode(b'\x01\x00' * 9600).decode())
+        await bridge.handle({'serverContent': {'outputTranscription': {'text': last},
+                                               'modelTurn': {'parts': [{'inlineData': blob}]}}})
+        await bridge.handle({'serverContent': {'outputTranscription': {'text': ' invented tail'},
+                                               'modelTurn': {'parts': [{'inlineData': blob}]},
+                                               'turnComplete': True}})
+        await bridge.memory.task
+        assert calls == [('What about the neck pillow?', 'long-term')]
+        assert not any(m['type'] in ('audio', 'reply_delta', 'say') for m in emitted)
+        assert fixed == ['No saved match.'] and not bridge.safety_stopped
+        await bridge.memory.close()
+    asyncio.run(trial())
+
+
 def jpeg():
     out = io.BytesIO()
     Image.new('RGB', (900, 600), 'blue').save(out, 'JPEG')

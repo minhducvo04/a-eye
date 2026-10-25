@@ -30,6 +30,14 @@ MAX_AUDIO = 24000 * 2 * 60
 FIRST_AUDIO_HOLD = .25
 AUDIO_CHUNK_SECONDS = .15
 VIDEO_LEAD_SECONDS = .3
+MEMORY_CLAIMS = tuple((name, re.compile(pattern, re.I)) for name, pattern in (
+    ('records_check', r'\b(?:reviewed|checked|searched|looked (?:through|at)) (?:our|my|the|your) (?:records|memory|memories|clips|calls|history|recordings)\b'),
+    ('no_clip', r'\bno (?:matching )?(?:clips?|recordings?|records?|memory|memories)\b'),
+    ('missing_clips', r"\b(?:don['’]t|do not|haven['’]t) have (?:any |a |the )?(?:clips?|recordings?|records?|memories)\b"),
+    ('call_search', r"\b(?:can['’]t|cannot|couldn['’]t|could not|didn['’]t|did not) find\b.{0,80}\b(?:calls?|clips?|records|memory|recordings?)\b"),
+    ('past_result', r'\b(?:in|from|during) (?:our |your |the )?(?:last|previous|past|earlier) (?:calls?|sessions?|recordings?)\b'),
+    ('found_clip', r'\b(?:found|located) (?:a |the |your |that |some )?(?:clips?|recordings?|records?)\b'),
+))
 # websockets debug logs include the handshake URL and raw media. Never emit them.
 WIRE_LOGGER = logging.Logger('aeye.live.transport')
 WIRE_LOGGER.disabled = True
@@ -287,6 +295,28 @@ class LiveBridge:
             if checked != text:
                 return checked
         return None
+
+    async def guard_memory_claim(self):
+        """Cut an unsupported recall claim; code owns the lookup, without a safety latch."""
+        if self.blocked or self.closed:
+            return False
+        phrase = next((name for name, pattern in MEMORY_CLAIMS if pattern.search(self.output)), None)
+        if not phrase:
+            return False
+        question = self.question.strip() or self.guide_question.strip()
+        if (question and self.memory.evidence_question == question
+                and monotonic() - self.memory.evidence_at <= 10):
+            return False
+        from server.logs import event
+        from server.live_memory import BLOCKED_LINE
+        event('claim_guard', reason=phrase)
+        await self.memory.hold()
+        if question and self.memory.allowed():
+            # A missed input classification must not veto the corrective lookup.
+            self.memory.schedule(question, force_past=True)
+        else:
+            await self.memory.say_fixed(BLOCKED_LINE)
+        return True
 
     async def _open(self):
         require_consent()
@@ -692,6 +722,8 @@ class LiveBridge:
         if line:
             await self.stop(line, output=not input_line)
             return
+        if await self.guard_memory_claim():
+            return
         size = int(self.rate * AUDIO_CHUNK_SECONDS) * 2
         if not final and len(self.audio_buffer) < size:
             return
@@ -866,6 +898,8 @@ class LiveBridge:
                 line = self.stop_line(getattr(self, attr), output)
                 if line:
                     await self.stop(line, output=output)
+                elif output:
+                    await self.guard_memory_claim()
                 scoped = not output and not line and await self.redirect_scope(self.question)
                 if (not output and not line and not scoped and self.guide and not self.safety_stopped
                         and self.guide.claims(self.question)):

@@ -91,6 +91,8 @@ class MemoryTurn:
         self.task = None
         self.held = False      # this turn's Live reply is held by the memory gate
         self.version = 0
+        self.evidence_question = None
+        self.evidence_at = -float('inf')
 
     def allowed(self):
         b = self.bridge
@@ -165,29 +167,32 @@ class MemoryTurn:
         await b.fixed_say(line)
         await b.stage('done')
 
-    def schedule(self, text):
+    def schedule(self, text, *, force_past=False):
         # Debounced like LiveGuide: a still-growing transcript replaces the pending run.
         if self.task and not self.task.done() and self.task is not asyncio.current_task():
             self.task.cancel()
         self.version += 1
-        self.task = asyncio.create_task(self.run(text, self.version))
+        self.task = asyncio.create_task(self.run(text, self.version, force_past=force_past))
 
     def reset(self):
         """A new user turn invalidates and cancels the old lookup, including an idle wait."""
         self.yield_turn()
+        self.evidence_question = None
+        self.evidence_at = -float('inf')
 
     async def close(self):
         if self.task and not self.task.done():
             self.task.cancel()
             await asyncio.gather(self.task, return_exceptions=True)
 
-    async def run(self, text, version):
-        await asyncio.sleep(DEBOUNCE)
+    async def run(self, text, version, *, force_past=False):
+        if not force_past:
+            await asyncio.sleep(DEBOUNCE)
         b = self.bridge
         if not self.current(version):
             return
         try:
-            await self._run(text, version)
+            await self._run(text, version, force_past=force_past)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -195,7 +200,7 @@ class MemoryTurn:
             if self.current(version):
                 await self.say_fixed(TIMEOUT_LINE)
 
-    async def _run(self, text, version):
+    async def _run(self, text, version, *, force_past=False):
         b = self.bridge
         line = b.stop_line(text)
         if line:
@@ -203,7 +208,7 @@ class MemoryTurn:
             return
         if b.guide and b.guide.claims(text):
             return   # safety, then guide, then memory: one owner per turn
-        decision = await self.decide(text)
+        decision = ('long-term', 'past_calls', 'claim_guard') if force_past else await self.decide(text)
         if not self.current(version):
             return
         if decision is None:
@@ -243,6 +248,8 @@ class MemoryTurn:
                                    memory_version=version):
                 self.held = False
                 delivered = 'prompt_turn'
+                self.evidence_question = text.strip()
+                self.evidence_at = monotonic()
         else:
             # Hard constraint: not-found is spoken by code, so nothing can invent a place or a time.
             honest = result.get('say') if not result.get('found') else BLOCKED_LINE

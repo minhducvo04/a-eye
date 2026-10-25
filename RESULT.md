@@ -1,3 +1,26 @@
+# Claim guard
+
+Changed files: `server/gemini_live.py`, `server/live_memory.py`, `server/test_gemini_live.py`, `RESULT.md`.
+
+Unsupported memory/record claims cut the streaming reply and clear queued audio without a safety stop or latch. The last question goes immediately through the existing code-owned past-memory lookup; explicit question scope still wins in recent_memory.answer. Found results supply evidence to Live; not-found results are spoken by code. Only a successfully delivered code evidence turn for this question within 10 seconds permits the claim. New user input invalidates that evidence. One claim_guard event records only a fixed phrase id in reason.
+
+Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_gemini_live.py server/test_live_memory.py` - FAIL (75 passed, 3 failed in 3.37s; all 10 new claim-guard cases passed).
+
+The three failures also reproduce from untouched baseline `73d96ff64b53b96cd7c57acb9d9681fc0e9e6087`:
+- `test_recent_tool_temporal_routes_and_local_result_cards`: expects local row 12; existing routing returns Rewind's workbench.
+- `test_code_owned_memory_does_not_send_query_or_crop_cards[rewind-rewind_hit]`: existing lookup publishes a card.
+- `test_code_owned_memory_does_not_send_query_or_crop_cards[long-term-find_item]`: existing lookup publishes a card.
+
+Baseline check: same pytest files with `-k 'recent_tool_temporal_routes_and_local_result_cards or code_owned_memory_does_not_send_query_or_crop_cards' --tb=short` - FAIL (3 failed, 65 deselected in 0.77s).
+
+Fail-before reproduction: initial claim-guard regression run had 3 failed, 1 passed; unsupported claims did not trigger a lookup. Final regressions cover missing/fresh/stale/other-question evidence, phrase-only logging, next-turn recovery, split phrases and late audio suppression.
+
+Test: `git diff --check` - PASS (no whitespace errors).
+
+Limits: synthetic provider packets and local WebSocket servers only; no live Gemini/TwelveLabs or physical call proof. Matching is phrase-based and cuts when the transcript exposes a matching phrase; earlier streamed prefixes cannot be recalled. Disabled memory gate or unavailable permission yields the existing honest blocked line. Existing routing/card failures are unchanged. No UI changes, .env reads, push, merge, or deployment.
+
+---
+
 ## Whole-index past-call search — pkg/whole-index
 
 Saved clip search now uses up to six concurrent batches of 60 IDs, newest first,
