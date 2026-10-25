@@ -355,7 +355,7 @@ async def answer(session, question, vision=None, *, on_hit=None, scope=None):
         target = words(DAYS.sub('', LONG.sub('', question))) - {
             'me', 'we', 'us', 'our', 'previous', 'session', 'can', 'could', 'tell', 'happen',
             'anything', 'something', 'everything', 'thing', 'talk', 'discuss', 'about'}
-        if on and target:
+        if target:
             try:
                 hits = await rewind.search_kept(question)
                 if hits:

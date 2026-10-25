@@ -295,9 +295,9 @@ def call_summary(rewind):
             continue
         if entry.get('kind') == 'scene' and note not in captions and len(captions) < 12:
             captions.append(note)
-        elif entry.get('kind') == 'user' and note not in questions and len(questions) < 12:
+        elif entry.get('kind') in ('user', 'helper') and note not in questions and len(questions) < 16:
             questions.append(note)
-    asked = (' User questions: ' + '; '.join(reversed(questions)))[:500] if questions else ''
+    asked = (' Talked about: ' + '; '.join(reversed(questions)))[:900] if questions else ''
     return '; '.join(reversed(captions))[:1500 - len(asked)] + asked
 
 
