@@ -89,7 +89,7 @@ Retrain: `python -m router.scope train --cache DIR`; evaluate: `python -m router
 ## Real-call script (from the Board file, section 6)
 
 Setup: sink pack, Rewind on with TwelveLabs consent, `LIVE_MEMORY_GATE=1`, `ROUTER=on`, `REWIND_FLUSH_S=15` only
-if Duc approves the cost, a fresh `CLOUD_BUDGET_PATH`. Camera on a table with a wrench, a towel and a mug.
+if the owner approves the cost, a fresh `CLOUD_BUDGET_PATH`. Camera on a table with a wrench, a towel and a mug.
 Times are from call start. Pass means: the `memory_turn` event shows the source, a card appears when the source
 has one, and Dad's spoken words (output transcript) contain the fact from the evidence, not from the current
 frame.
