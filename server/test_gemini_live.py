@@ -370,7 +370,7 @@ def test_point_uses_configured_backend_and_abstains(monkeypatch, source, cloud, 
         assert bool(emitted) == expected
         if expected:
             assert [o['kind'] for o in emitted[0]['ops']] == ['clear', 'box', 'arrow']
-        session.frame_time -= 2
+        session.frame_time -= 4  # pointer budget is 3 s (owner: boxes must show on the demo link)
         emitted.clear()
         await bridge.tool(dict(name='point_at', args={'label': LABEL}))
         assert not emitted

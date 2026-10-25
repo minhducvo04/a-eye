@@ -120,7 +120,7 @@ def test_hard_budget_and_speech_does_not_wait_for_grounding(monkeypatch):
 
 
 def test_stale_frame_or_camera_off_never_queries():
-    for s in (session(frame_time=monotonic() - 2), session(camera=False)):
+    for s in (session(frame_time=monotonic() - 4), session(camera=False)):
         vision = Vision()
         messages = asyncio.run(run_turn(s, 'Which mug?', vision=vision, llm=Brain(), route='now'))
         assert not shapes(messages) and not vision.calls

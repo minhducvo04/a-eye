@@ -163,6 +163,23 @@ class LiveBridge:
         self.rate = 24000
         self.blocked = False
         self.safety_stopped = False
+        self.pointed = False
+
+    async def _auto_point(self, text):
+        # Live does not always call point_at: box the first object it named that the scene already lists.
+        try:
+            scene = getattr(self.session, 'scene', None) or {}
+            labels = [o.get('label', '') for o in scene.get('objects', []) if o.get('label')]
+            spoken = text.casefold()
+            label = next((l for l in sorted(labels, key=len, reverse=True) if l.casefold() in spoken), None)
+            if not label:
+                return
+            draw = await pointer.ground(self.session, self.vision, label,
+                                        allow_cloud=cloud_vision.enabled() and privacy.google_allowed())
+            if draw and privacy.google_allowed() and not self.closed:
+                await self.send(draw)
+        except Exception:
+            pass
 
     async def stage(self, stage, **fields):
         await self.send(message('turn', turn_id=self.turn_id, stage=stage,
@@ -433,6 +450,7 @@ class LiveBridge:
             block = await context.collect(args['question'], provider='google')
             return block or 'No personal context available.'
         if name == 'point_at':
+            self.pointed = True
             draw = await pointer.ground(self.session, self.vision, args['label'],
                                         allow_cloud=cloud_vision.enabled() and privacy.google_allowed())
             if draw and privacy.google_allowed():
@@ -535,6 +553,8 @@ class LiveBridge:
                     self.session.recent_memory.note_transcript(self.output.strip(), 'helper')
             if not self.blocked:
                 await self.flush_audio(final=True)
+            if not self.blocked and not self.pointed and self.output.strip():
+                asyncio.create_task(self._auto_point(self.output))
             await self.stage('done')
             # A stop stays latched until new user input; late provider packets
             # and interruption acknowledgements must never restart playback.

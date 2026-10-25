@@ -130,7 +130,7 @@ def test_pointer_current_part_and_freshness():
         messages = turn(session, text, vision)
         assert vision.names[-1] == target
         assert any(m['type'] == 'draw' and any(op['kind'] == 'box' for op in m['ops']) for m in messages), target
-    session.frame_time = monotonic() - 2
+    session.frame_time = monotonic() - 4  # pointer budget is 3 s
     assert not any(m['type'] == 'draw' for m in turn(session, 'repeat', Grounding()))
 
 

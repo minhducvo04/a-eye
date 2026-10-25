@@ -76,6 +76,10 @@ def test_fake_live_streams_before_complete_and_stops_mid_reply(monkeypatch, haza
                 chunks = [m for m in emitted if m['type'] == 'audio' and m['pcm16_b64']]
                 assert all(3200 <= len(base64.b64decode(m['pcm16_b64'])) <= 6400 for m in chunks)
                 assert len({m['utterance_id'] for m in chunks}) == 1
+                captions = [m for m in emitted if m['type'] == 'say']
+                assert captions and captions[0]['text'] == 'A blue cup.'
+                assert emitted.index(captions[0]) < emitted.index(chunks[0])
+                assert {m['utterance_id'] for m in captions} == {chunks[0]['utterance_id']}
                 if hazard:
                     assert len(fixed) == 1 and fixed[0][0] == before('open the electrical panel')
                     assert any(m.get('state') == 'listening' for m in emitted[:fixed[0][1]])
@@ -204,3 +208,31 @@ def test_ws2_hazard_sends_stop_caption_and_fixed_audio(monkeypatch):
         assert any(m.get('state') == 'listening' for m in emitted[:stop_at])
         assert all(m['utterance_id'] == stop_id for m in emitted[stop_at:] if m['type'] == 'audio')
         assert bridges[0].blocked
+
+
+@pytest.mark.parametrize('explicit', [False, True])
+def test_auto_pointer_draws_named_scene_object_without_duplicate_tool_draw(explicit):
+    async def trial():
+        from server.test_pointer import Vision, LABEL, BOX, session
+        privacy.set_call({'google': True})
+        emitted = []
+        drawn = asyncio.Event()
+        async def emit(msg):
+            emitted.append(msg)
+            if msg['type'] == 'draw':
+                drawn.set()
+        current, vision = session(), Vision(conf=.6)
+        current.scene = vision.result
+        bridge = LiveBridge(current, vision, None, emit, emit)
+        bridge.model = 'fake'
+        if explicit:
+            await bridge.tool(dict(name='point_at', args={'label': LABEL}))
+        await bridge.handle(audio_content(f'Use the {LABEL}.', turnComplete=True))
+        await asyncio.wait_for(drawn.wait(), 1)
+        await asyncio.sleep(.01)
+        drawings = [m for m in emitted if m['type'] == 'draw']
+        assert len(drawings) == 1
+        assert next(op for op in drawings[0]['ops'] if op['kind'] == 'box')['bbox'] == BOX
+        assert len(vision.calls) == 1
+        assert not bridge.pointed  # explicit pointing cannot suppress the next reply
+    asyncio.run(trial())

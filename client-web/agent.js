@@ -726,7 +726,9 @@ function boot() {
         sendUser(pack === 'engineering' ? 'light an LED' : 'sink', 'typed');
       }
       // Phone speech barged in on the server: stop this laptop's playback as its own VAD would.
-      if (micRoute.phone && message.state === "listening") stopLocalPlayback();
+      // Gemini Live interruption (the user talked over it) also arrives as listening: cut queued audio at once.
+      const liveCall = liveSettings(pack, cloud.google, privateMode).allowed;
+      if ((micRoute.phone || liveCall) && message.state === "listening") stopLocalPlayback();
       wait = waitAfterAgentState(wait, message.agent, message.state, now);
       applyAgentState(message.agent, message.state);
       ui.dispatch({ type: "agent_state", agent: message.agent, state: message.state });

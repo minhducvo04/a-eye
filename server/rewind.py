@@ -211,6 +211,32 @@ def encode_mp4(frames, path):
     return duration
 
 
+def _kept_path(owner):
+    # Kept-call index for one owner: TwelveLabs video ids and call times only, no media or transcripts.
+    from server.memory import person_id, root
+    return root() / person_id(owner) / 'rewind_kept.json'
+
+
+def kept_calls(owner):
+    try:
+        return json.loads(_kept_path(owner).read_text())
+    except (OSError, ValueError):
+        return []
+
+
+async def _keep_and_record(rewind):
+    """'Remember this call': upload the rest, then remember the call's videos so later calls can search them."""
+    await rewind.flush(wait=True)
+    clips = [dict(video_id=c.video_id, start_s=c.start_s, key_s=c.key_s) for c in rewind.clips if c.video_id]
+    if not clips:
+        return
+    calls = [c for c in kept_calls(rewind.owner) if c.get('session_id') != rewind.session_id]
+    calls.append(dict(session_id=rewind.session_id, started_wall=rewind.started_wall, clips=clips))
+    path = _kept_path(rewind.owner)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(calls[-50:]))
+
+
 @dataclass
 class Clip:
     start_s: float              # call time of the first frame
@@ -419,12 +445,31 @@ class Rewind:
                     indexing=counts.get('indexing', 0) + counts.get('uploading', 0),
                     pending=counts.get('pending', 0) + counts.get('open', 0))
 
+    async def search_kept(self, query, limit=3):
+        """Hits in this owner's earlier kept calls ("Remember this call"), newest call first."""
+        past = {c['video_id']: (call, c) for call in kept_calls(self.owner)
+                if call.get('session_id') != self.session_id for c in call.get('clips', [])}
+        if not past:
+            return []
+        rows = await self.client.search(self.index_id, query, video_ids=list(past), limit=limit)
+        hits = []
+        for row in sorted(rows, key=lambda r: r.get('rank', 99)):
+            hit = past.get(row.get('video_id'))
+            if hit is None:
+                continue
+            call, clip = hit
+            at = clip['start_s'] + float(row.get('start', 0))
+            hits.append(dict(t_s=round(at, 1), start_s=round(at, 1), end_s=round(clip['start_s'] + float(row.get('end', 0)), 1),
+                             rank=row.get('rank'), video_id=row.get('video_id'), frame=None, candidates=[],
+                             past_call=True, call_started_wall=call.get('started_wall')))
+        return hits
+
     async def search(self, query, limit=3, before_s=None):
         """Hits in this call, best first: call time, clip window and the nearest kept frame."""
         clips = {c.video_id: c for c in self.clips if c.video_id and c.status == 'ready'
                  and (before_s is None or c.end_s <= before_s)}
         if not clips:
-            return []
+            return await self.search_kept(query, limit) if before_s is None else []
         rows = await self.client.search(self.index_id, query, video_ids=list(clips), limit=limit)
         hits = []
         for row in sorted(rows, key=lambda r: r.get('rank', 99)):
@@ -464,6 +509,8 @@ class Rewind:
             task.add_done_callback(self.waits.discard)
         try:
             hits = await self.search(query, before_s=before_s) if before_s is not None else await self.search(query)
+            if not hits and before_s is None and any(c.video_id for c in self.clips):
+                hits = await self.search_kept(query)   # nothing in this call: try the calls you saved
         except Exception as exc:
             event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
                   error=type(exc).__name__)
@@ -484,6 +531,11 @@ class Rewind:
                     break
         hit.pop('candidates', None)
         hit['alternatives'] = [h['t_s'] for h in hits[1:2]]
+        if hit.get('past_call'):
+            ago = max(0, time() - (hit.get('call_started_wall') or time()))
+            when = (f"{round(ago / 60)} minutes ago" if ago < 5400 else f"{round(ago / 3600)} hours ago"
+                    if ago < 172800 else f"{round(ago / 86400)} days ago")
+            return f"I found it in a call you saved from about {when}, {fmt_offset(hit['t_s'])} into that call.", hit
         if hit['sure']:
             return f"That was {fmt_offset(hit['t_s'])}. Here's the clip.", hit
         times = ' or '.join(fmt_offset(t) for t in [hit['t_s']] + hit['alternatives'])
@@ -637,7 +689,7 @@ class Registry:
             self.memories.detach(session_id)      # local memory stops writing when the call ends
         rewind.memory_writer = None
         if rewind.keep and rewind.on:
-            rewind.end_task = self.spawn(rewind.flush(wait=False))
+            rewind.end_task = self.spawn(_keep_and_record(rewind))
         elif any(c.video_id for c in rewind.clips) or rewind.waits or rewind.lock.locked():
             rewind.end_task = self.spawn(self._end_and_forget(rewind))
         else:
