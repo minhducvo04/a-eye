@@ -78,3 +78,6 @@ ready:            ## morning connection and device checks (no settings changed)
 .PHONY: offline-check
 offline-check:    ## unplug WAN first; real local service probes and Private boundary tests
 	$(PY) scripts/offline_check.py
+.PHONY: apify-home
+apify-home:       ## scrape home-repair Amazon listings into data/kb/home_products.jsonl (.env loaded above)
+	$(PY) scripts/apify_home.py --out data/kb/home_products.jsonl
