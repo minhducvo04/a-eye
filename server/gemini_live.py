@@ -277,6 +277,10 @@ class LiveBridge:
     async def publish_context(self, block):
         if not self.active or self.closed or self.session.private or not privacy.google_allowed():
             return False
+        # Live API: clientContent interrupts any generation in progress. Publish only while Live is idle
+        # (no reply streaming and the user not mid-question); the builder keeps the block for the next tick.
+        if self.received or getattr(self, 'stream_id', None) or self.question.strip() or self.output.strip():
+            return False
         # A small text WebSocket message is atomic. Do not hold the speech send lock
         # while a background update waits on transport backpressure.
         payload = {'clientContent': {'turns': [{'role': 'user', 'parts': [{'text': block}]}],
