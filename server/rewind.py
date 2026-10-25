@@ -73,12 +73,31 @@ def is_rewind_question(text):
 
 
 def query_from(text):
-    """Turn "when did I plug in the CPU fan?" into a visual query: the moment, not the question words."""
-    value = re.sub(r"^\s*(hey\s+)?(a-?eye,?\s*)?", '', text or '', flags=re.I)
-    value = re.sub(r"\b(when|where) did i\b|\bwhat did i do with\b|\bdid i (already )?\b|\brewind\b", '', value,
-                   flags=re.I)
-    value = re.sub(r"[?!.]+$", '', value).strip(' ,')
-    return value or (text or '').strip()
+    """Keep the object phrase in order, dropping question and temporal filler."""
+    from server.recent_memory import AGE, DAYS, LONG, OPENING, words
+    value = LONG.sub('', DAYS.sub('', AGE.sub('', OPENING.sub('', text or ''))))
+    filler = {'me', 'we', 'us', 'our', 'your', 'previous', 'session', 'can', 'could', 'tell',
+              'happen', 'anything', 'something', 'everything', 'thing', 'talk', 'discuss',
+              'rewind', 'already', 'before', 'today', 'tonight', 'week', 'day', 'plug', 'find'}
+    tokens = [w for w in re.findall(r'[a-zA-Z0-9]+', value) if words(w) - filler]
+    return ' '.join(tokens) or (text or '').strip()
+
+
+def search_order(row):
+    """Scores compare across batches; rank is only a fallback/tiebreaker."""
+    return (-(row.get('score') if row.get('score') is not None else -1), row.get('rank') or 99)
+
+
+def low_confidence(hit):
+    return str(hit.get('confidence') or '').lower() == 'low'
+
+
+def mentions_object(text, query):
+    from server.recent_memory import words
+    target = words(query)
+    # Saved questions are not observations of an object.
+    caption = re.split(r'User questions:|Talked about:', text or '', maxsplit=1)[0]
+    return bool(target) and target <= words(caption)
 
 
 _ARTICLE = re.compile(r"\b(the|a|an|my|your|that|this)\s+", re.I)
@@ -288,6 +307,9 @@ def past_call_line(hit):
     ago = max(0, time() - (hit.get('call_started_wall') or time()))
     when = (f"{round(ago / 60)} minutes ago" if ago < 5400 else f"{round(ago / 3600)} hours ago"
             if ago < 172800 else f"{round(ago / 86400)} days ago")
+    if not hit.get('sure'):
+        return (f"I'm not sure I saw it. Here's my best guess from a call you saved from about {when}, "
+                f"{fmt_offset(hit['t_s'])} into that call.")
     return f"I found it in a call you saved from about {when}, {fmt_offset(hit['t_s'])} into that call."
 
 
@@ -613,7 +635,7 @@ class Rewind:
                     pending=counts.get('pending', 0) + counts.get('open', 0))
 
     @_call_cloud
-    async def search_kept(self, query, limit=3):
+    async def search_kept(self, query, limit=5):
         """Best hits in up to 360 saved clips, searched newest first within four seconds."""
         if limit <= 0 or not self.search_allowed() or (self.owner == 'local' and not shared_demo_library()):
             return []
@@ -621,6 +643,7 @@ class Rewind:
                 if call.get('session_id') != self.session_id for c in call.get('clips', [])}
         if not past:
             return []
+        query = query_from(query)
         # Long TwelveLabs id filters return HTTP 400. Bound fan-out to six batches of 60.
         newest = list(reversed(past))[:360]  # kept file is in save order
         batches = [newest[i:i + 60] for i in range(0, len(newest), 60)]
@@ -628,7 +651,7 @@ class Rewind:
 
         async def search_batch(index_id, number, video_ids):
             try:
-                results[number] = await self.client.search(index_id, query, video_ids=video_ids, limit=limit)
+                results[number] = await self.client.search(index_id, query, video_ids=video_ids, limit=max(5, limit))
             except httpx.HTTPStatusError as exc:
                 event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
                       where='rewind_search_kept', error=exc.response.status_code)
@@ -653,14 +676,17 @@ class Rewind:
             pass
         rows = [row for batch in results for row in batch]
         hits = []
-        for row in sorted(rows, key=lambda r: (r.get('rank') or 99, -(r.get('score') or 0))):
+        for row in sorted(rows, key=lambda r: (
+                not mentions_object(past.get(r.get('video_id'), ({}, {}))[0].get('summary'), query),
+                *search_order(r))):
             hit = past.get(row.get('video_id'))
             if hit is None:
                 continue
             call, clip = hit
             at = clip['start_s'] + float(row.get('start', 0))
             hits.append(dict(t_s=round(at, 1), start_s=round(at, 1), end_s=round(clip['start_s'] + float(row.get('end', 0)), 1),
-                             rank=row.get('rank'), video_id=row.get('video_id'), frame=None, candidates=[],
+                             rank=row.get('rank'), score=row.get('score'), confidence=row.get('confidence'),
+                             video_id=row.get('video_id'), frame=None, candidates=[],
                              past_call=True, video_t_s=float(row.get('start', 0)),
                              call_started_wall=call.get('started_wall')))
             if len(hits) >= limit:
@@ -668,7 +694,7 @@ class Rewind:
         return hits
 
     @_call_cloud
-    async def search(self, query, limit=3, before_s=None):
+    async def search(self, query, limit=5, before_s=None):
         """Hits in this call, best first: call time, clip window and the nearest kept frame."""
         if not self.cloud_allowed():
             return []
@@ -676,9 +702,10 @@ class Rewind:
                  and (before_s is None or c.end_s <= before_s)}
         if not clips:
             return await self.search_kept(query, limit) if before_s is None else []
-        rows = await self.client.search(self.index_id, query, video_ids=list(clips), limit=limit)
+        query = query_from(query)
+        rows = await self.client.search(self.index_id, query, video_ids=list(clips), limit=max(5, limit))
         hits = []
-        for row in sorted(rows, key=lambda r: r.get('rank', 99)):
+        for row in sorted(rows, key=search_order):
             clip = clips.get(row.get('video_id'))
             if clip is None:
                 continue
@@ -698,13 +725,17 @@ class Rewind:
                 if all(t_f != c[0] for c in candidates):
                     candidates.append((t_f, jpeg))
             hits.append(dict(t_s=round(at, 1), start_s=round(start, 1), end_s=round(end, 1), rank=row.get('rank'),
-                             video_id=clip.video_id, frame=frame, candidates=candidates))
-        return hits
+                             video_id=clip.video_id, frame=frame, candidates=candidates,
+                             score=row.get('score'), confidence=row.get('confidence')))
+        log = getattr(getattr(self, 'session', None), 'recent_memory', None)
+        entries = getattr(log, 'entries', [])
+        hits.sort(key=lambda h: not any(
+            e.get('kind') == 'scene' and h['start_s'] <= e['t_s'] <= h['end_s']
+            and mentions_object(' '.join([e['note'], *e.get('labels', [])]), query) for e in entries))
+        return hits[:limit]
 
     async def answer(self, text, vision=None, before_s=None):
-        """Spoken line plus the best hit (or None). TwelveLabs gives rank but no score, so the rank-1 frame is
-        checked by our own vision host (no extra cloud call) before the talker claims it; that check also gives
-        the box the caller draws on the hit frame."""
+        """Rank by visual score and notes; verify locally before claiming a confident hit."""
         if not self.on and not self.clips:
             return "Rewind is off, so I didn't keep clips of this call. Turn on Rewind to use it.", None
         query = query_from(text)
@@ -732,7 +763,7 @@ class Rewind:
             for t_f, jpeg in hit.pop('candidates', None) or [(hit['t_s'], hit['frame'])]:
                 objects = await confirm(vision, jpeg, hit['target'])
                 if objects:
-                    hit.update(objects=objects, sure=True, frame=jpeg)
+                    hit.update(objects=objects, sure=not low_confidence(hit), frame=jpeg)
                     break
         hit.pop('candidates', None)
         hit['alternatives'] = [h['t_s'] for h in hits[1:2]]

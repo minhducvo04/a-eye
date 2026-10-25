@@ -59,7 +59,7 @@ def test_object_search_uses_saved_videos_and_emits_card(tmp_path, monkeypatch):
     result = asyncio.run(answer(session, 'Where was my wrench last call?', on_hit=on_hit))
     assert result['found'] and result['source'] == 'rewind'
     assert 'call you saved' in result['say'] and '23 seconds' in result['say']
-    assert session.rewind.client.searches == [('idx-1', 'Where was my wrench last call?', ['old-video'])]
+    assert session.rewind.client.searches == [('idx-1', 'wrench', ['old-video'])]
     assert cards[0]['past_call'] and cards[0]['t_s'] == 23
     assert cards[0]['sure'] is False and cards[0]['objects'] == []
 
@@ -169,7 +169,7 @@ def test_saved_search_batches_merge_and_limit(tmp_path, monkeypatch, count, batc
     assert [v for batch in batches for v in batch] == [
         f'video-{n}' for n in range(count - 1, max(-1, count - 361), -1)]
     assert [h['video_id'] for h in hits] == [
-        f'video-{count - 121}', f'video-{max(0, count - 360)}', f'video-{count - 61}']
+        f'video-{count - 1}', f'video-{count - 121}', f'video-{max(0, count - 360)}']
     assert all(h['t_s'] == 23 and h['past_call'] for h in hits)
 
 
@@ -299,7 +299,7 @@ def test_past_call_question_searches_saved_videos_with_rewind_off(tmp_path, monk
     assert not session.rewind.on and not session.rewind.cloud_allowed()
     result = asyncio.run(answer(session, 'Where was my wrench last call?'))
     assert result['found'] and result['source'] == 'rewind'
-    assert session.rewind.client.searches == [('idx-1', 'Where was my wrench last call?', ['old-video'])]
+    assert session.rewind.client.searches == [('idx-1', 'wrench', ['old-video'])]
     assert not session.rewind.on  # recording of the current call stays off
 
 
@@ -318,3 +318,26 @@ def test_past_call_search_with_rewind_off_respects_privacy(tmp_path, monkeypatch
     result = asyncio.run(answer(session, 'Where was my wrench last call?'))
     assert not session.rewind.client.searches
     assert result['source'] == 'kept-summary' and 'blue mug' in result['say']
+
+
+def test_saved_summary_prefers_bottle_and_keeps_low_confidence_card(tmp_path, monkeypatch):
+    session = library(tmp_path, monkeypatch)
+    privacy.set_call(rewind=True)
+    session.rewind.set_on(True)
+    records = rw.kept_calls('local')
+    records[0]['summary'] = 'A phone on the table. User questions: Where is my water bottle?'
+    records.append(dict(session_id='bottle-call', started_wall=10, summary='Water bottle on a shelf',
+                        clips=[dict(video_id='bottle-video', start_s=20)]))
+    rw._kept_path('local').write_text(json.dumps(records))
+    session.rewind.client.rows = [
+        dict(video_id='old-video', start=3, end=5, rank=1, score=0.99),
+        dict(video_id='bottle-video', start=3, end=5, rank=2, score=0.8, confidence='low')]
+    cards = []
+
+    async def on_hit(hit):
+        cards.append(hit)
+
+    result = asyncio.run(answer(session, 'Dad where did I put my water bottle last call', on_hit=on_hit))
+    assert session.rewind.client.searches[0][1] == 'water bottle'
+    assert cards[0]['video_id'] == 'bottle-video' and cards[0]['sure'] is False
+    assert result['sure'] is False and 'best guess' in result['say'] and 'not sure' in result['say']
