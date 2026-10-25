@@ -64,6 +64,7 @@ class Session:
     home_guide: object = field(default=None, repr=False)
     ee_guide: object = field(default=None, repr=False)
     growth: object = field(default=None, repr=False)
+    context_agent: object = field(default=None, repr=False)
     step_checker: object = field(default=None, repr=False)
     private: bool = False
     checker_test_mode: bool = False
@@ -354,7 +355,7 @@ async def plan_scene(session, planner, base_system, user, scene, seq, text, emit
     return clean, safe_speech(note)[:160], head.get('speak') is True
 
 async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None, planner=None, stt_ms=None,
-                   app=None, route=None):
+                   app=None, route=None, context_block=None):
     """One voice turn. With planner set (talker + thinker mode), llm only talks and planner draws in parallel."""
     usage = []
     TURN_USAGE.set(usage)
@@ -573,6 +574,10 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         scene, seq = session.scene, session.scene_seq
     system = session.pack.system_prompt + personas.style_block(session.persona) + (
         " memory lists earlier views, oldest last; only the entry marked now is what the camera shows.")
+    if session.context_agent:
+        from server.context_agent import classic_provider
+        system += (context_block if context_block is not None else
+                   await session.context_agent.collect(text, provider=classic_provider()))
     duo = planner is not None
     pointing = session.pack.id == 'general'
     if not session.camera:

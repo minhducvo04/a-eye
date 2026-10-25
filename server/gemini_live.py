@@ -85,8 +85,10 @@ async def discover_model(client=None):
 
 
 TOOL_ARGS = {'point_at': ('label',), 'find_item': ('name',), 'tag_item': ('name', 'place'),
-             'forget_memory': ('name',), 'rewind_search': ('query',), 'recent_memory': ('question',)}
+             'forget_memory': ('name',), 'rewind_search': ('query',), 'recent_memory': ('question',),
+             'gather_context': ('question',)}
 TOOL_DESCRIPTIONS = {
+    'gather_context': 'Gather relevant camera, recent memory, places, growth and dated notes before answering a user question.',
     'point_at': 'Ground a visible object and draw a box and arrow only when sure.',
     'find_item': 'Look up an item in the user\'s local memory.',
     'tag_item': 'Remember an item and its home place locally, when the user asks.',
@@ -136,6 +138,7 @@ class LiveBridge:
         self.active = False
         self.closed = False
         self.reconnects = 0
+        self.audio_context_sent = False
         self.lock = asyncio.Lock()
         self.video_lock = asyncio.Lock()
         self.last_video = -float('inf')
@@ -187,10 +190,13 @@ class LiveBridge:
         self.ws = await connect(url, open_timeout=10, close_timeout=2, max_size=4 * 1024 * 1024,
                                 logger=WIRE_LOGGER)
         try:
+            context = self.session.context_agent
+            context_block = (await context.collect(provider='google')) if context else ''
             setup = live_setup(self.model, self.session.pack.system_prompt + personas.style_block(self.session.persona) +
                     ' Use point_at to point at visible objects. Use local memory tools only when requested. '
                     'Use recent_memory for questions about previous steps or observations, preserving the full time scope. '
-                    'Never claim a memory is saved or deleted before a tool confirms it.',
+                    'Never claim a memory is saved or deleted before a tool confirms it. '
+                    'Call gather_context before answering each spoken user question. ' + context_block,
                     voice=self.session.persona.get('gemini_live_voice'))
             setup['tools'] = [{'functionDeclarations': declarations(self.rewind_on())}]
             await self._send({'setup': setup})
@@ -250,8 +256,18 @@ class LiveBridge:
         if raw:
             if self.blocked:
                 self._reset_reply()
+            context = self.session.context_agent
+            if context and not self.audio_context_sent and self.active and privacy.google_allowed():
+                # Append context before the utterance starts; audio still controls the turn.
+                # Once words arrive, gather_context reranks against the actual question.
+                block = await context.collect(provider='google')
+                if block:
+                    await self._input({'clientContent': {'turns': [
+                        {'role': 'user', 'parts': [{'text': block}]}], 'turnComplete': False}})
+                self.audio_context_sent = True
             await self._input({'realtimeInput': {'audio': {'mimeType': 'audio/pcm;rate=16000', 'data': encoded}}})
         if final:
+            self.audio_context_sent = False
             await self._input({'realtimeInput': {'audioStreamEnd': True}})
 
     async def text(self, text):
@@ -265,6 +281,15 @@ class LiveBridge:
         if line:
             await self.stop(line)
             return True
+        context = self.session.context_agent
+        if context:
+            from server.context_agent import DISMISS
+            if DISMISS.fullmatch(text):
+                await self.dismiss_followup(text)
+                return True
+            context.ingest(text)
+            block = await context.collect(text, provider='google')
+            text += block
         await self.video()
         # Realtime streams have no cross-modality acknowledgement. Give a newly
         # sent frame a short lead; keep text on the same realtime input path.
@@ -325,6 +350,12 @@ class LiveBridge:
         if self.blocked:
             return 'Stopped by code.'
         require_consent()
+        if name == 'gather_context':
+            context = self.session.context_agent
+            if not context:
+                return 'No personal context available.'
+            block = await context.collect(args['question'], provider='google')
+            return block or 'No personal context available.'
         if name == 'point_at':
             draw = await pointer.ground(self.session, self.vision, args['label'],
                                         allow_cloud=cloud_vision.enabled() and privacy.google_allowed())
@@ -348,6 +379,14 @@ class LiveBridge:
         # Allowlist one textual result; never forward crops, embeddings or the memory log.
         return str(result.get('say') or 'No result.')[:4000]
 
+    async def dismiss_followup(self, text):
+        context = self.session.context_agent
+        deleted = context.dismiss(text)
+        # Replace the provider session so it cannot recall a deleted setup/tool note.
+        await self.stop("Okay, I deleted that follow-up." if deleted else "There isn't a follow-up to delete.")
+        if self.ws:
+            await self.ws.close()
+
     async def handle(self, response):
         require_consent()
         content = response.get('serverContent', {})
@@ -367,6 +406,11 @@ class LiveBridge:
                     await self.stop(line)
                 if not output:
                     await self.receive_text(self.question)
+                    from server.context_agent import DISMISS
+                    if self.session.context_agent and DISMISS.fullmatch(self.question) and not self.blocked:
+                        await self.dismiss_followup(self.question)
+                    elif self.session.context_agent and not self.blocked:
+                        await self.session.context_agent.collect(self.question, provider='google')
         if not self.blocked:
             for part in content.get('modelTurn', {}).get('parts', []):
                 blob = part.get('inlineData')
@@ -390,6 +434,8 @@ class LiveBridge:
                 id=call['id'], name=call['name'], response={'result': result})]}})
         if content.get('turnComplete'):
             if not self.blocked:
+                if self.session.context_agent:
+                    self.session.context_agent.ingest(self.question)
                 self.session.recent_memory.note_transcript(self.question, 'user')
             if not self.blocked and self.output.strip():
                 line = self.stop_line(self.output, True)

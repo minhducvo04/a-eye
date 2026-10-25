@@ -292,7 +292,8 @@ class Store(Places):
             days = self._read_json('settings.json', {}).get('kept_days', retention_days())
         cutoff = self.clock() - 86400 * days
         self._delete_places(placements=[p['id'] for p in self.placements() if p['t'] < cutoff])
-        return self._drop(lambda r: r.get('t', 0) >= cutoff)
+        return self._drop(lambda r: (r.get('followup_at', 0) + min(days, 7) * 86400 >= self.clock()
+                                    if r.get('source') == 'plan' else r.get('t', 0) >= cutoff))
 
 
 def mentions(record, item):

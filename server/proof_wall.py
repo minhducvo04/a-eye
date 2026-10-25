@@ -29,10 +29,12 @@ def picture_count(root=None):
 async def status(request: Request, session_id: str = ''):
     call = registry(request.app).get(session_id, identity(request))
     meter = getattr(call, 'cloud_meter', None)
+    context = getattr(getattr(call, 'session', None), 'context_agent', None)
     try:
         count = await asyncio.to_thread(picture_count)
     except OSError:
         count = None  # unreadable is unknown, never a reassuring zero
-    return JSONResponse(dict(pictures_saved=count, pictures_sent=meter.pictures_sent if meter else None,
+    return JSONResponse(dict(context_sources=list(context.sources) if context else [],
+                             pictures_saved=count, pictures_sent=meter.pictures_sent if meter else None,
                              **(meter.snapshot() if meter else dict(cloud_ai_calls=None, bytes_to_cloud=None))),
                         headers={'Cache-Control': 'no-store'})
