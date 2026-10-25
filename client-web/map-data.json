@@ -218,8 +218,8 @@
    "id": "router",
    "zone": "server",
    "pos": [
-    -0.8,
-    2.3,
+    -1.2,
+    3.1,
     1.2
    ],
    "size": 0.55,
@@ -304,9 +304,9 @@
    "id": "safety",
    "zone": "server",
    "pos": [
-    -1.6,
-    -2.8,
-    1.8
+    -1.8,
+    -3.4,
+    2.0
    ],
    "size": 0.55,
    "status": "working",
@@ -358,9 +358,9 @@
    "id": "guide",
    "zone": "server",
    "pos": [
-    0.4,
-    -0.3,
-    2.2
+    1.2,
+    0.9,
+    2.8
    ],
    "size": 0.5,
    "status": "working",
@@ -412,8 +412,8 @@
    "id": "context",
    "zone": "server",
    "pos": [
-    1.4,
-    4.3,
+    2.4,
+    5.0,
     -0.6
    ],
    "size": 0.5,
@@ -610,7 +610,7 @@
    "size": 0.5,
    "status": "working",
    "name": "Recent memory",
-   "speed": "seconds to minutes",
+   "speed": "not measured",
    "cost": "$0 (local)",
    "kind": "Call-local text recall (server/recent_memory.py)",
    "what": "Remembers what was said and seen in this call so \"what did I just do?\" can be answered from text, without video. Lives only for the call.",
@@ -836,9 +836,9 @@
    "id": "privacy",
    "zone": "server",
    "pos": [
-    -6.6,
-    -3.3,
-    2
+    -7.0,
+    -3.6,
+    1.6
    ],
    "size": 0.42,
    "status": "working",
@@ -901,7 +901,8 @@
    "name": "voice + frames",
    "speed": "1 fps",
    "cost": "",
-   "what": "Mic audio and 1 fps, 320 px frames up; voice and boxes back down. One WebSocket, /ws2."
+   "what": "Mic audio and 1 fps, 320 px frames up; voice and boxes back down. One WebSocket, /ws2.",
+   "main": true
   },
   {
    "id": "srv-gem",
@@ -913,8 +914,9 @@
    "bend": 1.2,
    "name": "live audio + frames",
    "speed": "0.6 to 1.1 s",
-   "cost": "~$0.10 / min",
-   "what": "The live conversation. Gemini hears and sees, then speaks; the reply streams back through the server to the phone."
+   "cost": "~$0.10 / min (est.)",
+   "what": "The live conversation. Gemini hears and sees, then speaks; the reply streams back through the server to the phone.",
+   "main": true
   },
   {
    "id": "srv-rt",
@@ -959,7 +961,7 @@
    "rate": 0.4,
    "name": "earlier this call",
    "speed": "",
-   "cost": "~$0.10 / req",
+   "cost": "~$0.10 / req (est.)",
    "what": "Questions about earlier in this call search Rewind."
   },
   {
@@ -1113,7 +1115,7 @@
    "bend": 0.8,
    "name": "silent clips",
    "speed": "35 to 40 s",
-   "cost": "~$0.10 / req",
+   "cost": "~$0.10 / req (est.)",
    "what": "Busy moments become short silent clips, uploaded on each flush and searchable about 35 to 40 s after the event."
   },
   {
@@ -1233,5 +1235,25 @@
    ],
    "say": "Every cloud switch off: Whisper, a local model and Kokoro at home. $0, speed not measured."
   }
- ]
+ ],
+ "headline": {
+  "say": "A-Eye sees through your phone camera and talks you through hands-on jobs, while coded safety gates can cut the model off mid sentence.",
+  "chips": [
+   {
+    "text": "voice in 0.6 to 1.1 s",
+    "tone": "speed",
+    "node": "gemini"
+   },
+   {
+    "text": "hazard stop in 86 ms",
+    "tone": "speed",
+    "node": "safety"
+   },
+   {
+    "text": "~$1.40 per 2.5 min call (est.)",
+    "tone": "cost",
+    "node": "gemini"
+   }
+  ]
+ }
 }

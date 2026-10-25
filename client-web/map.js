@@ -9,7 +9,7 @@ const TONE = {
   danger: '#ff6b78', building: '#ff9f5a', muted: '#8a95a8', speed: '#74e4ff', cost: '#ffd479', switch: '#dbe4f2',
 };
 const PULSE_SPEED = REDUCED ? 0.9 : 4.2; // world units per second
-const TRAIL = 18;
+const TRAIL = 30;
 
 const data = await (await fetch('map-data.json', { cache: 'no-store' })).json();
 const zones = Object.fromEntries(data.zones.map((z) => [z.id, z]));
@@ -173,13 +173,14 @@ for (const e of data.edges) {
 const ambient = [];
 for (const e of data.edges) {
   if (e.kind === 'control' || e.status === 'building') continue;
-  const count = REDUCED ? 1 : Math.max(1, Math.round((e.rate ?? 0.5) * 5)); // reduced motion: one slow pulse per line
+  const count = REDUCED ? 1 : Math.max(1, Math.round((e.rate ?? 0.5) * (e.main ? 9 : 4))); // reduced motion: one slow pulse per line
   for (let i = 0; i < count; i++) {
     const reverse = e.both && i % 2 === 1;
     ambient.push({ edge: e.id, reverse, t: REDUCED ? 0 : Math.random(), wait: Math.random() * (REDUCED ? 12 : 1.2), flow: false });
   }
 }
 const flowPackets = [];
+let pendingClear = false;
 const MAXP = (ambient.length + 4) * TRAIL;
 const pPos = new Float32Array(MAXP * 3), pCol = new Float32Array(MAXP * 3), pSize = new Float32Array(MAXP), pAlpha = new Float32Array(MAXP);
 const pGeo = new THREE.BufferGeometry();
@@ -280,24 +281,28 @@ const tone = (t) => TONE[t] || TONE.muted;
 
 function rangeSvg(w) {
   const W = 320, top = (w.marks || []).length ? 22 : 6, rowH = 36, axisY = top + w.ranges.length * rowH + 4, H = axisY + 22;
-  const x = (v) => 10 + ((v - w.min) / (w.max - w.min)) * (W - 20);
+  const x = (v) => 14 + ((v - w.min) / (w.max - w.min)) * (W - 40);
   const step = niceStep(w.max - w.min);
+  const halo = 'paint-order="stroke" stroke="#0a0f19" stroke-width="5" stroke-linejoin="round"';
   let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(w.title)}">`;
   for (let v = w.min; v <= w.max + 1e-9; v += step) {
+    const last = v + step > w.max + 1e-9;
     s += `<line x1="${x(v)}" x2="${x(v)}" y1="${top}" y2="${axisY}" stroke="rgba(255,255,255,.08)"/>`;
-    s += `<text x="${x(v)}" y="${axisY + 14}" fill="#a3afc2" font-size="11" text-anchor="middle">${+v.toFixed(2)}${v + step > w.max + 1e-9 ? ' ' + esc(w.unit) : ''}</text>`;
+    s += `<text x="${x(v)}" y="${axisY + 14}" fill="#a3afc2" font-size="11" text-anchor="middle">${+v.toFixed(2)}</text>`;
+    if (last) s += `<text x="${W - 2}" y="${axisY + 14}" fill="#a3afc2" font-size="11" text-anchor="end">${esc(w.unit)}</text>`;
+  }
+  // marks first, so range captions (with a dark halo) sit on top of the mark lines
+  for (const m of w.marks || []) {
+    const c = tone(m.tone), mx = x(m.at);
+    s += `<line x1="${mx}" x2="${mx}" y1="${top - 6}" y2="${axisY}" stroke="${c}" stroke-width="2" ${m.tone === 'muted' ? 'stroke-dasharray="3 3"' : ''}/>`;
+    s += `<text x="${mx + (mx > W - 110 ? -5 : 5)}" y="${top - 8}" fill="${c === TONE.muted ? '#a3afc2' : c}" font-size="11" font-weight="600" text-anchor="${mx > W - 110 ? 'end' : 'start'}">${esc(m.label)}</text>`;
   }
   w.ranges.forEach((r, i) => {
     const y = top + i * rowH;
     const text = `${r.label}: ${r.from} to ${r.to} ${w.unit}`, end = x(r.from) + text.length * 6.6 > W - 4;
-    s += `<text x="${end ? Math.min(W - 4, x(r.to)) : x(r.from)}" y="${y + 13}" fill="#e9eef7" font-size="12" text-anchor="${end ? 'end' : 'start'}">${esc(text)}</text>`;
     s += `<rect x="${x(r.from)}" y="${y + 19}" width="${Math.max(3, x(r.to) - x(r.from))}" height="10" rx="5" fill="${tone(r.tone)}"/>`;
+    s += `<text x="${end ? Math.min(W - 4, x(r.to)) : x(r.from)}" y="${y + 13}" fill="#e9eef7" font-size="12" text-anchor="${end ? 'end' : 'start'}" ${halo}>${esc(text)}</text>`;
   });
-  for (const m of w.marks || []) {
-    const c = tone(m.tone), mx = x(m.at);
-    s += `<line x1="${mx}" x2="${mx}" y1="${top - 6}" y2="${axisY}" stroke="${c}" stroke-width="2"/>`;
-    s += `<text x="${mx + (mx > W - 110 ? -5 : 5)}" y="${top - 8}" fill="${c === TONE.muted ? '#a3afc2' : c}" font-size="11" font-weight="600" text-anchor="${mx > W - 110 ? 'end' : 'start'}">${esc(m.label)}</text>`;
-  }
   return s + '</svg>';
 }
 function niceStep(span) { const raw = span / 5; const p = 10 ** Math.floor(Math.log10(raw)); return [1, 2, 2.5, 5, 10].map((m) => m * p).find((v) => v >= raw); }
@@ -355,7 +360,7 @@ function indexPanel() {
   for (const z of data.zones) {
     s += `<p class="sec">${esc(z.name)}</p><ul class="index">`;
     for (const n of data.nodes.filter((x) => x.zone === z.id)) {
-      s += `<li><button data-node="${n.id}"><i style="background:${toneOf(n)}"></i><span>${esc(n.name)}</span><small>${esc(n.status === 'building' ? 'building' : n[mode === 'name' ? 'speed' : mode] || '')}</small></button></li>`;
+      s += `<li><button data-node="${n.id}"><i style="background:${toneOf(n)}"></i><span>${esc(n.name)}</span><small class="m-${mode === 'name' ? 'speed' : mode}">${esc(n.status === 'building' ? 'building' : n[mode === 'name' ? 'speed' : mode] || '')}</small></button></li>`;
     }
     s += '</ul>';
   }
@@ -364,9 +369,10 @@ function indexPanel() {
 function openPanel(html) {
   body.innerHTML = html;
   panel.hidden = false;
+  document.body.classList.add('sheet');
   panel.scrollTop = 0;
 }
-function closePanel() { panel.hidden = true; selected = null; applyFocus(); }
+function closePanel() { panel.hidden = true; document.body.classList.remove('sheet'); selected = null; applyFocus(); }
 panel.addEventListener('click', (ev) => {
   const t = ev.target.closest('button');
   if (!t) return;
@@ -382,20 +388,42 @@ const home = { target: new THREE.Vector3(), pos: new THREE.Vector3() };
 let tween = null;
 let panelShift = 0, panelShiftY = 0;
 function frame() {
+  // Fit by projection: move and zoom until every node sits inside the free area below the header strip.
   const narrow = camera.aspect < 0.8;
   root.rotation.z = narrow ? -Math.PI / 2 : 0;
   root.updateMatrixWorld(true);
   const pts = data.nodes.map((n) => world(n.pos));
   const box = new THREE.Box3().setFromPoints(pts);
-  const c = box.getCenter(new THREE.Vector3());
-  const r = Math.max(...pts.map((p) => p.distanceTo(c))) + 1.4;
-  const vfov = THREE.MathUtils.degToRad(camera.fov);
-  const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
-  const dist = (r / Math.sin(Math.min(vfov, hfov) / 2)) * (narrow ? 0.7 : 0.84);
+  const W = innerWidth, H = innerHeight;
+  const barBottom = document.querySelector('.bar').getBoundingClientRect().bottom;
+  const side = Math.min(95, W * 0.19);
+  const safe = { l: side, r: W - side, t: barBottom + 12, b: H - (narrow ? 70 : 76) };
   const dir = narrow ? new THREE.Vector3(0.1, 0.22, 1).normalize() : new THREE.Vector3(0.16, 0.3, 1).normalize();
-  home.target.copy(c).add(new THREE.Vector3(0, narrow ? 1.1 : 0.4, 0));
+  const target = box.getCenter(new THREE.Vector3());
+  let dist = 32;
+  const vfov = THREE.MathUtils.degToRad(camera.fov);
+  camera.clearViewOffset();
+  const right = new THREE.Vector3(), up = new THREE.Vector3(), q = new THREE.Vector3();
+  for (let i = 0; i < 8; i++) {
+    camera.position.copy(target).addScaledVector(dir, dist);
+    camera.lookAt(target);
+    camera.updateMatrixWorld(true);
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const p of pts) {
+      q.copy(p).project(camera);
+      const x = (q.x * 0.5 + 0.5) * W, y = (-q.y * 0.5 + 0.5) * H;
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+    }
+    const k = Math.max((x1 - x0) / (safe.r - safe.l), (y1 - y0) / (safe.b - safe.t));
+    const perPx = (2 * dist * Math.tan(vfov / 2)) / H;
+    right.setFromMatrixColumn(camera.matrixWorld, 0);
+    up.setFromMatrixColumn(camera.matrixWorld, 1);
+    target.addScaledVector(right, ((x0 + x1) / 2 - (safe.l + safe.r) / 2) * perPx).addScaledVector(up, -((y0 + y1) / 2 - (safe.t + safe.b) / 2) * perPx);
+    dist *= Math.pow(k, 0.85);
+  }
+  home.target.copy(target);
+  home.pos.copy(target).addScaledVector(dir, dist);
   window.__floor.position.y = box.min.y - 2.5;
-  home.pos.copy(home.target).addScaledVector(dir, dist);
 }
 function flyTo(target, pos, ms = 700) {
   if (REDUCED) { controls.target.copy(target); if (pos) camera.position.copy(pos); return; }
@@ -432,15 +460,25 @@ for (const f of data.flows) {
   b.addEventListener('click', () => setFlow(flow && flow.id === f.id ? null : f));
   flowsEl.appendChild(b);
 }
-function markFlows() { for (const b of flowsEl.children) b.setAttribute('aria-pressed', String(!!flow && b.dataset.flow === flow.id)); sayEl.textContent = flow ? flow.say : defaultSay; }
-function setFlow(f) {
+// headline strip: one sentence and three numbers a judge can read in ten seconds
+document.getElementById('tagline').textContent = data.headline.say;
+for (const c of data.headline.chips) {
+  const b = document.createElement('button');
+  b.className = 't-' + c.tone;
+  b.textContent = c.text;
+  b.addEventListener('click', () => select({ kind: 'node', id: c.node }));
+  document.getElementById('chips').appendChild(b);
+}
+function markFlows() { for (const b of flowsEl.children) b.setAttribute('aria-pressed', String(!!flow && b.dataset.flow === flow.id)); sayEl.textContent = flow ? flow.say : defaultSay; document.body.classList.toggle('flowing', !!flow); }
+function setFlow(f, once = false) {
   flow = f;
   selected = null;
   panel.hidden = true;
+  document.body.classList.remove('sheet');
   markFlows();
   applyFocus();
   flowPackets.length = 0;
-  if (f) flowPackets.push({ step: 0, t: 0, wait: 0.2 });
+  if (f) flowPackets.push({ step: 0, t: 0, wait: once ? 0.8 : 0.2, once });
 }
 
 // ---------- mode switch ----------
@@ -528,14 +566,14 @@ function writePulse(i, edgeId, t, reverse, color, scale, alpha) {
   const o = edgeObj[edgeId];
   let n = i;
   for (let k = 0; k < TRAIL; k++) {
-    let tt = t - k * (0.26 / o.length);
+    let tt = t - k * (0.2 / o.length);
     if (tt < 0 || tt > 1) { pAlpha[n] = 0; n++; continue; }
     const u = reverse ? 1 - tt : tt;
     o.curve.getPoint(u, tmpA);
     pPos[n * 3] = tmpA.x; pPos[n * 3 + 1] = tmpA.y; pPos[n * 3 + 2] = tmpA.z;
     const fall = 1 - k / TRAIL;
-    pSize[n] = (k === 0 ? 1.5 : 0.85 * fall + 0.1) * scale;
-    pAlpha[n] = alpha * (k === 0 ? 1 : 0.8 * fall * fall) * o.dim;
+    pSize[n] = (k === 0 ? 2.8 : 1.7 * fall + 0.2) * scale;
+    pAlpha[n] = alpha * (k === 0 ? 1 : 0.85 * Math.pow(fall, 1.6)) * o.dim;
     pCol[n * 3] = color.r; pCol[n * 3 + 1] = color.g; pCol[n * 3 + 2] = color.b;
     n++;
   }
@@ -558,7 +596,7 @@ function tick(now) {
   // shift the scene left while the desktop panel is open so the subject is not covered
   // (on phones the bottom sheet covers the lower half, so the scene moves up instead)
   const open = !panel.hidden, wide = innerWidth > 760;
-  const wantX = open && wide ? 200 : 0, wantY = open && !wide ? innerHeight * 0.5 - (150 + innerHeight * 0.42) / 2 : 0;
+  const wantX = open && wide ? 200 : 0, wantY = open && !wide ? innerHeight * 0.5 - (barEl.getBoundingClientRect().bottom + panel.getBoundingClientRect().top) / 2 : 0;
   panelShift += (wantX - panelShift) * (REDUCED ? 1 : 0.12);
   panelShiftY += (wantY - panelShiftY) * (REDUCED ? 1 : 0.12);
   if (Math.abs(panelShift) > 0.5 || Math.abs(panelShiftY) > 0.5) camera.setViewOffset(innerWidth + panelShift * 2, innerHeight + panelShiftY * 2, panelShift * 2, panelShiftY * 2, innerWidth, innerHeight);
@@ -570,8 +608,8 @@ function tick(now) {
     o.dim += ((o.dimTarget ?? 1) - o.dim) * 0.12;
     o.flash *= Math.pow(0.04, dt);
     const hov = hovered && hovered.kind === 'node' && nodeObj[hovered.id] === o ? 1.15 : 1;
-    o.halo.scale.setScalar(o.baseHalo * (1 + 0.45 * o.flash) * hov);
-    o.halo.material.opacity = (0.32 + 0.35 * o.flash) * o.dim + 0.05;
+    o.halo.scale.setScalar(o.baseHalo * (1 + 1.1 * o.flash) * hov);
+    o.halo.material.opacity = Math.min(1, (0.32 + 0.6 * o.flash) * o.dim + 0.05);
     o.core.material.opacity = 0.2 + 0.8 * o.dim;
     o.shell.material.uniforms.uGain.value = (1.0 + 0.8 * o.flash) * o.dim;
     o.ring.material.opacity = 0.32 * o.dim;
@@ -591,14 +629,14 @@ function tick(now) {
     const e = edges[p.edge], o = edgeObj[p.edge];
     if (p.wait > 0) { p.wait -= dt; n = writePulse(n, p.edge, -1, p.reverse, white, 1, 0); continue; }
     p.t += (dt * PULSE_SPEED) / o.length;
-    if (p.t > 1 + 0.26 * TRAIL / o.length) {
+    if (p.t > 1 + 0.2 * TRAIL / o.length) {
       p.t = 0;
       p.wait = (0.2 + Math.random() * (1.1 / (e.rate || 0.5))) * (REDUCED ? 8 : 1);
     }
-    if (p.t >= 1 && !p.arrived) { arrive(p.reverse ? e.from : e.to, 0.35); p.arrived = true; }
+    if (p.t >= 1 && !p.arrived) { arrive(p.reverse ? e.from : e.to, e.main ? 0.3 : 0.45); p.arrived = true; }
     if (p.t < 1) p.arrived = false;
     cTmp.set(p.reverse ? toneOf(nodes[e.to]) : o.color);
-    n = writePulse(n, p.edge, showAmbient ? p.t : -1, p.reverse, cTmp, 0.9, showAmbient ? 0.95 : 0);
+    n = writePulse(n, p.edge, showAmbient ? p.t : -1, p.reverse, cTmp, e.main ? 1.1 : 0.9, showAmbient ? 0.95 : 0);
   }
   for (const fp of flowPackets) {
     const raw = flow.edges[fp.step];
@@ -610,12 +648,13 @@ function tick(now) {
       const e = edges[id];
       arrive(rev ? e.from : e.to, 1);
       fp.step++; fp.t = 0; fp.wait = REDUCED ? 0.3 : 0.12;
-      if (fp.step >= flow.edges.length) { fp.step = 0; fp.wait = 1.2; }
+      if (fp.step >= flow.edges.length) { fp.step = 0; fp.wait = 1.2; if (fp.once) { pendingClear = true; } }
       continue;
     }
     cTmp.set(TONE.speed).lerp(white, 0.2);
-    n = writePulse(n, id, fp.wait > 0 ? -1 : fp.t, rev, cTmp, 1.5, 1);
+    n = writePulse(n, id, fp.wait > 0 ? -1 : fp.t, rev, cTmp, 1.05, 1);
   }
+  if (pendingClear) { pendingClear = false; setFlow(null); }
   for (let i = n; i < MAXP; i++) pAlpha[i] = 0;
   for (const k of ['position', 'color', 'size', 'alpha']) pGeo.attributes[k].needsUpdate = true;
 
@@ -651,14 +690,26 @@ function placeLabels() {
   }
   live.sort((a, b) => a.prio - b.prio);
   const placed = [];
+  const overlap = (r) => placed.reduce((sum, q) => sum + Math.max(0, Math.min(r.x1, q.x1) - Math.max(r.x0, q.x0)) * Math.max(0, Math.min(r.y1, q.y1) - Math.max(r.y0, q.y0)), 0);
   for (const l of live) {
-    const outside = l.y < safeTop || l.y + l.h > safeBottom || l.x + l.w / 2 > safeRight;
-    const r = { x0: l.x - l.w / 2 - 2, x1: l.x + l.w / 2 + 2, y0: l.y - 1, y1: l.y + l.h + 1 };
-    const clash = placed.some((q) => r.x0 < q.x1 && r.x1 > q.x0 && r.y0 < q.y1 && r.y1 > q.y0);
-    let op = clash || outside ? 0 : l.kind === 'zone' ? (related ? 0.3 : 0.85) : l.focus ? 1 : 0.16;
-    if (!clash && !outside) placed.push(r);
-    l.el.style.opacity = op;
-    l.el.style.transform = `translate(${(l.x - l.w / 2).toFixed(1)}px, ${l.y.toFixed(1)}px)`;
+    // try below, above, right, left of the anchor before giving up; node labels are never dropped
+    const c = l.kind === 'node' ? [[0, 0], [0, -l.h - 30], [l.w / 2 + 20, -l.h / 2 - 12], [-l.w / 2 - 20, -l.h / 2 - 12], [0, 14], [0, -l.h - 44]]
+      : l.kind === 'edge' ? [[0, 0], [0, -l.h - 2], [0, l.h + 2]] : [[0, 0]];
+    let best = null;
+    for (const [dx, dy] of c) {
+      const x = l.x + dx, y = l.y + dy;
+      const r = { x0: x - l.w / 2 - 3, x1: x + l.w / 2 + 3, y0: y - 2, y1: y + l.h + 2, x, y };
+      if (r.y0 < safeTop || r.y1 > safeBottom || r.x1 > safeRight || r.x0 < 0 || r.x1 > w) continue;
+      const o = overlap(r);
+      if (!best || o < best.o) best = { r, o };
+      if (o === 0) break;
+    }
+    const keep = best && (best.o === 0 || l.kind === 'node');
+    l.el.style.opacity = !keep ? 0 : l.kind === 'zone' ? (related ? 0.3 : 0.85) : l.focus ? 1 : 0.16;
+    l.el.style.zIndex = l.kind === 'node' ? 2 : 1;
+    if (!keep) continue;
+    placed.push(best.r);
+    l.el.style.transform = `translate(${(best.r.x - l.w / 2).toFixed(1)}px, ${best.r.y.toFixed(1)}px)`;
   }
 }
 
@@ -670,4 +721,6 @@ if (startFlow) setFlow(startFlow);
 const sel = params.get('select');
 if (sel && (nodes[sel] || edges[sel])) { REDUCED || (tween = null); select({ kind: nodes[sel] ? 'node' : 'edge', id: sel }); }
 if (params.get('panel') === 'index') openPanel(indexPanel());
+// play "Ask a question" once on a plain load to lead the eye (never under reduced motion)
+if (!REDUCED && !location.search) setFlow(data.flows.find((f) => f.id === 'ask'), true);
 requestAnimationFrame(tick);

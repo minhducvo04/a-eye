@@ -28,11 +28,20 @@ html, body { margin: 0; height: 100%; background: var(--canvas); color: var(--te
 #stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 #labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
 
-.bar { position: fixed; top: 0; left: 0; right: 0; padding: 16px 20px 0; display: grid; grid-template-columns: 1fr auto; gap: 10px 16px; pointer-events: none; }
+.bar { position: fixed; top: 0; left: 0; right: 0; padding: 16px 20px 22px; background: linear-gradient(to bottom, rgba(4,6,12,.94) 0, rgba(4,6,12,.86) 72%, rgba(4,6,12,0) 100%); z-index: 2; display: grid; grid-template-columns: 1fr auto; gap: 10px 16px; pointer-events: none; }
 .bar > * { pointer-events: auto; }
 .brand h1 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -0.02em; }
 .brand h1 span { color: var(--muted); font-weight: 450; }
-.say { margin: 4px 0 0; color: var(--muted); font-size: 13px; max-width: 62ch; min-height: 1.45em; }
+.say { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 13px; max-width: 62ch; min-height: 1.45em; }
+.tagline { margin: 4px 0 8px; color: var(--text); font-size: 14px; max-width: 64ch; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chips button { font: 650 14px var(--font); background: rgba(4,6,12,.7); border: 1px solid var(--rim-hi); border-radius: 8px; padding: 6px 11px; cursor: pointer; min-height: 34px; }
+.chips button.t-speed { color: var(--label-speed); border-color: rgba(116,228,255,.35); }
+.chips button.t-cost { color: var(--label-cost); border-color: rgba(255,212,121,.35); }
+.chips button:hover { background: rgba(255,255,255,.06); }
+.index li button small.m-speed { color: var(--label-speed); }
+.index li button small.m-cost { color: var(--label-cost); }
+.panel .sec { margin-top: 18px; }
 .controls { display: flex; gap: 8px; align-items: start; }
 .seg { display: inline-flex; background: var(--surface); border: 1px solid var(--rim); border-radius: 999px; padding: 3px; backdrop-filter: blur(10px); }
 .seg button, .ghost, .flows button { font: 600 13px var(--font); border: 0; background: transparent; color: var(--muted); padding: 7px 14px; border-radius: 999px; cursor: pointer; min-height: 34px; transition: color .18s ease-out, background .18s ease-out; }
@@ -57,10 +66,10 @@ button:focus-visible { outline: 2px solid var(--label-speed); outline-offset: 2p
 #modeNote { color: var(--muted); }
 
 /* labels */
-.lab { position: absolute; left: 0; top: 0; white-space: nowrap; font-size: 12.5px; line-height: 1.25; padding: 3px 8px 4px; border-radius: 7px; background: rgba(4, 6, 12, 0.78); border: 1px solid var(--rim); will-change: transform; transition: opacity .2s ease-out; text-align: center; }
+.lab { position: absolute; left: 0; top: 0; white-space: nowrap; font-size: 12.5px; line-height: 1.25; padding: 3px 8px 4px; border-radius: 7px; background: rgba(4, 6, 12, 0.9); border: 1px solid var(--rim); will-change: transform; transition: opacity .2s ease-out; text-align: center; }
 .lab .v { font-weight: 650; display: block; }
 .lab .n { color: var(--muted); font-size: 11px; display: block; }
-.lab.edge { font-size: 11.5px; padding: 2px 7px 3px; border-radius: 999px; background: rgba(4, 6, 12, 0.72); }
+.lab.edge { font-size: 11.5px; padding: 2px 7px 3px; border-radius: 999px; background: rgba(4, 6, 12, 0.88); }
 .lab.m-name .v { color: var(--label-name); }
 .lab.m-speed .v { color: var(--label-speed); }
 .lab.m-cost .v { color: var(--label-cost); }
@@ -134,9 +143,15 @@ button:focus-visible { outline: 2px solid var(--label-speed); outline-offset: 2p
   .brand h1 { font-size: 18px; }
   .say { font-size: 12.5px; }
   .controls { justify-content: space-between; }
-  .flows { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -14px; padding: 0 14px 4px; }
-  .flows::-webkit-scrollbar { display: none; }
-  .flows button { flex: none; }
+  .bar { padding-bottom: 16px; }
+  .tagline { font-size: 12.5px; margin: 2px 0 6px; }
+  .chips { gap: 6px; }
+  .chips button { font-size: 12.5px; padding: 4px 8px; min-height: 30px; }
+  .flows { gap: 5px; }
+  .flows button { font-size: 12px; padding: 4px 9px; min-height: 30px; }
+  .say { font-size: 12px; position: fixed; left: 14px; right: 14px; bottom: 40px; color: var(--text); background: rgba(4,6,12,.8); border: 1px solid var(--rim); border-radius: 8px; padding: 6px 9px; }
+  .say:empty, body:not(.flowing) .say { display: none; }
+  body.sheet .tagline, body.sheet .chips, body.sheet .flows, body.sheet .say { display: none; }
   .legend { left: 14px; bottom: 12px; max-width: calc(100vw - 28px); gap: 10px; font-size: 11.5px; }
   #modeNote { display: none; }
   .panel { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 58vh; border-radius: 16px 16px 0 0; padding: 18px 16px 28px; animation-name: rise; }

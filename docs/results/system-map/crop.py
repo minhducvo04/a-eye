@@ -7,10 +7,13 @@ with sync_playwright() as p:
     for q,name in [('?select=safety','look-safety'),('?select=gemini','look-gemini'),('?select=rewind','look-rewind'),('?select=privacy','look-privacy'),('?select=guide','look-guide')]:
         pg.goto('http://127.0.0.1:8471/map.html'+q); pg.wait_for_timeout(1800)
         pg.locator('.look').screenshot(path=f'{OUT}/crop-{name}.png')
-    pg.goto('http://127.0.0.1:8471/map.html'); pg.wait_for_timeout(2500)
-    pg.screenshot(path=f'{OUT}/crop-server-pulses.png', clip={'x':380,'y':160,'width':420,'height':300})
-    pg.screenshot(path=f'{OUT}/crop-parts-cloud.png', clip={'x':260,'y':500,'width':240,'height':160})
-    pg.screenshot(path=f'{OUT}/crop-gemini.png', clip={'x':780,'y':120,'width':260,'height':170})
+    pg.goto('http://127.0.0.1:8471/map.html?still=1'); pg.wait_for_timeout(2500)
+    def around(prefix, w, h, dy=-40):
+        r = pg.evaluate("(p)=>{const l=[...document.querySelectorAll('.lab.node')].find(e=>e.textContent.startsWith(p));const r=l.getBoundingClientRect();return [r.x+r.width/2, r.y]}", prefix)
+        return {'x': max(0, r[0]-w/2), 'y': max(0, r[1]+dy-h/2), 'width': w, 'height': h}
+    pg.screenshot(path=f'{OUT}/crop-server-pulses.png', clip=around('A-Eye server', 460, 320))
+    pg.screenshot(path=f'{OUT}/crop-parts-cloud.png', clip=around('Parts shelf', 260, 180))
+    pg.screenshot(path=f'{OUT}/crop-gemini.png', clip=around('Gemini', 300, 200))
     pg.locator('.bar').screenshot(path=f'{OUT}/crop-controls.png')
     # hover tooltip
     box = pg.evaluate("(()=>{const l=[...document.querySelectorAll('.lab.node')].find(e=>e.textContent.startsWith('Router'));const r=l.getBoundingClientRect();return [r.x+r.width/2, r.y-14]})()")

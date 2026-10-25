@@ -1,44 +1,51 @@
 {
  "1536-name": {
   "labels": 16,
-  "worst": 16.55,
-  "p5": 17.5,
-  "median": 17.99,
-  "zone_worst": 6.62
+  "worst": 15.04,
+  "p5": 15.99,
+  "median": 18.07,
+  "zone_worst": 6.64
  },
  "1280-name": {
   "labels": 16,
-  "worst": 16.55,
-  "p5": 17.52,
-  "median": 18.0,
+  "worst": 15.36,
+  "p5": 15.63,
+  "median": 18.08,
   "zone_worst": 6.64
  },
  "1280-speed": {
-  "labels": 21,
-  "worst": 10.81,
-  "p5": 13.08,
-  "median": 13.64,
-  "zone_worst": 6.64
+  "labels": 25,
+  "worst": 11.89,
+  "p5": 12.86,
+  "median": 13.76,
+  "zone_worst": 6.73
  },
  "1280-cost": {
-  "labels": 17,
-  "worst": 9.01,
-  "p5": 9.08,
-  "median": 14.27,
-  "zone_worst": 6.64
+  "labels": 19,
+  "worst": 9.04,
+  "p5": 9.11,
+  "median": 14.31,
+  "zone_worst": 6.73
  },
  "390-name": {
-  "labels": 13,
-  "worst": 17.88,
-  "p5": 17.96,
-  "median": 18.11,
-  "zone_worst": 6.66
+  "labels": 16,
+  "worst": 16.96,
+  "p5": 17.67,
+  "median": 18.16,
+  "zone_worst": 6.7
  },
  "390-speed": {
-  "labels": 14,
-  "worst": 13.64,
-  "p5": 13.7,
-  "median": 13.77,
-  "zone_worst": 6.66
+  "labels": 17,
+  "worst": 13.07,
+  "p5": 13.51,
+  "median": 13.78,
+  "zone_worst": 6.69
+ },
+ "390-cost": {
+  "labels": 16,
+  "worst": 11.81,
+  "p5": 13.11,
+  "median": 14.42,
+  "zone_worst": null
  }
 }

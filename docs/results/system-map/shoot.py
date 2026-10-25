@@ -6,9 +6,13 @@ OUT = Path(sys.argv[1])
 OUT.mkdir(parents=True, exist_ok=True)
 BASE = 'http://127.0.0.1:8471/map.html'
 SHOTS = [
-    ('1536-name', 1536, 864, ''),
-    ('1280-name', 1280, 800, ''),
-    ('390-name', 390, 844, ''),
+    ('1536-name', 1536, 864, '?still=1'),
+    ('1280-name', 1280, 800, '?still=1'),
+    ('390-name', 390, 844, '?still=1'),
+    ('1280-autoplay', 1280, 800, ''),
+    ('390-autoplay', 390, 844, ''),
+    ('390-cost', 390, 844, '?mode=cost'),
+    ('390-index', 390, 844, '?panel=index'),
     ('1280-speed', 1280, 800, '?mode=speed'),
     ('1280-cost', 1280, 800, '?mode=cost'),
     ('1280-router-panel', 1280, 800, '?mode=speed&select=router'),

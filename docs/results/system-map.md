@@ -4,6 +4,22 @@ Interactive 3D map of the A-Eye system for judges, served at `/map.html` next to
 per call, all driven by one JSON file. Branch `pkg/system-map`; the commit sha is in the git log of that branch (this
 file is part of that commit).
 
+## Fix round 1 (after the Media lead FIX on 00c2283)
+
+1. Headline strip under the title: one sentence on what A-Eye does and three chips, voice in 0.6 to 1.1 s, hazard
+   stop in 86 ms, ~$1.40 per 2.5 min call (est.). Chips open the matching node. Data in `map-data.json` `headline`.
+2. Light: pulse heads about 2.4x bigger (2.8 vs 1.5 world units at the source) with 30-point tails (was 18); the
+   camera to server and server to Gemini lines carry 9 pulses each (was 5); landing glow 1.1x halo growth (was 0.45).
+   "Ask a question" plays once on a bare load, then the map returns to all flows; not under reduced motion.
+3. Composition: the camera fit now projects every node and fits them inside the area below the header strip and
+   above the legend; Router, Context builder, Step guide, Safety gates and Privacy switches moved apart.
+4. Facts: Recent memory speed is "not measured"; Rewind and Gemini edge costs carry "(est.)".
+5. Labels try below, above, right and left before giving up; node labels are never dropped (edge labels may be).
+   Chart axes are padded, the unit sits after the last tick, and range captions have a dark halo over mark lines.
+6. Phone: flow chips wrap to two rows; the header has a dark scrim so the title is never covered; when a panel opens
+   the tagline, chips and flows fold away and the selected node is centred between header and sheet. Flow text moves
+   to a bottom card. Index values use the mode colour.
+
 ## What it is
 
 - `client-web/map.html`, `map.js`, `map.css`, `map-data.json`; three.js 0.186.1 vendored under
@@ -52,9 +68,9 @@ Headless Chromium 1248 (Playwright) on the real GPU: `ANGLE Metal Renderer: Appl
 
 | Width | Files |
 |---|---|
-| 1536 | `1536-name.png` (no rail open), `1536-reduced.png` (prefers-reduced-motion emulated) |
-| 1280 | `1280-name.png`, `1280-speed.png`, `1280-cost.png`, `1280-router-panel.png`, `1280-safety-panel.png`, `1280-memory-panel.png`, `1280-saved-panel.png`, `1280-flow-hazard.png`, `1280-index.png`, `1280-click-gemini.png` (real mouse click on the node) |
-| 390 | `390-name.png`, `390-speed.png`, `390-router-panel.png` (bottom sheet), all at 2x |
+| 1536 | `1536-name.png` (no rail open, `?still=1`), `1536-reduced.png` (prefers-reduced-motion emulated, no autoplay) |
+| 1280 | `1280-name.png` (`?still=1`), `1280-autoplay.png` (bare load, Ask a question playing), `1280-speed.png`, `1280-cost.png`, `1280-router-panel.png`, `1280-safety-panel.png`, `1280-memory-panel.png`, `1280-saved-panel.png`, `1280-flow-hazard.png`, `1280-index.png`, `1280-click-gemini.png` (real mouse click on the node) |
+| 390 | `390-name.png`, `390-autoplay.png`, `390-speed.png`, `390-cost.png`, `390-index.png`, `390-router-panel.png` (bottom sheet), all at 2x |
 | Crops (2x) | `crop-server-pulses.png`, `crop-gemini.png`, `crop-parts-cloud.png`, `crop-controls.png`, `crop-hover-router.png` (real hover), `crop-look-gemini.png`, `crop-look-safety.png`, `crop-look-rewind.png`, `crop-look-guide.png`, `crop-look-privacy.png` |
 
 Recipe: `python -m http.server 8471 --bind 127.0.0.1` inside `client-web`, then `shoot.py <outdir>`, `crop.py <outdir>`,
@@ -64,10 +80,10 @@ Recipe: `python -m http.server 8471 --bind 127.0.0.1` inside `client-web`, then 
 
 | Metric | Result |
 |---|---|
-| Frame time | p95 16.7 to 16.8 ms, p50 16.7 ms in every capture (about 125 frames each, after 30 warm-up frames; vsync bound at 60 Hz). `frames.json` |
-| Label contrast, from pixels | brightest text vs chip median per visible label: worst 9.0:1 (cost mode), 11.8:1 (speed), 16.6:1 (name); zone captions worst 6.6:1. `contrast.json` |
+| Frame time | p95 16.7 to 16.8 ms, p50 16.7 ms in all 19 captures (about 127 frames each, after 30 warm-up frames; vsync bound at 60 Hz). `frames.json` |
+| Label contrast, from pixels | brightest text vs chip median per visible label (chips now 0.9 opaque): worst 9.0:1 (1280 cost), 11.9:1 (1280 speed), 15.0:1 (1536 name), 11.8:1 (390 cost); zone captions worst 6.6:1. `contrast.json` |
 | Token contrast, computed | muted #a3afc2 9.1:1 on canvas, 7.2:1 on a bright chip (#1a2232); danger #ff6b78 7.4:1 / 5.8:1; speed 13.8:1; cost 14.4:1 |
-| Assets | page code 74.5 KB raw (html 1.7, js 34.6, css 11.1, json 27.1); three.js 829.8 KB raw (core 415.8, module 392.8, OrbitControls 21.1), 199.7 KB gzip |
+| Assets | page code 79.7 KB raw (html 1.8, js 37.9, css 12.4, json 27.6); three.js 829.8 KB raw (core 415.8, module 392.8, OrbitControls 21.1), 199.7 KB gzip |
 | Served by the app | `create_app()` static mount returns 200 for map.html, map.js, map-data.json and all three vendor files (TestClient, isolated budget file, LOCAL_ONLY=1) |
 | Tests | `node --test client-web/map-data.test.mjs`: 5 pass; `server/test_access.py`: 28 pass |
 
@@ -79,7 +95,7 @@ Drive recipe and Doctor line: N/A (Kyra tools; this is the A-Eye repo).
 - Motion only seen as stills and frame timings; reduced motion checked by emulation in a still, not watched.
 - Frame time on a weaker GPU (phone, integrated laptop); only the M5 Max was measured.
 - Dimmed labels (opacity 0.16 when something else is selected) are context only and fall below 4.5:1 by design.
-- At 390 a few labels (Grounding boxes, YOLO detector, Privacy switches) are hidden by the overlap rule until tapped
-  or found in Index.
+- Autoplay seen only as a mid-flow still; the return to all flows after one pass was not watched.
+- Bright comets on the main path were judged in stills only; could read as too strong in motion.
 - Not loaded through the live server on :8000 (not restarted, as asked); the static mount was checked with TestClient.
 - No Media lead sign-off yet.

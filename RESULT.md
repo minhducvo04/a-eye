@@ -13,6 +13,7 @@ call), driven by `client-web/map-data.json`. No app screen changed (agent.html, 
 
 ### Limits
 
+Fix round 1 applied (headline strip, stronger light, projection fit, fact fixes, label and chart fixes, phone header).
 Not tried on a real phone; motion seen only as stills; frame time measured only on the M5 Max (p95 16.7 ms).
 Parts shelf, router time scope and saved-call recall are shown as building.
 
