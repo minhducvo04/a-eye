@@ -54,12 +54,12 @@ The cap feeds the existing Private/local provider checks. Existing v2 calls clos
 
 Tests were written before implementation: the initial focused run failed with four missing limiter/budget API failures; the socket-capacity probe waited for the missing rejection and was interrupted. The implemented tests exercise the observable refusal and local-success paths.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_limits.py server/test_pairing.py server/test_cloud_meter.py server/test_gemini_live.py` - PASS (`51 passed in 7.94s`). Synthetic loopback WebSockets prove idle Live cutoff and transport accounting without a paid call.
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server/test_limits.py server/test_pairing.py server/test_cloud_meter.py server/test_gemini_live.py` - PASS (`51 passed in 7.94s`). Synthetic loopback WebSockets prove idle Live cutoff and transport accounting without a paid call.
 
 Test: `node --test client-web/` - PASS (`tests 158; pass 158; fail 0; cancelled 0; skipped 0; todo 0`).
 
-Test: `env VISION_BACKEND=fake LOCAL_ONLY=1 BOX_URL=http://127.0.0.1:9 OLLAMA_URL=http://127.0.0.1:9 ROUTER_OLLAMA_URL=http://127.0.0.1:9 CLOUD_BUDGET_PATH=/tmp/aeye-limits-smoke.sqlite3 /Users/minhducvo/Projects/a-eye/.venv/bin/python scripts/smoke.py` - PASS (`steps=['SAFETY', 'IDENTIFY', 'LOCATE', 'GUIDE', 'AWAIT'] target_overlays=1`; `SMOKE PASS`). Real Uvicorn processes, synthetic frame, no cloud.
+Test: `env VISION_BACKEND=fake LOCAL_ONLY=1 BOX_URL=http://127.0.0.1:9 OLLAMA_URL=http://127.0.0.1:9 ROUTER_OLLAMA_URL=http://127.0.0.1:9 CLOUD_BUDGET_PATH=/tmp/aeye-limits-smoke.sqlite3 $HOME/Projects/a-eye/.venv/bin/python scripts/smoke.py` - PASS (`steps=['SAFETY', 'IDENTIFY', 'LOCATE', 'GUIDE', 'AWAIT'] target_overlays=1`; `SMOKE PASS`). Real Uvicorn processes, synthetic frame, no cloud.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q` - FAIL (`1 failed, 1045 passed, 2 warnings in 93.48s (0:01:33)`) on the final code. All 12 new limits regressions passed. The sole failure is `vision/test_gemini.py::test_recorded_payment_failure_is_reported_and_cleared`: missing `vision/fixtures/gemini_payment_required.json`. `git ls-tree -r HEAD vision/fixtures` returns no fixture. This belongs to the vision package and was left unchanged.
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q` - FAIL (`1 failed, 1045 passed, 2 warnings in 93.48s (0:01:33)`) on the final code. All 12 new limits regressions passed. The sole failure is `vision/test_gemini.py::test_recorded_payment_failure_is_reported_and_cleared`: missing `vision/fixtures/gemini_payment_required.json`. `git ls-tree -r HEAD vision/fixtures` returns no fixture. This belongs to the vision package and was left unchanged.
 
 Test: `git diff --check` - PASS.
