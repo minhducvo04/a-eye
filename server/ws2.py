@@ -209,6 +209,8 @@ async def scene_loop(session, vision, send, gate=None):
                     session.scene_time = monotonic()
                     session.scene_memory.add(scene, observed_at)
                     session.recent_memory.add(scene, observed_at)
+                    if session.live_context:
+                        session.live_context.request()
                     await send(message('track', seq=frame['seq'], objects=scene['objects']))
                 except Exception:
                     event('dependency_error', session.session_id, dependency='vision', level='error')
@@ -723,7 +725,8 @@ async def websocket(ws: WebSocket):
                 from server.context_agent import attach, classic_provider
                 context = await asyncio.to_thread(attach, session, ws.app, rewind_mod.identity(ws))
                 provider = 'google' if ws.query_params.get('mode') == 'gemini-live' else classic_provider()
-                await context.collect(provider=provider)
+                if provider != 'google':
+                    await context.collect(provider=provider)
                 rewind_task = asyncio.create_task(session.rewind.follow(session))
                 if session.rewind.on:
                     await send(rewind_mod.state_message(session.rewind))

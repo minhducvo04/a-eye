@@ -418,7 +418,7 @@ def test_output_safety_and_next_safe_question():
         assert await bridge.text('Describe the blue board')
         await bridge.handle({'serverContent': {'outputTranscription': {'text': 'A blue board.'}, 'turnComplete': True}})
         assert any(m['type'] == 'say' and m['text'] == 'A blue board.' for m in emitted)
-        assert any('clientContent' in m for m in wire)
+        assert wire == [{'realtimeInput': {'text': 'Describe the blue board'}}]
     asyncio.run(trial())
 
 

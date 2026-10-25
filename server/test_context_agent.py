@@ -113,7 +113,7 @@ def test_classic_prompt_receives_context(context):
     assert 'blue toolbox' in llm.calls[0][0]
 
 
-def test_live_context_before_audio_and_question_tool_and_own_plan(context):
+def test_live_optional_context_tool_and_own_plan(context):
     import asyncio
     import json
     from server.gemini_live import LiveBridge
@@ -129,9 +129,8 @@ def test_live_context_before_audio_and_question_tool_and_own_plan(context):
         bridge = LiveBridge(context.session, None, None, send, send)
         bridge.ws, bridge.active, bridge.model = Socket(), True, 'fixture'
         await bridge.audio('AAA=', final=True)
-        assert 'blue toolbox' in json.dumps(wire[0]['clientContent'])
-        assert wire[0]['clientContent']['turnComplete'] is False
-        assert 'audio' in wire[1]['realtimeInput']
+        assert 'audio' in wire[0]['realtimeInput']
+        assert not any('clientContent' in item for item in wire)
         result = await bridge.tool(dict(name='gather_context', args={'question': 'toolbox'}))
         assert 'blue toolbox' in result
         assert context.sources == ['memory']

@@ -65,6 +65,7 @@ class Session:
     ee_guide: object = field(default=None, repr=False)
     growth: object = field(default=None, repr=False)
     context_agent: object = field(default=None, repr=False)
+    live_context: object = field(default=None, repr=False)
     step_checker: object = field(default=None, repr=False)
     private: bool = False
     checker_test_mode: bool = False
