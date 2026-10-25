@@ -25,7 +25,7 @@ QUESTIONS = [
     ('What was step 4?', False, 'recent', 'connect wire'),
     ('Where was the multimeter 120 seconds ago?', False, 'recent', 'left tray'),
     ('Where was the resistor earlier in this call?', True, 'rewind', '0:30'),
-    ('Where was the wire 3 minutes ago?', True, 'rewind', '0:30'),
+    ('Where was the wire 6 minutes ago?', True, 'rewind', '0:30'),
     ('Where was the soldering iron earlier?', True, 'rewind', '0:30'),
     ('Where was the multimeter at the start of this call?', True, 'rewind', '0:30'),
     ('Where was the breadboard before?', True, 'rewind', '0:30'),

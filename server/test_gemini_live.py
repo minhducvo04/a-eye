@@ -22,6 +22,8 @@ def jpeg():
 
 
 def test_fake_live_recent_step_transcripts_and_scene_stay_local(monkeypatch):
+    # The tool and prefetch path, as with LIVE_MEMORY_GATE=0 (the gate has its own tests in test_live_memory.py).
+    monkeypatch.setenv('LIVE_MEMORY_GATE', '0')
     async def trial():
         from server.ws2 import scene_loop
         from server.test_ws2 import Vision
@@ -129,7 +131,8 @@ def test_recent_tool_temporal_routes_and_local_result_cards(tmp_path):
         assert 'parts bin' in await recall('Where was the resistor yesterday?')
         assert any(m['type'] == 'find_item' for m in emitted)
         session.rewind.on = False
-        assert 'earlier call' in await recall('Where was the resistor 3 minutes ago?')
+        # Over 5 minutes with Rewind off: this call's notes only, never another call relabelled as then.
+        assert "can't confirm" in await recall('Where was the resistor 6 minutes ago?')
         assert session.rewind.calls == 1
         assert "can't confirm" in await recall('Where was the blue wire just now?')
         privacy.update('google', False)

@@ -195,6 +195,9 @@ class LiveBridge:
         from server.live_guide import LiveGuide
         # On by default in the Live call (owner decision, 2026-10-25); LIVE_GUIDE=0 turns it off.
         self.guide = LiveGuide(session, self) if os.getenv('LIVE_GUIDE', '1') != '0' else None
+        from server.live_memory import MemoryTurn
+        # Code-owned answers to past questions; LIVE_MEMORY_GATE=0 turns it off (checked per turn).
+        self.memory = MemoryTurn(self)
         self._reset_reply()
 
     def _reset_reply(self):
@@ -375,6 +378,7 @@ class LiveBridge:
         self.prefetch.new_turn()
         self.pending_memory = None
         self.input_turn_open = True
+        self.memory.reset()
 
     def memory_allowed(self, result):
         if self.closed or self.session.private or not privacy.google_allowed():
@@ -386,7 +390,7 @@ class LiveBridge:
             return bool(writer and writer.store.remembering())
         return True
 
-    async def _lookup_memory(self, question):
+    async def _lookup_memory(self, question, scope=None):
         from server.rewind import small_frame
         cards = []
         turn_id = self.turn_id
@@ -400,7 +404,7 @@ class LiveBridge:
                 fields['frame_b64'] = await asyncio.to_thread(small_frame, hit['frame'])
             cards.append(message('rewind_hit', **fields))
 
-        result = await recent_memory.answer(self.session, question, self.vision, on_hit=on_hit)
+        result = await recent_memory.answer(self.session, question, self.vision, on_hit=on_hit, scope=scope)
         if result['source'] == 'long-term':
             cards.append(rewind_tools.memory_hit_message(result, turn_id, self.session.recent_memory.started_wall))
         return result, cards
@@ -476,6 +480,10 @@ class LiveBridge:
         if self.guide and self.guide.claims(text):
             await self.hold()
             self.guide.schedule(text)
+            return True
+        if self.memory.allowed() and await self.memory.decide(text):
+            await self.memory.hold()
+            self.memory.schedule(text)
             return True
         self.prefetch.feed(text)
         context = self.session.context_agent
@@ -718,7 +726,10 @@ class LiveBridge:
                     # Code owns this turn (a task start, "done", "it's off"): Live's reply is never played.
                     if not self.blocked:
                         await self.hold()
+                    self.memory.yield_turn()
                     self.guide.schedule(self.question)
+                elif not output and not line and not self.safety_stopped:
+                    await self.memory.watch(self.question)
                 if output and not self.blocked and not self.pointed and spoken_target(
                         self.output, getattr(self.session, 'scene', None) or {}):
                     # Box the object as soon as Live names it, not after the reply ends.
@@ -851,6 +862,7 @@ class LiveBridge:
         self.active = False
         if self.guide:
             await self.guide.close()
+        await self.memory.close()
         await self.close_tools()
         await self.prefetch.close()
         self.pending_memory = None
