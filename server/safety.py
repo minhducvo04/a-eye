@@ -54,6 +54,14 @@ def _stop(id, pattern, line):
     return Gate(id, pattern, pattern, _re(r"[\s\S]+"), line)
 
 
+_HOT_ACTION = (r"\b(touch\w*|grab\w*|hold\w*|pick\w* up)\b[^.!?;,\n]{0,40}"
+               r"\b(hot|soldering)\b[^.!?;,\n]{0,30}\b(tip|iron|metal)\b")
+HOT_TOOL = Gate(
+    'hot_tool', _re(_HOT_ACTION), _re(_HOT_ACTION),
+    _re(r"(?<!don't )(?<!don’t )(?<!not )(?<!never )(?<!avoid )" + _HOT_ACTION),
+    "Do not touch the hot soldering iron tip; leave it in its stand.")
+
+
 GATES = (
     _stop('open_power_supply', _pair(
         r"\b(open\w*|pry\w*|unscrew\w*|disassembl\w*|inside|internal)\b", _SUPPLY),
@@ -79,8 +87,7 @@ GATES = (
     _stop('unsafe_ladder', _pair(_LADDER, _UNSAFE),
           "Stop and don't reach or climb higher. Get help to come down safely and use stable access."),
     _stop('water_on', _re(_WATER_ON), WATER_OFF_LINE),
-    _stop('hot_tool', _re(r"\b(touch\w*|grab\w*|hold\w*|pick\w* up)\b.{0,40}\b(hot|soldering)\b.{0,30}\b(tip|iron|metal)\b"),
-          "Do not touch the hot soldering iron tip; leave it in its stand."),
+    HOT_TOOL,
     Gate('hot_oil',
          _re(r"\b(oil|grease|fat|pan)\b.{0,40}\b(smok\w*|on fire|fire|flames?|flaming|burning)\b|"
              r"\b(smok\w*|fire|flames?|flaming)\b.{0,30}\b(oil|grease|fat|pan)\b|\bgrease fire\b"),
@@ -139,12 +146,19 @@ def before(question):
     return None
 
 
-def after(text, question=''):
-    """A reply that contradicts a gate becomes that gate's line. Fixed lines pass through unchanged."""
+def violation(text, question=''):
+    """Return the rejecting output gate, so diagnostics need never include the text."""
     if not text or text in LINES:
-        return text
+        return None
+    text = ' '.join(text.split())
     for gate in GATES:
         about = gate.topic.search(text) or gate.ask.search(question or '')
         if about and gate.wrong.search(text):
-            return gate.line
-    return text
+            return gate
+    return None
+
+
+def after(text, question=''):
+    """A reply that contradicts a gate becomes that gate's line. Fixed lines pass through unchanged."""
+    gate = violation(text, question)
+    return gate.line if gate else text

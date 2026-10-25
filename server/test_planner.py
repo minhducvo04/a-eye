@@ -1,6 +1,7 @@
 """Synthetic LLM and Live packets only; no provider, camera, or network calls."""
 import asyncio
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -655,7 +656,8 @@ def test_bad_plan_falls_back_without_cache_or_speech(monkeypatch, tmp_path, caps
     asyncio.run(trial())
     events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert any(e['event'] == 'planner' and e['reason']['result'] == 'rejected'
-               and e['reason']['cause'] == 'unsafe' for e in events)
+               and e['reason']['cause'] == 'unsafe' and e['reason']['gate'] == 'hot_tool' for e in events)
+    assert 'Grab' not in json.dumps(events) and 'headphones' not in json.dumps(events)
 
 
 def test_cache_rechecks_home_scope(monkeypatch, tmp_path):
@@ -712,7 +714,8 @@ def test_second_call_shares_total_timeout(monkeypatch, tmp_path):
     asyncio.run(trial())
 
 
-def test_sdk_two_calls_text_only_retries_off(monkeypatch, tmp_path):
+@pytest.mark.parametrize('model', [None, 'fixture-model'])
+def test_sdk_two_calls_text_only_retries_off(monkeypatch, tmp_path, model):
     from server import llm
     calls, options = [], []
 
@@ -733,13 +736,43 @@ def test_sdk_two_calls_text_only_retries_off(monkeypatch, tmp_path):
     async def trial():
         b, emitted, fixed, wire, fake, store, points = setup(monkeypatch, tmp_path)
         monkeypatch.setenv('ANTHROPIC_API_KEY', 'synthetic')
-        monkeypatch.setenv('PLANNER_MODEL', 'fixture-model')
+        if model:
+            monkeypatch.setenv('PLANNER_MODEL', model)
         monkeypatch.setattr(llm, '_shared_anthropic', lambda: Client())
         b.guide.planner.complete = planner.claude
         b.guide.observe('help me fix my headphones')
         await b.guide.planner.task
         assert b.guide.kind == 'plan' and len(calls) == 2
-        assert all(c['model'] == 'fixture-model' and isinstance(c['messages'][0]['content'], str) for c in calls)
+        assert all(c['model'] == (model or 'claude-haiku-5-5')
+                   and isinstance(c['messages'][0]['content'], str) for c in calls)
         assert all(o == dict(max_retries=0, timeout=12) for o in options)
         await b.guide.close()
+    asyncio.run(trial())
+
+
+def test_recorded_headphone_repair_installs_and_reloads(monkeypatch, tmp_path):
+    cases = Path(__file__).resolve().parents[1] / 'eval/cases/checker_good_plans.jsonl'
+    value = next(row['plan'] for line in cases.read_text().splitlines()
+                 if (row := json.loads(line))['id'] == 'good13')
+    assert len(value['steps']) == 8
+    assert planner.check_plan(value) == value
+    request = 'dad The wire on my headphones broke near the plug. How do I fix it?'
+    value['task'] = planner.task_request(request)
+
+    async def trial():
+        b, emitted, fixed, wire, fake, store, points = setup(monkeypatch, tmp_path, FakeLLM(value))
+        try:
+            await b.handle({'serverContent': {'inputTranscription': {
+                'text': request, 'finished': True}, 'turnComplete': True}})
+            await b.guide.planner.task
+            assert b.guide.guide.plan == value and b.guide.kind == 'plan'
+            assert planner.PlanCache(store.path).get(value['task']) == value
+            for index in range(1, 8):
+                b._reset_reply()
+                await say_user(b, 'next')
+                assert b.guide.guide.index == index
+            assert len(fake.calls) == 2 and not fixed
+        finally:
+            await b.guide.close()
+            await b.prefetch.close()
     asyncio.run(trial())

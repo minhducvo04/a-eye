@@ -11,7 +11,7 @@ from time import monotonic
 
 from server import parts_shelf, privacy, safety
 from server.logs import event
-from server.packs.electronics import refuse
+from server.packs import electronics
 from server.packs.home import NEXT
 from server.task_scope import refuse_home, task_for
 
@@ -42,8 +42,8 @@ SOLDER_ACTION = re.compile(r'\b(?:solder|desolder|reflow|heat|tin)\b', re.I)
 WIRING = re.compile(r'\b(?:wir(?:e|ing)|rewir\w*|connect\w*|insert\w*|plac\w*|strip\w*|cut\w*)\b', re.I)
 COMPONENT = re.compile(r'\b(?:breadboard|circuit|diode|led|resistor|capacitor|buzzer|potentiometer|jumper|wire)\b', re.I)
 POWER_OFF = re.compile(
-    r'\b(?:unplug|disconnect)\b.{0,35}\b(?:usb|power|supply|batter(?:y|ies)|circuit|device)\b|'
-    r'\b(?:usb|power|supply|batter(?:y|ies)|circuit|device|wire)\b.{0,35}'
+    r'\b(?:unplug|disconnect)\b.{0,35}\b(?:usb|power|supply|batter(?:y|ies)|circuit|device|headphones)\b|'
+    r'\b(?:usb|power|supply|batter(?:y|ies)|circuit|device|wire|headphones)\b.{0,35}'
     r'\b(?:unplugged|disconnected|detached|off)\b|\bno power\b', re.I)
 VENTILATION = re.compile(
     r'\b(?:arrange|ensure|use|provide|set up|turn on)\b.{0,35}'
@@ -76,10 +76,33 @@ def enabled():
     return os.getenv('PLANNER', '1') != '0'
 
 
+def unsafe_gate(text, *, output=False):
+    # A hot-tip warning is valid output, but user intent to touch it still stops.
+    # Preserve the other conservative request gates, including live-power work.
+    for gate in safety.GATES:
+        if gate.ask.search(text) and (not output or gate.id != 'hot_tool'):
+            return gate.id
+    gate = safety.violation(text)
+    if gate:
+        return gate.id
+    line = electronics.refuse(text)
+    if line:
+        return {electronics.HOT: 'hot_tool', electronics.MAINS: 'mains',
+                electronics.SERIES: 'series_resistor', electronics.USB: 'usb_power',
+                electronics.RESISTANCE: 'powered_resistance'}[line]
+    if refuse_home(text):
+        return 'home_scope'
+    return None
+
+
 def unsafe(text):
-    # Run both speech gates and the electronics gate on all text, including non-spoken fields.
-    before, after, electronics = safety.before(text), safety.after(text), refuse(text)
-    return bool(before or after != text or electronics or refuse_home(text))
+    return unsafe_gate(text) is not None
+
+
+class UnsafePlan(ValueError):
+    def __init__(self, gate):
+        super().__init__('unsafe')
+        self.gate = gate
 
 
 def task_request(text):
@@ -155,8 +178,13 @@ def validate(value, task):
         texts.extend(step.values())
         joined = ' '.join(step[key] for key in ('say', 'show', 'target', 'check', 'safety'))
         texts.extend((joined, task + ' ' + joined))
-    if any(unsafe(text) for text in texts):
-        raise ValueError('unsafe')
+    gate = unsafe_gate(task)
+    if gate:
+        raise UnsafePlan(gate)
+    for text in texts:
+        gate = unsafe_gate(text, output=True)
+        if gate:
+            raise UnsafePlan(gate)
     # Preparation must be audible before the first hazardous action. A late step,
     # a negated precaution, or safety text that the guide never speaks is not enough.
     first = steps[0]['say']
@@ -169,7 +197,7 @@ def validate(value, task):
         action = (WIRING if pattern is POWER_OFF else SOLDER_ACTION).search(first)
         if (not preparation or re.search(r"\b(?:not|never|don't|skip|without)\b", first[:preparation.end()], re.I)
                 or (action and action.start() < preparation.start())):
-            raise ValueError('unsafe')
+            raise UnsafePlan('power_off' if pattern is POWER_OFF else 'ventilation')
     if any(PERSONAL.search(text) or PERSON_CONTEXT.search(text) or NAMED_PERSON.search(text) for text in texts):
         raise ValueError('personal')
     return json.loads(json.dumps(value))  # no caller can mutate an accepted cache entry
@@ -255,7 +283,7 @@ async def claude(system, evidence):
         raise ValueError('disabled')
     if not os.getenv('ANTHROPIC_API_KEY'):
         raise ValueError('no_client')
-    model = os.getenv('PLANNER_MODEL', 'claude-sonnet-5-5')
+    model = os.getenv('PLANNER_MODEL', 'claude-haiku-5-5')
     # SDK retries would exceed the two-call budget. No tools, images or fallback calls.
     client = llm._shared_anthropic().with_options(max_retries=0, timeout=TIMEOUT)
     response = await client.messages.create(
@@ -324,7 +352,10 @@ class BackgroundPlanner:
         if rejection == 'coded':
             self.cancel()
         if rejection or not self.allowed():
-            event('planner', reason={'result': 'rejected', 'cause': rejection or 'disabled', 'chars': len(text)})
+            outcome = {'result': 'rejected', 'cause': rejection or 'disabled', 'chars': len(text)}
+            if rejection == 'unsafe':
+                outcome['gate'] = unsafe_gate(text)
+            event('planner', reason=outcome)
             return False
         if owner.kind in ('ee', 'tie', 'home') and owner.guide and not owner.guide.completed:
             event('planner', reason={'result': 'rejected', 'cause': 'coded_active', 'chars': len(text)})
@@ -339,7 +370,7 @@ class BackgroundPlanner:
         return True
 
     async def build(self, task, transcript):
-        started, reason = monotonic(), 'error'
+        started, reason, gate_id = monotonic(), 'error', None
         task_hash = hashlib.sha256(task.encode()).hexdigest()[:16]
         event('planner', reason={'task_hash': task_hash, 'result': 'started', 'chars': len(transcript)})
         try:
@@ -385,6 +416,8 @@ class BackgroundPlanner:
         except asyncio.CancelledError:
             reason = 'cancelled'
             raise
+        except UnsafePlan as exc:
+            reason, gate_id = 'unsafe', exc.gate
         except ValueError as exc:
             reason = str(exc) if str(exc) in {'json', 'schema', 'length', 'unsafe', 'personal', 'disabled', 'no_client'} else 'error'
         except Exception:
@@ -393,6 +426,8 @@ class BackgroundPlanner:
             outcome = {'task_hash': task_hash, 'result': reason, 'chars': len(transcript)}
             if reason not in {'valid', 'timeout', 'no_client', 'cancelled', 'error'}:
                 outcome.update(result='rejected', cause=reason)
+            if gate_id:
+                outcome['gate'] = gate_id
             event('planner', reason=outcome, ms=round((monotonic() - started) * 1000))
 
     async def mark_good(self, guide):

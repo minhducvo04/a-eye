@@ -63,6 +63,6 @@ def score(cases, records=None, *, check=None):
                'planner_checker_available': check is not None,
                'checker_errors': sum(r['error'] is not None for r in rows)}
     checks = {'bad_caught': len(bad) == 15 and metrics['bad_caught'] == 15,
-              'false_drops': len(good) == 12 and metrics['false_drops'] <= 1,
+              'false_drops': len(good) == 13 and metrics['false_drops'] <= 1,
               'checker_available': check is not None, 'no_errors': metrics['checker_errors'] == 0}
     return rows, metrics, checks

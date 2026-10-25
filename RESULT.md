@@ -1,3 +1,40 @@
+## Planner Live fix-back round 5 — pkg/planner-live5, 2026-10-25
+
+Base: `9469744`. Default planner model is now `claude-haiku-5-5`; env overrides,
+two sequential calls, zero retries, and the 12-second total deadline remain.
+Safe hot-tip warnings pass both the planner and electronics check; spoken intent
+to touch the hot tip and unsafe plan actions still stop. Rejections log only a
+coded gate id. Spoken headphone unplugging now satisfies power-off preparation.
+
+Added a saved eight-step headphone-repair fixture with soldering precautions.
+It is hand-written, not captured provider output. It passes the checker, installs
+from synthetic Live input, reloads from cache, and advances through all eight
+steps. The 15 existing bad cases and false-drop threshold are unchanged.
+
+Changed files: `server/planner.py`, `server/safety.py`,
+`server/packs/electronics.py`, `server/test_planner.py`,
+`eval/cases/checker_good_plans.jsonl`, `eval/swap/checker.py`,
+`eval/swap/test_checker_regressions.py`, `eval/swap/test_components.py`,
+`docs/results/planner-live.md`, and `RESULT.md`.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py eval/swap/test_checker_regressions.py server/test_home_safety.py server/test_ee_guide.py eval/swap/test_components.py eval/swap/test_heldout.py --tb=short` - PASS
+(185 passed in 12.00s; summary read).
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(1253 passed, 16 failed, 2 warnings in 60.76s; summary and failure evidence read).
+Fifteen failures are denied local sockets; one hazard assertion fails downstream
+of Live startup `PermissionError`. No planner/checker/held-out failure remains.
+Log: `.pytest_cache/planner-live5-full.log`.
+Test: `~/Projects/a-eye/.venv/bin/python eval/swap/run.py checker --model current --out .pytest_cache/planner-live5-checker` - PASS
+(15/15 bad caught, 1/13 false-dropped, 0 errors). The new repair fixture passes;
+existing `good01` lacks the required spoken preparation and still drops.
+Test: `git diff --check` - PASS.
+
+Limits: no `.env` read, network permission change, real provider request, push,
+merge, deployment, or device proof. Real Haiku latency is unverified.
+Full report: [planner-live](docs/results/planner-live.md).
+
+---
+
 ## Planner Live fix-back round 4 — pkg/planner-live4, 2026-10-25
 
 Base: `a5b3cb4`. Model `turnComplete` no longer discards rejected planner input.

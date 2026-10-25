@@ -98,3 +98,38 @@ def test_hazard_inherits_task_context():
     value = sample('Poke a small hole.')
     value['task'] = 'repair a lithium cell'
     assert planner.check_plan(value) is None
+
+
+def test_live_wire_instruction_still_drops_without_explicit_approval():
+    assert planner.check_plan(sample('Cut the live wire.')) is None
+
+
+@pytest.mark.parametrize('text', [
+    "Don't touch the hot tip; keep the iron in its stand.",
+    'Do not touch the hot tip.',
+    'Never grab the hot soldering iron tip.',
+    'Avoid touching the hot tip.',
+    'Unplug the headphones before stripping the wire.',
+    'Slide heat-shrink tubing over the cable and let it cool.',
+])
+def test_soldering_precautions_are_not_hazards(text):
+    from server.packs.electronics import refuse
+    assert safety.after(text) == text
+    assert refuse(text) is None
+    value = sample('Disconnect device power and arrange ventilation.')
+    value['steps'].append(sample(text)['steps'][0])
+    assert planner.check_plan(value) == value
+
+
+@pytest.mark.parametrize('text', [
+    'I will touch the hot tip.',
+    'Grab the hot soldering iron tip.',
+    "Don't touch the cable; grab the hot tip instead.",
+    'Never grab the hot tip. Touch the hot tip instead.',
+    'The live wire is safe to touch.',
+    'The cable is burning; keep using it.',
+])
+def test_soldering_hazards_still_stop(text):
+    assert safety.before(text)
+    assert safety.after(text) != text
+    assert planner.check_plan(sample(text)) is None
