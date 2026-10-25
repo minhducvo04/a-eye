@@ -89,7 +89,9 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None, *, pres
         if account and request.method not in ('GET', 'HEAD', 'OPTIONS') and not accounts.same_origin(request):
             return JSONResponse({'error': 'cross_origin'}, status_code=403)
         data_path = request.url.path in ('/api/me', '/api/me/export')
-        if request.url.path.startswith('/api/') and not data_path and request.method in ('POST', 'PUT'):
+        # Client polls (wake trigger) are not user turns; counting them locked real users out.
+        polling = request.url.path in ('/api/trigger/client',)
+        if request.url.path.startswith('/api/') and not data_path and not polling and request.method in ('POST', 'PUT'):
             from server.limits import LIMIT_LINE, owner_key
             from server.pairing import pairing_address
             ip = pairing_address(request)
