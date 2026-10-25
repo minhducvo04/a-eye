@@ -404,6 +404,12 @@ class Rewind:
     def cloud_allowed(self):
         return self.on and (not self.ended or self.keep) and not local_only()
 
+    def search_allowed(self):
+        """Saved calls already live at TwelveLabs: searching them needs this call's TwelveLabs consent
+        (not Private mode, not local-only), never this call's recording switch."""
+        return (not self.private and not getattr(self.session, 'private', False)
+                and not local_only())
+
     def add_frame(self, jpeg_b64):
         if not self.on:
             return
@@ -609,7 +615,7 @@ class Rewind:
     @_call_cloud
     async def search_kept(self, query, limit=3):
         """Best hits in up to 360 saved clips, searched newest first within four seconds."""
-        if limit <= 0 or not self.cloud_allowed() or (self.owner == 'local' and not shared_demo_library()):
+        if limit <= 0 or not self.search_allowed() or (self.owner == 'local' and not shared_demo_library()):
             return []
         past = {c['video_id']: (call, c) for call in kept_calls(self.owner)
                 if call.get('session_id') != self.session_id for c in call.get('clips', [])}
@@ -965,7 +971,7 @@ async def hit_media(rewind, hit, cutter=None):
             fields['clip_mp4'] = f'/api/rewind/clip/{clip_id}.mp4'
         return fields
     retrieve = getattr(rewind.client, 'retrieve_video', None)
-    if retrieve is None or not rewind.cloud_allowed():
+    if retrieve is None or not rewind.search_allowed():
         return fields
     cutter = cutter or cut_clip
     try:
@@ -976,7 +982,7 @@ async def hit_media(rewind, hit, cutter=None):
             shared = await asyncio.wait_for(rewind.client.ensure_index(INDEX_NAME), timeout=2)
             video = await asyncio.wait_for(retrieve(shared, hit['video_id']), timeout=2)
         url = (video.get('hls') or {}).get('video_url')
-        if isinstance(url, str) and url.startswith('https://') and rewind.cloud_allowed():
+        if isinstance(url, str) and url.startswith('https://') and rewind.search_allowed():
             at = max(0, hit.get('video_t_s', 0))
             fields.update(clip_url=url, start_s=max(0, at - 3), end_s=at + 3)
             clip_id = await asyncio.to_thread(store_clip, url, fields['start_s'], cutter)
