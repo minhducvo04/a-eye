@@ -6,7 +6,7 @@ final class ModesTests: XCTestCase {
         XCTAssertEqual(Modes.all.filter(\.isAvailable).compactMap(\.pack),
                        ["general", "pc_build", "cooking", "assemble", "memory", "home", "general"])
         XCTAssertEqual(Modes.all.filter { !$0.isAvailable }.map(\.title), ["Mechanic", "Engineering"])
-        XCTAssertEqual(Modes.all[Modes.defaultIndex].pack, "memory")
+        XCTAssertEqual(Modes.all[Modes.defaultIndex].id, "gemini-live")
         XCTAssertEqual(Modes.all.filter(\.requiresPowerOff).map(\.id), ["pc_build"])
     }
 

@@ -78,7 +78,7 @@ test('early final uses latest interim at 700ms and never sends a late correction
   assert.equal(sent.length, 2);
 });
 
-for (const [headset, home, live] of [[false, false], [true, false], [false, true], [false, false, true]]) test(live ? 'Live selection requires consent and uses existing hello and caption messages' : home ? 'sink selection and presenter controls use real client contracts' : headset ? 'headset call never acquires local video through camera or permission controls' : 'call page toggles camera, keeps voice-only hello, retries text, reconnects, and renders streamed replies', async () => {
+for (const [headset, home, live, policy] of [[false, false], [true, false], [false, true], [false, false, true], [false, false, true, "general"], [false, false, true, "optout"], [false, false, true, "private"]]) test(live ? `${policy || 'live'}: Live defaults to Google and uses existing hello and caption messages` : home ? 'sink selection and presenter controls use real client contracts' : headset ? 'headset call never acquires local video through camera or permission controls' : 'call page toggles camera, keeps voice-only hello, retries text, reconnects, and renders streamed replies', async () => {
   const saved = new Map();
   const put = (key, value) => { saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { value, configurable: true, writable: true }); };
   const nodes = new Map(), intervals = new Map(), timeouts = new Map();
@@ -130,7 +130,10 @@ for (const [headset, home, live] of [[false, false], [true, false], [false, true
   const settle = async () => { for (let i = 0; i < 8; i++) await new Promise(resolve => setImmediate(resolve)); };
   put('document', { getElementById: node, createElement: () => new Element(), createTextNode: text => ({ textContent: text }), hidden: false });
   put('window', { isSecureContext: true, innerWidth: 390, innerHeight: 844, devicePixelRatio: 1, matchMedia: () => ({ matches: true }), addEventListener() {}, requestAnimationFrame() { return 1; }, setInterval(fn, ms) { intervals.set(++timerId, { fn, ms }); return timerId; }, clearInterval(id) { intervals.delete(id); }, setTimeout(fn, ms) { timeouts.set(++timerId, { fn, ms }); return timerId; }, clearTimeout(id) { timeouts.delete(id); } });
-  put('localStorage', null);
+  put('localStorage', policy === 'optout' || policy === 'private' ? {
+    getItem: key => key === 'aeye.cloud' && policy === 'optout' ? JSON.stringify({ google: false }) : key === 'aeye.private' && policy === 'private' ? '1' : null,
+    setItem() {}, removeItem() {},
+  } : null);
   put('location', { search: headset ? '?device=headset' : '', protocol: 'https:', host: 'example.test' });
   put('navigator', { mediaDevices: { enumerateDevices: async () => [], getUserMedia: async c => { constraints.push(c); gets++; return { getTracks: () => [{ stop() { stops++; } }] }; } } });
   put('SpeechRecognition', class { constructor() { recognition = this; } start() {} stop() {} });
@@ -142,13 +145,11 @@ for (const [headset, home, live] of [[false, false], [true, false], [false, true
   let now = 1000;
   Date.now = () => now;
   try {
-    await import(`./agent.js?headset-test=${headset}&home=${home}&live=${live}`);
-    const choose = () => node('picker').handlers.click({ target: { closest: () => ({ getAttribute: name => live ? 'gemini-live' : home ? (name === 'data-pack' ? 'home' : 'plumbing') : 'general' }) } });
-    if (live) {
-      choose();
-      await settle();
-      assert.equal(Socket.all.length, 0, 'Google defaults off');
-      node('cloud-google').checked = true;
+    await import(`./agent.js?headset-test=${headset}&home=${home}&live=${live}&policy=${policy}`);
+    assert.equal(node('ring-title').textContent, 'Gemini Live', 'Live is selected at launch');
+    const choose = () => node('picker').handlers.click({ target: { closest: () => ({ getAttribute: name => policy === 'general' ? 'general' : live ? 'gemini-live' : home ? (name === 'data-pack' ? 'home' : 'plumbing') : 'general' }) } });
+    if (!live && !home) {
+      node('cloud-google').checked = false;
       node('cloud-google').handlers.change();
     }
     choose();
@@ -157,6 +158,13 @@ for (const [headset, home, live] of [[false, false], [true, false], [false, true
     assert.ok(socket);
     socket.open();
     assert.equal(socket.messages[0].camera, false);
+    if (policy === 'optout' || policy === 'private') {
+      assert.equal(new URL(socket.url).searchParams.get('mode'), null);
+      assert.equal(socket.messages[0].pack, 'general');
+      assert.equal(Boolean(socket.messages[0].private), policy === 'private');
+      assert.equal(node('cloud-google').checked, false);
+      return;
+    }
     if (live) {
       assert.equal(new URL(socket.url).searchParams.get('mode'), 'gemini-live');
       assert.equal(new URL(socket.url).searchParams.get('google'), '1');

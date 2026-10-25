@@ -34,8 +34,8 @@ public enum Modes {
         Mode(id: "gemini-live", title: "Gemini Live", symbol: "waveform", pack: "general", requiresPowerOff: false),
     ]
 
-    /// The pack that is the product focus: Memory is centred at launch, as on the web.
-    public static let defaultIndex = all.firstIndex { $0.id == "memory" } ?? 0
+    /// Live is centred at launch, as on the web.
+    public static let defaultIndex = all.firstIndex { $0.id == "gemini-live" } ?? 0
 
     /// The `home` pack waits for a task word; the web sends "sink" as soon as the helper first listens.
     public static let homePack = "home"

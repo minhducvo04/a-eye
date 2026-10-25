@@ -9,10 +9,10 @@ import Observation
 @MainActor
 @Observable
 final class CallController {
-    var googleConsent = UserDefaults.standard.bool(forKey: "geminiLiveGoogle") {
+    var googleConsent = LiveConfiguration.consent(UserDefaults.standard.object(forKey: "geminiLiveGoogle") as? Bool) {
         didSet {
             UserDefaults.standard.set(googleConsent, forKey: "geminiLiveGoogle")
-            if oldValue != googleConsent, isLive { end() }
+            if oldValue != googleConsent, mode != nil { end() }
         }
     }
     var privateMode = UserDefaults.standard.bool(forKey: "privateMode") {
@@ -21,7 +21,7 @@ final class CallController {
             if oldValue != privateMode, mode != nil { end() }
         }
     }
-    var isLive: Bool { mode?.id == "gemini-live" }
+    private(set) var isLive = false
     var liveAllowed: Bool { googleConsent && !privateMode }
     let liveAudio = LiveAudio()
     var isMuted: Bool { isLive ? liveAudio.isMuted : listener.isMuted }
@@ -115,9 +115,9 @@ final class CallController {
     // MARK: - Call lifecycle
 
     func start(_ mode: Mode) {
-        guard self.mode == nil, mode.isAvailable, socketURL != nil,
-              mode.id != "gemini-live" || liveAllowed else { return }
+        guard self.mode == nil, mode.isAvailable, socketURL != nil else { return }
         self.mode = mode
+        isLive = LiveConfiguration.enabled(mode: mode.id, google: googleConsent, privateMode: privateMode)
         state = .initial
         isHomeStartPending = mode.pack == Modes.homePack
         sessionId = UUID().uuidString
@@ -152,6 +152,7 @@ final class CallController {
         isHomeStartPending = false
         isCameraOn = true
         mode = nil
+        isLive = false
         callStartedAt = nil
         lastFrameSize = .zero
     }

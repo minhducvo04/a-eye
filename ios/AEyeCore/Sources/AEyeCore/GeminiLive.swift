@@ -2,6 +2,12 @@ import Foundation
 
 /// Consent is evaluated for every connection; URL settings cannot bypass the mode picker.
 public enum LiveConfiguration {
+    public static func consent(_ saved: Bool?) -> Bool { saved ?? true }
+
+    public static func enabled(mode: String, google: Bool, privateMode: Bool) -> Bool {
+        ["gemini-live", "general"].contains(mode) && google && !privateMode
+    }
+
     public static func url(_ base: URL, live: Bool, google: Bool, privateMode: Bool) -> URL? {
         guard !live || (google && !privateMode),
               var parts = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return nil }
