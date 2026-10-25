@@ -15,6 +15,8 @@ final class CallController {
             if oldValue != holdToTalk { setMuted(holdToTalk) }
         }
     }
+    private(set) var recallSaveText = ""
+    @ObservationIgnored private var recallSaveTask: Task<Void, Never>?
     private(set) var rewind = RewindControls()
     var canChangeRewind: Bool { isSocketOpen && !privateMode && !rewind.locked && !rewind.pending }
 
@@ -170,6 +172,8 @@ final class CallController {
 
     func start(_ mode: Mode) {
         guard self.mode == nil, mode.isAvailable, socketURL != nil else { return }
+        recallSaveTask?.cancel()
+        recallSaveText = ""
         self.mode = mode
         isLive = LiveConfiguration.enabled(mode: mode.id, google: googleConsent, privateMode: privateMode)
         state = .initial
@@ -185,6 +189,10 @@ final class CallController {
     }
 
     func end() {
+        let keepRecall = mode != nil && rewind.on && rewind.keep && !privateMode
+        recallSaveTask?.cancel()
+        recallSaveText = ""
+        if keepRecall { watchRecallSave() }
         camera.stop()
         rewind = RewindControls()
         classicTurnActive = false
@@ -218,6 +226,42 @@ final class CallController {
         isLive = false
         callStartedAt = nil
         lastFrameSize = .zero
+    }
+
+    private func watchRecallSave() {
+        guard let base = socketURL,
+              var parts = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return }
+        parts.scheme = parts.scheme == "wss" ? "https" : "http"
+        parts.path = "/api/rewind/status"
+        // Preserve owner/auth query fields when moving from the socket to HTTP.
+        parts.queryItems = (parts.queryItems ?? []).filter { $0.name != "session_id" }
+            + [URLQueryItem(name: "session_id", value: sessionId)]
+        guard let url = parts.url else { return }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 5
+        if !accessToken.isEmpty { request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization") }
+        recallSaveText = "Saving this call for Recall, about 30 s"
+        recallSaveTask = Task { [weak self] in
+            for _ in 0..<300 {
+                guard !Task.isCancelled else { return }
+                do {
+                    let (data, response) = try await URLSession.shared.data(for: request)
+                    guard !Task.isCancelled else { return }
+                    if (response as? HTTPURLResponse)?.statusCode == 200,
+                       let status = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        if status["save_status"] as? String == "saved" {
+                            self?.recallSaveText = "Saved. Your next call can recall this one."
+                            return
+                        }
+                        if status["save_status"] as? String == "unavailable" { break }
+                    }
+                } catch { /* Retry without claiming success. */ }
+                do { try await Task.sleep(nanoseconds: 2_000_000_000) }
+                catch { return }
+            }
+            guard !Task.isCancelled else { return }
+            self?.recallSaveText = ""
+        }
     }
 
     // MARK: - Things the views ask for

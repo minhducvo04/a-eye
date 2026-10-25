@@ -1618,7 +1618,7 @@ svg .fill {
   .intro { display: none; }
 }
 
-/* ---------- One badge style: Private, Rewind on, Expert (+ Recap action) ---------- */
+/* ---------- One badge style: Private, Rewind on, Expert ---------- */
 
 .badges {
   display: flex;
@@ -2070,11 +2070,6 @@ body[data-mode="memory"] .listen-text.mono {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
 }
 
-/* Recap: brighter on dark glass. */
-.badge.action {
-  color: #B9D0FF;
-}
-
 /* Desktop row: coming-soon modes say so instead of only looking disabled. */
 @media (min-width: 700px) and (hover: hover) and (pointer: fine) {
   .ring > button:not([data-pack]) .ring-name::after {
@@ -2097,11 +2092,6 @@ body[data-mode="memory"] .listen-text.mono {
 .chip {
   font-family: var(--font);
   font-size: var(--fs-footnote);
-}
-
-#rewind-recap {
-  background-color: rgba(8, 10, 14, 0.72);
-  color: #C9DBFF;
 }
 
 /* Expert has its own badge; its timing line shows only with ?dev=1. */

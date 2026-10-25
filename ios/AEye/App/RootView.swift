@@ -29,7 +29,7 @@ struct RootView: View {
                 // Permission failures never hide End Call or the other call controls.
                 CallScreen(controller: controller)
             } else {
-                StartScreen { startCall(Modes.dad) }
+                StartScreen(recallSaveText: controller.recallSaveText) { startCall(Modes.dad) }
             }
         }
         .sheet(isPresented: $showSettings) { SettingsSheet(controller: controller) }

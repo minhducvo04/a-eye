@@ -11,7 +11,7 @@ import { callOwner, ownerHeaders, ownerQuery, resetCallOwner } from './call-owne
 import { paintDraw, applyDraw, pruneDraw, viewTransform, visibleOps, targetLabels, splitByTargets } from "./draw.js";
 import { writeFrame } from "./live.js";
 import { agoLine, countAt, countLine, createMemoryApi, placeFor, renderSplit } from "./memory.js";
-import { fetchRecap, forgetRewind, initialRewind, nextRewind, NOTICE as REWIND_NOTICE, PROMPTS as REWIND_PROMPTS, renderRecap, showsRewindChip } from "./rewind.js";
+import { forgetRewind, initialRewind, nextRewind, NOTICE as REWIND_NOTICE, PROMPTS as REWIND_PROMPTS, showsRewindChip } from "./rewind.js";
 import { sharpCanvasSize } from "./overlay.js";
 import {
   AUDIO_FALLBACK_MS,
@@ -781,12 +781,6 @@ function boot() {
       showRewind(Boolean(message.on));
       return;
     }
-    if (message.type === "rewind_recap") {
-      rewindEl.classList.remove("wide");
-      renderRecap(document, rewindBody, message);
-      openSheet(rewindEl);
-      return;
-    }
     // A find answer. TODO(rewind builder): a local `find_item` with the same fields (+ `place`) lands here too.
     if (message.type === "rewind_hit" || message.type === "find_item") {
       showFind(message);
@@ -926,16 +920,31 @@ function boot() {
     rewindChip.setAttribute("aria-expanded", open ? "true" : "false");
   }
 
-  // Recap over HTTP: the Recap chip during a call, and the end-of-call sheet when Rewind was on.
-  async function showRecap(id) {
-    rewindEl.classList.remove("wide");
-    renderRecap(document, rewindBody, { pending: true });
-    openSheet(rewindEl);
-    try {
-      renderRecap(document, rewindBody, await fetchRecap(id));
-    } catch {
-      renderRecap(document, rewindBody, { steps: [], say: "The recap isn't available right now." });
+  let recallSaveGeneration = 0;
+  const recallSaveEl = document.getElementById("recall-save-status");
+  function showRecallSave(text = "") {
+    if (!recallSaveEl) return;
+    recallSaveEl.textContent = text;
+    recallSaveEl.classList.toggle("hidden", !text);
+  }
+
+  async function watchRecallSave(id, generation) {
+    for (let attempt = 0; attempt < 300; attempt++) {
+      if (generation !== recallSaveGeneration) return;
+      try {
+        const response = await apiFetch(`/api/rewind/status?session_id=${encodeURIComponent(id)}`);
+        if (!response.ok) throw new Error("Recall status unavailable");
+        const status = await response.json();
+        if (generation !== recallSaveGeneration) return;
+        if (status.save_status === "saved") {
+          showRecallSave("Saved. Your next call can recall this one.");
+          return;
+        }
+        if (status.save_status === "unavailable") break;
+      } catch { /* Retry temporary failures without claiming the call is saved. */ }
+      await new Promise(resolve => window.setTimeout(resolve, 2000));
     }
+    if (generation === recallSaveGeneration) showRecallSave();
   }
 
   function showFind(hit) {
@@ -1676,6 +1685,8 @@ function boot() {
     renderLeaves();
     homeStartPending = next === 'home' || next === 'engineering';
     document.getElementById('guide-presenter')?.classList.add('hidden');
+    recallSaveGeneration++;
+    showRecallSave();
     ended = false;
     sessionId = randomId();
     setText('proof-context', 'used: none');
@@ -1779,12 +1790,14 @@ function boot() {
     picker.classList.remove("hidden");
     renderLink();
     paint(Date.now());
-    const hadRewind = rewindOn;
+    const keepRecall = rewindOn && !privateMode && Boolean(document.getElementById("rewind-keep")?.checked);
     rewind = initialRewind();
     cloud.twelvelabs = false;
     showRewind(false);
     renderPrivate();
-    if (hadRewind) void showRecap(sessionId);   // end-of-call recap; the server uploads the last clips first
+    const saveGeneration = ++recallSaveGeneration;
+    showRecallSave(keepRecall ? "Saving this call for Recall, about 30 s" : "");
+    if (keepRecall) void watchRecallSave(sessionId, saveGeneration);
   }
 
   function ringButtons() {
@@ -2241,8 +2254,6 @@ function boot() {
   const forgetBtn = document.getElementById("rewind-forget");
   if (forgetBtn) forgetBtn.addEventListener("click", () => void forgetRewind(sessionId).then(
     (r) => showProblem(`Forgot ${r.deleted} clip${r.deleted === 1 ? "" : "s"}.`), () => showProblem("Nothing to forget.")));
-  const recapBtn = document.getElementById("rewind-recap");
-  if (recapBtn) recapBtn.addEventListener("click", () => void showRecap(sessionId));
   if (rewindToggle) {
     rewindToggle.addEventListener("change", () => setRewind(rewindToggle.checked));
   }

@@ -276,6 +276,9 @@ def kept_calls(owner):
 async def _keep_and_record(rewind):
     """'Remember this call': upload the rest, then remember the call's videos so later calls can search them."""
     await rewind.flush(wait=True)
+    # Live uploads may already be indexing when there are no pending clips to flush.
+    while waits := [task for task in rewind.waits if not task.done()]:
+        await asyncio.gather(*waits, return_exceptions=True)
     if rewind.owner == 'local':
         return  # Open demo callers have call-scoped recall, never a shared saved-call library.
     clips = [dict(video_id=c.video_id, start_s=c.start_s, key_s=c.key_s) for c in rewind.clips if c.video_id]
@@ -286,6 +289,7 @@ async def _keep_and_record(rewind):
     path = _kept_path(rewind.owner)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(calls[-50:]))
+    rewind.saved = True
 
 
 @dataclass
@@ -322,7 +326,8 @@ class Rewind:
         self.lock = asyncio.Lock()
         self.uploads = []       # (task_id, upload_ms) for the report and status
         self.waits = set()
-        self.end_task = None    # end-of-call cleanup, awaited by the recap route
+        self.saved = False
+        self.end_task = None    # end-of-call upload/indexing or deletion
         self.mode = None
         self.recall_mode = recall_mode()   # 'live' or 'save'; ws2 sets it per call at hello
         self.owner = 'local'    # identity() of the caller that opened this call
@@ -546,6 +551,16 @@ class Rewind:
 
     def call_tag(self):
         return datetime.fromtimestamp(self.started_wall, timezone.utc).strftime('%Y%m%dT%H%M%S')
+
+    def save_status(self):
+        """Only confirm retention after every clip is indexed and the library entry is written."""
+        if not self.ended or not self.keep or not self.on or self.private:
+            return None
+        if self.end_task is not None and not self.end_task.done():
+            return 'saving'
+        if self.saved and self.clips and all(c.status == 'ready' for c in self.clips):
+            return 'saved'
+        return 'unavailable'
 
     def status(self):
         counts = {}
