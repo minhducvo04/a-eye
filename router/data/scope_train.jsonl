@@ -279,3 +279,308 @@
 {"id": "s278", "scope": "past_calls", "text": "a couple days ago where did I put the tape"}
 {"id": "s279", "scope": "past_calls", "text": "have I fixed a sink with you before"}
 {"id": "s280", "scope": "past_calls", "text": "in a previous call did I mention my bike"}
+{"text": "did i plug this led in right", "scope": "now"}
+{"text": "wait is this the wire i just stripped? looks ok?", "scope": "now"}
+{"text": "what did i just hook under the sink, is it the p-trap", "scope": "now"}
+{"text": "this outlet i just popped open, live?", "scope": "now"}
+{"text": "is this the hex bit i grabbed", "scope": "now"}
+{"text": "did i seat this washer right", "scope": "now"}
+{"text": "this led strip i stuck, even?", "scope": "now"}
+{"text": "ok this faucet i just snugged, still dripping?", "scope": "now"}
+{"text": "what did i just put in the drain, backwards?", "scope": "now"}
+{"text": "this plug i just clicked in, right one?", "scope": "now"}
+{"text": "did i wire this switch backwards", "scope": "now"}
+{"text": "this supply line nut, tight enough?", "scope": "now"}
+{"text": "u see that spark", "scope": "seconds"}
+{"text": "what'd i just drop behind the sink", "scope": "seconds"}
+{"text": "did you catch that drip", "scope": "seconds"}
+{"text": "where'd that washer go just now", "scope": "seconds"}
+{"text": "wait what'd i just knock off the counter", "scope": "seconds"}
+{"text": "did you see that led blink", "scope": "seconds"}
+{"text": "what just rolled under the fridge", "scope": "seconds"}
+{"text": "did i just nick the copper", "scope": "seconds"}
+{"text": "u see me grab the wrong bit just now", "scope": "seconds"}
+{"text": "what'd i just yank out of the outlet", "scope": "seconds"}
+{"text": "did that fuse just pop", "scope": "seconds"}
+{"text": "wait did i just splash the led driver", "scope": "seconds"}
+{"text": "where's the wrench i had a couple min ago", "scope": "minutes"}
+{"text": "what did i do with the channel locks like 2 min ago", "scope": "minutes"}
+{"text": "where's that led connector i set down a few minutes ago", "scope": "minutes"}
+{"text": "did i shut the water a couple minutes ago", "scope": "minutes"}
+{"text": "where's the putty knife from like 3 min ago", "scope": "minutes"}
+{"text": "what was on the cutting board a minute ago", "scope": "minutes"}
+{"text": "where's the voltage tester i had a few min back", "scope": "minutes"}
+{"text": "did i already snip the led leads a couple minutes ago", "scope": "minutes"}
+{"text": "where's the sink strainer i set down like 2 min ago", "scope": "minutes"}
+{"text": "what bit was in the driver a few minutes ago", "scope": "minutes"}
+{"text": "where's the teflon tape from a minute or two ago", "scope": "minutes"}
+{"text": "did i unplug the disposal a couple min ago", "scope": "minutes"}
+{"text": "what was the first thing we did", "scope": "this_call"}
+{"text": "at the start of this call did we shut the water", "scope": "this_call"}
+{"text": "earlier on this call where'd i put the basin wrench", "scope": "this_call"}
+{"text": "when we started, was the led strip already stuck", "scope": "this_call"}
+{"text": "rewind to when i pulled the trap", "scope": "this_call"}
+{"text": "first step we did, was it the breaker", "scope": "this_call"}
+{"text": "earlier in this call did i already test the outlet", "scope": "this_call"}
+{"text": "what tools did i have out when we hopped on", "scope": "this_call"}
+{"text": "go back to when i cut the led strip", "scope": "this_call"}
+{"text": "since we started this call, did i already grease the o-ring", "scope": "this_call"}
+{"text": "earlier you told me to kill the breaker, did i", "scope": "this_call"}
+{"text": "first thing i asked you this call, remind me", "scope": "this_call"}
+{"text": "last time how'd we wire the led", "scope": "past_calls"}
+{"text": "yesterday where'd i stash the basin wrench", "scope": "past_calls"}
+{"text": "last week did the p-trap still leak", "scope": "past_calls"}
+{"text": "last call did i already swap that outlet", "scope": "past_calls"}
+{"text": "the other day what'd we do with the disposal", "scope": "past_calls"}
+{"text": "last time we did a faucet, which kit", "scope": "past_calls"}
+{"text": "yesterday did the led driver even work", "scope": "past_calls"}
+{"text": "last week where'd i park the pipe wrench", "scope": "past_calls"}
+{"text": "in the last call did we shut off the right breaker", "scope": "past_calls"}
+{"text": "have we wired an led strip before", "scope": "past_calls"}
+{"text": "last time you told me to kill the breaker first", "scope": "past_calls"}
+{"text": "last time you saw the kitchen, was the faucet dripping", "scope": "past_calls"}
+{"text": "wait wait, um, what did I just plug in here, is it, is it the right way", "scope": "now"}
+{"text": "so I just, uh, I just put this washer on the faucet, does it look seated from here", "scope": "now"}
+{"text": "hang on, did I just, like, hook this LED strip up backwards on this cabinet", "scope": "now"}
+{"text": "okay so I just tightened this, this nut under the sink, is that too tight looking", "scope": "now"}
+{"text": "what did I just, um, what did I just clip onto this wire, is the polarity right here", "scope": "now"}
+{"text": "yeah I just, I just seated this P-trap, does it look level from where you are", "scope": "now"}
+{"text": "wait did I, did I just put the drain gasket on the right side of this, of this flange", "scope": "now"}
+{"text": "so um I just stuck this LED in the socket, is the little tab lining up", "scope": "now"}
+{"text": "okay I just, I just wrapped the tape, is this enough around the threads here", "scope": "now"}
+{"text": "uh I just plugged the, the power brick into this strip, is that the kitchen outlet I wanted", "scope": "now"}
+{"text": "wait so I just, I just flipped this breaker, is the, is the kitchen light supposed to be off now", "scope": "now"}
+{"text": "hang on I just set this blade on the, on the saw, are the teeth facing the right way here", "scope": "now"}
+{"text": "wait wait did you, um, did you see that, I think I just dropped the tiny screw", "scope": "seconds"}
+{"text": "oh crap what did I just, hang on, what did I just knock off the counter", "scope": "seconds"}
+{"text": "did you catch that, like, that washer just, it just pinged somewhere", "scope": "seconds"}
+{"text": "uh what was that, I just, I just heard something fall under the sink", "scope": "seconds"}
+{"text": "hang on where did the, the hex key just go, it was in my hand a second ago", "scope": "seconds"}
+{"text": "did I just, wait, did I just bump the LED strip off the, off the cabinet edge", "scope": "seconds"}
+{"text": "oh no what did I, what did I just splash, did you see that", "scope": "seconds"}
+{"text": "wait the, the needle nose just, they just slipped, where did they land", "scope": "seconds"}
+{"text": "um I just, I just set something down and now I, I don't even remember what it was", "scope": "seconds"}
+{"text": "did you see me, like, just now, did I hit the, the garbage disposal switch", "scope": "seconds"}
+{"text": "hang on the, the wire nut just popped off, where did it, where did it bounce", "scope": "seconds"}
+{"text": "wait wait what did I just, I just had the plumber's putty in my hand a second ago", "scope": "seconds"}
+{"text": "um so like a couple minutes ago, where did I, where did I set the basin wrench", "scope": "minutes"}
+{"text": "wait, a few minutes back I had the, the LED driver on the counter, where'd it go", "scope": "minutes"}
+{"text": "yeah so like two minutes ago I, I put the plumber's tape somewhere, do you remember", "scope": "minutes"}
+{"text": "hang on, a minute ago I set the, the channel locks down, where was that", "scope": "minutes"}
+{"text": "um a couple minutes ago what was I, what was I doing with the drain snake", "scope": "minutes"}
+{"text": "so like three minutes back I, I had the spare P-trap gasket, where did I leave it", "scope": "minutes"}
+{"text": "wait wait, a few minutes ago I unplugged the, the toaster to free the outlet, where did I set it", "scope": "minutes"}
+{"text": "yeah um a minute or two ago I put the, the LED clips in a little pile, where was that pile", "scope": "minutes"}
+{"text": "so hang on, a couple minutes ago I shut the, the shutoff under the sink, did I leave it closed", "scope": "minutes"}
+{"text": "uh a few minutes back I had the, the voltage tester on the stove, where'd it go", "scope": "minutes"}
+{"text": "wait like two minutes ago I wiped the, the sink rim, did I put the rag back", "scope": "minutes"}
+{"text": "um so a little while ago, like a few minutes, I set the hole saw by the cabinet, is it still there", "scope": "minutes"}
+{"text": "wait wait, at the start of this call, um, what was the first thing we, we did under the sink", "scope": "this_call"}
+{"text": "so earlier on this call I, I had the LED strip still in the box, where did I set the box", "scope": "this_call"}
+{"text": "hang on, when we first started today, did I, did I already shut the water off", "scope": "this_call"}
+{"text": "yeah so like earlier in this call, before we got to the faucet, where did I put the old cartridge", "scope": "this_call"}
+{"text": "um at the beginning of this call what tools did I, did I have laid out on the counter", "scope": "this_call"}
+{"text": "wait, rewind a bit, earlier on this call when I took the, the trap off, where did the washer go", "scope": "this_call"}
+{"text": "so like, the first thing we did on this call, was I, was I already wearing gloves", "scope": "this_call"}
+{"text": "hang on earlier in this call I, I showed you the leak, which fitting was dripping then", "scope": "this_call"}
+{"text": "yeah um when we started this call the, the kitchen light was, was it already flickering", "scope": "this_call"}
+{"text": "wait wait, before we got this far on this call, did I already, already unplug the disposal", "scope": "this_call"}
+{"text": "so at the start of this call I had the, the LED remote on the counter, where did it go during the call", "scope": "this_call"}
+{"text": "um earlier on this call, like when I first picked up the, the putty knife, what did you tell me to do", "scope": "this_call"}
+{"text": "wait wait last time, um last time we did the sink, where did I, where did I stash the spare washers", "scope": "past_calls"}
+{"text": "so yesterday when we, when we were on, did I finish wrapping the LED under the cabinets", "scope": "past_calls"}
+{"text": "yeah last week I, I think we swapped the, the faucet cartridge, did we leave the old one in the drawer", "scope": "past_calls"}
+{"text": "hang on, the other day on our call, where did I leave the, the basin wrench after we hung up", "scope": "past_calls"}
+{"text": "um last time you helped me with the, with the kitchen outlet, which breaker was it", "scope": "past_calls"}
+{"text": "wait so last weekend we, we were replacing that LED driver, did I ever put the cover back", "scope": "past_calls"}
+{"text": "yeah yesterday I, I was going to snake the sink after we talked, did I actually do it", "scope": "past_calls"}
+{"text": "so like two calls ago, the last time we did electronics, where did I put the, the wire strippers", "scope": "past_calls"}
+{"text": "hang on last time we were in the kitchen, did you, did you see me put the spare fuses somewhere", "scope": "past_calls"}
+{"text": "um the other night when we, when we tightened the P-trap, did it still drip after I hung up", "scope": "past_calls"}
+{"text": "wait wait, last week on the previous call, what size hex key did we, did we use for the faucet", "scope": "past_calls"}
+{"text": "yeah so last time, not this call the last one, where did I, where did I leave the plumber's putty", "scope": "past_calls"}
+{"text": "what did I just plug in here, is it right", "scope": "now"}
+{"text": "I put this LED like this, it look correct?", "scope": "now"}
+{"text": "did I put this washer the right way, look", "scope": "now"}
+{"text": "this wire I just connect, it in right hole?", "scope": "now"}
+{"text": "the tap I close, still drip now or no", "scope": "now"}
+{"text": "I tighten this nut here, too tight?", "scope": "now"}
+{"text": "did I attach this clip right, see this", "scope": "now"}
+{"text": "I connect this cable here, polarity ok?", "scope": "now"}
+{"text": "this strainer I put in sink, it sit right?", "scope": "now"}
+{"text": "did I put drain plug in right, look at this", "scope": "now"}
+{"text": "this screwdriver I pick, it match this screw?", "scope": "now"}
+{"text": "I put tape on this pipe here, enough or no", "scope": "now"}
+{"text": "what I just drop, it roll where", "scope": "seconds"}
+{"text": "wait that noise just now, what is", "scope": "seconds"}
+{"text": "the small screw just fall, where it go", "scope": "seconds"}
+{"text": "did you see I just knock the pliers", "scope": "seconds"}
+{"text": "what I just peel off the wire", "scope": "seconds"}
+{"text": "LED just blink one time, you see", "scope": "seconds"}
+{"text": "I just splash water, you catch that", "scope": "seconds"}
+{"text": "where the hex key go, I just had it", "scope": "seconds"}
+{"text": "did I just shut the wrong tap", "scope": "seconds"}
+{"text": "what I just take from the drawer", "scope": "seconds"}
+{"text": "a few second ago, what in my hand", "scope": "seconds"}
+{"text": "where I set the wrench, like two minute ago", "scope": "minutes"}
+{"text": "a couple minute ago, I put the sponge where", "scope": "minutes"}
+{"text": "few minute back, which tap I open", "scope": "minutes"}
+{"text": "where the LED strip go, I leave it one minute ago", "scope": "minutes"}
+{"text": "what I mix in bowl, like three minute ago", "scope": "minutes"}
+{"text": "I leave pliers on counter a few minute ago, where", "scope": "minutes"}
+{"text": "two minute ago the sink still leak?", "scope": "minutes"}
+{"text": "where I put the wire cutter a little while ago", "scope": "minutes"}
+{"text": "a minute ago I unplug the lamp, plug go where", "scope": "minutes"}
+{"text": "few minute back, what I take off the faucet", "scope": "minutes"}
+{"text": "where the putty knife go, couple minute ago", "scope": "minutes"}
+{"text": "did I already rinse the strainer, like two minute ago", "scope": "minutes"}
+{"text": "what is first thing we do when this call start", "scope": "this_call"}
+{"text": "at start of this call, the sink already leak", "scope": "this_call"}
+{"text": "earlier in this call I take off p trap, where I put", "scope": "this_call"}
+{"text": "since we start, I already shut the water", "scope": "this_call"}
+{"text": "when we begin, what tool I have on table", "scope": "this_call"}
+{"text": "the first step we do on this call, I forget", "scope": "this_call"}
+{"text": "earlier in this call, I already change the LED", "scope": "this_call"}
+{"text": "go back to when I open the cabinet this call", "scope": "this_call"}
+{"text": "before this step, what we do first since we start", "scope": "this_call"}
+{"text": "at beginning of our call, kitchen light on or off", "scope": "this_call"}
+{"text": "earlier in this call, I put the old washer where", "scope": "this_call"}
+{"text": "remind me first thing I do after we start", "scope": "this_call"}
+{"text": "last time we fix this sink, which washer we use", "scope": "past_calls"}
+{"text": "yesterday I change this LED, I put resistor", "scope": "past_calls"}
+{"text": "in last call, kitchen tap still drip after", "scope": "past_calls"}
+{"text": "the other day we work on this lamp, what we do", "scope": "past_calls"}
+{"text": "last week I leave the wrench where", "scope": "past_calls"}
+{"text": "previous call, I already take off the faucet", "scope": "past_calls"}
+{"text": "last time you see my toolbox, it on floor", "scope": "past_calls"}
+{"text": "two day ago we fix the leak, what part we change", "scope": "past_calls"}
+{"text": "in the last call, I put spare LED where", "scope": "past_calls"}
+{"text": "yesterday in kitchen, I leave pliers on sink", "scope": "past_calls"}
+{"text": "have we fix this same drain before, last time", "scope": "past_calls"}
+{"text": "last weekend we change the tap, which tool we use", "scope": "past_calls"}
+{"text": "dad what did I just plug in here, is it right", "scope": "now"}
+{"text": "ok I stuck this wire in the LED, is the stripe facing the right way", "scope": "now"}
+{"text": "dad look, the washer on this sink bolt, did I put the flat side up", "scope": "now"}
+{"text": "I just cranked this nut, does it look crooked to you", "scope": "now"}
+{"text": "this bulb I twisted into the socket, is it in far enough", "scope": "now"}
+{"text": "I shoved the hose onto the faucet, is it actually on", "scope": "now"}
+{"text": "the battery I dropped in the remote, is plus touching plus", "scope": "now"}
+{"text": "I just wrapped this tape on the pipe, is that enough", "scope": "now"}
+{"text": "I lined the hinge up, does this door look straight", "scope": "now"}
+{"text": "the pan's on the burner I just lit, is the flame too big", "scope": "now"}
+{"text": "I pushed the drain plug in, is this even the right hole", "scope": "now"}
+{"text": "this screwdriver on the screw I'm holding, is it the right size", "scope": "now"}
+{"text": "dad did you see that, the LED flashed and then went dark", "scope": "seconds"}
+{"text": "what did I just drop under the sink, it rolled and I can't see it", "scope": "seconds"}
+{"text": "wait which way did I just twist the valve, I already let go", "scope": "seconds"}
+{"text": "which wire did I just yank off the LED, my hand's empty", "scope": "seconds"}
+{"text": "ugh the little screw just fell off the counter, where'd it go", "scope": "seconds"}
+{"text": "did you see me knock the wrench off the bench a second ago", "scope": "seconds"}
+{"text": "what did I just set the pliers on, I already moved", "scope": "seconds"}
+{"text": "which burner did I just click off, I looked away", "scope": "seconds"}
+{"text": "did that LED blink red or green just now, I missed it", "scope": "seconds"}
+{"text": "something just fell behind the fridge, what was that", "scope": "seconds"}
+{"text": "which battery cap did I flick off a second ago", "scope": "seconds"}
+{"text": "did you see that little spark when the wires touched just now", "scope": "seconds"}
+{"text": "dad where did I set the wrench a couple minutes ago", "scope": "minutes"}
+{"text": "like two minutes ago I had the sink stopper, where'd I put it", "scope": "minutes"}
+{"text": "a few minutes back the LED strip was on the table, where'd I leave it", "scope": "minutes"}
+{"text": "what was I even doing with the pliers about a minute ago", "scope": "minutes"}
+{"text": "I put the screwdriver down a couple minutes ago and now it's gone", "scope": "minutes"}
+{"text": "which drawer did I open a few minutes ago for the extra little fuse", "scope": "minutes"}
+{"text": "about three minutes ago I took the aerator off, where is the screen", "scope": "minutes"}
+{"text": "the towel I used on the drip a minute or two ago, where'd it go", "scope": "minutes"}
+{"text": "I had the measuring cup out a few minutes ago, which side of the counter", "scope": "minutes"}
+{"text": "what was in my other hand like four minutes ago, some tool", "scope": "minutes"}
+{"text": "a couple minutes ago I turned something under the sink, which knob", "scope": "minutes"}
+{"text": "where did the battery cover go a few minutes back", "scope": "minutes"}
+{"text": "dad what was the first thing we did on this call with the sink", "scope": "this_call"}
+{"text": "at the start of this call, where did I set the LED strip", "scope": "this_call"}
+{"text": "before we got to the wires on this call, what did you say to unplug", "scope": "this_call"}
+{"text": "way at the beginning of this call, which tool did I grab first", "scope": "this_call"}
+{"text": "earlier in this call I pulled the faucet handle off, where did I set it", "scope": "this_call"}
+{"text": "what step did we finish first since this call started", "scope": "this_call"}
+{"text": "when this call started, was the red wire already loose", "scope": "this_call"}
+{"text": "before the kitchen part of this call, where did I leave the drill", "scope": "this_call"}
+{"text": "since we got on this call, did I shut the water off already once", "scope": "this_call"}
+{"text": "the first thing I showed you this call, was that the right breaker", "scope": "this_call"}
+{"text": "earlier on this call, not a minute ago, where did the gasket go", "scope": "this_call"}
+{"text": "what did we do first, before all the sink stuff on this call", "scope": "this_call"}
+{"text": "dad what was the first thing we did last time we fixed the sink", "scope": "past_calls"}
+{"text": "yesterday at the start of our call, where did I set the LED strip", "scope": "past_calls"}
+{"text": "last time, before we got to the wires, what did you say to unplug", "scope": "past_calls"}
+{"text": "last week at the beginning, which tool did I grab first", "scope": "past_calls"}
+{"text": "yesterday when I pulled the faucet handle off, where did I set it", "scope": "past_calls"}
+{"text": "what step did we finish first the last time I called you", "scope": "past_calls"}
+{"text": "when I called you last week, was the red wire already loose", "scope": "past_calls"}
+{"text": "the other day, before we did the kitchen, where did I leave the drill", "scope": "past_calls"}
+{"text": "on our last call, not today, did I shut the water off already once", "scope": "past_calls"}
+{"text": "the first thing I showed you last time, was that the right breaker", "scope": "past_calls"}
+{"text": "last time, not earlier today, where did the gasket go", "scope": "past_calls"}
+{"text": "what did we do first, before the sink stuff, last weekend", "scope": "past_calls"}
+{"text": "just plugged this LED in here. right jack?", "scope": "now"}
+{"text": "fitted the p-trap. still dripping?", "scope": "now"}
+{"text": "just crimped this wire. look tight?", "scope": "now"}
+{"text": "seated the washer. sitting right?", "scope": "now"}
+{"text": "plugged this outlet tester in. which lights?", "scope": "now"}
+{"text": "just set the strainer. sitting flat?", "scope": "now"}
+{"text": "put this bit in. hex or phillips?", "scope": "now"}
+{"text": "hooked the LED strip. polarity ok?", "scope": "now"}
+{"text": "just clicked the drain in. flush?", "scope": "now"}
+{"text": "turned this shutoff. closed enough?", "scope": "now"}
+{"text": "got the driver on this screw. stripping?", "scope": "now"}
+{"text": "just flipped this stove knob. off?", "scope": "now"}
+{"text": "wait that clink. drop something?", "scope": "seconds"}
+{"text": "spark. just now. you see it?", "scope": "seconds"}
+{"text": "screw bounced. where", "scope": "seconds"}
+{"text": "bit just hit the floor. you catch it?", "scope": "seconds"}
+{"text": "hiss. last couple seconds. what", "scope": "seconds"}
+{"text": "LED just blinked. once. see it?", "scope": "seconds"}
+{"text": "nut rolled. just now", "scope": "seconds"}
+{"text": "lost the washer. seconds ago. floor?", "scope": "seconds"}
+{"text": "drip just started. you see that?", "scope": "seconds"}
+{"text": "clip pinged off. where", "scope": "seconds"}
+{"text": "that smell just now. gas?", "scope": "seconds"}
+{"text": "wrench slipped. last second. see that?", "scope": "seconds"}
+{"text": "wrench. couple minutes ago. counter?", "scope": "minutes"}
+{"text": "channel locks. few minutes back. where", "scope": "minutes"}
+{"text": "LED driver. two minutes. fridge top?", "scope": "minutes"}
+{"text": "teflon tape. couple minutes. vanished", "scope": "minutes"}
+{"text": "shutoff key. few minutes. cabinet?", "scope": "minutes"}
+{"text": "the 10mm. set it down two minutes ago", "scope": "minutes"}
+{"text": "bucket. couple minutes. still by the trap?", "scope": "minutes"}
+{"text": "toaster. unplugged few minutes ago. which outlet", "scope": "minutes"}
+{"text": "hex set. two minutes. drawer?", "scope": "minutes"}
+{"text": "strainer basket. minutes ago. stove?", "scope": "minutes"}
+{"text": "voltage tester. few minutes. bench?", "scope": "minutes"}
+{"text": "putty knife. couple minutes. sink rim?", "scope": "minutes"}
+{"text": "first thing this call. what was I holding", "scope": "this_call"}
+{"text": "start of this call. water on?", "scope": "this_call"}
+{"text": "earlier this call. LED polarity. what did we pick", "scope": "this_call"}
+{"text": "when we hopped on. tools out?", "scope": "this_call"}
+{"text": "first step this call. trap or supply", "scope": "this_call"}
+{"text": "this call start. breaker off?", "scope": "this_call"}
+{"text": "rewind this call. when I pulled the trap", "scope": "this_call"}
+{"text": "earlier on this one. basin wrench. where", "scope": "this_call"}
+{"text": "first thing after I hit call. what", "scope": "this_call"}
+{"text": "this session start. LED still boxed?", "scope": "this_call"}
+{"text": "before these last minutes. this call. valve shut?", "scope": "this_call"}
+{"text": "this call. first leak we saw. where", "scope": "this_call"}
+{"text": "last week's LED job. which wire was live", "scope": "past_calls"}
+{"text": "yesterday. the sink. shutoff left closed?", "scope": "past_calls"}
+{"text": "last time under this sink. spare washer. where", "scope": "past_calls"}
+{"text": "other day. kitchen outlet. which breaker", "scope": "past_calls"}
+{"text": "last call. LED strip. how long we cut", "scope": "past_calls"}
+{"text": "yesterday's trap swap. keep the old gasket?", "scope": "past_calls"}
+{"text": "last week. disposal. still leaking after", "scope": "past_calls"}
+{"text": "previous call. hex keys. which drawer", "scope": "past_calls"}
+{"text": "two days ago. flickering LED. same fixture?", "scope": "past_calls"}
+{"text": "last time we cooked. mixer. where", "scope": "past_calls"}
+{"text": "other night. the GFCI. trip?", "scope": "past_calls"}
+{"text": "last weekend. faucet cartridge. which brand", "scope": "past_calls"}
+{"text": "what comes after this step", "scope": "now"}
+{"text": "ok what do I do next", "scope": "now"}
+{"text": "alright whats the next step", "scope": "now"}
+{"text": "and after that what", "scope": "now"}
+{"text": "so what now", "scope": "now"}
+{"text": "next thing after this one?", "scope": "now"}

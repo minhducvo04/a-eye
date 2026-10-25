@@ -1,19 +1,19 @@
 {
  "n": 100,
- "acc": 0.96,
+ "acc": 0.93,
  "recall": {
   "now": 1.0,
-  "seconds": 0.95,
-  "minutes": 0.95,
-  "this_call": 0.9,
+  "seconds": 0.9,
+  "minutes": 0.9,
+  "this_call": 0.85,
   "past_calls": 1.0
  },
  "now_held_by_mistake": 0,
  "gated": 78,
  "gated_truly_past": 1.0,
- "gated_scope_acc": 0.9487,
+ "gated_scope_acc": 0.9359,
  "past_coverage": 0.975,
- "threshold": 0.8,
+ "threshold": 0.81,
  "matrix": {
   "now": {
    "now": 20,
@@ -23,24 +23,24 @@
    "past_calls": 0
   },
   "seconds": {
-   "now": 0,
-   "seconds": 19,
+   "now": 1,
+   "seconds": 18,
    "minutes": 1,
    "this_call": 0,
    "past_calls": 0
   },
   "minutes": {
    "now": 0,
-   "seconds": 1,
-   "minutes": 19,
+   "seconds": 2,
+   "minutes": 18,
    "this_call": 0,
    "past_calls": 0
   },
   "this_call": {
-   "now": 0,
+   "now": 1,
    "seconds": 0,
    "minutes": 0,
-   "this_call": 18,
+   "this_call": 17,
    "past_calls": 2
   },
   "past_calls": {
