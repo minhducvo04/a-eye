@@ -544,6 +544,149 @@ def test_tool_hazard_and_pc_power_gate():
     asyncio.run(trial())
 
 
+@pytest.mark.parametrize('owner', ['guide', 'memory', 'safety', 'barge'])
+def test_mic_chunk_preserves_code_owned_hold(monkeypatch, owner):
+    async def trial():
+        from server import agent, live_guide, live_memory
+        from server.packs.home import HomeGuide
+        from server.step_check import Verdict
+
+        monkeypatch.setenv('LIVE_GUIDE', '1')
+        monkeypatch.setenv('LIVE_MEMORY_GATE', '1')
+        monkeypatch.setenv('ROUTER', 'off')
+        monkeypatch.setattr(live_guide, 'DEBOUNCE', 0)
+        monkeypatch.setattr(live_memory, 'DEBOUNCE', 0)
+        privacy.set_call({'google': True})
+        emitted, fixed, wire = [], [], []
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def emit(msg):
+            emitted.append(msg)
+
+        async def speak(line):
+            fixed.append(line)
+
+        async def send(raw):
+            wire.append(json.loads(raw))
+
+        async def check(*args):
+            entered.set()
+            await release.wait()
+            return Verdict('closed', 1)
+
+        async def lookup(*args):
+            entered.set()
+            await release.wait()
+            return dict(source='recent', found=True, say='The mug was on the shelf.'), []
+
+        bridge = LiveBridge(Session('mic-hold', camera=False), None, None, emit, speak)
+        bridge.ws, bridge.active, bridge.model = SimpleNamespace(send=send), True, 'fake'
+        # VAD ends the input stream while code is still checking the user's turn.
+        await bridge.audio('AAA=', final=True)
+        if owner == 'guide':
+            monkeypatch.setattr(agent, 'check_water_off', check)
+            bridge.session.home_guide = HomeGuide(task='sink', index=2, introduced=True)
+            bridge.guide.kind = 'home'
+            question = "it's off"
+        elif owner == 'memory':
+            bridge._lookup_memory = lookup
+            question = 'Where was the mug a minute ago?'
+        else:
+            question = None
+        if question:
+            await bridge.handle({'serverContent': {'inputTranscription': {'text': question}}})
+            await asyncio.wait_for(entered.wait(), 1)
+        elif owner == 'safety':
+            await bridge.stop(bridge.stop_line('open the electrical panel'))
+        else:
+            await bridge.interrupt()
+        task = (bridge.guide.task if owner == 'guide' else
+                bridge.memory.task if owner == 'memory' else None)
+        version = bridge.memory.version
+        safety_line = bridge.safety_line
+        emitted.clear()
+        try:
+            await bridge.audio('AAA=')
+            await bridge.handle({'serverContent': {
+                'outputTranscription': {'text': 'Unverified provider reply.'},
+                'modelTurn': {'parts': [{'inlineData': {
+                    'mimeType': 'audio/pcm;rate=24000',
+                    'data': base64.b64encode(b'\x00\x00' * 6000).decode()}}]}}})
+            played = [m for m in emitted if m['type'] in ('audio', 'say', 'reply_delta')]
+            assert bool(played) == (owner == 'barge')
+            assert bridge.blocked == (owner != 'barge')
+            assert bridge.safety_stopped == (owner == 'safety')
+            assert bridge.safety_line == safety_line
+            assert bridge.memory.version == version
+            assert wire[-1]['realtimeInput']['audio']['data'] == 'AAA='
+            if task:
+                assert not task.done()
+                if owner == 'memory':
+                    assert bridge.memory.current(version)
+                else:
+                    assert not bridge.session.home_guide.water_off_passed
+                # Only the owner's completed check may release the held output.
+                await bridge.handle({'serverContent': {'turnComplete': True}})
+                release.set()
+                await asyncio.wait_for(task, 1)
+                assert not bridge.blocked
+                prompts = [m['clientContent'] for m in wire if 'clientContent' in m]
+                assert len(prompts) == 1 and prompts[0]['turnComplete']
+                prompt = prompts[0]['turns'][0]['parts'][0]['text']
+                assert ('step 4 of 7' if owner == 'guide' else 'The mug was on the shelf.') in prompt
+        finally:
+            release.set()
+            await bridge.guide.close()
+            await bridge.memory.close()
+            await bridge.prefetch.close()
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('stop', ['safety', 'closed'])
+@pytest.mark.parametrize('idle_result', ['idle', 'timeout'])
+def test_prompt_turn_rechecks_stop_after_provider_idle_wait(stop, idle_result):
+    async def trial():
+        privacy.set_call({'google': True})
+        wire, fixed = [], []
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def emit(msg):
+            pass
+
+        async def speak(line):
+            fixed.append(line)
+
+        async def send(raw):
+            wire.append(json.loads(raw))
+
+        async def wait_idle():
+            entered.set()
+            await release.wait()
+            if idle_result == 'timeout':
+                raise asyncio.TimeoutError
+            return True
+
+        bridge = LiveBridge(Session('prompt-stop', camera=False), None, None, emit, speak)
+        bridge.ws, bridge.active = SimpleNamespace(send=send), True
+        await bridge.hold()
+        bridge.provider_idle.wait = wait_idle
+        task = asyncio.create_task(bridge.prompt_turn('Say the checked step.'))
+        await asyncio.wait_for(entered.wait(), 1)
+        line = bridge.stop_line('open the electrical panel')
+        if stop == 'safety':
+            await bridge.stop(line)
+        else:
+            bridge.closed = True
+        release.set()
+        assert await asyncio.wait_for(task, 1) is False
+        assert bridge.blocked and not wire
+        if stop == 'safety':
+            assert bridge.safety_stopped and bridge.safety_line == line and fixed == [line]
+        else:
+            assert bridge.closed and not fixed
+    asyncio.run(trial())
+
+
 def test_output_safety_and_next_safe_question():
     async def trial():
         privacy.set_call({'google': True})

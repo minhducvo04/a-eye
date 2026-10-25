@@ -471,7 +471,12 @@ class LiveBridge:
         if len(raw) % 2 or len(raw) > 16000 * 2 * 60:
             raise ValueError('Invalid audio')
         if raw:
-            if self.blocked and not self.audio_input_open:
+            # A mic chunk after VAD ends is not permission to release a coded
+            # hold or safety stop. Only the owner may finish/cancel its work.
+            held = self.memory.held or any(
+                owner and owner.task and not owner.task.done()
+                for owner in (self.guide, self.memory))
+            if self.blocked and not self.audio_input_open and not self.safety_stopped and not held:
                 self._reset_reply()
             self.audio_input_open = True
             await self._input({'realtimeInput': {'audio': {'mimeType': 'audio/pcm;rate=16000', 'data': encoded}}})
