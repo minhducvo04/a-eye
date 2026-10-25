@@ -580,13 +580,14 @@ async def websocket(ws: WebSocket):
             rewind_task.cancel()
             await asyncio.gather(rewind_task, return_exceptions=True)
             rewind_task = None
+        if end_call and session is not None and getattr(session, 'rewind', None):
+            # Snapshot kept-call text before clearing the call-local notes below.
+            rewind_mod.registry(ws.app).end(session.rewind, session=session)
         if session is not None:
             session.recent_memory.clear()
             session.scene_memory.entries.clear()
             if session.context_agent:
                 session.context_agent.block = ''
-        if end_call and session is not None and getattr(session, 'rewind', None):
-            rewind_mod.registry(ws.app).end(session.rewind, session=session)
 
     async def cancel_yolo():
         nonlocal yolo_task
