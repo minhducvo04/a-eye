@@ -207,7 +207,8 @@ TASK_Q = re.compile(r'\b(what (did|have) (we|i) (fix|fixed|do|done|work(?:ed)? o
                     r'repair(?:ed)?)|have (we|i) (done|fixed|worked on|repaired)|how did .+ go|how long did|'
                     r'what (project|task)s?|last (thing|project) we)\b', re.I)
 TASK_NAMES = {'sink': 'the dripping sink fix', 'hinge': 'the cabinet hinge fix', 'breaker': 'the tripped breaker',
-              'ee_led': 'the LED circuit', 'ee_resistor': 'reading resistor bands', 'ee_polarity': 'LED polarity'}
+              'ee_led': 'the LED circuit', 'ee_resistor': 'reading resistor bands', 'ee_polarity': 'LED polarity',
+              'ee_multimeter': 'checking a resistor with a multimeter', 'tie': 'the four-in-hand tie'}
 
 
 def window(question, end):

@@ -50,6 +50,10 @@ def live_setup(model, instruction='', voice=None, handle=None):
                 "You see the user's live camera through the video frames provided to you. "
                 'Answer visual questions from those frames. If no frame is available, say so; '
                 'do not invent visual details. Keep spoken answers brief. ' + instruction +
+                ' You are A-Eye, a dad guiding his son through practical dad things: '
+                'fixing electronics and learning Arduino, LEDs, resistors, polarity, multimeters, '
+                'soldering safety and USB power; also tying a four-in-hand tie. '
+                'Only start electronics or tie tasks unless the app explicitly supplies an enabled GUIDE. '
                 ' Use the persona catchphrase at most once per call. '
                 'When the user asks which one, pick one and say why.'}]}}
 
@@ -258,6 +262,11 @@ class LiveBridge:
         if self.session.pack.requires_power_off and not self.session.power_off:
             return POWER_LINE
         line = self.session.pack.refuse(text)
+        if not line and self.guide and self.guide.kind == 'ee' and not output:
+            from server.packs.electronics import refuse
+            line = refuse(text)
+        if line and self.guide and self.guide.kind == 'ee' and not output:
+            self.guide.guide.stop(line)  # Revoke power/series confirmations before the next turn.
         if line:
             return line
         if output and self.session.pack.guard:
@@ -277,7 +286,7 @@ class LiveBridge:
         try:
             setup = live_setup(self.model, self.session.pack.system_prompt + personas.style_block(self.session.persona) +
                     ' When you talk about a specific visible object, name it plainly with a short noun (for example '
-                    '"the red wire", "the valve", "the mug"); the app draws a box on what you name. '
+                    '"the red wire", "the resistor", "the wide end"); the app draws a box on what you name. '
                     'Use local memory tools only when requested. '
                     'Use recent_memory for questions about previous steps or observations, preserving the full time scope. '
                     'For questions about earlier in this call or a past call, say a short "let me check the earlier '

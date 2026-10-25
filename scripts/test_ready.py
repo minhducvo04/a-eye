@@ -92,4 +92,4 @@ def test_local_probes_only_read_settings(monkeypatch, capsys):
     assert 'secret-' not in output
     assert calls[0] == ['/fake/tailscale', 'status', '--json']
     assert calls[1][-3:] == ['-m', 'device.fake_turn', '--mock']
-    assert 'xrsimulator' in calls[2] and 'CODE_SIGNING_ALLOWED=NO' in calls[2]
+    assert len(calls) == 2  # Readiness no longer runs an optional Vision Pro build.

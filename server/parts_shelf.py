@@ -13,7 +13,7 @@ DIR = Path(__file__).resolve().parent.parent / 'data' / 'kb'
 FIELDS = ('id', 'kind', 'name', 'aliases', 'task_ids', 'step_keys', 'what', 'identify', 'spec', 'safety',
           'product_ids', 'source', 'updated')
 KINDS = {'part', 'tool', 'fixture', 'howto'}
-TASKS = {'sink', 'hinge', 'breaker', 'ee_led', 'ee_resistor', 'ee_polarity'}
+TASKS = {'ee_led', 'ee_resistor', 'ee_polarity', 'ee_multimeter'}
 TEXT_MAX = 200
 NOTE_MAX = 500
 TOOL_MAX = 600
@@ -56,7 +56,8 @@ def check_card(card):
 
 class Shelf:
     def __init__(self, cards=(), products=None):
-        self.cards = list(cards)
+        # Filter even injected/legacy cards, so dialogue and direct lookup cannot revive retired tasks.
+        self.cards = [c for c in cards if set(_list(c['task_ids'])) <= TASKS]
         self.products = dict(products or {})
         self.by_step = {}
         self.terms = []
@@ -159,8 +160,7 @@ _SHELF = None
 def step_text(task, step):
     """The full coded step text (the spoken line may be a faded hint or empty)."""
     from server.packs.electronics import TASKS as EE
-    from server.packs.home import TASKS as HOME
-    steps = {**HOME, **EE}.get(task) or ()
+    steps = EE.get(task) or ()
     return steps[step - 1] if isinstance(step, int) and 0 < step <= len(steps) else ''
 
 

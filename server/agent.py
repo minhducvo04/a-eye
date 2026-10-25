@@ -63,6 +63,7 @@ class Session:
     expert_step: str = ''
     home_guide: object = field(default=None, repr=False)
     ee_guide: object = field(default=None, repr=False)
+    tie_guide: object = field(default=None, repr=False)
     growth: object = field(default=None, repr=False)
     context_agent: object = field(default=None, repr=False)
     live_context: object = field(default=None, repr=False)
@@ -75,6 +76,9 @@ class Session:
 
     def __post_init__(self):
         self.board = load_board(self.board_id)
+        from server.task_scope import home_enabled
+        if self.pack.id == 'home' and not home_enabled():
+            self.pack = packs.get('general')
         if self.pack.id == 'home':
             from server.packs.home import HomeGuide
             self.home_guide = HomeGuide()
@@ -417,15 +421,57 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         await emit(message('turn', turn_id=turn_id, stage='speaking', detail=detail,
                            at_ms=int(time() * 1000)))
 
-    # Closed-set task selection is deterministic, including the spoken single word "sink".
-    if session.pack.id == 'general' and re.fullmatch(r'(?:fix (?:the |a )?)?sink[.!]?', text.strip(), re.I):
+    from server.task_scope import task_for, home_enabled
+    chosen = task_for(text) if not session.pack.refuse(text) else None
+    if not home_enabled():
+        session.home_guide = None
+    if chosen and chosen.startswith('ee_') and session.pack.id in ('general', 'engineering', 'home'):
+        from server.packs.electronics import ElectronicsGuide
+        session.pack = packs.get('engineering')
+        session.home_guide, session.tie_guide = None, None
+        if session.ee_guide is None:
+            session.ee_guide = ElectronicsGuide(task=chosen, growth=session.growth)
+    elif chosen == 'tie' and session.pack.id in ('general', 'engineering', 'home'):
+        from server.packs.tie import TieGuide
+        session.pack = packs.get('general')
+        session.home_guide, session.ee_guide = None, None
+        if session.tie_guide is None:
+            session.tie_guide = TieGuide(growth=session.growth)
+    elif chosen in ('sink', 'hinge', 'breaker') and home_enabled() and session.pack.id == 'general':
         from server.packs.home import HomeGuide
         session.pack = packs.get('home')
-        session.home_guide = HomeGuide()
-        await proof('Home: sink')
+        session.home_guide = HomeGuide(task=chosen)
+        session.ee_guide, session.tie_guide = None, None
+        await proof(f'Home: {chosen}')
         if app is not None and getattr(app.state, 'presenter', False) and session.private:
             await proof('Presenter available')
     forgetting = bool(re.fullmatch(r'forget my progress[.!]?', text.strip(), re.I))
+    if session.tie_guide is not None:
+        from server.packs.tie import TieGuide
+        guide = session.tie_guide
+        guide.growth = session.growth
+        if forgetting:
+            if session.growth:
+                session.growth.forget()
+            session.tie_guide = TieGuide(growth=session.growth)
+            answer = 'Your progress has been forgotten.'
+        else:
+            answer = session.pack.refuse(text) or guide.reply(text)
+        if answer:
+            msg = say(answer)
+            msg.update(turn_id=turn_id, part=0, final=True)
+            session.recent_memory.note_step(answer)
+            await emit(message('reply_delta', agent='helper', turn_id=turn_id, text=answer))
+            await emit(msg)
+            if session.speak:
+                async for audio in session.speak(msg):
+                    await emit(audio)
+            if answer.startswith('Step ') and guide.target:
+                drawing = await pointer.ground(session, vision, guide.target)
+                if drawing:
+                    await emit(drawing)
+        remember()
+        return messages
     if session.ee_guide is not None:
         from server.packs.electronics import ElectronicsGuide, LINES as EE_LINES, refuse as ee_refuse
         from server import recent_memory
@@ -441,7 +487,7 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
             observed = ee_refuse(session.scene.get('caption', ''))
             if observed == USB:
                 guide.usb_off = False
-                if guide.task == 'ee_led' and guide.index < 5:
+                if guide.task == 'ee_multimeter' or (guide.task == 'ee_led' and guide.index < 5):
                     stop = observed
             else:
                 stop = observed

@@ -392,9 +392,10 @@ async def websocket(ws: WebSocket):
                    and bool(os.environ.get('ANTHROPIC_API_KEY')) and claude_allowed())
             # ROUTER=on: the router decides first (and logs its label); the regex is the fallback only when the
             # router is off or unsure. Past/object questions and spoken forget go to memory and Rewind.
-            home_turn = session.home_guide is not None or (session.pack.id == 'general' and
-                re.fullmatch(r'(?:fix (?:the |a )?)?sink[.!]?', text.strip(), re.I))
-            fixed_turn = home_turn or session.ee_guide is not None or bool(session.pack.refuse(text)) or bool(
+            from server.task_scope import task_for, home_enabled
+            guide_turn = ((home_enabled() and session.home_guide is not None) or
+                          session.tie_guide is not None or task_for(text) is not None)
+            fixed_turn = guide_turn or session.ee_guide is not None or bool(session.pack.refuse(text)) or bool(
                 re.fullmatch(r'forget my progress[.!]?', text.strip(), re.I))
             temporal = recent_memory.source_for(text, bool(getattr(session, 'rewind', None) and session.rewind.on))
             if not fixed_turn and not forget_request(text) and temporal:

@@ -16,7 +16,7 @@ STEPS = {**HOME, **EE}
 
 def test_checked_in_cards_load_and_link_real_steps_and_products():
     shelf = Shelf.load()
-    assert 30 <= len(shelf.cards) <= 40
+    assert shelf.cards and all(set(c['task_ids'].split(',')) <= parts_shelf.TASKS for c in shelf.cards)
     for card in shelf.cards:
         assert set(card) == set(FIELDS)
         for key in filter(None, card['step_keys'].split(',')):
@@ -27,7 +27,8 @@ def test_checked_in_cards_load_and_link_real_steps_and_products():
             assert row['url'].startswith('https://www.amazon.com/') and row['name']
             assert 'price' not in row  # the export has no prices; never invent one
     # Every guide step that has a card target in the plan is covered.
-    assert shelf.for_step('ee_led', 3) and shelf.for_step('sink', 6) and shelf.for_step('hinge', 2)
+    assert shelf.for_step('ee_led', 3) and shelf.for_step('ee_multimeter', 3)
+    assert not any(shelf.for_step(task, 1) for task in ('sink', 'hinge', 'breaker', 'tie'))
 
 
 def test_missing_or_bad_files_give_an_empty_shelf(tmp_path):
@@ -44,8 +45,8 @@ def test_step_note_puts_the_named_part_first_and_stays_short():
     note = shelf.note('ee_led', 3, line=parts_shelf.step_text('ee_led', 3))
     assert note.startswith('220 ohm resistor:') and 'in series' in note
     assert len(note) <= parts_shelf.NOTE_MAX
-    sink = shelf.note('sink', 6, line=parts_shelf.step_text('sink', 6))
-    assert 'faucet cartridge' in sink and 'ask a hardware store' in sink and 'Listing' not in sink
+    meter = shelf.note('ee_multimeter', 3, line=parts_shelf.step_text('ee_multimeter', 3))
+    assert 'multimeter' in meter and 'powered circuit' in meter
 
 
 def test_dialogue_warms_only_cards_for_the_current_step():
@@ -53,14 +54,16 @@ def test_dialogue_warms_only_cards_for_the_current_step():
     assert 'adjustable wrench' not in shelf.note('ee_led', 2, ['do I need a wrench?'])
     assert 'multimeter' not in shelf.note('ee_resistor', 1, ['which multimeter should I use'])
     assert 'multimeter' in shelf.note(texts=['which multimeter should I use'])
-    assert 'adjustable wrench' in shelf.note(texts=['where is my adjustable wrench'])
+    assert shelf.note(texts=['where is my adjustable wrench']) == ''
     assert shelf.note(texts=['light an LED']).startswith('LED:')
 
 
 def test_look_up_part_answers_from_memory_or_says_no_card():
     shelf = parts_shelf.shelf()
-    text = shelf.look_up('the Phillips screwdriver')
-    assert text.startswith('Phillips #2 screwdriver') and 'Klein' in text and len(text) <= parts_shelf.TOOL_MAX
+    text = shelf.look_up('a multimeter')
+    assert text.startswith('multimeter') and 'ohms' in text and len(text) <= parts_shelf.TOOL_MAX
+    for name in ('sink shutoff valve', 'faucet cartridge', 'cabinet hinge', 'breaker panel'):
+        assert shelf.look_up(name) == parts_shelf.NO_CARD
     assert shelf.look_up('a flux capacitor') == parts_shelf.NO_CARD
 
 

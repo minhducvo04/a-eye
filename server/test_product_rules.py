@@ -89,7 +89,8 @@ def test_caption_speech_and_draw_are_checked():
     assert check('Show the motherboard.') == 'Show the motherboard.'
 
 
-def test_factual_completion_once(tmp_path):
+def test_factual_completion_once(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME_TASKS", "1")
     from server.growth import GrowthLog
     from server.memory import Store, Cipher
     from server.packs.home import HomeGuide, TASKS
@@ -123,7 +124,8 @@ def test_blocked_claim_split_across_stream_tokens_never_reaches_caption(claim):
 @pytest.mark.parametrize('previous_tries,expected', [
     (3, 'Last time you used 3 tries; today, 1.'), (1, ''),
 ])
-def test_completion_only_emits_code_fact_without_model(tmp_path, previous_tries, expected):
+def test_completion_only_emits_code_fact_without_model(tmp_path, previous_tries, expected, monkeypatch):
+    monkeypatch.setenv("HOME_TASKS", "1")
     from server.growth import GrowthLog
     from server.memory import Store, Cipher
     from server.packs.home import TASKS

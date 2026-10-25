@@ -167,3 +167,31 @@ See its docs/results report.
 ## fix-guide
 
 See its docs/results report.
+
+
+## Electronics and tie refocus — 2026-10-25
+
+Branch: `pkg/refocus`; local commit only, no push.
+Full handoff and changed-file list: [docs/results/refocus-electronics-tie.md](docs/results/refocus-electronics-tie.md).
+
+Live and classic default to electronics and an eight-step four-in-hand tie guide.
+Legacy home tasks require `HOME_TASKS=1`; water/electrical safety checks remain.
+Added natural electronics starts and a six-step multimeter resistance guide with
+a power-disconnected gate and power-report revocation. Removed home shelf cards.
+Updated dad/son setup and persona text; existing actual-parent restriction remains.
+
+Files changed: `server/task_scope.py`, `server/agent.py`, `server/ws2.py`,
+`server/live_guide.py`, `server/gemini_live.py`,
+`server/packs/{__init__,general,home,electronics,tie}.py`, `server/personas.py`,
+`server/recent_memory.py`, `server/parts_shelf.py`, `data/kb/cards.json`,
+`conftest.py`, `server/test_{refocus,live_guide,guide_review,live_memory,parts_shelf,home_pack,growth,step_check,dad_flow,product_rules}.py`,
+`scripts/test_ready.py`, `docs/results/refocus-electronics-tie.md`, `RESULT.md`.
+The readiness test correction removes a stale Vision Pro build expectation;
+production readiness code is untouched.
+
+Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts` - PASS (968 passed, 2 existing JWT fixture warnings in 53.16s; summary read, exit 0).
+Test: `git diff --check` - PASS.
+
+Limits: synthetic provider/camera fixtures and actual local loopback tests only;
+no real Gemini calls, .env reads, real media, UI edits, contract changes or push.
+Physical camera/audio, electronics and knot results await the owner's 05:00 PDT test.

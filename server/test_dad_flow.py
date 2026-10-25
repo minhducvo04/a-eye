@@ -119,3 +119,8 @@ def test_presenter_websocket_hello_and_reconnect_reset(monkeypatch, tmp_path):
             assert ws.receive_json()['state'] == 'listening'
             assert ws.receive_json()['detail'] == 'Presenter available'
             assert client.get(url).json()['enabled'] is False
+
+
+@pytest.fixture(autouse=True)
+def _enable_legacy_home_tasks(monkeypatch):
+    monkeypatch.setenv("HOME_TASKS", "1")

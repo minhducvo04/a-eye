@@ -87,6 +87,9 @@ class HomeGuide:
         self.save()
 
     def reply(self, text, store=None):
+        from server.task_scope import home_enabled, SCOPE_LINE
+        if not home_enabled():
+            return safety.before(text) or refuse(text) or SCOPE_LINE
         if self.growth and self.epoch != self.growth.epoch:
             self.run_id, self.introduced, self.completed = '', False, False
             self.index, self.hints, self.tries = 0, 0, 1
@@ -161,7 +164,7 @@ class HomeGuide:
 
 
 PACK = Pack('home', 'Home skills',
-            'Help someone aged 16 or older with a dripping sink supply line or tap, a read-only breaker guide, '
-            'or a loose cabinet hinge. Support independent practice. Use local home facts only with consent; '
-            'a saved valve location is not proof that water is off. The deterministic guide owns spoken steps.' + STYLE,
+            'Legacy home practice, available only when explicitly enabled. Support independent practice. '
+            'Use saved facts only with consent; saved locations are not safety proof. '
+            'The deterministic guide owns spoken steps.' + STYLE,
             ('the shutoff valve', 'the dripping connection', 'the cabinet hinge'), False, refuse)
