@@ -371,8 +371,9 @@ async def claude(system, evidence):
     options.update(tools=[dict(name='submit_plan', description='Submit the reusable learning guide.',
                               input_schema=PLAN_SCHEMA)],
                    tool_choice=dict(type='tool', name='submit_plan'))
+    # Anthropic 2.x no longer accepts temperature, even with forced tool output.
     response = await client.messages.create(
-        model=model, max_tokens=700, temperature=0.1, system=llm.cached_system(system),
+        model=model, max_tokens=700, system=llm.cached_system(system),
         messages=[{'role': 'user', 'content': evidence}], **options)
     llm.usage_counts(response)
     for block in response.content:
@@ -463,7 +464,7 @@ class BackgroundPlanner:
 
     async def build(self, task, transcript):
         started, reason, gate_id = monotonic(), 'error', None
-        call_ms = None
+        call_ms = error_type = None
         task_hash = hashlib.sha256(task.encode()).hexdigest()[:16]
         event('planner', reason={'task_hash': task_hash, 'result': 'started', 'chars': len(transcript)})
         try:
@@ -513,14 +514,18 @@ class BackgroundPlanner:
             reason, gate_id = str(exc), exc.gate
         except ValueError as exc:
             reason = str(exc) if str(exc) in SCHEMA_ERRORS | {'unsafe', 'personal', 'disabled', 'no_client'} else 'error'
-        except Exception:
-            pass  # provider exception text may contain evidence or credentials
+            if reason == 'error':
+                error_type = type(exc).__name__
+        except Exception as exc:
+            error_type = type(exc).__name__  # never log provider messages or arguments
         finally:
             outcome = {'task_hash': task_hash, 'result': reason, 'chars': len(transcript)}
             if reason not in {'valid', 'timeout', 'no_client', 'cancelled', 'error'}:
                 outcome.update(result='rejected', cause=reason)
             if call_ms is not None:
                 outcome['call_ms'] = call_ms
+            if error_type:
+                outcome['error_type'] = error_type
             if gate_id:
                 outcome['gate'] = gate_id
             event('planner', reason=outcome, ms=round((monotonic() - started) * 1000))
