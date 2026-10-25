@@ -81,7 +81,7 @@ def test_seconds_question_holds_live_and_sends_one_evidence_turn(monkeypatch, ca
         assert not played(emitted)
         assert not fixed  # the RAM lookup is fast: no wait line
         [text] = prompts(wire)
-        assert 'MEMORY v1' in text and 'towel' in text and 'not evidence of the past' in text
+        assert f'MEMORY v{bridge.memory.version}' in text and 'towel' in text and 'not evidence of the past' in text
         assert not bridge.blocked  # Live may now speak its evidence answer
     asyncio.run(trial())
     rows = [json.loads(line) for line in capsys.readouterr().out.splitlines() if '"memory_turn"' in line]
@@ -217,9 +217,9 @@ def test_router_scope_decides_without_time_words_and_vetoes_a_weak_match(monkeyp
     sent, _ = asyncio.run(trial('have we ever worked on this lamp together',
                                 dict(scope='past_calls', scope_past=.97)))
     assert seen == ['long-term'] and 'Monday' in sent[0]
-    # "did I put this in" sounds past but is a now check: the head says now, so Live's own answer plays.
+    # "did I put this in" sounds past but is a now check: release it as one fresh Live turn.
     sent, emitted = asyncio.run(trial('did I put this in the right way', dict(scope='now', scope_past=.03)))
-    assert seen == ['long-term'] and sent == [] and any(m['type'] == 'audio' for m in emitted)
+    assert seen == ['long-term'] and sent == ['did I put this in the right way'] and not played(emitted)
     # Explicit time words with a sure "now" from the head: the early hold is released to Live.
     sent, emitted = asyncio.run(trial('what did I just do', dict(scope='now', scope_past=.01)))
     assert seen == ['long-term'] and sent == ['what did I just do']
@@ -230,4 +230,150 @@ def test_present_tense_checks_never_hold_without_the_router():
         bridge, emitted, fixed, wire = bridge_for()
         await say_user(bridge, 'what did I do wrong here', live_says='The screw is crooked.')
         assert bridge.memory.task is None and not prompts(wire) and not fixed
+    asyncio.run(trial())
+
+
+def test_streaming_safety_stop_cancels_an_already_held_lookup():
+    async def trial():
+        bridge, emitted, fixed, wire = bridge_for()
+        started, release, cancelled = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+        async def lookup(question, scope=None):
+            started.set()
+            try:
+                await release.wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+            return dict(source='recent', found=True, say='The wrench was on the towel.'), []
+
+        bridge._lookup_memory = lookup
+        await bridge.handle({'serverContent': {'inputTranscription': {
+            'text': 'where did I put the wrench a minute ago'}}})
+        await asyncio.wait_for(started.wait(), 1)
+        assert bridge.blocked and bridge.memory.held
+        await bridge.handle({'serverContent': {'inputTranscription': {'text': ' on the gas line'}}})
+        release.set()
+        await asyncio.gather(bridge.memory.task, return_exceptions=True)
+        assert bridge.safety_stopped and bridge.blocked
+        assert cancelled.is_set() and not bridge.memory.held
+        assert len(fixed) == 1 and 'gas' in fixed[0]
+        assert not prompts(wire) and not played(emitted)
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('new_input', ['interrupted', 'new_input_turn'])
+@pytest.mark.parametrize('phase', ['lookup', 'idle_wait'])
+def test_new_input_cancels_old_memory_turn_and_invalidates_delivery(new_input, phase):
+    async def trial():
+        bridge, emitted, fixed, wire = bridge_for()
+        started, release, waiting = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        bridge.provider_idle.clear()
+        idle_wait = bridge.provider_idle.wait
+
+        async def wait_idle():
+            waiting.set()
+            return await idle_wait()
+
+        bridge.provider_idle.wait = wait_idle
+
+        async def lookup(question, scope=None):
+            started.set()
+            await release.wait()
+            return dict(source='recent', found=True, say='The mug was on the shelf.'), []
+
+        bridge._lookup_memory = lookup
+        await bridge.handle({'serverContent': {'inputTranscription': {
+            'text': 'where was the mug two minutes ago'}}})
+        await asyncio.wait_for(started.wait(), 1)
+        if phase == 'idle_wait':
+            release.set()
+            await asyncio.wait_for(waiting.wait(), 1)
+        task, version = bridge.memory.task, bridge.memory.version
+        if new_input == 'interrupted':
+            await bridge.handle({'serverContent': {'interrupted': True}})
+        else:
+            bridge.new_input_turn()
+        release.set()
+        bridge.provider_idle.set()
+        await asyncio.gather(task, return_exceptions=True)
+        assert task.cancelled() and bridge.memory.version > version
+        assert not bridge.memory.held and not prompts(wire) and not fixed
+    asyncio.run(trial())
+
+
+def test_prompt_turn_preserves_a_safety_stop_during_idle_wait():
+    async def trial():
+        bridge, emitted, fixed, wire = bridge_for()
+        waiting = asyncio.Event()
+        bridge.provider_idle.clear()
+        idle_wait = bridge.provider_idle.wait
+
+        async def wait_idle():
+            waiting.set()
+            return await idle_wait()
+
+        bridge.provider_idle.wait = wait_idle
+        task = asyncio.create_task(bridge.prompt_turn('Past evidence: the mug was on the shelf.'))
+        await asyncio.wait_for(waiting.wait(), 1)
+        line = bridge.stop_line('gas line')
+        await bridge.stop(line)
+        bridge.provider_idle.set()
+        assert await task is False
+        assert bridge.safety_stopped and bridge.blocked and bridge.safety_line == line
+        assert fixed == [line] and not prompts(wire)
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('scope', ['past_calls', 'now'])
+def test_router_only_question_holds_audio_until_scope_is_known(monkeypatch, scope):
+    monkeypatch.setenv('ROUTER', 'on')
+
+    async def trial():
+        bridge, emitted, fixed, wire = bridge_for()
+        deciding, release = asyncio.Event(), asyncio.Event()
+
+        async def decision(session, question):
+            deciding.set()
+            await release.wait()
+            return dict(scope=scope, scope_past=.99 if scope == 'past_calls' else .01)
+
+        async def lookup(question, source=None):
+            return dict(source='history', found=True, say='We fixed the lamp on Monday.'), []
+
+        monkeypatch.setattr(live_memory, 'scope_decision', decision)
+        bridge._lookup_memory = lookup
+        question = 'have we ever worked on this lamp together'
+        await bridge.handle({'serverContent': {'inputTranscription': {'text': question}}})
+        held_before_decision = bridge.blocked and bridge.memory.held
+        await asyncio.wait_for(deciding.wait(), 1)
+        blob = dict(mimeType='audio/pcm;rate=24000', data=base64.b64encode(b'\x01\x00' * 9600).decode())
+        await bridge.handle({'serverContent': {'modelTurn': {'parts': [{'inlineData': blob}]},
+                                               'outputTranscription': {'text': 'It is on the bench.'}}})
+        await bridge.handle({'serverContent': {'turnComplete': True}})
+        release.set()
+        await bridge.memory.task
+        assert held_before_decision and not played(emitted)
+        [text] = prompts(wire)
+        assert ('Monday' in text) if scope == 'past_calls' else (text == question)
+        assert not bridge.blocked
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('source,card_type', [('rewind', 'rewind_hit'), ('long-term', 'find_item')])
+def test_code_owned_memory_does_not_send_query_or_crop_cards(source, card_type):
+    async def trial():
+        writer = SimpleNamespace(store=SimpleNamespace(remembering=lambda: True))
+        bridge, emitted, fixed, wire = bridge_for(rewind=SimpleNamespace(on=True, memory_writer=writer))
+        privacy.set_call({'google': True, 'twelvelabs': True})
+        question = 'Where did I put the mug a minute ago?'
+
+        async def lookup(text, scope=None):
+            return (dict(source=source, found=True, say='The mug was on the shelf.'),
+                    [dict(type=card_type, query=text, frame_b64='synthetic-crop', t_s=5, sure=True)])
+
+        bridge._lookup_memory = lookup
+        await say_user(bridge, question)
+        assert not [m for m in emitted if m['type'] in ('rewind_hit', 'find_item')]
+        assert 'shelf' in prompts(wire)[0]
     asyncio.run(trial())

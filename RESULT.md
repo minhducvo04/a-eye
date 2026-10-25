@@ -151,3 +151,28 @@ Proof: `/private/tmp/aeye-live-resilience-server-final.log`.
 Limits: no `.env` read and no real Gemini calls. Real provider acceptance of the
 new setup fields, real 2–3 minute continuity, latency and physical playback are
 not verified. All test media and provider responses were synthetic.
+
+## Memory review fixes — 2026-10-25
+
+Branch: `pkg/fix-memory`; local commit only, no push.
+Full handoff: [docs/results/fix-memory-review.md](docs/results/fix-memory-review.md).
+
+Fixed all five requested memory-turn issues: safety while held cancels lookup;
+barge-in/new input cancels and invalidates old work; idle-wait delivery re-checks
+safety and memory ownership; router-only questions hold before scheduling;
+code-owned memory turns do not emit transcript/crop cards that open a client sheet.
+
+Files changed: `server/gemini_live.py`, `server/live_memory.py`,
+`server/test_live_memory.py`, `docs/results/fix-memory-review.md`, `RESULT.md`.
+`server/recent_memory.py` remains unchanged for its other builder.
+
+Five reproduction functions (ten parameterized cases) failed before the fixes.
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_live_memory.py --tb=short` - PASS (21 passed in 2.43s).
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router` - PASS (875 passed, 2 warnings in 52.32s; summary read, exit 0).
+Test: `git diff --check` - PASS.
+
+The first broad run had 15 failures from sandbox-denied loopback binds; the
+passing run used permitted local sockets. Proof is retained locally in
+`.pytest_cache/fix-memory-review-tests.log` (ignored). No `.env` read, real Gemini
+calls, real media or device/browser verification. Ordinary tool cards keep their
+existing behavior. Landing and smoke remain the integrator's responsibility.

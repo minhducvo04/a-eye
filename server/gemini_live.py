@@ -205,6 +205,13 @@ class LiveBridge:
         self._reset_reply()
 
     def _reset_reply(self):
+        """Full reset for fresh user input; code-owned prompts must preserve the safety latch."""
+        self._reset_output()
+        self.blocked = False
+        self.safety_stopped = False
+        self.safety_line = None
+
+    def _reset_output(self):
         self.turn_id = uuid4().hex
         self.received = False
         self.output = ''
@@ -217,9 +224,6 @@ class LiveBridge:
         self.speaking = False
         self.generating = False
         self.rate = 24000
-        self.blocked = False
-        self.safety_stopped = False
-        self.safety_line = None
         self.pointed = False
 
     async def _auto_point(self, text):
@@ -359,15 +363,19 @@ class LiveBridge:
         self.output = ''
         await self.send(state('listening'))
 
-    async def prompt_turn(self, text):
+    async def prompt_turn(self, text, *, memory_version=None):
         """Ask Live to speak now. clientContent interrupts generation, so wait for the held turn first."""
         try:
             await asyncio.wait_for(self.provider_idle.wait(), 3)
         except asyncio.TimeoutError:
             pass
-        if not self.active or self.closed or self.session.private or not privacy.google_allowed():
+        if (not self.active or self.closed or self.safety_stopped or self.session.private
+                or not privacy.google_allowed()):
             return False
-        self._reset_reply()
+        if memory_version is not None and not self.memory.current(memory_version):
+            return False
+        self._reset_output()
+        self.blocked = False
         self.input_turn_open = False
         return await self._input({'clientContent': {'turns': [{'role': 'user', 'parts': [{'text': text}]}],
                                                     'turnComplete': True}})
@@ -543,6 +551,7 @@ class LiveBridge:
             return
         self.safety_stopped = True
         self.safety_line = line
+        self.memory.yield_turn()
         self.cancel_tools()
         if self.prefetch.task:
             self.prefetch.task.cancel()
@@ -727,7 +736,7 @@ class LiveBridge:
                 if len(getattr(self, attr)) > 16000:
                     raise ValueError('Live transcript too long')
                 line = self.stop_line(getattr(self, attr), output)
-                if line and not self.blocked:
+                if line:
                     await self.stop(line)
                 if (not output and not line and self.guide and not self.safety_stopped
                         and self.guide.claims(self.question)):
