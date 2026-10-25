@@ -1650,6 +1650,15 @@ function boot() {
 
   async function choosePack(next) {
     if (!PACK_LABEL[next] || pack) return;
+    if (next === 'gemini-live' && !cloud.google && !privateMode) {
+      const notice = document.getElementById('live-start-notice');
+      notice.textContent = 'To start Gemini Live, turn on Gemini Live (Google) below. It sends microphone audio and downscaled camera video to Google. You can also choose General with Google off.';
+      notice.classList.remove('hidden');
+      openSheet(settingsEl);
+      settingsEl.scrollTop = 0;
+      return;
+    }
+    document.getElementById('live-start-notice').classList.add('hidden');
     pack = next;
     renderLeaves();
     homeStartPending = next === 'home';
@@ -1780,6 +1789,7 @@ function boot() {
     const mode = MODES[ringIndex];
     ringTitle.textContent = mode.title;
     ringHint.textContent = mode.pack ? "tap to start" : "coming soon";
+    ringHint.disabled = !mode.pack;
   }
 
   function scrollRingTo(i, smooth) {
@@ -2076,6 +2086,7 @@ function boot() {
 
   // Tap the centred mode to start; a coming-soon mode shakes. With a mouse there is no swipe, so tapping a side
   // mode that works starts it directly (iOS only scrolls it to the centre).
+  ringHint.addEventListener('click', () => void choosePack(MODES[ringIndex].pack));
   picker.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-mode]");
     if (!button) return;
