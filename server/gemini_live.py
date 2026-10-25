@@ -19,7 +19,7 @@ import httpx
 from jsonschema import validate
 from websockets.asyncio.client import connect
 
-from server import cloud_meter, cloud_vision, pointer, privacy, recent_memory, rewind_tools, personas
+from server import cloud_meter, cloud_vision, parts_shelf, pointer, privacy, recent_memory, rewind_tools, personas
 from server.agent import POWER_LINE, message, say, state
 from server.live_prefetch import Prefetch, query_key
 
@@ -90,7 +90,7 @@ async def discover_model(client=None):
 
 TOOL_ARGS = {'point_at': ('label',), 'find_item': ('name',), 'tag_item': ('name', 'place'),
              'forget_memory': ('name',), 'rewind_search': ('query',), 'recent_memory': ('question',),
-             'gather_context': ('question',)}
+             'gather_context': ('question',), 'look_up_part': ('name',)}
 TOOL_DESCRIPTIONS = {
     'gather_context': 'Optional lookup for a specific missing personal detail. Use rarely; background context arrives automatically.',
     'point_at': 'Draw a box and arrow on a visible object you are talking about or recommending. Call it whenever you name or choose a specific visible object.',
@@ -100,6 +100,7 @@ TOOL_DESCRIPTIONS = {
     'rewind_search': 'Search this call\'s Rewind clips only while Rewind is on.',
     'recent_memory': 'Recall recent steps or observations. Pass the full question, including its time scope; '
                      'routes to recent call notes, Rewind, or earlier-call memory as appropriate.',
+    'look_up_part': 'What a named part or tool is, how to tell it is the right one, and real listings.',
 }
 
 
@@ -112,7 +113,8 @@ def declarations(rewind_on):
         for name, fields in TOOL_ARGS.items()
         # point_at is not offered: a blocking tool reply made Live speak every pointed answer twice.
         # The server boxes the object Live names from its transcript instead (_auto_point).
-        if name != 'point_at' and (name != 'rewind_search' or rewind_on)]
+        if name != 'point_at' and (name != 'rewind_search' or rewind_on)
+        and (name != 'look_up_part' or parts_shelf.tool_on())]
 
 
 _GENERIC = set("""the a an this that these those it its object objects thing things item items something image photo
@@ -597,6 +599,8 @@ class LiveBridge:
         if self.blocked:
             return 'Stopped by code.'
         require_consent()
+        if name == 'look_up_part':
+            return parts_shelf.shelf().look_up(args['name'])
         if name == 'gather_context':
             context = self.session.context_agent
             if not context:
