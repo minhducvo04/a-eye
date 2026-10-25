@@ -27,12 +27,12 @@ def _re(pattern):
 
 # Conservative text backstops, not a substitute for visual hazard detection.
 _WATER = r"\b(water|wet|leak\w*|drip\w*|puddle)\b"
-_ELECTRIC = r"\b(outlet|socket|live cord|powered cord|plugged.in cord|extension cord)\b"
+_ELECTRIC = r"\b(outlet|socket|live cord|powered cord|plugged.in cord|extension cord|psu|power supply|charger|power strip|computer|laptop)\b"
 _PANEL = r"\b(electrical panel|electric panel|breaker (box|panel)|fuse box)\b"
 _OPEN = r"\b(open\w*|remov\w*|unscrew\w*|take off|inside)\b"
 _LADDER = r"\b(ladder|stepladder)\b"
 _UNSAFE = r"\b(top (rung|step)|wobbl\w*|unstable|uneven|overreach\w*|lean\w* sideways)\b"
-_WATER_ON = r"\bwater\b.{0,20}\b(still on|is on|running|not off)\b"
+_WATER_ON = r"\bwater(?: supply)?\s+(?:(?:is|was)\s+)?(?:still\s+on|(?:still\s+)?running|not\s+off)\b"
 WATER_OFF_LINE = ("Stop here until the step checker confirms the water is off. "
                   "Show the shutoff valve and the tap with no water flowing.")
 
@@ -82,9 +82,10 @@ GATES = (
     Gate('live_power',
          _re(r"\b(live|hot|powered|power (is )?(still )?on|while (it's|it is) (on|plugged in)|without (turning|switching|shutting) "
              r"(the )?(power|breaker|it) off|plugged in)\b.{0,50}\b(wire\w*|wiring|outlet|socket|breaker|panel|fuse|electric\w*|"
-             r"psu|power supply|light fixture|switch)\b|\b(wire\w*|wiring|outlet|socket|breaker|panel|fuse|psu|power supply|light "
+             r"light fixture|switch)\b|\b(wire\w*|wiring|outlet|socket|breaker|panel|fuse|light "
              r"fixture)\b.{0,50}\b(live|power (is )?(still )?on|while (it's|it is) on|plugged in|without (turning|switching|shutting) "
-             r"(the )?(power|breaker|it) off)\b"),
+             r"(the )?(power|breaker|it) off)\b|\b(psu|power supply)\b.{0,50}\b(live|power (is )?(still )?on)\b|"
+             r"\b(live|power (is )?(still )?on)\b.{0,50}\b(psu|power supply)\b"),
          _re(r"\b(live|power (is )?(still )?on)\b.{0,60}\b(wire\w*|outlet|socket|breaker|panel|psu|electric\w*)\b|"
              r"\b(wire\w*|outlet|socket|breaker|panel|psu)\b.{0,60}\b(live|power (is )?(still )?on)\b"),
          _re(r"\b(is|it's|that's)\s+(\w+\s+)?" + _OK + r"\b|\bno need to (turn|switch|shut)\b|\b(leave|keep) (it|the power) on\b"),

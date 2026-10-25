@@ -32,7 +32,7 @@ class FakeTL:
     async def task(self, task_id):
         return {'status': 'ready'}
 
-    async def delete_video(self, index_id, video_id):
+    async def delete_video(self, index_id, video_id, force=False):
         self.deleted.append((index_id, video_id))
 
     analyzed = None
@@ -250,7 +250,7 @@ def test_call_end_deletes_cloud_videos_unless_kept():
     video = gone.clips[0].video_id
     result = asyncio.run(end('gone'))
     assert registry.client.deleted == [('idx-1', video)] and result == dict(deleted=1, failed=0)
-    assert gone.clips[0].status == 'deleted' and gone.clips[0].frames    # frames stay for the end recap
+    assert gone.clips[0].status == 'deleted' and not gone.clips[0].frames
     assert asyncio.run(gone.forget()) == dict(deleted=1, failed=0)
     assert gone.clips == [] and not gone.ring
 
@@ -272,6 +272,8 @@ def test_local_only_locks_rewind_cloud(monkeypatch):
 
 
 def test_http_client_delete_video(monkeypatch):
+    from server.privacy import set_call
+    set_call(rewind=True)
     monkeypatch.setenv('TWELVELABS_API_KEY', 'tlk_test')
     seen = []
 
@@ -285,6 +287,8 @@ def test_http_client_delete_video(monkeypatch):
     assert seen == [('DELETE', '/v1.3/indexes/idx/videos/vid'), ('DELETE', '/v1.3/indexes/idx/videos/gone')]
 
 def test_http_client_creates_index_and_searches_with_filter(monkeypatch):
+    from server.privacy import set_call
+    set_call(rewind=True)
     monkeypatch.setenv('TWELVELABS_API_KEY', 'tlk_test')
     seen = []
 
@@ -308,6 +312,8 @@ def test_http_client_creates_index_and_searches_with_filter(monkeypatch):
 
 
 def test_http_client_needs_key(monkeypatch):
+    from server.privacy import set_call
+    set_call(rewind=True)
     monkeypatch.delenv('TWELVELABS_API_KEY', raising=False)
     try:
         asyncio.run(TwelveLabsClient().ensure_index())
@@ -499,4 +505,5 @@ def test_recap_route_and_typed_recap_over_ws2():
             assert first['text'] == 'Let me look back over the call.' and not first['final']
             assert card['skipped'] == ['install the RAM'] and last['final']
         body = client.post('/api/rewind/recap', json={'session_id': 's'}).json()
-        assert body['mode'] == 'pc_build' and body['steps'][0]['text'] == 'Installed the CPU'
+        assert body['mode'] == 'pc_build' and body['steps'] == []  # not kept: no new upload after deletion
+        assert all(not c.frames for c in rewind.clips)

@@ -35,7 +35,7 @@ class FakeTwelveLabs:
                          'end': max(0.1, float(meta.get('end_s', 0)) - float(meta.get('start_s', 0)))})
         return rows[:limit]
 
-    async def delete_video(self, index_id, video_id):
+    async def delete_video(self, index_id, video_id, force=False):
         self.videos.pop(video_id, None)
         self.deleted.append(video_id)
 

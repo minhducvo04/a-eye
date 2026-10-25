@@ -151,3 +151,21 @@ Proof: `/private/tmp/aeye-live-resilience-server-final.log`.
 Limits: no `.env` read and no real Gemini calls. Real provider acceptance of the
 new setup fields, real 2–3 minute continuity, latency and physical playback are
 not verified. All test media and provider responses were synthetic.
+
+## Recall review fixes — PASS
+
+Fixed all ten high/medium rows in the independent Recall review. Details and per-finding regression mapping:
+[docs/results/fix-recall-review.md](docs/results/fix-recall-review.md).
+
+Files changed: `server/rewind.py`, `server/ws2.py`, `server/safety.py`, `server/privacy.py`,
+`server/rewind_fake.py` (fake delete signature only), `server/test_recall_review.py`,
+`server/test_rewind.py`, `server/test_recall_pipeline.py`, `server/test_recent_memory.py`,
+this result, the detailed report, and its test-output artifact.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_recall_review.py` - PASS (11 passed in 0.84s).
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server` - PASS (864 passed, 2 warnings in 46.35s).
+Test: `git diff --check` - PASS.
+
+Limits: synthetic providers/media only; no real TwelveLabs/Gemini calls, physical-device proof, push or deployment.
+Anonymous kept clips are call-scoped; authenticated kept calls remain owner-scoped. Protected builder files unchanged;
+no `.env` read. Final full-suite output: [fix-recall-server-tests.txt](docs/results/fix-recall-server-tests.txt).
