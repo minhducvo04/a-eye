@@ -333,7 +333,7 @@ function boot() {
       sensitivity: Number(sensEl && sensEl.value) || 5,
       onAmbient: (reading) => {
         if (ambientEl) ambientEl.textContent = `Noise ${dbfs(reading.rms)} dB${reading.noisy ? " (loud)" : ""}`;
-        if (reading.noisy && reading.calibrated && !holdMode) void enableHold();
+        // Owner decision: never switch to hold to talk on its own; hands-free stays on. The Settings toggle still works.
       },
       onFinal: (text) => {
         if (voice?.isInputBlocked()) return;
