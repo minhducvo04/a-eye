@@ -10,7 +10,7 @@ Test: git diff --check - PASS.
 
 Browser command:
 ```
-/Users/minhducvo/.cache/uv/archive-v0/hcY8qU8TLWbqDTHje52_-/bin/python client-web/call-ui-smoke.py /Users/minhducvo/Projects/a-eye/.venv/bin/python
+$HOME/.cache/uv/archive-v0/hcY8qU8TLWbqDTHje52_-/bin/python client-web/call-ui-smoke.py $HOME/Projects/a-eye/.venv/bin/python
 ```
 
 The final browser run is recorded in [browser-smoke.log](browser-smoke.log).
