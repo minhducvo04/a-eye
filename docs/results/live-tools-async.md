@@ -74,9 +74,9 @@ receives audio before that tool is released. Tests use a real loopback WebSocket
 with synthetic provider packets. Socket checks required permitted loopback access
 because the initial sandbox attempt could not bind a port.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_live_prefetch.py server/test_gemini_live.py server/test_live_streaming.py server/test_bg_context.py server/test_recent_memory.py --tb=short` - PASS (62 passed in 5.07s).
+Test: `.venv/bin/python -m pytest -q server/test_live_prefetch.py server/test_gemini_live.py server/test_live_streaming.py server/test_bg_context.py server/test_recent_memory.py --tb=short` - PASS (62 passed in 5.07s).
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q` - PASS (`1272 passed, 2 warnings in 67.04s (0:01:07)`). Final-code proof: `/private/tmp/aeye-live-tools-async-pytest-recheck.log`. Both warnings are existing short HMAC fixture keys in identity tests.
+Test: `.venv/bin/python -m pytest -q` - PASS (`1272 passed, 2 warnings in 67.04s (0:01:07)`). Final-code proof: `/private/tmp/aeye-live-tools-async-pytest-recheck.log`. Both warnings are existing short HMAC fixture keys in identity tests.
 
 An earlier full run passed with `1272 passed, 2 warnings in 68.07s`. The first run
 including the final sibling-tool safety check reported `1 failed, 1271 passed,
@@ -88,7 +88,7 @@ under `/private/tmp/aeye-live-tools-async-pytest*.log`.
 
 Test: `node --test client-web/` - PASS (169 tests, 169 pass, 0 fail, 0 cancelled, 0 skipped; duration_ms 1312.613584).
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python scripts/live_prefetch_probe.py` - PASS (real loopback socket, synthetic Live and Rewind).
+Test: `.venv/bin/python scripts/live_prefetch_probe.py` - PASS (real loopback socket, synthetic Live and Rewind).
 
 Recorded standalone probe output, milliseconds from start of synthetic input:
 
@@ -116,8 +116,8 @@ fake-only budget ledger because it makes no external calls.
 With credentials already exported, run:
 
 ```sh
-/Users/minhducvo/Projects/a-eye/.venv/bin/python scripts/live_prefetch_probe.py --live
-/Users/minhducvo/Projects/a-eye/.venv/bin/python scripts/live_prefetch_probe.py --live --rewind --vision http://127.0.0.1:8001
+.venv/bin/python scripts/live_prefetch_probe.py --live
+.venv/bin/python scripts/live_prefetch_probe.py --live --rewind --vision http://127.0.0.1:8001
 ```
 
 The first uses real Gemini with synthetic memory. The second uploads a generated

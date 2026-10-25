@@ -7,7 +7,7 @@ Runs a real Chromium (Playwright) with a fake camera and microphone against a ru
 
 Checks: no console errors or page errors from load to the end; the Call button starts a session; Camera on flips
 its state and frames start; Mic flips its state; Hold to talk can be pressed; a socket question gets a reply
-caption; headset additions stay hidden on desktop and phone; Settings scrolls with the wheel; no long task over 300 ms after a find card. Exit 0 on pass. Synthetic media only (Chromium's fake devices).
+caption; the hidden phone-pairing host panel stays hidden; Settings scrolls with the wheel; no long task over 300 ms after a find card. Exit 0 on pass. Synthetic media only (Chromium's fake devices).
 """
 import json
 import os
@@ -122,12 +122,10 @@ def main():
         }))""", hello['session_id'])
         page.wait_for_function("document.getElementById('replies').textContent.trim().length > 0", timeout=6000)
 
-        # Desktop keeps the redesigned Settings; pairing is verified by headset_smoke.py.
+        # Desktop keeps the redesigned Settings; the pairing host panel stays hidden.
         page.locator("#call .open-settings").click()
         page.wait_for_timeout(500)
-        assert not page.locator('#pair-request').is_visible(), 'Headset pairing leaked into desktop'
-        assert not page.locator('#composer').is_visible(), 'Headset composer leaked into desktop'
-        assert not page.locator('#step-card').is_visible(), 'Headset step card leaked into desktop'
+        assert not page.locator('#pair-request').is_visible(), 'Pairing host panel leaked into desktop'
         sheet = page.locator("#settings").bounding_box()
         page.mouse.move(sheet["x"] + sheet["width"] / 2, sheet["y"] + sheet["height"] / 2)
         page.mouse.wheel(0, 400)
@@ -167,8 +165,6 @@ def main():
         assert not page.locator('[data-pack="home"]').is_visible()
         page.click('#ring-hint')
         page.wait_for_timeout(600)
-        for selector in ['#composer', '#step-card', '#headset-panel']:
-            assert not page.locator(selector).is_visible(), f'{selector} leaked into phone'
         end = page.locator('#end-call').bounding_box()
         assert end and end['y'] >= 0 and end['y'] + end['height'] <= 844
         page.click('#end-call')

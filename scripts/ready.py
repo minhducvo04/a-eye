@@ -6,7 +6,6 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -140,17 +139,6 @@ def local_checks(report):
     ok = command([sys.executable, '-m', 'device.fake_turn', '--mock'], 120)
     report.row('Device no-hardware test', 'PASS' if ok else 'FAIL', 'yes' if ok else 'no',
                'Run python -m device.fake_turn --mock; install device dependencies and macOS say/afconvert.')
-    if not shutil.which('xcodebuild'):
-        report.row('Vision Pro simulator build', 'SKIP', 'xcodebuild is not installed')
-    else:
-        with tempfile.TemporaryDirectory(prefix='aeye-ready-build-') as build:
-            ok = command(['xcodebuild', '-project', 'visionos/AEyeVision/AEyeVision.xcodeproj',
-                          '-scheme', 'AEyeVision', '-sdk', 'xrsimulator', '-destination',
-                          'generic/platform=visionOS Simulator', '-derivedDataPath', build,
-                          'CODE_SIGNING_ALLOWED=NO', 'build'], 300)
-        report.row('Vision Pro simulator build', 'PASS' if ok else 'FAIL', 'yes' if ok else 'no',
-                   'Install/select full Xcode with visionOS simulator SDK; build AEyeVision for simulator.')
-
 
 def main():
     report = Report()

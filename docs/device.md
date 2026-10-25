@@ -41,6 +41,12 @@ resistor, and the Mac that runs the A-eye server.
 9. **Start it on every boot:** `sudo cp device/aeye-device.service /etc/systemd/system/ && sudo systemctl enable --now aeye-device`.
    The log: `journalctl -u aeye-device -f`.
 
+## External camera devices
+
+External camera devices (future, e.g. glasses via phone): use the paired-camera route; see server/pairing.py.
+The call host asks for a pair code, the camera device joins `/ws2` with `role: "camera"` and that code, and its
+frames feed the same call (`paired_call` in `server/ws2.py`; phone side is the pair-camera page in `client-web/pair.js`).
+
 ## Wiring: button and LED
 
 Pin numbers are the physical header pins; GPIO numbers are what the config uses.
