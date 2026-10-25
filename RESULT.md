@@ -601,3 +601,39 @@ See its docs/results report.
 ## planner-live10
 
 See its docs/results report.
+
+## planner-live11 — 2026-10-25
+
+Fixed the emergency-line-as-plan-step path: calm, gate-specific precautions,
+legacy cache migration, and per-step gate-ID logging. Water/electric matching
+requires an explicit water word and an electrical word within one sentence;
+no pairing across plan fields/task context. Both eight-step headphone fixtures
+now replay their spoken output without stop latches. Real hazard input still stops.
+A bounded normal soldering-iron plug-in instruction no longer hits the general
+outlet-repair refusal; repair/mains/hazard checks remain.
+
+Fixed main failure
+`server/test_gemini_live.py::test_fake_live_wire_audio_tools_captions_and_revocation`:
+its assertion now expects the complete intentional `live=True` persona block.
+Other wire/audio/consent assertions remain unchanged.
+
+Changed: `server/planner.py`, `server/safety.py`, `server/gates.py`,
+`server/test_planner_safety_steps.py`, `server/test_planner.py`,
+`server/test_gates.py`, `server/test_gemini_live.py`,
+`eval/swap/test_checker_regressions.py`, `docs/results/planner-live.md`, `RESULT.md`.
+
+Test: `PYTHONPATH=.pytest_cache/offline:. ~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(1370 passed, 1 failed, 2 warnings in 103.28s). Only
+`scripts/test_public.py::test_tracked_scan_and_git_free_export` failed: our audit
+guard blocked its attempt to read its temporary fake `.env`. The user's no-read
+restriction remains in force. The named main regression and all planner/safety
+checks passed. Full log: `.pytest_cache/planner-live11-pytest-final.log`.
+Test: `~/Projects/a-eye/.venv/bin/python eval/swap/run.py checker --model current --out .pytest_cache/planner-live11-checker` - PASS
+(15/15 bad caught, 1/14 false drops, 0 errors; unchanged case bank/threshold).
+Test: `git diff --check` - PASS.
+
+Limits: the real six-step text was not available in this worktree; exact live
+trigger remains unverified. Existing fixtures are synthetic. No `.env` reads,
+external network, cloud calls, push, merge or deployment. Synthetic localhost
+servers only. Detailed cause, baseline failures and evidence:
+[round 11 report](docs/results/planner-live.md).
