@@ -1,22 +1,53 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#000000">
   <meta name="referrer" content="no-referrer">
-  <title>My data · A-eye</title><link rel="stylesheet" href="accounts.css">
+  <title>My data · A-eye</title>
+  <link rel="stylesheet" href="accounts.css">
 </head>
-<body><main>
-  <a href="agent.html">← Back to A-eye</a>
-  <h1>My data</h1>
-  <p>See your saved memory notes, tags, settings, progress and family notes below. Media and embeddings
-    are listed by file size and excluded from the export. A complete call history is not recorded.</p>
-  <p id="account-status" role="status" aria-live="polite">Loading your data…</p>
-  <div id="data-actions" hidden>
-    <button id="export-data">Export my data</button>
-    <button id="delete-data" class="danger">Delete everything</button>
-    <button id="sign-out">Sign out</button>
-  </div>
-  <p><a href="signin.html">Sign in or choose Guest</a></p>
-  <details><summary>What is stored about me</summary><pre id="stored-data"></pre></details>
-</main><script type="module" src="accounts.js"></script></body>
+<body>
+  <header class="top">
+    <a class="back" href="agent.html" aria-label="Back to A-eye">
+      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+    </a>
+    <p class="wordmark" aria-hidden="true">A-eye</p>
+  </header>
+
+  <main>
+    <section class="card" aria-labelledby="data-heading">
+      <p class="eyebrow">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3l7 3v5.5c0 4.4-3 8-7 9.5-4-1.5-7-5.1-7-9.5V6z"/></svg>
+        Your data
+      </p>
+      <h1 id="data-heading">My data</h1>
+      <p class="lead">Your saved memory notes, tags, settings, progress and family notes. Media and embeddings
+        are listed by file size and left out of the export. A complete call history is not recorded.</p>
+
+      <p id="account-status" class="status" role="status" aria-live="polite">Loading your data…</p>
+
+      <div id="data-actions" class="actions" hidden>
+        <button id="export-data" class="primary">Export my data</button>
+        <button id="sign-out">Sign out</button>
+        <button id="delete-data" class="danger">Delete everything</button>
+      </div>
+
+      <details>
+        <summary>What is stored about me</summary>
+        <pre id="stored-data"></pre>
+      </details>
+
+      <nav class="group" aria-label="Account links">
+        <a class="row" href="signin.html">
+          <span>Sign in or choose Guest</span>
+          <span aria-hidden="true">›</span>
+        </a>
+      </nav>
+    </section>
+  </main>
+  <script type="module" src="accounts.js"></script>
+</body>
 </html>

@@ -23,7 +23,7 @@ async function startSignIn() {
       location.assign('/agent.html');
     } catch (error) { showError(error); guest.disabled = false; }
   });
-  if (!config.google_client_id) return;
+  if (!config.google_client_id) { guest.classList.add('primary'); return; }
   const load = document.getElementById('load-google');
   load.hidden = false;
   load.addEventListener('click', () => {

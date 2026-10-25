@@ -1,9 +1,6 @@
-// Touch laptops must not qualify. iPadOS uses a desktop Mac UA with multiple touch points.
+// Any device with two or more cameras gets the button: phones, tablets, and desktops with an extra webcam.
 export function showFlipCamera(nav, coarse, devices) {
-  const mobile = /Android|iPhone|iPad|iPod/.test(nav.userAgent || "") ||
-    (/Macintosh/.test(nav.userAgent || "") && nav.maxTouchPoints > 1);
-  return mobile && (coarse || nav.maxTouchPoints > 0) &&
-    devices.filter(d => d.kind === "videoinput").length >= 2;
+  return devices.filter(d => d.kind === "videoinput").length >= 2;
 }
 
 export async function switchVideoTrack(stream, facingMode, getUserMedia, active = () => true) {
@@ -27,11 +24,11 @@ export function wireFlipCamera({ video, button, active, busy, onError, onSwitch 
   let facing = "environment";
   let switching = false;
   try { if (localStorage.getItem("aeye.facingMode") === "user") facing = "user"; } catch {}
-  const mobile = /Android|iPhone|iPad|iPod/.test(navigator.userAgent) ||
-    (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
   function preview() {
+    // Mirror the preview only (frames sent to the server are never mirrored). Desktop webcams rarely report a
+    // facingMode, so an unreported one is treated as the back camera and left unmirrored.
     const actual = video.srcObject?.getVideoTracks?.()[0]?.getSettings?.().facingMode;
-    video.style.transform = (actual || (mobile ? facing : "environment")) === "user" ? "scaleX(-1)" : "";
+    video.style.transform = (actual || "environment") === "user" ? "scaleX(-1)" : "";
     button.disabled = !active() || switching;
   }
   async function refresh() {
@@ -69,7 +66,7 @@ export function wireFlipCamera({ video, button, active, busy, onError, onSwitch 
   navigator.mediaDevices?.addEventListener?.("devicechange", refresh);
   void refresh();
   return {
-    constraints: base => mobile && !base.deviceId ? { width: base.width, height: base.height, facingMode: facing } : base,
+    constraints: base => (base.deviceId ? base : { width: base.width, height: base.height, facingMode: facing }),
     refresh,
     preview,
     busy: () => switching,

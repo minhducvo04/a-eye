@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { showFlipCamera, switchVideoTrack } from './flip-camera.js';
 const devices = [{ kind: 'videoinput' }, { kind: 'videoinput' }];
-test('only touch/coarse phones and tablets with two cameras show flip', () => {
+test('any device with two cameras shows flip, one camera never does', () => {
   assert.equal(showFlipCamera({ userAgent: 'Android', maxTouchPoints: 1 }, true, devices), true);
   assert.equal(showFlipCamera({ userAgent: 'Macintosh', maxTouchPoints: 5 }, false, devices), true);
-  assert.equal(showFlipCamera({ userAgent: 'Windows NT', maxTouchPoints: 10 }, true, devices), false);
-  assert.equal(showFlipCamera({ userAgent: 'Macintosh', maxTouchPoints: 0 }, false, devices), false);
+  assert.equal(showFlipCamera({ userAgent: 'Windows NT', maxTouchPoints: 10 }, true, devices), true);
+  assert.equal(showFlipCamera({ userAgent: 'Macintosh', maxTouchPoints: 0 }, false, devices), true);
   assert.equal(showFlipCamera({ userAgent: 'Android', maxTouchPoints: 1 }, true, devices.slice(0, 1)), false);
+  assert.equal(showFlipCamera({ userAgent: 'Macintosh', maxTouchPoints: 0 }, false, [{ kind: 'audioinput' }, ...devices.slice(0, 1)]), false);
 });
 function fixture() {
   const old = { kind: 'video', stop() { this.stopped = true; } };
