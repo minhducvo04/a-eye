@@ -362,9 +362,9 @@ class LiveContextBuilder:
                 return
             # Check the complete output BEFORE limiting its length. Explicit hazards
             # without a known pack rule still receive a fixed, coded stop.
+            # Only a coded gate may stop the call. A model-flagged hazard with no matching gate
+            # stays in the context (Live hears it) instead of interrupting: it fired on a plain desk.
             line = self.safety_line(result['hazard'] + '\n' + result['context'])
-            if result['hazard'].strip() and not line:
-                line = UNKNOWN_HAZARD_LINE
         if line:
             if line != self.last_stop:
                 await self.stop(line)
