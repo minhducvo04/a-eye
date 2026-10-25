@@ -8,8 +8,9 @@ function page(nativeHls = false) {
   function element(tag) {
     return {
       tag, children: [], style: {}, events: {}, hidden: false,
-      append(...children) { this.children.push(...children); },
+      append(...children) { for (const c of children) c.parent = this; this.children.push(...children); },
       replaceChildren(...children) { this.children = children; },
+      remove() { if (this.parent) this.parent.children = this.parent.children.filter(c => c !== this); },
       setAttribute(name, value) { this[name] = value; },
       removeAttribute(name) { delete this[name]; },
       addEventListener(name, fn) { this.events[name] = fn; },
@@ -93,4 +94,37 @@ test('past-call hit shows the video at once with a loading line, and labels the 
   video.events.error();
   assert.equal(loading.textContent, 'Loading the clip…');
   update.dispose();
+});
+
+test('hls.js past-call clip: video is in the pane before attach, plays from start_s and drops the loading line', async () => {
+  const { doc, body, pane } = page(false);
+  const hls = { handlers: {}, attachedInPane: null,
+    on(name, fn) { this.handlers[name] = fn; },
+    loadSource(url) { this.url = url; },
+    attachMedia(video) { this.video = video; this.attachedInPane = Boolean(video.parent && video.parent.children.includes(video)); } };
+  globalThis.Hls = class { static isSupported() { return true; } static Events = { MANIFEST_PARSED: 'mp', ERROR: 'err' }; constructor() { return hls; } };
+  try {
+    const update = renderSplit(doc, body, { hit: { t_s: 52, start_s: 0, end_s: 3, past_call: true,
+      clip_url: 'https://media.invalid/saved.m3u8' }, line: pastCallLine({ t_s: 52 }) });
+    const video = pane().children.find(el => el.tag === 'video');
+    const loading = pane().children.find(el => el.className === 'memory-loading');
+    assert.equal(hls.url, 'https://media.invalid/saved.m3u8');
+    assert.equal(hls.video, video);
+    assert.equal(hls.attachedInPane, true);
+    assert.equal(loading.textContent, 'Loading the clip…');
+    hls.handlers.mp();
+    await Promise.resolve();
+    assert.equal(video.currentTime, 0);
+    assert.equal(video.playing, true);
+    video.events.playing();
+    assert.ok(!pane().children.includes(loading), 'loading line removed on playing');
+    assert.equal(video.hidden, false);
+    video.currentTime = 3.2;
+    video.events.timeupdate();
+    assert.equal(video.currentTime, 0);
+    update.dispose();
+    assert.equal(video.playing, false);
+  } finally {
+    delete globalThis.Hls;
+  }
 });
