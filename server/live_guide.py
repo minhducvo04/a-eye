@@ -26,7 +26,7 @@ OFF = re.compile(r"\b(?:(?:it['’]?s|it is|water(?: is)?|valve(?: is)?|tap(?: i
                  r"turned\s+(?:it|the valve|the water)\s+off)\b", re.I)
 CONTROL = re.compile(r'\b(walk me through it|try again|retry|forget my progress)\b', re.I)
 DEBOUNCE = .3
-OBSERVE_DEBOUNCE = .15
+OBSERVE_DEBOUNCE = .3
 PLAN_WAIT = 3.0
 RULE = ('Say only this step in your own words; do not skip ahead; do not say a step is done; '
         'the app decides when to move on. When the user says done or next, say nothing; the app checks and tells you.')
@@ -148,7 +148,7 @@ class LiveGuide:
         self.observation = asyncio.create_task(self._observe_later())
 
     async def _observe_later(self):
-        # Input transcription can trail finished/first output by a few packets.
+        # Input transcription can keep growing after model output completes.
         await asyncio.sleep(OBSERVE_DEBOUNCE)
         self.bridge.observe_guide()
 

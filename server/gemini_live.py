@@ -197,7 +197,7 @@ class LiveBridge:
         self.prefetch = Prefetch(session, self._lookup_memory, self._prefetch_ready)
         self.input_turn_open = False
         self.guide_observed = False
-        self.guide_boundary_seen = False
+        self.guide_question = ''
         self.guide_judged = ''
         self.pending_memory = None
         # Set while the provider is not generating; a guide prompt waits for it.
@@ -220,8 +220,6 @@ class LiveBridge:
         self.scope_redirected = False
 
     def _reset_output(self):
-        if self.guide:
-            self.guide.cancel_observation()
         self.turn_id = uuid4().hex
         self.received = False
         self.output = ''
@@ -422,16 +420,20 @@ class LiveBridge:
             if await self.publish_context(guide.block()):
                 guide.published = version
 
-    def new_input_turn(self):
+    def reset_guide_input(self):
         if self.guide:
             self.guide.cancel_observation()
+        self.guide_observed = False
+        self.guide_question = ''
+        self.guide_judged = ''
+
+    def new_input_turn(self, *, continuing_transcript=False):
+        if not continuing_transcript:
+            self.reset_guide_input()
         self.cancel_tools()
         self.prefetch.new_turn()
         self.pending_memory = None
         self.input_turn_open = True
-        self.guide_observed = False
-        self.guide_boundary_seen = False
-        self.guide_judged = ''
         self.memory.reset()
 
     def observe_guide(self):
@@ -439,11 +441,11 @@ class LiveBridge:
         # not prevent the completed utterance from requesting a plan.
         if self.guide:
             self.guide.cancel_observation()
-        if (self.guide and self.question.strip() and not self.guide_observed
-                and self.question != self.guide_judged and not self.closed
+        if (self.guide and self.guide_question.strip() and not self.guide_observed
+                and self.guide_question != self.guide_judged and not self.closed
                 and not self.safety_stopped and not self.scope_redirected):
-            self.guide_judged = self.question
-            self.guide_observed = bool(self.guide.observe(self.question))
+            self.guide_judged = self.guide_question
+            self.guide_observed = bool(self.guide.observe(self.guide_question))
 
     def memory_allowed(self, result):
         if self.closed or self.session.private or not privacy.google_allowed():
@@ -522,6 +524,10 @@ class LiveBridge:
         if len(raw) % 2 or len(raw) > 16000 * 2 * 60:
             raise ValueError('Invalid audio')
         if raw:
+            if not self.audio_input_open:
+                # A new mic utterance, unlike model output/turnComplete, ends
+                # the previous planner transcript's opportunity to grow.
+                self.reset_guide_input()
             # A mic chunk after VAD ends is not permission to release a coded
             # hold or safety stop. Only the owner may finish/cancel its work.
             held = self.scope_redirected or self.memory.held or any(
@@ -542,6 +548,7 @@ class LiveBridge:
             self._reset_reply()
         self.new_input_turn()
         self.question = text
+        self.guide_question = text
         await self.receive_text(text)
         line = self.stop_line(text)
         if line:
@@ -793,9 +800,17 @@ class LiveBridge:
                 if not output and not self.input_turn_open:
                     if self.scope_redirected and not self.safety_stopped:
                         self._reset_reply()
-                    self.new_input_turn()
+                    # turnComplete ends model output, not necessarily input
+                    # transcription. Retain rejected text until new mic input,
+                    # typed input, or interruption explicitly starts a turn.
+                    self.new_input_turn(continuing_transcript=bool(
+                        self.guide_question and not self.guide_observed))
                 attr = 'output' if output else 'question'
                 setattr(self, attr, getattr(self, attr) + text)
+                if not output:
+                    self.guide_question += text
+                    if len(self.guide_question) > 16000:
+                        raise ValueError('Live transcript too long')
                 if len(getattr(self, attr)) > 16000:
                     raise ValueError('Live transcript too long')
                 line = self.stop_line(getattr(self, attr), output)
@@ -828,16 +843,11 @@ class LiveBridge:
                     from server.context_agent import DISMISS
                     if self.session.context_agent and DISMISS.fullmatch(self.question) and not self.blocked:
                         await self.dismiss_followup(self.question)
-        boundary = (content.get('inputTranscription', {}).get('finished')
-                    or content.get('modelTurn') or content.get('outputTranscription') or response.get('toolCall'))
-        # Start once at the speech boundary, then reset the debounce only for new
-        # input. Streaming model audio must not keep postponing the decision.
-        if self.guide and not self.guide_observed:
-            first_boundary = boundary and not self.guide_boundary_seen
-            if boundary:
-                self.guide_boundary_seen = True
-            if first_boundary or (self.guide_boundary_seen and content.get('inputTranscription', {}).get('text')):
-                self.guide.observe_later()
+        # Every growth can overturn a rejection, even after model turnComplete.
+        # Model audio/output transcription must never postpone this debounce.
+        if (self.guide and not self.guide_observed
+                and content.get('inputTranscription', {}).get('text')):
+            self.guide.observe_later()
         if not self.blocked:
             for part in content.get('modelTurn', {}).get('parts', []):
                 blob = part.get('inlineData')
@@ -930,6 +940,7 @@ class LiveBridge:
                     await self.prefetch.close()
                     self.pending_memory = None
                     self.input_turn_open = False
+                    self.reset_guide_input()
                     await self.close_context()
                     stopped, safety_line = self.safety_stopped, self.safety_line
                     self._reset_reply()

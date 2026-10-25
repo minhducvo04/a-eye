@@ -275,3 +275,65 @@ Test: `git diff --check` - PASS.
 
 Limits: local execution with synthetic packets and fake provider transport.
 No real Gemini/Claude call, device playback, merge, or deployment was tested.
+
+## Fix-back round 4 on pkg/planner-live4 — 2026-10-25
+
+Base: `a5b3cb4` (main with planner-live3 merged). Work stays in this worktree;
+no push, `.env` read, network permission change, or real provider request.
+
+### Reproduction and change
+
+The new synthetic packet regression starts with the first 21 characters of the
+reported headphone sentence, interleaves model PCM and output transcription,
+waits for `rejected/no_intent/chars:21`, then delivers more input transcription.
+One variant puts model `turnComplete` before the final input chunk; the other
+keeps model output open. Before production changes: 1 failed, 1 passed
+(91 deselected in 2.09s). The completion-before-tail variant never started a plan.
+The variant with late input before completion already worked on the base.
+
+The remaining bug was transcript lifetime: `turnComplete` cleared `question`,
+and the next input packet reset planner observation state. Retrying only that
+tail lost the earlier problem statement. The bridge now keeps a separate,
+bounded planner transcript in call RAM across model-output resets. Every input
+growth schedules a 300 ms debounce, independent of model output or `finished`.
+Unchanged rejections stay deduplicated; a positive decision latches observation.
+Model completion still flushes the latest text, but a rejection remains eligible
+for retries on trailing input. New mic utterances, typed input, interruptions,
+and reconnects reset the retained planner input; close cancels deferred work.
+No contract, safety checker, planner budget, or guide wait limit changed.
+
+Both interleaved cases now request exactly one two-call plan using the full
+sentence and install step 1. The literal supplied sentence has 67 characters
+(68 with a trailing space); the regression asserts the actual full-text length
+alongside the 21-character rejection. Diagnostics contain lengths, not text.
+
+The same regression delays planner completion, starts a fresh mic turn with
+`Okay, what is the next step?`, verifies the free-form Live reply is held, then
+releases the plan and asserts the spoken prompt contains **step 1 of 2**, without
+advancement or a second build. Existing tests still exercise the real three-second
+pending-plan timeout, invalid plan, safety stop, and completion during debounce.
+
+### Verification
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py server/test_live_guide.py --tb=short` - PASS
+(100 passed in 11.08s; summary read).
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(1238 passed, 16 failed, 2 warnings in 60.13s; exit 1; summary and failure evidence
+read). Fifteen failures are denied local socket operations. The sixteenth is
+`server/test_live_streaming.py::test_ws2_hazard_sends_stop_caption_and_fixed_audio`,
+which raises `KeyError: 'state'` after `live_start_failed` / `PermissionError`.
+The failed node IDs match the sixteen documented in the earlier rounds. No
+planner/checker test failed. Warnings concern short synthetic JWT keys.
+Full local output: `.pytest_cache/planner-live4-full.log` (gitignored).
+
+Test: `git diff --check` - PASS.
+
+Changed files: `server/gemini_live.py`, `server/live_guide.py`,
+`server/test_planner.py`, this report, and `RESULT.md`.
+
+Limits: synthetic packets and fake providers only; no real Live call, device
+playback, merge, or deployment verification. No packet capture establishes the
+real provider's exact sequence. A transcription-only stream without a fresh
+mic/typed/interruption signal cannot distinguish an unaccepted turn's late tail
+from a new utterance; retained rejected input intentionally remains retryable.

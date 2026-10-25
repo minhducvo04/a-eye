@@ -167,6 +167,8 @@ def test_live_intent_packets(monkeypatch, tmp_path, text, expected):
 @pytest.mark.parametrize('boundary', ['finished', 'output', 'audio_output', 'output_before_tail',
                                      'streaming_output', 'early_finished', 'late_delta'])
 def test_live_timed_transcription_plans_before_reply_ends(monkeypatch, tmp_path, capsys, boundary):
+    from server.live_guide import OBSERVE_DEBOUNCE
+
     async def trial():
         b, emitted, fixed, wire, fake, store, points = setup(monkeypatch, tmp_path)
         chunks = ('dad', ' The wire on my', ' headphones broke near', ' the plug. How do I fix it?')
@@ -175,7 +177,7 @@ def test_live_timed_transcription_plans_before_reply_ends(monkeypatch, tmp_path,
                 await b.handle({'serverContent': {'inputTranscription': {
                     'text': chunk, 'finished': boundary in ('early_finished', 'late_delta') and index == 0}}})
                 # A provider may finish a segment before the rest of the utterance arrives.
-                await asyncio.sleep(.2 if boundary == 'late_delta' and index == 0 else .01)
+                await asyncio.sleep(OBSERVE_DEBOUNCE + .05 if boundary == 'late_delta' and index == 0 else .01)
                 if boundary == 'output_before_tail' and index == 2:
                     await b.handle({'serverContent': {'outputTranscription': {'text': 'Let us '}}})
             if boundary == 'finished':
@@ -186,7 +188,7 @@ def test_live_timed_transcription_plans_before_reply_ends(monkeypatch, tmp_path,
             else:
                 await b.handle({'serverContent': {'outputTranscription': {'text': 'Let us inspect it.'}}})
             # The model's reply has started, but turnComplete has NOT arrived yet.
-            for _ in range(10):
+            for _ in range(20):
                 await asyncio.sleep(.02)
                 if boundary == 'streaming_output':
                     await b.handle({'serverContent': {'outputTranscription': {'text': ' More.'}}})
@@ -215,6 +217,69 @@ def test_live_timed_transcription_plans_before_reply_ends(monkeypatch, tmp_path,
     assert 'headphones' not in json.dumps(events)
 
 
+@pytest.mark.parametrize('complete_before_tail', [False, True])
+def test_live_interleaved_late_transcript_retries_and_next_waits(monkeypatch, tmp_path, capsys,
+                                                               complete_before_tail):
+    from server.live_guide import OBSERVE_DEBOUNCE, PLAN_WAIT
+
+    async def trial():
+        started, release = asyncio.Event(), asyncio.Event()
+        fake = FakeLLM()
+
+        async def slow(system, evidence):
+            started.set()
+            await release.wait()
+            return await fake(system, evidence)
+
+        b, emitted, fixed, wire, _, store, points = setup(monkeypatch, tmp_path, slow)
+        text = 'dad The wire on my headphones broke near the plug. How do I fix it?'
+        audio = {'modelTurn': {'parts': [{'inlineData': {
+            'mimeType': 'audio/pcm;rate=24000', 'data': 'AAA='}}]}}
+        try:
+            await b.audio('AAA=', final=True)
+            await b.handle({'serverContent': {'inputTranscription': {'text': text[:21]}}})
+            await b.handle({'serverContent': audio})
+            await b.handle({'serverContent': {'outputTranscription': {'text': 'Let us inspect it.'}}})
+            # The actual reported rejection: first output is NOT the end of input.
+            await asyncio.sleep(OBSERVE_DEBOUNCE + .05)
+            assert not b.guide_observed and b.guide.planner.task is None
+            await b.handle({'serverContent': {'inputTranscription': {'text': text[21:48]}}})
+            await b.handle({'serverContent': audio})
+            if complete_before_tail:
+                await b.handle({'serverContent': {'turnComplete': True}})
+            await b.handle({'serverContent': {'inputTranscription': {'text': text[48:]}}})
+            await asyncio.wait_for(started.wait(), OBSERVE_DEBOUNCE + .5)
+            pending = b.guide.planner.task
+            assert b.guide_observed and not pending.done()
+            if not complete_before_tail:
+                await b.handle({'serverContent': {'turnComplete': True}})
+            # A fresh mic utterance starts turn two, while the plan is still building.
+            await b.audio('AAA=', final=True)
+            emitted.clear()
+            followup = asyncio.create_task(say_user(b, 'Okay, what is the next step?'))
+            await asyncio.sleep(.02)
+            assert b.blocked and not followup.done() and not prompts(wire)
+            assert not any(m['type'] in ('audio', 'say', 'reply_delta') for m in emitted)
+            release.set()
+            await asyncio.wait_for(followup, PLAN_WAIT + .5)
+            assert fake.calls[0][1]['question'] == text
+            assert fake.calls[0][1]['task'] == 'fix the wire on the headphones near the plug'
+            assert len(fake.calls) == 2 and b.guide.guide.index == 0
+            assert 'step 1 of 2' in prompts(wire)[-1] and not fixed
+        finally:
+            await b.memory.close()
+            await b.guide.close()
+            await b.prefetch.close()
+
+    asyncio.run(trial())
+    reasons = [e['reason'] for line in capsys.readouterr().out.splitlines()
+               if (e := json.loads(line))['event'] == 'planner']
+    assert reasons[0] == dict(result='rejected', cause='no_intent', chars=21)
+    assert [r['chars'] for r in reasons if r['result'] == 'started'] == [67]
+    assert len([r for r in reasons if r['result'] == 'valid']) == 1
+    assert 'headphones' not in json.dumps(reasons)
+
+
 @pytest.mark.parametrize('action', ['stop', 'interrupted', 'close'])
 def test_live_deferred_decision_cannot_outlive_turn(monkeypatch, tmp_path, action):
     async def trial():
@@ -229,7 +294,7 @@ def test_live_deferred_decision_cannot_outlive_turn(monkeypatch, tmp_path, actio
                 await b.handle({'serverContent': {'inputTranscription': {'text': 'hello dad'}, 'turnComplete': True}})
             else:
                 await b.guide.close()
-            await asyncio.sleep(.2)
+            await asyncio.sleep(.35)
             assert b.guide.planner.task is None and not fake.calls and not store.rows
         finally:
             await b.memory.close()
