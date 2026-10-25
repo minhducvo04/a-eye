@@ -25,6 +25,7 @@ from server.logs import event
 from server.keyframes import signature
 from server import packs, pairing
 from server import rewind as rewind_mod
+from server import recent_memory
 from server.routing import forget_request, route_turn
 from server.agent import Session, Turn, message, run_turn, say, state
 from server.llm import LLMClient, TURN_USAGE
@@ -158,6 +159,7 @@ async def scene_loop(session, vision, send, gate=None):
     keyframes = session.keyframe_gate
     previous_seq = None
     while True:
+        session.recent_memory.prune()
         frame = session.frame
         requested = session.refresh_requested.is_set()
         if (not session.camera or session.voice_pending or frame is None
@@ -206,6 +208,7 @@ async def scene_loop(session, vision, send, gate=None):
                     session.scene_seq = frame['seq']
                     session.scene_time = monotonic()
                     session.scene_memory.add(scene, observed_at)
+                    session.recent_memory.add(scene, observed_at)
                     await send(message('track', seq=frame['seq'], objects=scene['objects']))
                 except Exception:
                     event('dependency_error', session.session_id, dependency='vision', level='error')
@@ -266,6 +269,8 @@ async def websocket(ws: WebSocket):
 
     async def send(msg):
         validate('server_message_v2', msg)
+        if session and msg['type'] == 'say' and msg.get('agent') == 'helper':
+            session.recent_memory.note_step(msg['text'])
         if msg['type'] == 'metrics' and 'turn_id' in msg:
             event('turn_end', session.session_id if session else None,
                   cache_read_tokens=sum(x['cache_read_tokens'] for x in (TURN_USAGE.get() or [])),
@@ -373,6 +378,11 @@ async def websocket(ws: WebSocket):
                 re.fullmatch(r'(?:fix (?:the |a )?)?sink[.!]?', text.strip(), re.I))
             fixed_turn = home_turn or bool(session.pack.refuse(text)) or bool(
                 re.fullmatch(r'forget my progress[.!]?', text.strip(), re.I))
+            temporal = recent_memory.source_for(text, bool(getattr(session, 'rewind', None) and session.rewind.on))
+            if not fixed_turn and not forget_request(text) and temporal:
+                await recent_memory.run_turn(session, text, lifecycle.id, vision)
+                await lifecycle.stage('done')
+                return
             label = (await route_turn(session, text)
                      if not fixed_turn and os.environ.get('ROUTER', 'off') == 'on' else None)
             memory_or_rewind = not fixed_turn and rewind_mod.wants_rewind(session, text)
@@ -534,6 +544,9 @@ async def websocket(ws: WebSocket):
             rewind_task.cancel()
             await asyncio.gather(rewind_task, return_exceptions=True)
             rewind_task = None
+        if session is not None:
+            session.recent_memory.clear()
+            session.scene_memory.entries.clear()
         if session is not None and getattr(session, 'rewind', None):
             rewind_mod.registry(ws.app).end(session.session_id)   # uploads the rest after the call
 
