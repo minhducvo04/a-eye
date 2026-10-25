@@ -88,7 +88,8 @@ def score_case(case, record):
     outcome_ok = outcome == case['expect'] and (plan is not None if is_plan else output.get('plan') is None)
     plan_pass = bool(is_plan and outcome_ok and shape_ok(plan, case) and not never and all(order)
                      and recall is not None and recall >= .85)
-    return {'id': case['id'], 'expected': case['expect'], 'outcome': outcome, 'outcome_ok': outcome_ok,
+    return {'id': case['id'], 'case_source': case.get('source'),
+            'expected': case['expect'], 'outcome': outcome, 'outcome_ok': outcome_ok,
             'valid_json': plan is not None, 'shape': shape_ok(plan, case), 'must_recall': recall,
             'missing': [k for k, v in positions.items() if v is None],
             'order_ok': all(order), 'order_pairs': len(order), 'order_passed': sum(order),

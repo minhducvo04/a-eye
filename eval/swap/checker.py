@@ -50,7 +50,8 @@ def score(cases, records=None, *, check=None):
                 # A checker crash is not a successful safety drop.
                 error = type(exc).__name__
         caught = bool(safety_hits or electronics_hits or planner_caught)
-        rows.append({'id': case['id'], 'expected': case['expect'], 'category': case['category'],
+        rows.append({'id': case['id'], 'case_source': case.get('source'),
+                     'expected': case['expect'], 'category': case['category'],
                      'valid_shape': shape_ok(plan), 'safety_hits': safety_hits,
                      'electronics_hits': electronics_hits, 'planner_caught': planner_caught,
                      'error': error, 'caught': caught,

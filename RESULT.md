@@ -1,3 +1,60 @@
+# Checker hardening and independent eval cases — 2026-10-25
+
+Branch: `pkg/checker`, based on `e1d1ba6`; local commit only, no push.
+
+The checker catches **15/15 bad plans** with **1/12 false drops**, meeting the
+requested bar. Historical score: 5/15 and 0/12. The landed runtime validator's
+pre-change baseline was 12/15 and 0/12; the checker CLI lacked its public adapter.
+Planner fixture scoring remains 12/12 plan cases passed across 20 input cases.
+
+`check_plan()` now uses the runtime/cache validator. Added nonblank show and
+four-word target checks, audible first-step power isolation before wiring, and
+ventilation before soldering. Shared before/after safety patterns cover opening
+power supplies/chargers, damaged or punctured batteries, capacitor discharge or
+shorting, and explicitly unventilated soldering. Existing gates remain intact.
+The single false drop is the unchanged soldering fixture `good01`, which omits
+power isolation and ventilation. Its original accept label remains in the score.
+
+Imported all 52 Grok cases without changing their content: 7 planner rewrites,
+15 new planner cases, 30 talker rubrics. Sources are labeled, files remain
+separate, and planner replay supports `--case-source`. Original Claude content
+and fixture outputs are unchanged; fixture case hashes reflect source metadata.
+No matching Grok outputs exist, so independent model scores remain unavailable.
+
+Files changed:
+- `server/planner.py`, `server/safety.py`, `server/test_agent.py`.
+- `eval/cases/planner_cases.jsonl`, `checker_bad_plans.jsonl`, `checker_good_plans.jsonl`.
+- `eval/cases/grok_planner_rewrite.jsonl`, `grok_planner_new.jsonl`, `grok_talker.jsonl`.
+- `eval/swap/run.py`, `planner.py`, `checker.py`, `fixtures/planner/fixture.jsonl`.
+- `eval/swap/test_checker_regressions.py`, `test_case_sources.py`.
+- `docs/results/evals.md`, `RESULT.md`.
+
+Test: `~/Projects/a-eye/.venv/bin/python eval/swap/run.py planner --model fixture` - PASS
+(20 fixture records; 12/12 plans; must/order 100%; never hits 0).
+Test: `~/Projects/a-eye/.venv/bin/python -m eval.swap.run checker --model current` - PASS
+(15/15 bad caught; 1/12 false drops; 0 checker errors).
+Test: affected checker/planner/safety/agent/memory/brain checks - PASS
+(146 passed in 1.87s; exact command in `docs/results/evals.md`).
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(1195 passed, 17 failed, 2 warnings in 51.48s; summary read, no skips).
+The 17 failures are restricted operations: 16 need loopback sockets, and one
+export test scans a synthetic `.env`. The task's guard denied those operations.
+Test: changed-file privacy scan - PASS (17 files, 0 findings, 0 binaries).
+Test: `git diff --check` - PASS.
+
+All final tests used `PYTHONPATH=eval/out/offline-guard`, whose audit hook denies
+socket operations and `.env` reads. Local proof is in `eval/out/`: before/after
+score JSON, `proof-planner.txt`, `proof-checker.txt`, `proof-targeted.txt`, and
+`proof-pytest-final.txt`. No provider, device or live planner-quality claim.
+Grok case `e05` has an eight-word overlap with router training; it is preserved
+and disclosed, not exempted or labeled fully held-out. Talker guide text quotes
+code by design. No network, credential-file access, push, training or deployment.
+
+Full before/after analysis: [docs/results/evals.md](docs/results/evals.md).
+Inherited reports below are historical and retain their original scope.
+
+---
+
 ## Planner merge of local main — 2026-10-25
 
 Merged local `main` at `8ec3ae3` into `pkg/planner` from `e307a60`.
