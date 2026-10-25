@@ -354,7 +354,7 @@ async def answer(session, question, vision=None, *, on_hit=None, scope=None):
         # Owner decision: always ask TwelveLabs first for past calls; it returns the best moment even for generic questions.
         if True:
             try:
-                hits = await rewind.search_kept(query_from(question))
+                hits = await rewind.search_kept(query_from(question), image=rewind.held_crop(question))
                 if hits:
                     hit = dict(hits[0], sure=False, objects=[], alternatives=[h['t_s'] for h in hits[1:2]])
                     if on_hit:
