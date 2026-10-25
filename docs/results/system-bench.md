@@ -7,7 +7,7 @@ The running server uses its existing routing (including Opus and local fallbacks
 
 - Benchmark checkout: `806ae12c6cb983053332f4e5676b13e3928172cd`; Python 3.14.4; macOS-27.0.1-arm64-arm-64bit-Mach-O.
 - Host: Mac17,6, 18 logical CPUs, 36 GiB RAM. Load client and server share this Mac.
-- Existing port 8000 process: PID 71644, cwd /Users/minhducvo/Projects/a-eye; checkout HEAD 806ae12c6cb983053332f4e5676b13e3928172cd at inspection. Running process code identity is not cryptographically verified.
+- Existing port 8000 process: PID 71644, cwd $HOME/Projects/a-eye; checkout HEAD 806ae12c6cb983053332f4e5676b13e3928172cd at inspection. Running process code identity is not cryptographically verified.
 - Raw timings, failures, token counts and resource samples: [system-bench.json](system-bench.json). No frames, audio, credentials or generated reply bodies are retained.
 - p50 = median; p95 = nearest rank ceil(0.95*n). With ten samples p95 is the maximum; tails are noisy. Failed trials are excluded from completion quantiles and counted explicitly; observed Gemini first audio is retained even if completion times out.
 - Serial trials, no benchmark load running alongside latency trials. Direct model order shuffled with seed 42; cold calls retained. Repeated identical prompts and image can benefit from local prefix/vision caching. Unrelated machine/home-GPU activity was not controlled.
@@ -82,7 +82,7 @@ Twenty unauthenticated HEAD requests per host, each with a new curl/TCP/TLS conn
 | generativelanguage.googleapis.com | 20/20 | 140.77 / 202.29 | 22.61 / 81.88 | {404: 20} |
 | api.cartesia.ai | 20/20 | 109.53 / 187.94 | 21.59 / 62.31 | {405: 20} |
 | api.twelvelabs.io | 20/20 | 178.30 / 331.19 | 45.30 / 99.18 | {404: 20} |
-| 100.93.176.7 | 20/20 | 208.49 / 395.18 | 116.60 / 192.30 | {200: 20} |
+| <PC_TAILSCALE_IP> | 20/20 | 208.49 / 395.18 | 116.60 / 192.30 | {200: 20} |
 
 ## Local HTTP and WebSocket load
 

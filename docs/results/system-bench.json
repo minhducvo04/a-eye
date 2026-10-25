@@ -891,7 +891,7 @@
       "total_ms": 214.2
     },
     {
-      "host": "100.93.176.7",
+      "host": "<PC_TAILSCALE_IP>",
       "run": 0,
       "ok": true,
       "exit_code": 0,
@@ -902,7 +902,7 @@
       "total_ms": 195.356
     },
     {
-      "host": "100.93.176.7",
+      "host": "<PC_TAILSCALE_IP>",
       "run": 1,
       "ok": true,
       "exit_code": 0,
@@ -913,7 +913,7 @@
       "total_ms": 185.981
     },
     {
-      "host": "100.93.176.7",
+      "host": "<PC_TAILSCALE_IP>",
       "run": 2,
       "ok": true,
       "exit_code": 0,
@@ -924,7 +924,7 @@
       "total_ms": 154.648
     },
     {
-      "host": "100.93.176.7",
+      "host": "<PC_TAILSCALE_IP>",
       "run": 3,
       "ok": true,
       "exit_code": 0,
@@ -935,7 +935,7 @@
       "total_ms": 395.183
     },
     {
-      "host": "100.93.176.7",
+      "host": "<PC_TAILSCALE_IP>",
       "run": 4,
       "ok": true,
       "exit_code": 0,
@@ -946,7 +946,7 @@
       "total_ms": 354.589
     },
     {
-      "host": "100.93.176.7",
+      "host": "<PC_TAILSCALE_IP>",
       "run": 5,
       "ok": true,
       "exit_code": 0,
@@ -957,7 +957,7 @@
       "total_ms": 210.49200000000002
     },
     {
-      "host": "100.93.176.7",
+      "host": "<PC_TAILSCALE_IP>",
       "run": 6,
       "ok": true,
       "exit_code": 0,
@@ -968,7 +968,7 @@
       "total_ms": 252.193
     },
     {
-      "host": "100.93.176.7",
+      "host": "<PC_TAILSCALE_IP>",
       "run": 7,
       "ok": true,
       "exit_code": 0,
@@ -979,7 +979,7 @@
       "total_ms": 269.64700000000005
     },
     {
-      "host": "100.93.176.7",
+      "host": "<PC_TAILSCALE_IP>",
       "run": 8,
       "ok": true,
       "exit_code": 0,
@@ -990,7 +990,7 @@
       "total_ms": 411.733
     },
     {
-      "host": "100.93.176.7",
+      "host": "<PC_TAILSCALE_IP>",
       "run": 9,
       "ok": true,
       "exit_code": 0,
@@ -1001,7 +1001,7 @@
       "total_ms": 148.469
     },
     {
-      "host": "100.93.176.7",
+      "host": "<PC_TAILSCALE_IP>",
       "run": 10,
       "ok": true,
       "exit_code": 0,
@@ -1012,7 +1012,7 @@
       "total_ms": 215.17
     },
     {
-      "host": "100.93.176.7",
+      "host": "<PC_TAILSCALE_IP>",
       "run": 11,
       "ok": true,
       "exit_code": 0,
@@ -1023,7 +1023,7 @@
       "total_ms": 206.485
     },
     {
-      "host": "100.93.176.7",
+      "host": "<PC_TAILSCALE_IP>",
       "run": 12,
       "ok": true,
       "exit_code": 0,
@@ -1034,7 +1034,7 @@
       "total_ms": 189.703
     },
     {
-      "host": "100.93.176.7",
+      "host": "<PC_TAILSCALE_IP>",
       "run": 13,
       "ok": true,
       "exit_code": 0,
@@ -1045,7 +1045,7 @@
       "total_ms": 197.658
     },
     {
-      "host": "100.93.176.7",
+      "host": "<PC_TAILSCALE_IP>",
       "run": 14,
       "ok": true,
       "exit_code": 0,
@@ -1056,7 +1056,7 @@
       "total_ms": 161.833
     },
     {
-      "host": "100.93.176.7",
+      "host": "<PC_TAILSCALE_IP>",
       "run": 15,
       "ok": true,
       "exit_code": 0,
@@ -1067,7 +1067,7 @@
       "total_ms": 204.87199999999999
     },
     {
-      "host": "100.93.176.7",
+      "host": "<PC_TAILSCALE_IP>",
       "run": 16,
       "ok": true,
       "exit_code": 0,
@@ -1078,7 +1078,7 @@
       "total_ms": 234.601
     },
     {
-      "host": "100.93.176.7",
+      "host": "<PC_TAILSCALE_IP>",
       "run": 17,
       "ok": true,
       "exit_code": 0,
@@ -1089,7 +1089,7 @@
       "total_ms": 192.655
     },
     {
-      "host": "100.93.176.7",
+      "host": "<PC_TAILSCALE_IP>",
       "run": 18,
       "ok": true,
       "exit_code": 0,
@@ -1100,7 +1100,7 @@
       "total_ms": 292.814
     },
     {
-      "host": "100.93.176.7",
+      "host": "<PC_TAILSCALE_IP>",
       "run": 19,
       "ok": true,
       "exit_code": 0,

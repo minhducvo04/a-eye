@@ -105,7 +105,7 @@ async def direct(model, tier, run):
                 row.update(input_tokens=inp, output_tokens=out, stop_reason=message.stop_reason,
                            cost_usd=(inp * rate[0] + out * rate[1]) / 1e6, returned_model=message.model)
         else:
-            url = os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434').rstrip('/')
+            url = os.environ.get('OLLAMA_URL', 'http://127.0.0.1:11434').rstrip('/')
             msg = {'role': 'user', 'content': PROMPTS[tier]}
             if tier == 'part_frame':
                 msg['images'] = [frame()]
@@ -275,7 +275,7 @@ async def gemini_tiers():
 async def network():
     hosts = ['https://api.anthropic.com', 'https://generativelanguage.googleapis.com',
              'https://api.cartesia.ai', 'https://api.twelvelabs.io',
-             os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434')]
+             os.environ.get('OLLAMA_URL', 'http://127.0.0.1:11434')]
     # Each curl is a fresh TCP/TLS connection, no authentication, no redirect following.
     for host in hosts:
         parsed = urlsplit(host)
@@ -430,7 +430,7 @@ def report():
         '', '## Provenance and method', '',
         f"- Benchmark checkout: `{DATA['revision']}`; Python {DATA['python']}; {DATA['platform']}.",
         '- Host: Mac17,6, 18 logical CPUs, 36 GiB RAM. Load client and server share this Mac.',
-        '- Existing port 8000 process: PID 71644, cwd /Users/minhducvo/Projects/a-eye; checkout HEAD 806ae12c6cb983053332f4e5676b13e3928172cd at inspection. Running process code identity is not cryptographically verified.',
+        '- Existing port 8000 process: PID 71644, cwd $HOME/Projects/a-eye; checkout HEAD 806ae12c6cb983053332f4e5676b13e3928172cd at inspection. Running process code identity is not cryptographically verified.',
         '- Raw timings, failures, token counts and resource samples: [system-bench.json](system-bench.json). No frames, audio, credentials or generated reply bodies are retained.',
         '- p50 = median; p95 = nearest rank ceil(0.95*n). With ten samples p95 is the maximum; tails are noisy. Failed trials are excluded from completion quantiles and counted explicitly; observed Gemini first audio is retained even if completion times out.',
         '- Serial trials, no benchmark load running alongside latency trials. Direct model order shuffled with seed 42; cold calls retained. Repeated identical prompts and image can benefit from local prefix/vision caching. Unrelated machine/home-GPU activity was not controlled.',
