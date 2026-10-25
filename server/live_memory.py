@@ -136,13 +136,19 @@ class MemoryTurn:
             await self.hold()
             self.schedule(text)
         elif os.environ.get('ROUTER', 'off') == 'on' and len(text.split()) >= 3 and not self.bridge.blocked:
+            await self.hold()
             self.schedule(text)   # no time words: the scope head decides after the debounce
 
     def yield_turn(self):
         """The guide took this turn (safety, then guide, then memory)."""
         if self.task and not self.task.done() and self.task is not asyncio.current_task():
             self.task.cancel()
+        self.version += 1
         self.held = False
+
+    def current(self, version):
+        return (self.held and version == self.version and not self.bridge.safety_stopped
+                and self.allowed())
 
     async def say_fixed(self, line):
         """Code speaks; Live's held reply stays dropped until the next user input."""
@@ -158,32 +164,33 @@ class MemoryTurn:
         # Debounced like LiveGuide: a still-growing transcript replaces the pending run.
         if self.task and not self.task.done() and self.task is not asyncio.current_task():
             self.task.cancel()
-        self.task = asyncio.create_task(self.run(text))
+        self.version += 1
+        self.task = asyncio.create_task(self.run(text, self.version))
 
     def reset(self):
-        """A new user turn: forget the hold flag (the task itself finishes or is replaced)."""
-        self.held = False
+        """A new user turn invalidates and cancels the old lookup, including an idle wait."""
+        self.yield_turn()
 
     async def close(self):
         if self.task and not self.task.done():
             self.task.cancel()
             await asyncio.gather(self.task, return_exceptions=True)
 
-    async def run(self, text):
+    async def run(self, text, version):
         await asyncio.sleep(DEBOUNCE)
         b = self.bridge
-        if b.closed or b.safety_stopped:
+        if not self.current(version):
             return
         try:
-            await self._run(text)
+            await self._run(text, version)
         except asyncio.CancelledError:
             raise
         except Exception:
             # Never log transcripts or provider errors. A held turn gets the honest line, never silence.
-            if self.held and not b.closed and not b.safety_stopped:
+            if self.current(version):
                 await self.say_fixed(TIMEOUT_LINE)
 
-    async def _run(self, text):
+    async def _run(self, text, version):
         b = self.bridge
         line = b.stop_line(text)
         if line:
@@ -192,42 +199,40 @@ class MemoryTurn:
         if b.guide and b.guide.claims(text):
             return   # safety, then guide, then memory: one owner per turn
         decision = await self.decide(text)
+        if not self.current(version):
+            return
         if decision is None:
-            if self.held:
-                # The transcript grew into an ordinary question, or the router vetoed: let Live answer it.
+            # The transcript grew into an ordinary question, or the router vetoed: let Live answer it.
+            if await b.prompt_turn(text, memory_version=version):
                 self.held = False
-                await b.prompt_turn(text)
             return
         source, scope, via = decision
-        await self.hold()
-        self.version += 1
-        version = self.version
         started = monotonic()
         lookup = asyncio.create_task(b._lookup_memory(text, source))
         filler = False
         try:
             done, _ = await asyncio.wait({lookup}, timeout=FILLER_AFTER)
-            if not done and not b.safety_stopped:
+            if not done and self.current(version):
                 filler = True
                 await b.fixed_say(FILLER)
-            result, cards = await asyncio.wait_for(lookup, max(.1, TIMEOUT - (monotonic() - started)))
+            result, _ = await asyncio.wait_for(lookup, max(.1, TIMEOUT - (monotonic() - started)))
         except asyncio.TimeoutError:
-            result, cards = dict(source='unavailable', found=False, say=TIMEOUT_LINE), []
+            result = dict(source='unavailable', found=False, say=TIMEOUT_LINE)
         finally:
             if not lookup.done():
                 lookup.cancel()
         resolved = monotonic()
         ms = (resolved - started) * 1000
-        if b.closed or b.safety_stopped or version != self.version or not self.allowed():
+        if not self.current(version):
             return
         delivered = 'none'
         if result.get('found') and b.memory_allowed(result):
-            for card in cards:
-                if card['type'] != 'rewind_hit' or b.rewind_on():
-                    await b.send(card)
+            # Code-owned turns only speak evidence. These cards open a new client sheet and carry
+            # query text/crops; Rewind consent alone does not mean that sheet is already visible.
             b.cancel_tools()
-            self.held = False
-            if await b.prompt_turn(evidence_prompt(version, text, result, monotonic() - resolved)):
+            if await b.prompt_turn(evidence_prompt(version, text, result, monotonic() - resolved),
+                                   memory_version=version):
+                self.held = False
                 delivered = 'prompt_turn'
         else:
             # Hard constraint: not-found is spoken by code, so nothing can invent a place or a time.
