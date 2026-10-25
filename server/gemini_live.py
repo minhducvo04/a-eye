@@ -191,7 +191,7 @@ class LiveBridge:
         self.provider_idle = asyncio.Event()
         self.provider_idle.set()
         from server.live_guide import LiveGuide
-        # On by default in the Live call (Duc, 2026-10-25); LIVE_GUIDE=0 turns it off.
+        # On by default in the Live call (owner decision, 2026-10-25); LIVE_GUIDE=0 turns it off.
         self.guide = LiveGuide(session, self) if os.getenv('LIVE_GUIDE', '1') != '0' else None
         self._reset_reply()
 
