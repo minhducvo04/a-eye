@@ -128,3 +128,17 @@ test('hls.js past-call clip: video is in the pane before attach, plays from star
     delete globalThis.Hls;
   }
 });
+
+test('clip_mp4 plays a plain muted looping video and drops the loading line on playing', () => {
+  const { doc, body, timers, pane } = page();
+  const update = renderSplit(doc, body, { hit: { t_s: 5, frames_b64: ['a', 'b'], fps: 2,
+    clip_mp4: '/api/rewind/clip/abcd.mp4' }, line: 'Found' });
+  const video = pane().children.find(el => el.tag === 'video');
+  assert.equal(video.src, '/api/rewind/clip/abcd.mp4');
+  assert.ok(video.muted && video.loop && video.autoplay && video.playsInline && video.playing);
+  assert.ok(pane().children.some(el => el.className === 'memory-loading'));
+  video.events.playing();
+  assert.ok(!pane().children.some(el => el.className === 'memory-loading'));
+  assert.equal(timers.size, 0);
+  update.dispose();
+});

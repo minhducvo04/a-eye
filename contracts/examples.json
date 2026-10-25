@@ -1091,6 +1091,7 @@
    "end_s": 6,
    "sure": false,
    "clip_url": "https://media.example.invalid/clip.m3u8",
+   "clip_mp4": "/api/rewind/clip/0123abcd.mp4",
    "objects": []
   }
  ],

@@ -10,7 +10,7 @@ import { callOwner, ownerHeaders, ownerQuery, resetCallOwner } from './call-owne
 
 import { paintDraw, applyDraw, pruneDraw, viewTransform, visibleOps, targetLabels, splitByTargets } from "./draw.js";
 import { writeFrame } from "./live.js";
-import { agoLine, countAt, countLine, createMemoryApi, pastCallLine, placeFor, renderSplit } from "./memory.js";
+import { agoLine, countAt, countLine, createMemoryApi, pastCallLine, placeFor, renderSplit } from "./memory.js?v=2";
 import { forgetRewind, initialRewind, nextRewind, NOTICE as REWIND_NOTICE, PROMPTS as REWIND_PROMPTS, showsRewindChip } from "./rewind.js";
 import { sharpCanvasSize } from "./overlay.js";
 import {

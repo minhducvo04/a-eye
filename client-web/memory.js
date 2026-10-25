@@ -207,7 +207,36 @@ function playMemory(doc, pane, hit) {
     pane.append(img);
     startFrames();
   }
-  if (hit.clip_url) {
+  if (hit.clip_mp4) {
+    // The server already cut the moment to a small MP4: a plain <video src>, no HLS in the browser.
+    video = doc.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+    video.setAttribute('playsinline', '');
+    video.loop = true;
+    video.autoplay = true;
+    video.preload = 'auto';
+    video.hidden = false;
+    const loading = doc.createElement('p');
+    loading.className = 'memory-loading';
+    loading.textContent = 'Loading the clip…';
+    video.src = hit.clip_mp4;
+    pane.append(video, loading);
+    video.addEventListener('playing', () => {
+      if (disposed) return;
+      loading.remove();
+      if (img) img.hidden = true;
+      stopFrames();
+    });
+    video.addEventListener('error', () => {
+      if (disposed) return;
+      failed = true;
+      video.hidden = true;
+      loading.remove();
+      startFrames();
+    });
+    video.play?.().catch?.(() => {});
+  } else if (hit.clip_url) {
     const candidate = doc.createElement('video');
     const nativeHls = candidate.canPlayType('application/vnd.apple.mpegurl');
     const HlsLib = globalThis.Hls;
