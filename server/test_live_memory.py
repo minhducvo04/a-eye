@@ -161,9 +161,9 @@ def test_safety_and_guide_win_over_memory():
         bridge._reset_reply()
         bridge.new_input_turn()
         fixed.clear()
-        await say_user(bridge, 'my sink is dripping, what did I just do')
+        await say_user(bridge, 'help me with my tie, what did I just do')
         await bridge.guide.task
-        assert bridge.session.home_guide and bridge.memory.task is None
+        assert bridge.session.tie_guide and bridge.memory.task is None
         assert all('MEMORY' not in text for text in prompts(wire))
     asyncio.run(trial())
 
@@ -210,7 +210,7 @@ def test_router_scope_decides_without_time_words_and_vetoes_a_weak_match(monkeyp
 
         async def lookup(question, scope=None):
             seen.append(scope)
-            return dict(source='history', found=True, say='From your task history: on Monday you fixed the sink.'), []
+            return dict(source='history', found=True, say='From your task history: on Monday you built the LED circuit.'), []
         bridge._lookup_memory = lookup
         await say_user(bridge, text, live_says='Looks good.')
         return prompts(wire), emitted

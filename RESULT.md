@@ -189,3 +189,7 @@ with local socket access. Full evidence: [fix-bridge](docs/results/fix-bridge.md
 ## acceptance
 
 See its docs/results report.
+
+## refocus
+
+See docs/results/refocus-electronics-tie.md.

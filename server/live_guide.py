@@ -1,10 +1,7 @@
 """Coded step guides inside the Gemini Live call. Code owns the task and the step; Live only phrases it.
 
-Reuses HomeGuide and ElectronicsGuide unchanged and keeps them on the Session, so growth, hint fading,
-save() and stopped() work exactly as on the classic path. The step moves only when the guide's own rules
-pass on the user's transcript; the shutoff step also needs the trusted valve checker on the current frame.
-Safety lines, the valve retry line and growth numbers are spoken by fixed_say, never by Live.
-Never emits the 'Home: sink' detail: the web client treats it as a pack switch out of Live.
+Keeps electronics and tie guides on the Session for growth and hint fading. Legacy home tasks require
+HOME_TASKS=1. Safety lines and growth numbers are spoken by fixed_say, never by Live.
 """
 import asyncio
 import os
@@ -12,6 +9,7 @@ import re
 
 from server import cloud_vision, parts_shelf, pointer, privacy, safety
 from server.packs.home import NEXT
+from server.task_scope import task_for, home_enabled
 
 
 def ui_detail(detail):
@@ -21,9 +19,6 @@ def ui_detail(detail):
         return detail
     return 'Guide: ' + detail.split(': ', 1)[-1]
 
-START_HOME = re.compile(r'\b(sink|faucet|supply line|dripping tap|leaky tap|leaking tap|hinge|cabinet door|'
-                        r'breaker|tripped)\b', re.I)
-START_EE = re.compile(r'\b(light an? led|blink an? led|arduino|resistor bands?|resistor colou?rs?|led polarity)\b', re.I)
 # "It's off" asks for the check. Saying it never passes the check by itself.
 OFF = re.compile(r"\b(?:(?:it['’]?s|it is|water(?: is)?|valve(?: is)?|tap(?: is)?)"
                  r"\s+(?:now\s+)?(?:off|closed|shut)|(?:closed|shut)\s+(?:it|the valve)|"
@@ -37,7 +32,7 @@ RULE = ('Say only this step in your own words; do not skip ahead; do not say a s
 class LiveGuide:
     def __init__(self, session, bridge):
         self.session, self.bridge = session, bridge
-        self.kind = None          # 'home' or 'ee' once a task started in this call
+        self.kind = None          # 'ee', 'tie', or explicitly enabled 'home'
         self.line = ''            # the current step line as the guide returned it (faded per growth level)
         self.version = 0
         self.published = 0
@@ -48,7 +43,9 @@ class LiveGuide:
     def guide(self):
         if self.kind == 'ee':
             return self.session.ee_guide
-        if self.kind == 'home':
+        if self.kind == 'tie':
+            return self.session.tie_guide
+        if self.kind == 'home' and home_enabled():
             return self.session.home_guide
         return None
 
@@ -61,18 +58,13 @@ class LiveGuide:
         start = self._task_for(text)
         if start and (not guide or guide.completed or start != guide.task):
             return True
-        return bool(guide and not guide.completed and (NEXT.search(text) or OFF.search(text) or CONTROL.search(text)))
+        return bool(guide and not guide.completed and (NEXT.search(text) or
+                    (self.kind == 'home' and OFF.search(text)) or CONTROL.search(text) or
+                    (self.kind == 'ee' and re.fullmatch(r'power disconnected[.!]?', text.strip(), re.I))))
 
     @staticmethod
     def _task_for(text):
-        # Mirrors the guides' own task choice; a mention of the current task is an ordinary question.
-        if START_EE.search(text) and not START_HOME.search(text):
-            return ('ee_resistor' if re.search(r'\b(bands?|colou?rs?)\b', text, re.I) else
-                    'ee_polarity' if re.search(r'\bpolarity\b', text, re.I) else 'ee_led')
-        if START_HOME.search(text):
-            return ('hinge' if re.search(r'\b(hinge|cabinet door)\b', text, re.I) else
-                    'breaker' if re.search(r'\b(breaker|tripped)\b', text, re.I) else 'sink')
-        return None
+        return task_for(text)
 
     def schedule(self, text):
         # Replace only the debounce. Once checking, trailing transcription must
@@ -100,12 +92,18 @@ class LiveGuide:
     def _choose(self, text):
         from server.packs.electronics import ElectronicsGuide
         from server.packs.home import HomeGuide
+        from server.packs.tie import TieGuide
         s = self.session
-        if START_EE.search(text) and not START_HOME.search(text):
+        task = self._task_for(text)
+        if task and task.startswith('ee_'):
             self.kind = 'ee'
             if s.ee_guide is None:
                 s.ee_guide = ElectronicsGuide(growth=s.growth)
-        elif START_HOME.search(text) or self.kind is None:
+        elif task == 'tie':
+            self.kind = 'tie'
+            if s.tie_guide is None:
+                s.tie_guide = TieGuide(growth=s.growth)
+        elif task in ('sink', 'hinge', 'breaker') and home_enabled():
             self.kind = 'home'
             if s.home_guide is None:
                 s.home_guide = HomeGuide(growth=s.growth)
@@ -127,7 +125,8 @@ class LiveGuide:
     def total(self):
         from server.packs.electronics import TASKS as EE_TASKS
         from server.packs.home import TASKS as HOME_TASKS
-        return len((EE_TASKS if self.kind == 'ee' else HOME_TASKS)[self.guide.task])
+        from server.packs.tie import TASKS as TIE_TASKS
+        return len({'ee': EE_TASKS, 'home': HOME_TASKS, 'tie': TIE_TASKS}[self.kind][self.guide.task])
 
     def note(self):
         guide = self.guide
@@ -174,7 +173,7 @@ class LiveGuide:
         guide = self.guide
         was_completed = guide.completed
         store = self._store()
-        spoken = text + ', done' if OFF.search(text) and not NEXT.search(text) else text
+        spoken = text + ', done' if self.kind == 'home' and OFF.search(text) and not NEXT.search(text) else text
         if re.fullmatch(r'forget my progress[.!]?', text.strip(), re.I):
             if s.growth:
                 s.growth.forget()
@@ -182,6 +181,9 @@ class LiveGuide:
             from server.packs.electronics import ElectronicsGuide
             if self.kind == 'ee':
                 s.ee_guide = ElectronicsGuide(task=guide.task, growth=s.growth, usb_off=guide.usb_off)
+            elif self.kind == 'tie':
+                from server.packs.tie import TieGuide
+                s.tie_guide = TieGuide(growth=s.growth)
             else:
                 s.home_guide = HomeGuide(task=guide.task, growth=s.growth)
             guide = self.guide
@@ -190,7 +192,7 @@ class LiveGuide:
             await b.fixed_say('Your progress has been forgotten.')
             if b.closed or b.safety_stopped:
                 return
-        elif self.kind == 'ee':
+        elif self.kind in ('ee', 'tie'):
             line = guide.reply(spoken)
         else:
             testing = bool(b.app is not None and getattr(b.app.state, 'presenter', False) and s.checker_test_mode)
@@ -268,7 +270,7 @@ class LiveGuide:
     def target(self):
         from server.packs.home import TARGETS
         guide = self.guide
-        if self.kind == 'ee':
+        if self.kind in ('ee', 'tie'):
             return guide.target
         names = TARGETS.get(guide.task, ())
         return names[guide.index] if guide.index < len(names) else None

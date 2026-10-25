@@ -9,7 +9,8 @@ from types import SimpleNamespace
 from server import live_guide, privacy
 from server.agent import Session
 from server.gemini_live import LiveBridge, DOCUMENTED_MODEL
-from server.packs.home import HINTS, TASKS
+from server.packs.tie import HINTS, TASKS
+from server.packs.home import TASKS as HOME_TASKS
 from server.safety import WATER_OFF_LINE
 from server.step_check import RETRY_LINE
 
@@ -66,24 +67,25 @@ def details(emitted):
     return [m.get('detail') for m in emitted if m['type'] == 'turn' and m.get('detail')]
 
 
-def test_sink_starts_in_live_and_live_reply_is_held(monkeypatch):
+def test_tie_starts_in_live_and_live_reply_is_held(monkeypatch):
     async def trial():
         bridge, emitted, fixed, wire = bridge_for(monkeypatch)
-        await say_user(bridge, 'my sink is dripping')
-        guide = bridge.session.home_guide
-        assert guide and guide.task == 'sink' and guide.index == 0 and guide.introduced
+        await say_user(bridge, 'help me with my tie')
+        guide = bridge.session.tie_guide
+        assert guide and guide.task == 'tie' and guide.index == 0 and guide.introduced
         assert bridge.session.pack.id == 'general'
         text = prompts(wire)[-1]
-        assert 'step 1 of 7' in text and TASKS['sink'][0] in text and 'do not skip ahead' in text
-        assert 'Guide: sink 1/7' in details(emitted) and 'Home: sink' not in details(emitted)
+        assert 'step 1 of 8' in text and TASKS['tie'][0] in text and 'do not skip ahead' in text
+        assert 'Guide: tie 1/8' in details(emitted) and 'Home: sink' not in details(emitted)
         assert not any(m['type'] in ('audio', 'say', 'reply_delta') for m in emitted)
         assert not fixed
-        # An ordinary question about the sink is Live's to answer.
-        assert not bridge.guide.claims('what is under the sink?')
+        # An ordinary question about the tie is Live's to answer.
+        assert not bridge.guide.claims('why is the wide end longer?')
     asyncio.run(trial())
 
 
 def test_shutoff_step_never_advances_on_words_without_the_valve_check(monkeypatch):
+    monkeypatch.setenv("HOME_TASKS", "1")
     async def trial():
         bridge, emitted, fixed, wire = bridge_for(monkeypatch)
         await say_user(bridge, 'my sink is dripping')
@@ -106,6 +108,7 @@ def test_shutoff_step_never_advances_on_words_without_the_valve_check(monkeypatc
 
 
 def test_shutoff_step_advances_with_a_valve_pass(monkeypatch):
+    monkeypatch.setenv("HOME_TASKS", "1")
     async def trial():
         app = SimpleNamespace(state=SimpleNamespace(presenter=True))
         bridge, emitted, fixed, wire = bridge_for(monkeypatch, app=app)
@@ -119,7 +122,7 @@ def test_shutoff_step_advances_with_a_valve_pass(monkeypatch):
         await say_user(bridge, "it's off")
         guide = session.home_guide
         assert guide.index == 3 and not fixed and guide.water_off_passed is False
-        assert 'step 4 of 7' in prompts(wire)[-1] and TASKS['sink'][3] in prompts(wire)[-1]
+        assert 'step 4 of 7' in prompts(wire)[-1] and HOME_TASKS['sink'][3] in prompts(wire)[-1]
         assert 'Valve: test closed' in details(emitted)
         # The pass is consumed: the next "done" needs a fresh check.
         bridge._reset_reply()
@@ -132,7 +135,7 @@ def test_shutoff_step_advances_with_a_valve_pass(monkeypatch):
 def test_guide_block_published_only_while_idle(monkeypatch):
     async def trial():
         bridge, emitted, fixed, wire = bridge_for(monkeypatch)
-        await say_user(bridge, 'my sink is dripping')
+        await say_user(bridge, 'help me with my tie')
         bridge.guide.version += 1  # a step change not yet carried by a prompt
         bridge._reset_reply()
         bridge.generating = True
@@ -152,21 +155,21 @@ def test_hints_fade_and_walk_me_through_it_restores_steps(monkeypatch):
         growth = SimpleNamespace(level=lambda task: 2, epoch=0, start=lambda task: 'run',
                                  update=lambda *a, **k: True, comparison=lambda task, run: '')
         bridge, emitted, fixed, wire = bridge_for(monkeypatch, growth=growth)
-        await say_user(bridge, 'my sink is dripping')
-        assert HINTS['sink'][0] in prompts(wire)[-1] and TASKS['sink'][0] not in prompts(wire)[-1]
+        await say_user(bridge, 'help me with my tie')
+        assert HINTS['tie'][0] in prompts(wire)[-1] and TASKS['tie'][0] not in prompts(wire)[-1]
         bridge._reset_reply()
         await say_user(bridge, 'walk me through it')
-        assert TASKS['sink'][0] in prompts(wire)[-1]
+        assert TASKS['tie'][0] in prompts(wire)[-1]
     asyncio.run(trial())
 
 
 def test_hazard_in_a_guide_turn_gets_the_fixed_line(monkeypatch):
     async def trial():
         bridge, emitted, fixed, wire = bridge_for(monkeypatch)
-        await say_user(bridge, 'my sink is dripping')
+        await say_user(bridge, 'help me with my tie')
         bridge._reset_reply()
         await bridge.handle({'serverContent': {'inputTranscription': {'text': 'water near the outlet, done'}}})
         await asyncio.sleep(0)
         assert fixed and 'electrician' in fixed[0]
-        assert bridge.session.home_guide.index == 0 and bridge.session.home_guide.water_off_passed is False
+        assert bridge.session.tie_guide.index == 0 and bridge.session.tie_guide.water_off_passed is False
     asyncio.run(trial())
