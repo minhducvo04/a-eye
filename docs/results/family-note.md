@@ -28,7 +28,7 @@ Read aloud: native on-device speech completed for note and reply (physical heari
 git diff --check: PASS
 ```
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest server/test_family_note.py server/test_ws2.py server/test_proof_wall.py server/test_rt.py server/test_pipeline.py -q` - PASS (52 tests).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest server/test_family_note.py server/test_ws2.py server/test_proof_wall.py server/test_rt.py server/test_pipeline.py -q` - PASS (52 tests).
 
 Test: `node --test client-web/` - PASS (143 tests).
 
@@ -37,7 +37,7 @@ Test: `uv run --no-project --with playwright python scripts/family_note_smoke.py
 Local server command:
 
 ```sh
-env A_EYE_MOCK=1 LOCAL_ONLY=1 /Users/minhducvo/Projects/a-eye/.venv/bin/python -m uvicorn server.app:app --host 127.0.0.1 --port 8034 --no-access-log --no-proxy-headers
+env A_EYE_MOCK=1 LOCAL_ONLY=1 $HOME/Projects/a-eye/.venv/bin/python -m uvicorn server.app:app --host 127.0.0.1 --port 8034 --no-access-log --no-proxy-headers
 ```
 
 The browser run used fixture names/replies, blocked all non-local browser HTTP requests, exercised native speech without a speech stub, and used Send by tap. Spoken send/no/empty transcription were separately exercised through the actual WebSocket handler with a fixture STT adapter. The 40-case corpus uses 20 authored valid task/detail combinations and 20 handwritten invalid notes. Authenticated HTTP tests also cover unrelated owners, extra media payloads, read-aloud gating, cancellation, revoked contacts, one-time exchange/reply, expiry and rate limiting.
@@ -62,7 +62,7 @@ Contacts are intentionally call-scoped and process-local, not persisted across s
 
 ## Independent review fixes — 2026-10-24
 
-Both findings from `/Users/minhducvo/kyra-grok/aeye-review-note/RESULT.md` are fixed in the uncommitted working tree.
+Both findings from `$HOME/kyra-grok/aeye-review-note/RESULT.md` are fixed in the uncommitted working tree.
 
 - **High:** note, automatic reply and Replay now use the call's `voice.speak(..., { localOnly: true })`. It records `spokenText`, requires an installed on-device English voice, and returns a completion promise. Browser recognition, VAD barge-in, hold-to-talk and server PCM capture are blocked during playback. Pending interim text and captured preroll are cleared before playback. Completion restores input; speech errors/cancellation reject the read-aloud acknowledgement so they cannot enable Send.
 - **Low:** HTML responses carry `Content-Security-Policy: frame-ancestors 'none'` and `X-Frame-Options: DENY`. HTTP regressions cover `/`, `/agent.html` and `/family-reply.html`.
@@ -71,10 +71,10 @@ Tests were added and failed before the runtime fixes: voice regressions **29 pas
 
 The call-page regression loads the actual agent module with browser adapters, polls a recipient reply containing **stop**, injects both **stop** and **find a replacement part** through recognition, and observes no WebSocket `user_text` during speech. After completion, the same tool request produces `user_text`. The server-capture test observes zero PCM chunks during speech, then normal chunks afterward. Thus the tested local microphone paths cannot feed `start_text` during playback. These are synthetic input tests, not physical microphone/acoustic proof.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest server/test_family_note.py -q` - PASS (18 passed in 0.66s).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest server/test_family_note.py -q` - PASS (18 passed in 0.66s).
 Test: `node --test client-web/voice.test.mjs client-web/family-note.test.mjs client-web/turn.test.mjs` - PASS (43 tests; pass 43; fail 0; cancelled 0; skipped 0).
 Test: `node --test client-web/` - PASS (146 tests; pass 146; fail 0; cancelled 0; skipped 0).
-Test: `/Users/minhducvo/.cache/uv/archive-v0/hcY8qU8TLWbqDTHje52_-/bin/python scripts/family_note_smoke.py http://127.0.0.1:8035` - PASS.
+Test: `$HOME/.cache/uv/archive-v0/hcY8qU8TLWbqDTHje52_-/bin/python scripts/family_note_smoke.py http://127.0.0.1:8035` - PASS.
 
 Real-run summary:
 ```text
@@ -86,7 +86,7 @@ The browser used the local mock server (`A_EYE_MOCK=1 LOCAL_ONLY=1`), fixture te
 
 Changed files for this revision: `client-web/agent.js`, `client-web/family-note.js`, `client-web/voice.js`, `client-web/voice.test.mjs`, `client-web/turn.test.mjs`, `server/app.py`, `server/test_family_note.py`, this handoff and `RESULT.md`. No contracts or dependencies changed. No commit, merge or deployment.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q` - PASS (823 passed, 2 warnings in 68.01s). Log: `/private/tmp/family-full-python-unrestricted.log`.
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q` - PASS (823 passed, 2 warnings in 68.01s). Log: `/private/tmp/family-full-python-unrestricted.log`.
 Test: `git diff --check` - PASS.
 
 The initial sandboxed full Python run reported 818 passed, 1 failed and 4 errors: every failure/error was a denied localhost socket bind. The complete rerun with socket access passed. The two remaining warnings concern existing short JWT keys in identity test fixtures. No tests were skipped or changed to hide these environment failures. The local browser server was stopped after verification.

@@ -8,9 +8,9 @@ Implemented in the working tree; no commit, merge or deployment. API routes and 
 - Rewind/memory captions now use the checked speech text, closing the review's caption bypass.
 - Home completion already returns only the code-built numeric comparison (or silence). New turn-level tests prove both paths and repeated completion never invoke the model or append free praise.
 - Added filler-word, punctuation, casing, streamed-token and caption regressions, with factual-language controls. Before the fix: **9 failed, 55 passed in 0.86s**. Evidence: `/private/tmp/grow-review-before.log`.
-- Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest server/test_product_rules.py server/test_growth.py server/test_rewind.py -q` — PASS (**86 passed in 1.82s**). Evidence: `/private/tmp/grow-review-targeted.log`.
+- Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest server/test_product_rules.py server/test_growth.py server/test_rewind.py -q` — PASS (**86 passed in 1.82s**). Evidence: `/private/tmp/grow-review-targeted.log`.
 - Test: `node --test client-web/` — PASS (**151 tests, 151 pass, 0 fail, 0 skipped**). Evidence: `/private/tmp/grow-review-node.log`.
-- Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q` with localhost access — PASS (**912 passed, 2 warnings in 81.30s (0:01:21)**). Warnings are the existing short HMAC fixture-key warnings. Evidence: `/private/tmp/grow-review-python-localhost.log`.
+- Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q` with localhost access — PASS (**912 passed, 2 warnings in 81.30s (0:01:21)**). Warnings are the existing short HMAC fixture-key warnings. Evidence: `/private/tmp/grow-review-python-localhost.log`.
 - The first full Python run was sandbox-blocked: **2 failed, 906 passed, 2 warnings, 4 errors in 40.44s**, all six failures/errors from denied localhost binds. The full rerun above resolved them without code changes or skips. Evidence: `/private/tmp/grow-review-python.log`.
 - Test: `git diff --check` — PASS.
 
@@ -48,13 +48,13 @@ Each run also passed Pictures saved 0, Pictures sent 0, Cloud AI calls 0 and byt
 
 The initial growth regressions failed before implementation (4 missing-module failures). Focused regressions then covered encrypted reload, no plaintext fallback, user/task isolation, deletion, fading/override, retained safety gates, fixed complaint responses, blocked output including split stream tokens, factual one-time feedback, contact gating, and authenticated WebSocket ownership.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q` — PASS (893 passed, 2 warnings in 70.99s). The warnings are the existing short HMAC test-key warnings. Evidence: `/private/tmp/grow-python-final.log`.
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q` — PASS (893 passed, 2 warnings in 70.99s). The warnings are the existing short HMAC test-key warnings. Evidence: `/private/tmp/grow-python-final.log`.
 
 Test: `node --test client-web/` — PASS (151 tests, 151 pass, 0 fail, 0 skipped). Evidence: `/private/tmp/grow-node.log`.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python scripts/dad_flow_rehearsal.py` — PASS (3/3; hints 11, 6, 0). Evidence: `/private/tmp/grow-rehearsal-final.log`.
+Test: `$HOME/Projects/a-eye/.venv/bin/python scripts/dad_flow_rehearsal.py` — PASS (3/3; hints 11, 6, 0). Evidence: `/private/tmp/grow-rehearsal-final.log`.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest server/test_growth.py server/test_product_rules.py -q` — PASS (45 passed in 0.85s). This closing check follows a one-line fix preserving the selected task when forgetting progress; the full suite above ran immediately before that fix. Evidence: `/private/tmp/grow-closing.log`.
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest server/test_growth.py server/test_product_rules.py -q` — PASS (45 passed in 0.85s). This closing check follows a one-line fix preserving the selected task when forgetting progress; the full suite above ran immediately before that fix. Evidence: `/private/tmp/grow-closing.log`.
 
 Test: `git diff --check` — PASS.
 

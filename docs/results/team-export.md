@@ -25,11 +25,11 @@ boundary tests were added during review and all nine passed. The schema is check
 exported sample row is validated, including format checks in the exporter.
 
 Python executable used for all runs:
-`/Users/minhducvo/Projects/a-eye/.venv/bin/python` (the worktree has no `.venv`).
+`$HOME/Projects/a-eye/.venv/bin/python` (the worktree has no `.venv`).
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q scripts/test_export_data.py` - PASS (`9 passed in 0.15s`).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q scripts/test_export_data.py` - PASS (`9 passed in 0.15s`).
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q contracts device server vision voice market eval boxsvc router scripts` - FAIL (`6 failed, 1040 passed, 2 warnings, 4 errors in 40.79s`).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q contracts device server vision voice market eval boxsvc router scripts` - FAIL (`6 failed, 1040 passed, 2 warnings, 4 errors in 40.79s`).
 This includes every configured Python test directory plus `scripts/`, which default pytest discovery omits.
 Nine failures/errors were local socket binds blocked by sandbox restrictions. One was the missing untracked
 `vision/fixtures/gemini_payment_required.json` fixture in
@@ -41,13 +41,13 @@ Test: local-loopback retry of the nine sandbox-blocked cases below with loopback
 Output: `/private/tmp/team-export-loopback.log`.
 
 ```sh
-/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q device/test_capture.py::test_event_real_http_person_drop_and_no_files device/test_client.py::test_button_turn_reply_audio_then_idle_off device/test_client.py::test_frames_with_a_person_never_leave_the_device device/test_client.py::test_nothing_is_sent_while_off server/test_cloud_meter.py::test_real_websocket_send_boundary server/test_gemini_live.py::test_fake_live_wire_audio_tools_captions_and_revocation server/test_gemini_live.py::test_reconnect_once_then_fallback_and_close server/test_step_check.py::test_real_loopback_api_to_qwen_protocol_keeps_pictures_zero scripts/test_ready.py::test_live_pair_request_on_fake_socket
+$HOME/Projects/a-eye/.venv/bin/python -m pytest -q device/test_capture.py::test_event_real_http_person_drop_and_no_files device/test_client.py::test_button_turn_reply_audio_then_idle_off device/test_client.py::test_frames_with_a_person_never_leave_the_device device/test_client.py::test_nothing_is_sent_while_off server/test_cloud_meter.py::test_real_websocket_send_boundary server/test_gemini_live.py::test_fake_live_wire_audio_tools_captions_and_revocation server/test_gemini_live.py::test_reconnect_once_then_fallback_and_close server/test_step_check.py::test_real_loopback_api_to_qwen_protocol_keeps_pictures_zero scripts/test_ready.py::test_live_pair_request_on_fake_socket
 ```
 
 Test: `node --test client-web/` - PASS (`tests 153`, `pass 153`, `fail 0`, `skipped 0`).
 Output: `/private/tmp/team-export-node.log`.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python scripts/export_data.py --sample --output /private/tmp/aeye-team-export-sample` - PASS (exit 0; one valid row in each of seven tables).
+Test: `$HOME/Projects/a-eye/.venv/bin/python scripts/export_data.py --sample --output /private/tmp/aeye-team-export-sample` - PASS (exit 0; one valid row in each of seven tables).
 
 Manifest schema SHA-256:
 `6894792344828ea95de986d3fd25f10aa514e0ecb325b5d0ff63352c5fe456c9`.

@@ -61,7 +61,7 @@ The [official wire reference](https://ai.google.dev/api/live) warns that realtim
 Run each probe through Make (this worktree has no `.env`; the sibling checkout supplies it):
 
 ```sh
-make -f /Users/minhducvo/Projects/a-eye/.env -f Makefile gemini-live-check PY=/Users/minhducvo/Projects/a-eye/.venv/bin/python
+make -f $HOME/Projects/a-eye/.env -f Makefile gemini-live-check PY=$HOME/Projects/a-eye/.venv/bin/python
 ```
 
 All three completed runs used `models/gemini-3.8-live`, exited 0, and printed `blue-image check: PASS`:
@@ -76,9 +76,9 @@ Timing starts immediately before sending the question, excludes the one-second f
 
 Regression evidence: `test_camera_precedes_realtime_question` failed before the fix because only a client-content question was sent; it passes after the fix. The loopback test checks setup, video transport, realtime text, audio and consent. Probe reply checks cover blue success, the reported blindness reply, a blue denial and a wrong color.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_gemini_live.py` - PASS (`21 passed in 1.60s`). Loopback sockets required execution outside the restricted sandbox.
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server/test_gemini_live.py` - PASS (`21 passed in 1.60s`). Loopback sockets required execution outside the restricted sandbox.
 
-Test: `make test PY=/Users/minhducvo/Projects/a-eye/.venv/bin/python` - FAIL (`1 failed, 1026 passed, 2 warnings in 66.28s`). The sole failure remains `vision/test_gemini.py::test_recorded_payment_failure_is_reported_and_cleared`: missing `vision/fixtures/gemini_payment_required.json`, also absent from HEAD (`git ls-tree HEAD vision/fixtures/gemini_payment_required.json` returned no entry). No vision files were changed. Warnings concern short synthetic JWT keys. Make stopped before its web target, so that target was run separately.
+Test: `make test PY=$HOME/Projects/a-eye/.venv/bin/python` - FAIL (`1 failed, 1026 passed, 2 warnings in 66.28s`). The sole failure remains `vision/test_gemini.py::test_recorded_payment_failure_is_reported_and_cleared`: missing `vision/fixtures/gemini_payment_required.json`, also absent from HEAD (`git ls-tree HEAD vision/fixtures/gemini_payment_required.json` returned no entry). No vision files were changed. Warnings concern short synthetic JWT keys. Make stopped before its web target, so that target was run separately.
 
 Test: `make test-web` - PASS (`153 passed`, no failures/skips, `1266.711625 ms`).
 
@@ -90,17 +90,17 @@ Current changed files: `server/gemini_live.py`, `scripts/gemini_live_check.py`, 
 
 Privacy tests were written before the implementation; the first run failed collection because `server.gemini_live` did not yet exist. The final tests include a real loopback WebSocket server exchanging synthetic recorded-shape setup, audio, tool-call, and transcript frames. They cover consent before discovery, runtime catalogue/override validation, one reconnect then fallback, downscaling/rate limiting, metering, split safety transcripts, output checks and safe-turn recovery, actual temporary local-memory tag/find/forget, Rewind consent, grounding abstention, and default ws2 fallback. Browser tests exercise actual `agent.js` mode/consent/hello/caption wiring through the existing DOM/socket fixture.
 
-Python used the existing sibling environment `/Users/minhducvo/Projects/a-eye/.venv/bin/python`; this worktree has no local virtualenv. Loopback tests required sandbox escalation. No test needed a real credential, camera, microphone, or stored personal media.
+Python used the existing sibling environment `$HOME/Projects/a-eye/.venv/bin/python`; this worktree has no local virtualenv. Loopback tests required sandbox escalation. No test needed a real credential, camera, microphone, or stored personal media.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_gemini_live.py server/test_ws2.py server/test_pointer.py server/test_cloud_meter.py server/test_proof_wall.py server/test_access.py` - PASS (`93 passed in 2.67s`).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server/test_gemini_live.py server/test_ws2.py server/test_pointer.py server/test_cloud_meter.py server/test_proof_wall.py server/test_access.py` - PASS (`93 passed in 2.67s`).
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q` - FAIL (`1 failed, 1011 passed, 2 warnings in 64.57s (0:01:04)`). The sole failure is `vision/test_gemini.py::test_recorded_payment_failure_is_reported_and_cleared`: `FileNotFoundError` for `vision/fixtures/gemini_payment_required.json`. The fixture is absent from both this checkout and its HEAD tree; neither the vision test nor its fixture was changed. The vision owner must supply the original fixture. No invented replacement or skipped test was used. The two warnings concern short synthetic JWT test keys.
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q` - FAIL (`1 failed, 1011 passed, 2 warnings in 64.57s (0:01:04)`). The sole failure is `vision/test_gemini.py::test_recorded_payment_failure_is_reported_and_cleared`: `FileNotFoundError` for `vision/fixtures/gemini_payment_required.json`. The fixture is absent from both this checkout and its HEAD tree; neither the vision test nor its fixture was changed. The vision owner must supply the original fixture. No invented replacement or skipped test was used. The two warnings concern short synthetic JWT test keys.
 
 Test: `node --test client-web/` - PASS (`tests 153`, `pass 153`, `fail 0`, `skipped 0`, `duration_ms 1271.238167`).
 
 Test: `git diff --check` - PASS (no output).
 
-Real probe: `/Users/minhducvo/Projects/a-eye/.venv/bin/python scripts/gemini_live_check.py` - NOT CONFIGURED (`not configured`, exit 2). The script opens a real session when configured, sends a synthetic blue frame and “what do you see?”, and prints model, first-audio ms, and reply text. Its timing is first provider audio arrival, not safety-buffered client playback. No real Google model catalogue/session, first-audio timing, or device playback claim is made here.
+Real probe: `$HOME/Projects/a-eye/.venv/bin/python scripts/gemini_live_check.py` - NOT CONFIGURED (`not configured`, exit 2). The script opens a real session when configured, sends a synthetic blue frame and “what do you see?”, and prints model, first-audio ms, and reply text. Its timing is first provider audio arrival, not safety-buffered client playback. No real Google model catalogue/session, first-audio timing, or device playback claim is made here.
 
 ## Changed files
 

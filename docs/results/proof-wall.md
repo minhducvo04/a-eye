@@ -13,7 +13,7 @@ The unchanged rehearsal reproduced the lead's **3/5 PASS, 0/5 SKIP, 2/5 FAIL**, 
 
 ## Follow-up verification
 
-Python for all commands: `/Users/minhducvo/Projects/a-eye/.venv/bin/python`.
+Python for all commands: `$HOME/Projects/a-eye/.venv/bin/python`.
 
 Failing tests first (no GPU required):
 
@@ -97,7 +97,7 @@ Implemented in the working tree; changes are **uncommitted**. Read AGENTS.md and
 
 ## Verification
 
-Python: `/Users/minhducvo/Projects/a-eye/.venv/bin/python` (no worktree venv).
+Python: `$HOME/Projects/a-eye/.venv/bin/python` (no worktree venv).
 
 Failing test first:
 

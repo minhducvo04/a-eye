@@ -31,13 +31,13 @@ Final focused checks cover Private/Google-off/LOCAL_ONLY vetoes for both notes a
 Gemini controls, encrypted note/crop round trips, local grounding despite a global Gemini backend, and retaining
 local captions on Gemini failure. Existing memory tests cover storage, person refusal, deletion and ownership.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_memory_gemini.py server/test_memory.py server/test_memory_capture.py` - PASS (48 passed in 0.94s).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server/test_memory_gemini.py server/test_memory.py server/test_memory_capture.py` - PASS (48 passed in 0.94s).
 
 ## Live provider check and comparison
 
 Ran a single real `generateContent` request through `make`, using the main checkout's existing Makefile to load
 its `.env` (the worktree has no `.env`). The key and response body were never printed. Probe:
-`make -s -C /Users/minhducvo/Projects/a-eye -f /private/tmp/memory-gemini-probe.mk memory-gemini-probe`.
+`make -s -C $HOME/Projects/a-eye -f /private/tmp/memory-gemini-probe.mk memory-gemini-probe`.
 The temporary recipe runs `/private/tmp/memory-gemini-probe.py`; its success branch invokes the worktree's
 `scripts/gemini_vision_check.py`. The initial sandbox attempt could not connect; the network-enabled run returned:
 
@@ -51,13 +51,13 @@ it was not rerun here. That report gives p50/p90, not p95.
 
 ## Full suite
 
-Initial `make -k test PY=/Users/minhducvo/Projects/a-eye/.venv/bin/python`:
+Initial `make -k test PY=$HOME/Projects/a-eye/.venv/bin/python`:
 **3 failed, 995 passed, 2 warnings, 4 errors in 41.24s**; browser **151 passed, 0 failed**.
 Six failures/errors were sandbox loopback binds; one was the absent fixture
 `vision/fixtures/gemini_payment_required.json`. Temporarily supplied that fixture byte-for-byte from the main checkout
 (no vision code change), then reran the full suite with loopback permission after the final test additions.
 
-Test: `make -k test PY=/Users/minhducvo/Projects/a-eye/.venv/bin/python` - PASS with the supplied fixture and loopback permission.
+Test: `make -k test PY=$HOME/Projects/a-eye/.venv/bin/python` - PASS with the supplied fixture and loopback permission.
 
 ```text
 1006 passed, 2 warnings in 64.27s (0:01:04)

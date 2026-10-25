@@ -40,7 +40,7 @@ python -m server.probe_pointer --url http://127.0.0.1:8001 --uncached
 
 Tests were written first. The initial acceptance run had 6 failures and 11 passes, including a reproduced oversized-tag speech leak. The later plain-reply streaming regression also failed with a timeout before its fix. The final targeted run passed **95 tests** across pointer, stream, agent, latency and text-only evaluation tests. Coverage includes arbitrary stream chunks, no spoken metadata, confidence/source/absence refusal, bounded latency, immediate speech, cancellation, stale frames, camera-off, no second planner and Private routing.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q` - PASS (`980 passed, 2 warnings in 174.49s (0:02:54)`). The two warnings concern existing short test-only HMAC keys in identity tests.
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q` - PASS (`980 passed, 2 warnings in 174.49s (0:02:54)`). The two warnings concern existing short test-only HMAC keys in identity tests.
 
 Test: `node --test client-web/` - PASS (`tests 151`, `pass 151`, `fail 0`, duration 1231.867291 ms).
 

@@ -100,7 +100,7 @@ numbers.
 
 | Role | Who | Owns |
 |---|---|---|
-| A | Duc | iPhone app, contracts, integration |
+| A | the team | iPhone app, contracts, integration |
 | B | TBD | Vision on the GPU, model router |
 | C | TBD | Market search, store |
 | D | TBD | Agent, voice, eval, pitch |
@@ -176,3 +176,7 @@ make phone             # prints the HTTPS command for testing on an iPhone
 Safari needs HTTPS for the camera and mic on a phone; `make phone` prints the Tailscale command to run.
 
 See [AGENTS.md](AGENTS.md) for team rules and [CONTRIBUTING.md](CONTRIBUTING.md) for the PR flow.
+
+## Public source export
+
+Use [the checked export workflow](docs/public-export.md) to create a fresh public snapshot without private history.

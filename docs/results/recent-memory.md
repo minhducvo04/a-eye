@@ -26,7 +26,7 @@ The existing unqualified model-tool and recap paths remain in place. This packag
 Run from the worktree:
 
 ```sh
-/Users/minhducvo/Projects/a-eye/.venv/bin/python -m scripts.recent_memory_bench
+$HOME/Projects/a-eye/.venv/bin/python -m scripts.recent_memory_bench
 ```
 
 The complete 20 questions, expected sources, returned sources, content checks and timings are in [recent-memory-bench.json](recent-memory-bench.json). Fixtures describe a multimeter, resistor, breadboard, red wire and soldering iron. Cross-day data is written only to a temporary directory and removed afterward.
@@ -55,15 +55,15 @@ The initial regression failed because `server.recent_memory` did not exist. Targ
 
 Recent matching is conservative lexical matching over already-produced notes, not semantic event reconstruction. A numeric age uses a ±20-second observation tolerance. Unseen actions, synonyms without matching words, unnumbered steps, and unsupported dates can abstain. A camera scene is evidence of what the vision model described, not proof of successful assembly. The recent route adds no crops; existing cross-day crops remain under their existing policy.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_recent_memory.py server/test_keyframes.py server/test_rewind.py server/test_memory.py server/test_ws2.py server/test_proof_wall.py` - PASS (77 passed in 5.69s).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server/test_recent_memory.py server/test_keyframes.py server/test_rewind.py server/test_memory.py server/test_ws2.py server/test_proof_wall.py` - PASS (77 passed in 5.69s).
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q` - FAIL (1 failed, 1033 passed, 2 warnings in 93.39s; loopback access enabled).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q` - FAIL (1 failed, 1033 passed, 2 warnings in 93.39s; loopback access enabled).
 
 The remaining failure is `vision/test_gemini.py::test_recorded_payment_failure_is_reported_and_cleared`: `vision/fixtures/gemini_payment_required.json` is absent. `git ls-tree -r HEAD vision/fixtures` is empty. The missing recorded-response fixture is outside this package; no response was fabricated and no vision files were changed. The warnings concern short synthetic JWT test keys.
 
 Test: `node --test client-web/` - PASS (153 tests, 153 pass, 0 fail, 0 skipped; 1274.043417 ms).
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m scripts.recent_memory_bench` - PASS (20/20 right source; 20/20 content checks; fixture timings only).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m scripts.recent_memory_bench` - PASS (20/20 right source; 20/20 content checks; fixture timings only).
 
 Test: synthetic real loopback `/ws2` probe - PASS (first answer 3.78 ms).
 

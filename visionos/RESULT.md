@@ -110,7 +110,7 @@ To show the live phone picture, the server would need, for example, an additive 
   `/api/rewind/recap` 200; a fake phone joined with the on-screen code (`pair_joined`), its `audio_in` made a turn
   (`turn_done`), the headset showed the caption and the draw. Screenshots: `screenshots/round2/`.
 
-## Real headset run (not done; Duc runs it while wearing the headset)
+## Real headset run (not done; the team runs it while wearing the headset)
 
 Run from the repo root on the Mac, with the headset paired in Xcode (Window > Devices and Simulators) and
 Developer Mode on. The team id comes from an environment variable and never goes in a tracked file.

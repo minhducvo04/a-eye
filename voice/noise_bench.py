@@ -83,4 +83,6 @@ def main(url):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1] if len(sys.argv) > 1 else os.environ.get('BOX_URL', 'http://100.93.176.7:8090'))
+    if len(sys.argv) <= 1 and not os.environ.get('BOX_URL'):
+        raise SystemExit('Set BOX_URL to your local service URL or pass a URL argument')
+    main(sys.argv[1] if len(sys.argv) > 1 else os.environ.get('BOX_URL', 'http://127.0.0.1:8090'))

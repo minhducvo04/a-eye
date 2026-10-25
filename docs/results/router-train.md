@@ -9,12 +9,12 @@ package: the `server/llm.py` model router.)
 
 - **Not wired into the server.** `server/ws2.py` and the talker are unchanged. The lead integrates `route()`.
 - **The held-out set was written by the same agent that wrote the generation prompt.** It was not produced by the
-  generation pipeline, but it can share that agent's idea of the labels. Duc's own lines
-  (`router/data/heldout_duc.jsonl`, empty now) are the real test.
+  generation pipeline, but it can share that agent's idea of the labels. the team's own lines
+  (`router/data/heldout_team.jsonl`, empty now) are the real test.
 - **The runtime needs new dependencies**: `onnxruntime`, `tokenizers` and `numpy`
   (`router/requirements-router.txt`), plus a one-time download of about 310 MB of model files. Without them,
   `route()` returns `unsure` with `error: ModuleNotFoundError`, and the server falls back to Haiku.
-- No fine-tune was run. Duc's rule was to fine-tune only under 90% held-out accuracy, and the router scored 96%.
+- No fine-tune was run. the team's rule was to fine-tune only under 90% held-out accuracy, and the router scored 96%.
   An MLP head was tried and did worse (below).
 - There are 100 held-out questions, so one question is 1 point. Expert has only 20 questions.
 
@@ -131,9 +131,9 @@ uv pip install --python .venv/bin/python -r router/requirements-router.txt huggi
 `ROUTER_MODEL_DIR` overrides the model folder and `ROUTER_THREADS` the ONNX thread count (default 4).
 `pyproject.toml`'s `testpaths` does not include `router`; add it, or run `pytest router/`.
 
-## Duc's held-out questions
+## the team's held-out questions
 
-Add lines to `router/data/heldout_duc.jsonl`, one JSON object per line. Lines starting with `#` are notes. Example:
+Add lines to `router/data/heldout_team.jsonl`, one JSON object per line. Lines starting with `#` are notes. Example:
 
 ```json
 {"id": "d001", "mode": "cooking", "label": "past", "text": "where did I put the lid", "context": []}

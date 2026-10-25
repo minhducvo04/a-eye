@@ -1,6 +1,6 @@
 # Device picker (web): choose the mic, camera and speaker, and see which mic is live
 
-Duc could not tell which microphone the page was listening to. The web call page now shows it and lets him pick.
+the team could not tell which microphone the page was listening to. The web call page now shows it and lets him pick.
 
 ## What changed (client-web only)
 

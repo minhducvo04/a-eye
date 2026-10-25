@@ -8,14 +8,14 @@ switches: `BRAIN_MODE=single` restores the old single call, and `?vad=0` restore
 **Best alternative measured tonight:** Gemini Live (`gemini-3.8-live`). The `GOOGLE_API_KEY` in `.env`
 works and lists the Live models. It is only a server-side probe so far (`voice/gemini_live.py`), not wired
 into the page. It would send the user's microphone audio to Google, which `AGENTS.md` does not allow
-today ("Cartesia receives only the AI's own sentences"), so it needs Duc's yes first.
+today ("Cartesia receives only the AI's own sentences"), so it needs the team's yes first.
 
 **Sign up:** Cartesia with the code `CARTESIACALHACKS` (first-time users). It is the only voice sponsor
 prize ("Best Use of Cartesia"), and Ink-2 turn events plus Sonic-3.6 TTS slot straight into the cascade.
 The second choice is Deepgram ($200 free credit), whose Voice Agent accepts Anthropic as its brain. There
 is no Deepgram track at Cal Hacks.
 
-## Measured on Duc's setup (Mac, PC over Tailscale)
+## Measured on the team's setup (Mac, PC over Tailscale)
 
 | What | Before | After | How |
 |---|---|---|---|
@@ -36,7 +36,7 @@ server-TTS first-audio number is new. Barge-in with an open speaker relies on th
 cancellation. The duck step (a misfire restores playback) limits damage, but it is not tested with real
 echo.
 
-## Talker + thinker + scene feed (Duc's design)
+## Talker + thinker + scene feed (the team's design)
 
 ```
 mic -> browser STT + Silero VAD --final words--> /ws2
@@ -70,7 +70,7 @@ Scores are out of 10 for tonight's demo. pub = vendor published; der = derived; 
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | (a1) Ours: browser STT + VAD + Haiku talker + Sonnet planner (default) | ~0.9 s from final words (ours) | VAD duck 60 ms, stop 130 ms (ours) | Listens while it talks; turn-based | Yes | Yes | Yes (VAD unverified on iOS) | ~$0.03 der (Claude only) | Yes | Anthropic | done | **8** |
 | (a2) Ours with Gemini Live as the talker | 1.07 s from end of speech (ours) | Server `interrupted` at 0.25 s (ours) | Yes | Yes (ours) | Yes (ours) | Yes (WebSocket, ephemeral token) | $0.012-0.014 der | Yes (`GOOGLE_API_KEY`) | MLH Gemini (swag) | 3 to 4 | 7 (needs a privacy yes) |
-| (a3) Ours with PersonaPlex-7B on the 3090 Ti | 0.17 s turn-taking (pub) | 0.24 s native yield (pub) | Yes | No (start prompt only) | No | Needs our own audio relay | $0 | Gated HF weights (Duc must accept) | none | 6+ | 3 |
+| (a3) Ours with PersonaPlex-7B on the 3090 Ti | 0.17 s turn-taking (pub) | 0.24 s native yield (pub) | Yes | No (start prompt only) | No | Needs our own audio relay | $0 | Gated HF weights (the team must accept) | none | 6+ | 3 |
 | (b) Cartesia: Ink-2 STT + Sonic-3.6 TTS (+ Line agents) with Claude and our scene feed | Sonic about 90 ms (vendor claim), 166-190 ms measured by others | Ink-2 turn events plus our VAD | Listens while it talks; turn-based | Yes (our loop) | Yes (our loop or Line client tools) | Yes (WebSocket) | ~$0.03 der (Ink + Sonic), Line $0.06 pub, plus Claude | **No** (sign up) | **Cartesia prize** | 2 to 3 | **8** once keyed |
 | (c) OpenAI Realtime `gpt-realtime-2.1` (WebRTC) | not published | Built in, `semantic_vad` | Yes | Yes (docs) | Yes | Yes | $0.048 der (mini $0.015) | No | none | 3 | 5 |
 | (d) Gemini Live alone (no Claude) | 1.07 s (ours) | 0.25 s (ours) | Yes | Yes | Yes | Yes | $0.012-0.014 der | Yes | MLH Gemini | 3 | 6 (drops Claude) |
@@ -92,7 +92,7 @@ at $32/$64 per million (pub). Cartesia: about 800 credits per audio minute and $
 2. When the Cartesia key appears, swap browser speech for Sonic-3.6 TTS through `voice/cartesia.py`
    (the adapter exists) and Ink-2 for STT, then rerun `voice/bench_ws.py` and the browser barge test.
    That is the prize path, and the talker, planner and scene feed stay as they are.
-3. Keep Gemini Live as the full-duplex fallback. Wire it only if Duc says yes to sending mic audio to
+3. Keep Gemini Live as the full-duplex fallback. Wire it only if the team says yes to sending mic audio to
    Google.
 
 ## Reproduce

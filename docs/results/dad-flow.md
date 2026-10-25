@@ -51,7 +51,7 @@ From this worktree, using installed Python dependencies and reachable configured
 home TTS/STT services:
 
 ```sh
-/Users/minhducvo/Projects/a-eye/.venv/bin/python scripts/dad_flow_rehearsal.py
+$HOME/Projects/a-eye/.venv/bin/python scripts/dad_flow_rehearsal.py
 ```
 
 This starts and stops its own loopback server, runs five fresh Private calls with
@@ -63,7 +63,7 @@ For the presenter UI, keep the usual `A_EYE_TOKEN` configured and authenticate t
 browser normally (never paste the token into logs or receipts):
 
 ```sh
-/Users/minhducvo/Projects/a-eye/.venv/bin/python scripts/dad_flow_rehearsal.py --serve --port 8047
+$HOME/Projects/a-eye/.venv/bin/python scripts/dad_flow_rehearsal.py --serve --port 8047
 ```
 
 Open the printed loopback URL, select Private, then Sink. Keep the camera off for

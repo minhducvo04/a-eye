@@ -13,7 +13,7 @@ assembling); a second agent, the shopper, finds parts that fit. Cal Hacks 13.0 p
 | `vision/` | Vision service over HTTP (`/scene` for v2; `/identify`, `/locate`, `/verify`, `/health`). Qwen2.5-VL on the PC GPU through Ollama, fake fallback | server |
 | `voice/` | Cartesia TTS and STT adapter (stub first) | server (in process) |
 | `client-web/` | Browser call pages: `agent.html` (v2: draw layer, presence, voice, tracker) and `index.html` (v1) | server |
-| `ios/` | Native SwiftUI app (Duc). Same WS contract as `client-web/` | server |
+| `ios/` | Native SwiftUI app (the team). Same WS contract as `client-web/` | server |
 | `market/` | Price search (Apify, Bright Data) and `compat.py` compatibility checker | server |
 | `data/` | Hand-checked header tables `data/boards/<board_id>.json` | server, vision |
 | `eval/` | Accuracy harness: replays held-out frames through vision, writes a table | vision |
@@ -79,4 +79,4 @@ make smoke      # end to end: photo -> server -> fake vision -> box + step
 ## Devpost rules
 
 Hacking started 6:00 PM PT Fri Oct 23, 2026; this repo was created after that. Deadline Sun Oct 25, 9:00 AM PT.
-The repo stays private until Duc decides to make it public for Devpost.
+The repo stays private until the team decides to make it public for Devpost.

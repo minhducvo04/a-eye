@@ -95,7 +95,7 @@ def local_url(url):
 
 class Qwen:
     def __init__(self, url=None, model=None, transport=None):
-        self.url = url or os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434')
+        self.url = url or os.environ.get('OLLAMA_URL', 'http://127.0.0.1:11434')
         self.model = model or os.environ.get('VISION_CAPTION_MODEL', 'qwen2.5vl:7b-q4_K_M')
         self.transport = transport
 

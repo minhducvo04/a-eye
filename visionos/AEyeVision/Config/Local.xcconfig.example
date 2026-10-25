@@ -3,4 +3,4 @@
 // The `$()` is required: a bare `//` starts a comment in an xcconfig file and would cut the URL off.
 AEYE_SERVER_URL = ws:/$()/127.0.0.1:8000/ws2
 // Your Apple developer team id (Xcode > Settings > Accounts). Only needed to run on a real headset.
-DEVELOPMENT_TEAM = ABCDE12345
+DEVELOPMENT_TEAM =

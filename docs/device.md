@@ -25,11 +25,11 @@ resistor, and the Mac that runs the A-eye server.
    and in the settings set the name `aeye`, user `pi`, your home Wi-Fi, and turn on SSH.
 2. **Connect the parts.** Camera ribbon into the CAM port, speakerphone into a blue USB port, button and LED as in
    [Wiring](#wiring-button-and-led). Plug in the power.
-3. **Log in from the Mac:** `ssh pi@aeye.local`.
+3. **Log in from the Mac:** `ssh <PC_USER>@<PC_NAME>`.
 4. **Install what it needs** (one line):
    `sudo apt install -y python3-venv python3-picamera2 python3-opencv libportaudio2`
 5. **Copy A-eye to the Pi** from the Mac, in the repo folder:
-   `rsync -a --exclude .venv --exclude data ./ pi@aeye.local:a-eye/`
+   `rsync -a --exclude .venv --exclude data ./ <PC_USER>@<PC_NAME>:a-eye/`
    Then on the Pi: `cd a-eye && python3 -m venv --system-site-packages .venv && .venv/bin/pip install -r device/requirements.txt sounddevice`
 6. **Tell it where the server is.** `sudo mkdir -p /etc/a-eye && sudo cp device/device.example.toml /etc/a-eye/device.toml`,
    then `sudo nano /etc/a-eye/device.toml`: set `url` to `ws://<the Mac's address>:8000/ws2`, `button = "gpio"`,

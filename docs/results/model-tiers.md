@@ -1,7 +1,7 @@
 # Model tiers for a wearable or home device (2026-10-24, overnight)
 
 Status: **partial.** Unattended runs continue on the box until about 07:20 PDT. Final rows land in
-`C:\kyra-work\aeye-night\` on the box (see the commands at the end).
+`<PC_WORK_DIR>\aeye-night\` on the box (see the commands at the end).
 
 ## Answer so far
 
@@ -56,8 +56,8 @@ the runner the LibriSpeech dummy set, Systran faster-whisper and moonshine-ai), 
 ## Reading the final results
 
 ```
-ssh tomdu@100.93.176.7 "type C:\\kyra-work\\aeye-night\\status.txt"
-scp -r tomdu@100.93.176.7:C:/kyra-work/aeye-night /tmp/aeye-night
+ssh <PC_USER>@<PC_TAILSCALE_IP> "type <PC_WORK_DIR>\\aeye-night\\status.txt"
+scp -r <PC_USER>@<PC_TAILSCALE_IP>:C:/kyra-work/aeye-night /tmp/aeye-night
 cat /tmp/aeye-night/tiers_table.txt      # full-turn table (gemma4:31b judge), GPU and cpu4 rows
 cat /tmp/aeye-night/ground.jsonl         # caption and box rows per model and device
 cat /tmp/aeye-night/speech.jsonl         # Whisper and Moonshine WER, real-time factor, peak RAM

@@ -76,8 +76,10 @@ def wav_bytes(pcm):
 
 
 def main(out_dir):
+    if not os.environ.get("BOX_URL"):
+        raise SystemExit("Set BOX_URL to your local service URL before running this script")
     load_env()
-    box = os.environ.get('BOX_URL', 'http://100.93.176.7:8090').rstrip('/')
+    box = os.environ.get('BOX_URL', 'http://127.0.0.1:8090').rstrip('/')
     os.makedirs(out_dir, exist_ok=True)
     clips, latency = {}, {}
     for voice in VOICES:

@@ -1,6 +1,6 @@
-# ios/ (Duc)
+# ios/ (the team)
 
-Built by rereynrd with Claude Code, 2026-10-23.
+Built by the team with Claude Code, 2026-10-23.
 
 A camera-first SwiftUI iPhone app for A-eye. It opens straight onto the rear camera. A ring of modes sits at the
 bottom; swipe to one and tap the centre to start a call. During the call the app sends camera frames, speaks the
@@ -95,7 +95,7 @@ and the Mac must be on the same Wi-Fi. Accepted forms: `192.168.1.10:8000` (beco
 
 ## Screenshots and rehearsal
 
-`-aeye-start <mode id>` as a launch argument (Xcode scheme, or `xcrun simctl launch <sim> com.rereynrd.aeye
+`-aeye-start <mode id>` as a launch argument (Xcode scheme, or `xcrun simctl launch <sim> com.example.aeye
 -aeye-start memory`) starts that call at once, like the web's `?mode=`.
 
 ## Privacy

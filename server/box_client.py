@@ -6,7 +6,7 @@ import httpx
 
 
 def box_url():
-    return os.environ.get('BOX_URL', 'http://100.93.176.7:8090').rstrip('/')
+    return os.environ.get('BOX_URL', 'http://127.0.0.1:8090').rstrip('/')
 
 
 class BoxClient:

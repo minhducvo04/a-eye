@@ -1,6 +1,7 @@
 # Safety net for the overnight run (Windows task "A-eye restore", 07:25): unload everything, warm the app's models.
 $o = 'http://127.0.0.1:11434'
-$log = 'C:\kyra-work\aeye-night\restore_task.txt'
+if (-not $env:NIGHT_LOG_DIR) { throw 'Set NIGHT_LOG_DIR before running night_restore.ps1' }
+$log = Join-Path $env:NIGHT_LOG_DIR 'restore_task.txt'
 try { (Invoke-RestMethod "$o/api/ps").models | ForEach-Object { Invoke-RestMethod "$o/api/generate" -Method Post -Body (@{model=$_.name; keep_alive=0} | ConvertTo-Json) | Out-Null } } catch {}
 Start-Sleep 3
 foreach ($m in 'qwen3.5:9b-q4_K_M','qwen2.5vl:7b-q4_K_M') {

@@ -30,13 +30,13 @@ Tests were written first:
 - `python -m pytest -q server/test_home_pack.py`: **4 failed in 0.55s** before implementation.
 - The repeat-after-revocation regression also failed before its fix: **1 failed in 0.56s**.
 
-Interpreter used below: `/Users/minhducvo/Projects/a-eye/.venv/bin/python` (this worktree has no `.venv`).
+Interpreter used below: `$HOME/Projects/a-eye/.venv/bin/python` (this worktree has no `.venv`).
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_home_safety.py server/test_home_pack.py server/test_agent.py voice/test_safety.py voice/test_memory_pack.py` - PASS (**67 passed in 0.59s**).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server/test_home_safety.py server/test_home_pack.py server/test_agent.py voice/test_safety.py voice/test_memory_pack.py` - PASS (**67 passed in 0.59s**).
 
-Test: `make test PY=/Users/minhducvo/Projects/a-eye/.venv/bin/python` - FAIL in the sandbox (**1 failed, 800 passed, 2 warnings, 4 errors in 40.91s**). All five failures were localhost socket binds rejected with `PermissionError: [Errno 1] Operation not permitted`; make stopped before the web target. The two warnings were existing short synthetic JWT test keys.
+Test: `make test PY=$HOME/Projects/a-eye/.venv/bin/python` - FAIL in the sandbox (**1 failed, 800 passed, 2 warnings, 4 errors in 40.91s**). All five failures were localhost socket binds rejected with `PermissionError: [Errno 1] Operation not permitted`; make stopped before the web target. The two warnings were existing short synthetic JWT test keys.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q device/test_capture.py::test_event_real_http_person_drop_and_no_files device/test_client.py::test_button_turn_reply_audio_then_idle_off device/test_client.py::test_frames_with_a_person_never_leave_the_device device/test_client.py::test_nothing_is_sent_while_off server/test_cloud_meter.py::test_real_websocket_send_boundary` - PASS with approved localhost access (**5 passed in 17.50s**).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q device/test_capture.py::test_event_real_http_person_drop_and_no_files device/test_client.py::test_button_turn_reply_audio_then_idle_off device/test_client.py::test_frames_with_a_person_never_leave_the_device device/test_client.py::test_nothing_is_sent_while_off server/test_cloud_meter.py::test_real_websocket_send_boundary` - PASS with approved localhost access (**5 passed in 17.50s**).
 
 Test: `node --test client-web/` - PASS (**tests 141; pass 141; fail 0; skipped 0**).
 

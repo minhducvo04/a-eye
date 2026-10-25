@@ -1,12 +1,12 @@
 # Fine-tune plan: qwen-aeye:9b (2026-10-24)
 
-Status: **plan only. Nothing downloaded, nothing trained.** Waiting for "go" and for Duc to say the GPU box is free.
+Status: **plan only. Nothing downloaded, nothing trained.** Waiting for "go" and for the team to say the GPU box is free.
 
 ## Answer
 
 LoRA-tune **Qwen3.5-9B** (the app's grounding model today, 15/16 boxes) on about 4,000 examples written in A-eye's
 exact JSON, then register it in Ollama as a **new tag `qwen-aeye:9b`**. The current `qwen3.5:9b-q4_K_M` and
-`qwen2.5vl:7b-q4_K_M` stay untouched and remain the defaults. Switching is Duc's call
+`qwen2.5vl:7b-q4_K_M` stay untouched and remain the defaults. Switching is the team's call
 (`VISION_GROUND_MODEL=qwen-aeye:9b`; `box_format()` already reads an unknown tag as qwen3.5's 0 to 1000 boxes).
 
 Box time: about 6 to 8 hours with the GPU to itself (setup 1 h, data 1 h, training 3 to 5 h, export and eval 1 h).
@@ -63,7 +63,7 @@ SHA-256 and perceptual-hash check against those 16 files runs before training an
 
 ## Method
 
-- WSL2 Ubuntu on KietPC (32 cores, 45 GB RAM, 955 GB free). Python 3.12 venv via `uv` (system Python is 3.14,
+- WSL2 Ubuntu on <PC_NAME> (32 cores, 45 GB RAM, 955 GB free). Python 3.12 venv via `uv` (system Python is 3.14,
   too new for the CUDA wheels), PyTorch CUDA 12.x, Unsloth, Transformers v5 (Unsloth says older versions do not
   work for Qwen3.5).
 - `FastVisionModel.from_pretrained("Qwen/Qwen3.5-9B", load_in_4bit=False, load_in_16bit=True)`,
@@ -76,8 +76,8 @@ SHA-256 and perceptual-hash check against those 16 files runs before training an
 ## Export to Ollama (new tag only)
 
 1. Merge LoRA into bf16 safetensors: `model.save_pretrained_merged(..., save_method="merged_16bit")`.
-2. Copy to `C:\kyra-work\models\qwen-aeye-9b\` so Windows Ollama can read it.
-3. Modelfile `FROM C:\kyra-work\models\qwen-aeye-9b` (plus the base's template/params copied from
+2. Copy to `<PC_WORK_DIR>\models\qwen-aeye-9b\` so Windows Ollama can read it.
+3. Modelfile `FROM <PC_WORK_DIR>\models\qwen-aeye-9b` (plus the base's template/params copied from
    `ollama show qwen3.5:9b-q4_K_M --modelfile`), then `ollama create qwen-aeye:9b --quantize q4_K_M -f Modelfile`.
 4. Fallback if Ollama refuses the directory: llama.cpp `convert_hf_to_gguf.py` (text GGUF + `--mmproj`),
    `llama-quantize` to Q4_K_M, import the GGUF.
@@ -88,9 +88,9 @@ we know before burning training hours.
 
 ## Box time and the live app
 
-Training must never run while Duc demos. Proposal:
+Training must never run while the team demos. Proposal:
 
-1. Train only after Duc says "the box is free" (tonight or overnight).
+1. Train only after the team says "the box is free" (tonight or overnight).
 2. Before: note `ollama ps`, then unload the app's models (`keep_alive: 0` on each). No change to Ollama or boxsvc
    config. Live vision falls back to the fake backend meanwhile (AutoBackend).
 3. During: nothing else uses the GPU; I check every 20 min and stop on OOM or a stall.

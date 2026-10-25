@@ -28,7 +28,7 @@ Sources:
 |---|---|---|
 | (a) Vision frames from the phone or web client in the same session | No | `/ws2` keeps one session per socket (`server/ws2.py`, `websocket()` holds `session` as a local). A second client with the same `session_id` gets its own session, and a new `hello` resets it. Sharing would need a server change, which is out of scope. |
 | (b) A still photo the user picks | **Yes** | `PhotosPicker` is a system UI; the app only gets the photo the user picks. No camera permission at all. |
-| (c) Real main camera | Only with Apple's enterprise entitlement and license | Needs Duc's yes and Apple paperwork. Not requested. |
+| (c) Real main camera | Only with Apple's enterprise entitlement and license | Needs the team's yes and Apple paperwork. Not requested. |
 
 **Chosen path: (b).** The headset does everything else the iPhone does (voice in and out, captions, mode ring, presence,
 power gate, market sheet, settings). The picture A-eye looks at is a photo picked with `PhotosPicker`. While a call
@@ -36,7 +36,7 @@ runs the app sends that photo as a `frame` once a second (same loop, size and qu
 draws the server's overlay on it with the same aspect-fill mapping (`CoverTransform`). The photo lives in memory
 only; nothing is written to disk.
 
-If Duc later gets the enterprise entitlement, `PhotoSource.latestJPEG()` is the one seam to replace with a
+If the team later gets the enterprise entitlement, `PhotoSource.latestJPEG()` is the one seam to replace with a
 `CameraFrameProvider` source.
 
 ## What is copied, what differs

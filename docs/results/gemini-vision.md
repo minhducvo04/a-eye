@@ -71,12 +71,12 @@ Fail-before evidence: `vision/test_gemini.py` initially failed collection with
 The first targeted run reported 121 passed / 1 failed because the sandbox denied a loopback bind.
 The same suite with loopback permission passed 127 tests. Final summaries are recorded below.
 
-Live benchmark command: `/Users/minhducvo/Projects/a-eye/.venv/bin/python scripts/gemini_vision_check.py`
+Live benchmark command: `$HOME/Projects/a-eye/.venv/bin/python scripts/gemini_vision_check.py`
 Result: `not configured`, exit 2. No Gemini key was available in the process; no `.env` was read,
 no live image was uploaded, and no Gemini latency/accuracy result is claimed.
 
 Final targeted command:
-`/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q vision/ server/test_ws2.py server/test_ws.py server/test_cloud_meter.py voice/test_home_first.py`
+`$HOME/Projects/a-eye/.venv/bin/python -m pytest -q vision/ server/test_ws2.py server/test_ws.py server/test_cloud_meter.py voice/test_home_first.py`
 
 Summary: **150 passed in 15.05s**. Loopback permission granted for the existing real socket test.
 The `voice/test_home_first.py` assertion was updated to include Google-off and the Google disclosure.

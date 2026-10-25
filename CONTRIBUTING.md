@@ -5,7 +5,7 @@
 3. Build against `contracts/schema.json`. Validate your messages with `contracts.validate()` in Python tests.
 4. Add tests next to your code. Run `make test` before you push.
 5. Write `RESULT.md` in your worktree: files changed, limits, `Test: <command> - PASS/FAIL (<result>)`.
-6. Push `pkg/<package>` and open a PR to `main`, or ask the integrator (Duc) to merge locally.
+6. Push `pkg/<package>` and open a PR to `main`, or ask the integrator (the team) to merge locally.
 7. The integrator reads the diff (files outside your package, secrets, clip paths, contract drift), merges,
    then runs `make test` and `make smoke` on `main`.
 

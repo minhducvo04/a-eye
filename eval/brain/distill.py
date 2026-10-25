@@ -21,7 +21,7 @@ import httpx
 
 from eval.brain.run import cases, style, talker_prompt
 
-OLLAMA = os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434').rstrip('/')
+OLLAMA = os.environ.get('OLLAMA_URL', 'http://127.0.0.1:11434').rstrip('/')
 KITCHEN = {'knife', 'fork', 'spoon', 'bowl', 'cup', 'bottle', 'wine glass', 'oven', 'microwave', 'sink',
            'refrigerator', 'toaster', 'banana', 'apple', 'orange', 'broccoli', 'carrot', 'pizza', 'sandwich',
            'hot dog', 'donut', 'cake', 'dining table'}
@@ -199,6 +199,8 @@ def main():
     p.add_argument('--model', required=True)
     p.add_argument('--out', required=True)
     a = ap.parse_args()
+    if a.cmd != 'scenes' and not os.environ.get('OLLAMA_URL'):
+        raise SystemExit('Set OLLAMA_URL to your local service URL before running this script')
     if a.cmd == 'safety':
         safety_probe(a.model, a.out)
     elif a.cmd == 'scenes':

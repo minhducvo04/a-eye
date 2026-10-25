@@ -259,7 +259,7 @@ class LLMClient:
                 payload = {'model': model, 'stream': False, 'think': False,
                            'options': local_options(max_tokens), 'keep_alive': LOCAL_KEEP_ALIVE,
                            'messages': [{'role': 'system', 'content': system}, message]}
-                url = os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434').rstrip('/') + '/api/chat'
+                url = os.environ.get('OLLAMA_URL', 'http://127.0.0.1:11434').rstrip('/') + '/api/chat'
                 if self._httpx_client is not None:
                     response = self._httpx_client.post(url, json=payload, timeout=20)
                 else:
@@ -341,7 +341,7 @@ class LLMClient:
                                    options=local_options(max_tokens), keep_alive=LOCAL_KEEP_ALIVE,
                                    messages=[{'role': 'system', 'content': system},
                                              {'role': 'user', 'content': user}])
-                    url = os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434').rstrip('/') + '/api/chat'
+                    url = os.environ.get('OLLAMA_URL', 'http://127.0.0.1:11434').rstrip('/') + '/api/chat'
                     async with client.stream('POST', url, json=payload, timeout=max(20, local_wait + 5)) as response:
                         response.raise_for_status()
                         async for line in response.aiter_lines():
@@ -385,7 +385,7 @@ class LLMClient:
             client = self._httpx_client or _shared_async_client()
             payload = dict(model=LOCAL, stream=True, think=False,
                            messages=[{'role': 'system', 'content': system}, {'role': 'user', 'content': user}])
-            url = os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434').rstrip('/') + '/api/chat'
+            url = os.environ.get('OLLAMA_URL', 'http://127.0.0.1:11434').rstrip('/') + '/api/chat'
             text = ''
             async with client.stream('POST', url, json=payload, timeout=None) as response:
                 response.raise_for_status()

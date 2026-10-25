@@ -18,7 +18,7 @@ The web DOM/socket harness verifies the initial selection, General and Live quer
 
 ## Verification
 
-Test: `make test PY=/Users/minhducvo/Projects/a-eye/.venv/bin/python` - FAIL.
+Test: `make test PY=$HOME/Projects/a-eye/.venv/bin/python` - FAIL.
 
 ```text
 1 failed, 1033 passed, 2 warnings in 104.67s (0:01:44)

@@ -1,6 +1,6 @@
-# Duc's slow-turn fix, measured 2026-10-23 about 21:00 to 21:15 PDT
+# the team's slow-turn fix, measured 2026-10-23 about 21:00 to 21:15 PDT
 
-Conditions like Duc's run: camera frames at 1 fps (each different), cooking pack, typed final text standing in for
+Conditions like the team's run: camera frames at 1 fps (each different), cooking pack, typed final text standing in for
 the browser speech final, server TTS (Kokoro on the GPU box), vision on the box. Same 5 questions each run.
 The browser's own speech-final delay is not in these numbers (no real mic); the page now sends the interim text
 after 700 ms of no new words instead of waiting for the browser's final.
