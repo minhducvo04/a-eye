@@ -697,8 +697,8 @@ Removed automatic web recap and its sheet trigger; added kept-call indexing stat
 
 Files changed, exact commands, test evidence and limits: [docs/results/no-recap.md](docs/results/no-recap.md).
 
-Test: /Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server - FAIL (1135 passed; 15 sandbox/network-related failures; 2 warnings).
-Test: /Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_no_recap.py - PASS (3 passed).
+Test: $HOME/Projects/a-eye/.venv/bin/python -m pytest -q server - FAIL (1135 passed; 15 sandbox/network-related failures; 2 warnings).
+Test: $HOME/Projects/a-eye/.venv/bin/python -m pytest -q server/test_no_recap.py - PASS (3 passed).
 Test: node --test client-web/*.test.mjs - PASS (172 passed).
 Test: swift build --package-path ios/AEyeCore --scratch-path /private/tmp/a-eye-no-recap-swift --disable-sandbox - PASS.
 Test: swiftc -frontend -parse ios/AEye/App/Call/CallController.swift ios/AEye/App/RootView.swift ios/AEye/App/Views/StartScreen.swift - PASS (syntax only).

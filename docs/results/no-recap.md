@@ -19,9 +19,9 @@ Implemented on `pkg/no-recap`, locally only; no push, no .env reads, no external
 
 ## Checks
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server` - FAIL (1135 passed, 15 failed, 2 warnings, 96.75 s). Fourteen failures explicitly report denied loopback socket binds; the remaining Live hazard test receives an error after Live startup raises PermissionError. No unrelated tests were modified. Log: `/private/tmp/no-recap-server.log`.
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server` - FAIL (1135 passed, 15 failed, 2 warnings, 96.75 s). Fourteen failures explicitly report denied loopback socket binds; the remaining Live hazard test receives an error after Live startup raises PermissionError. No unrelated tests were modified. Log: `/private/tmp/no-recap-server.log`.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_no_recap.py` - PASS (3 passed). This final focused run includes an added parameter after the full run: both already-indexing live clips and final pending clips, plus off/unkept/failed/empty calls. Fake TwelveLabs asserts no analysis. The initial regression run failed because save_status did not exist.
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server/test_no_recap.py` - PASS (3 passed). This final focused run includes an added parameter after the full run: both already-indexing live clips and final pending clips, plus off/unkept/failed/empty calls. Fake TwelveLabs asserts no analysis. The initial regression run failed because save_status did not exist.
 
 Test: `node --test client-web/*.test.mjs` - PASS (172 passed, 0 failed). Runtime DOM fixtures exercise no automatic request, ignored recap cards, exact saving/saved text, and no status/poll for off or unkept calls. Log: `/private/tmp/no-recap-web.log`.
 
