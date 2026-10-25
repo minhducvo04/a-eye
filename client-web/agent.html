@@ -52,21 +52,11 @@
         <h1 class="intro-title">Call <span class="intro-verb">it</span></h1>
         <p class="intro-note">A companion call that watches, guides, and remembers as you learn.</p>
         <button type="button" id="ring-hint" class="call-start">Call</button>
-        <button type="button" class="headset-only call-start" data-mode="plumbing" data-pack="home">Sink guide</button>
       </div>
     </section>
 
     <!-- Call screen (CallScreen.swift): pill on top, caption card, power gate, input, bottom bar. -->
     <section id="call" class="call hidden" aria-label="Call">
-      <div id="headset-panel" class="headset-panel hidden">
-        <h1 id="headset-status" role="status">Waiting for your phone camera</h1>
-        <button type="button" id="headset-sound" class="glass">Enable sound</button>
-        <div id="headset-help">
-          <p>Keep your remembered phone page open. It joins this call automatically.</p>
-          <button type="button" id="headset-pair" class="glass">Pair phone · show QR</button>
-          <p>Vision Pro uses your phone camera, never its own.</p>
-        </div>
-      </div>
       <div class="top">
         <div class="pill glass">
           <span id="presence-dot" class="presence-dot" role="img" aria-label=""></span>
@@ -104,10 +94,6 @@
           <span class="wait-ring" aria-hidden="true"><svg viewBox="0 0 44 44"><circle class="track" cx="22" cy="22" r="22"/><circle id="wait-arc" class="arc" cx="22" cy="22" r="22" pathLength="100" stroke-dasharray="0 100"/></svg><span id="wait-pct">0%</span></span>
           <span class="wait-text" aria-hidden="true"><span id="wait-eyebrow" class="wait-eyebrow">SCANNING</span><span id="wait-line" class="wait-line">Hold the camera steady…</span></span>
         </div>
-        <div id="step-card" class="step-card glass hidden" role="status">
-          <p class="eyebrow"><span id="step-eyebrow">SINK</span></p>
-          <p id="step-line" class="step-line"></p>
-        </div>
         <div id="caption" class="caption glass hidden" aria-live="polite">
           <p class="eyebrow"><span id="caption-eyebrow" aria-hidden="true">A-EYE</span><span id="caption-speaker" class="sr-only">Helper</span></p>
           <p id="replies" class="caption-text"></p>
@@ -118,10 +104,6 @@
           <canvas id="wave" class="wave" aria-hidden="true"></canvas>
           <p id="interim" class="listen-text" aria-hidden="true">LISTENING</p>
         </div>
-        <form id="composer" class="typed glass" autocomplete="off">
-          <input id="typed" name="typed" type="text" autocomplete="off" enterkeyhint="send" placeholder="Type next or a question">
-          <button type="submit" class="send" aria-label="Send"><svg><use href="#i-send"/></svg></button>
-        </form>
         <!-- Rewind on with kept clips: starter questions for the call memory. -->
         <div id="rewind-ask" class="rewind-ask hidden">
           <button type="button" id="rewind-chip" class="rewind-ask-chip glass" aria-expanded="false" aria-controls="rewind-prompts"><svg aria-hidden="true"><use href="#i-rewind"/></svg>Rewind</button>
@@ -191,7 +173,8 @@
     </div>
     <p id="live-start-notice" class="permission-text hidden" role="alert"></p>
 
-    <div class="headset-only">
+    <!-- Host side of phone pairing (another device is the camera). Kept hidden until an external camera device needs it. -->
+    <div class="pair-host hidden">
     <p class="group-title">Phone camera</p>
     <div class="group">
       <button type="button" id="pair-request" class="row text-btn">Use my phone (camera + mic)</button>
@@ -207,7 +190,6 @@
       <p><b>Phone</b> — Open the pairing link or scan the QR; tap Start and remember this phone.</p>
       <p><b>Laptop</b> — Open A-eye in your browser, start a call and enable camera and mic.</p>
       <p><b>Raspberry Pi device</b> — Configure the A-eye server address using docs/device.md, then press its button.</p>
-      <p><b>Vision Pro (browser or app)</b> — In Safari open agent.html?device=headset and use your remembered phone; in the native app connect to your A-eye server.</p>
     </div>
 
     </div>

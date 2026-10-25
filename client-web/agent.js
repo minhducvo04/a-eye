@@ -3,7 +3,6 @@ import { liveSettings } from './gemini-live.js';
 import { triggerClient } from './trigger.js';
 import { setupFamily } from './family-note.js';
 import { createValveCard } from './step-check.js';
-import { isHeadset, requestLocalMedia, headsetStep } from './headset.js';
 import { bootPairCamera, phoneMicRoute, setupPairCall } from './pair.js';
 import { callOwner, ownerHeaders, ownerQuery, resetCallOwner } from './call-owner.js';
 // Agent call page. Speaks the v2 WebSocket contract on /ws2.
@@ -84,12 +83,7 @@ const BOARD_ID = "demo-b650";
 const TRACK_W = 320;
 
 function boot() {
-  const headset = isHeadset(location.search, navigator.userAgent);
-  if (!headset && bootPairCamera()) return;
-  document.body?.classList.toggle("headset", headset);
-  const headsetPanel = document.getElementById("headset-panel");
-  const headsetStatus = document.getElementById("headset-status");
-  headsetPanel?.classList.toggle("hidden", !headset);
+  if (bootPairCamera()) return;
   const picker = document.getElementById("picker");
   const stage = document.getElementById("stage");
   const video = document.getElementById("camera");
@@ -134,14 +128,9 @@ function boot() {
   const waitPct = document.getElementById("wait-pct");
   const waitEyebrow = document.getElementById("wait-eyebrow");
   const waitLine = document.getElementById("wait-line");
-  const stepCard = document.getElementById("step-card");
-  const stepEyebrow = document.getElementById("step-eyebrow");
-  const stepLine = document.getElementById("step-line");
-  let lastStepLine = "";
   const scanEl = document.getElementById("scan");
   const scanBand = scanEl.querySelector(".scan-band");
   const scanPath = document.getElementById("scan-path");
-  const typedEl = headset ? document.getElementById("typed") : null;
   const micBtn = document.getElementById("mic");
   const holdToggle = document.getElementById("hold-toggle");
   const sensEl = document.getElementById("sensitivity");
@@ -465,7 +454,7 @@ function boot() {
   }
 
   function reducedMotion() {
-    return headset || Boolean(reducedQuery && reducedQuery.matches);
+    return Boolean(reducedQuery && reducedQuery.matches);
   }
 
   function send(message) {
@@ -1359,12 +1348,12 @@ function boot() {
 
   const flipCamera = wireFlipCamera({
     video, button: document.getElementById("flip-camera"),
-    active: () => cameraOn && !headset, busy: () => starting,
+    active: () => cameraOn, busy: () => starting,
     onError: showProblem, onSwitch: () => commitTracker("draw"),
   });
 
   async function startCamera() {
-    if (headset || starting || cameraOn) return;
+    if (starting || cameraOn) return;
     if (!window.isSecureContext) {
       ui.dispatch({ type: "https" });
       renderCall();
@@ -1378,7 +1367,7 @@ function boot() {
     starting = true;
     let retryDefault = false;
     try {
-      const stream = await requestLocalMedia(navigator.mediaDevices, headset, {
+      const stream = await navigator.mediaDevices.getUserMedia({
         video: flipCamera.constraints(videoConstraints(cameraChoice)),
         audio: false,
       });
@@ -1780,14 +1769,6 @@ function boot() {
     agents = { helper: "idle", shopper: "idle" };
     wait = null;
     micRoute = { phone: false, resume: false };
-    lastStepLine = "";
-    stepCard?.classList.add("hidden");
-    if (headset) {
-      headsetPanel.classList.remove("connected");
-      document.getElementById("headset-sound").textContent = "Enable sound";
-      headsetStatus.textContent = "Waiting for your phone camera";
-      document.getElementById("headset-help").classList.remove("hidden");
-    }
     document.getElementById("phone-chip")?.classList.add("hidden");
     renderWait(Date.now());
     hideStill();
@@ -1966,13 +1947,12 @@ function boot() {
     noticeEl.textContent = notes.join(" ");
     noticeEl.classList.toggle("hidden", notes.length === 0);
     renderReplies(st);
-    renderStepCard(st);
     renderListen(st);
     renderTranscript(st);
     muteBtn.setAttribute("aria-pressed", st.muted ? "true" : "false");
     muteBtn.textContent = st.muted ? "Unmute" : "Mute";
     if (document.activeElement !== volumeEl) volumeEl.value = String(st.volume);
-    overlayEl.classList.toggle("hidden", headset || !st.showStart);
+    overlayEl.classList.toggle("hidden", !st.showStart);
     if (sttLabel) sttLabel.textContent = stt === "server" ? "Whisper" : "Browser";
     renderMic();
   }
@@ -2002,22 +1982,6 @@ function boot() {
     captionEyebrow.textContent = shopper ? "SHOPPER" : "A-EYE";
     captionSpeaker.textContent = shopper ? "Shopper" : "Helper";
     captionEl.classList.toggle("hidden", !lines.length && !st.error);
-  }
-
-  function renderStepCard(st) {
-    if (!stepCard) return;
-    if (!headset || !pack) {
-      stepCard.classList.add("hidden");
-      return;
-    }
-    const valveEl = document.getElementById("valve-check");
-    const valve = valveEl && !valveEl.classList.contains("hidden") ? String(valveEl.textContent || "").trim() : "";
-    const caption = replyLines(st).map((line) => line.text).join(" ").trim();
-    if (caption) lastStepLine = caption;
-    const model = headsetStep(pack, { valve, caption: lastStepLine });
-    if (stepEyebrow) stepEyebrow.textContent = model.eyebrow;
-    if (stepLine) stepLine.textContent = model.line;
-    stepCard.classList.remove("hidden");
   }
 
   // ListeningStrip.swift: waveform and heard line while voice input is available; "MIC OFF" while the mic is off.
@@ -2182,24 +2146,6 @@ function boot() {
     settingsEl.scrollTop = 0;
     document.getElementById("pair-request")?.click?.();
   });
-  document.getElementById("headset-sound")?.addEventListener("click", () => {
-    if (!voice) return;
-    voice.primeSpeech();
-    void voice.unlockAudio();
-    ui.dispatch({ type: "tap_start" });
-    applyAudioPrefs();
-    document.getElementById("headset-sound").textContent = "Sound enabled";
-  });
-  document.getElementById("headset-pair")?.addEventListener("click", () => {
-    openSheet(settingsEl);
-    void onSettingsOpen();
-    settingsEl.scrollTop = 0;
-    document.getElementById("pair-request")?.click();
-  });
-  if (headset) {
-    startBtn.disabled = true;
-    cameraPick.disabled = true;
-  }
   // Wheel and trackpad: if the browser did not scroll natively (seen in Brave), scroll it ourselves next frame.
   // Passive listeners only, no preventDefault; deltaX and deltaY both count. The ring turns a vertical wheel sideways.
   function wheelScroll(el, horizontal) {
@@ -2308,15 +2254,9 @@ function boot() {
     button.textContent = prompt.label;
     button.addEventListener("click", () => {
       togglePrompts(false);
-      if (!typedEl) {
-        ui.dispatch({ type: "final", text: prompt.text, now: Date.now() });
-        renderCall();
-        sendUser(prompt.text, "typed");
-        return;
-      }
-      typedEl.value = prompt.text;
-      typedEl.focus();
-      typedEl.setSelectionRange(prompt.text.length, prompt.text.length);
+      ui.dispatch({ type: "final", text: prompt.text, now: Date.now() });
+      renderCall();
+      sendUser(prompt.text, "typed");
     });
     rewindPrompts.append(button);
   }
@@ -2352,17 +2292,6 @@ function boot() {
   });
   document.getElementById("upload").addEventListener("change", (event) => {
     onUpload(event);
-  });
-  document.getElementById("composer")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    if (!typedEl) return;
-    const text = typedEl.value;
-    typedEl.value = "";
-    const clean = String(text || "").trim();
-    if (!clean) return;
-    ui.dispatch({ type: "final", text: clean, now: Date.now() });
-    renderCall();
-    sendUser(clean, "typed");
   });
   micBtn.addEventListener("click", () => {
     if (!holdMode) onMic();
@@ -2528,9 +2457,9 @@ function boot() {
   async function allowDevices() {
     if (micRoute.phone) return;
     const md = navigator.mediaDevices;
-    for (const ask of (headset ? [{ audio: true }] : [{ audio: true, video: true }, { audio: true }, { video: true }])) {
+    for (const ask of [{ audio: true, video: true }, { audio: true }, { video: true }]) {
       try {
-        const stream = await requestLocalMedia(md, headset, ask);
+        const stream = await md.getUserMedia(ask);
         for (const track of stream.getTracks()) track.stop();
         break;
       } catch (err) {
@@ -2555,14 +2484,6 @@ function boot() {
     const { route, action } = phoneMicRoute(micRoute, message, ui.getState().micOn);
     micRoute = route;
     if (micRoute.phone) micPreview.stop();
-    if (headset) {
-      headsetPanel.classList.toggle("connected", micRoute.phone);
-      headsetStatus.textContent = micRoute.phone
-        ? (message.state === "camera" && !message.camera_on ? "Phone camera paused" : "Phone camera connected")
-        : "Waiting for your phone camera";
-      document.getElementById("headset-help").classList.toggle("hidden", micRoute.phone);
-      if (message.state === "left") document.getElementById("pair-status").textContent = "Phone disconnected. Waiting for your phone camera.";
-    }
     const phoneChip = document.getElementById("phone-chip");
     if (phoneChip) phoneChip.classList.toggle("hidden", !micRoute.phone);
     if (action === "stop_local" && voice) {
@@ -2683,10 +2604,10 @@ function boot() {
 
   // Live camera switch: open the new device, then stop the old tracks. The call and frames keep going.
   async function swapCamera() {
-    if (headset || !cameraOn || starting || flipCamera.busy()) return;
+    if (!cameraOn || starting || flipCamera.busy()) return;
     starting = true;
     try {
-      const stream = await requestLocalMedia(navigator.mediaDevices, headset, { video: flipCamera.constraints(videoConstraints(cameraChoice)), audio: false });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: flipCamera.constraints(videoConstraints(cameraChoice)), audio: false });
       if (!cameraOn || !pack) {
         for (const track of stream.getTracks()) track.stop();
         return;

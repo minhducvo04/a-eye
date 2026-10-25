@@ -15,7 +15,7 @@ except ImportError:
 PRIVATE_DIRS = {'.git', '.claude', '.codex', '.agents', 'data', 'private', 'notes',
                 'results', 'screenshots', 'ui-parity', 'ui-polish', 'clips', 'frames', 'recordings'}
 PUBLIC_DOCS = {'README.md', 'api.md', 'data-export.md', 'device.md', 'features.md',
-               'headset-demo.md', 'home-setup.md', 'privacy.md', 'wiring.md', 'public-export.md'}
+               'home-setup.md', 'privacy.md', 'wiring.md', 'public-export.md'}
 PRIVATE_FILES = {'RESULT.md', 'CLAUDE.md', 'ios-dad-handoff.md', 'devpost-draft.md'}
 MEDIA = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.pdf', '.mp4', '.mov', '.wav', '.m4a'}
 
