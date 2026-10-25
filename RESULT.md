@@ -1,3 +1,36 @@
+## Planner Live fix-back round 4 — pkg/planner-live4, 2026-10-25
+
+Base: `a5b3cb4`. Model `turnComplete` no longer discards rejected planner input.
+A separate bounded transcript survives model-output resets, retries whenever
+input grows after a 300 ms debounce, and resets on fresh mic/typed input,
+interruption, or reconnect. Positive decisions latch; unchanged rejections are
+deduplicated. The existing three-second pending-plan hold remains unchanged.
+
+The interleaved PCM/output/input regression reproduced loss of the final repair
+request when `turnComplete` preceded the last input chunk (1 failed, 1 passed
+before production changes). Both orderings now plan from the full text after the
+21-character rejection. The exact second-turn next-step question waits for the
+pending plan and speaks step 1, without advancement or another build.
+
+Changed files: `server/gemini_live.py`, `server/live_guide.py`,
+`server/test_planner.py`, `docs/results/planner-live.md`, `RESULT.md`.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py server/test_live_guide.py --tb=short` - PASS
+(100 passed in 11.08s; summary read).
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(1238 passed, 16 failed, 2 warnings in 60.13s; summary and failure evidence read).
+Fifteen failures are denied local sockets; the hazard assertion fails downstream
+of Live startup `PermissionError`. These match the earlier sixteen failed node
+IDs; no planner/checker test failed. Log: `.pytest_cache/planner-live4-full.log`.
+Test: `git diff --check` - PASS.
+
+Limits: synthetic packets/fake providers only; no `.env` read, network permission
+change, real provider call, push, merge, deployment, or device proof. Retained
+rejected transcription requires a fresh mic/typed/interruption signal to identify
+a new utterance. Details: [planner-live](docs/results/planner-live.md).
+
+---
+
 ## Planner Live merged-main fix — pkg/planner-live3, 2026-10-25
 
 Base: `c83d4a1` with checker and planner-live2 merged. The two soldering failures
