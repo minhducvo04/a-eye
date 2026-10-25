@@ -612,6 +612,10 @@ class Rewind:
         if self.index_id is None:
             self.index_id = await self.client.ensure_index(self.index_name)
         rows = await self.client.search(self.index_id, query, video_ids=list(past), limit=limit)
+        if not rows and self.index_name != INDEX_NAME:
+            # Saved calls may live in the shared index (open demo calls upload there), not this caller's own index.
+            shared = await self.client.ensure_index(INDEX_NAME)
+            rows = await self.client.search(shared, query, video_ids=list(past), limit=limit)
         hits = []
         for row in sorted(rows, key=lambda r: r.get('rank', 99)):
             hit = past.get(row.get('video_id'))
