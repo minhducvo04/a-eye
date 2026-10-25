@@ -1,3 +1,31 @@
+## Live polish — pkg/live-polish, 2026-10-25
+
+Live setup omits catchphrases, limits repeated camera requests and visual claims,
+and permits ordinary visual questions. Punctuation-only output cannot create a
+caption or empty speaking turn. Background coded stops wait for mic final;
+direct input hazard stops remain instant. Scope requires home-repair wording.
+
+Files changed: `server/personas.py`, `server/gemini_live.py`,
+`server/context_agent.py`, `server/task_scope.py`, `server/test_live_polish.py`,
+`docs/results/live-polish.md`, `RESULT.md`.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_live_polish.py server/test_refocus.py server/test_personas.py eval/swap/test_checker_regressions.py` - PASS (97 passed in 1.68s).
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_live_polish.py eval/swap/test_checker_regressions.py eval/swap/test_heldout.py` - PASS (73 passed in 1.26s).
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL (1284 passed, 16 failed, 2 warnings in 100.83s; summary read).
+The remaining failures are 15 denied loopback binds and one downstream hazard
+state assertion after Live startup PermissionError. Scope/checker and held-out
+isolation regressions found during work were fixed without weakening tests.
+Test: `git diff --check` - PASS.
+
+Limits: synthetic offline verification only; no real model, device, camera or
+microphone proof. Initial PCM now waits for meaningful caption text or provider
+completion to avoid cancelling playback on a late caption; latency is unmeasured.
+No UI changes, persona JSON edits, `.env` reads, network permission changes, push,
+merge, or deployment. Report: [live-polish](docs/results/live-polish.md).
+Full test log: `.pytest_cache/live-polish-full.log`.
+
+---
+
 ## Planner Live fix-back round 5 — pkg/planner-live5, 2026-10-25
 
 Base: `9469744`. Default planner model is now `claude-haiku-5-5`; env overrides,

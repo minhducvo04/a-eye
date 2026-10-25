@@ -54,7 +54,12 @@ def live_setup(model, instruction='', voice=None, handle=None):
                 'fixing electronics and learning Arduino, LEDs, resistors, polarity, multimeters, '
                 'soldering safety and USB power; also tying a four-in-hand tie. '
                 'Only start electronics or tie tasks unless the app explicitly supplies an enabled GUIDE. '
-                ' Use the persona catchphrase at most once per call. '
+                'Answer ordinary visual questions even when task scope is on; only home-repair requests '
+                'get the scope line when home tasks are disabled. '
+                'Ask to see something at most once. If the camera still does not show it, give the '
+                'next concrete step from what the son said, within the safety rules and current GUIDE. '
+                'Name only what is clearly visible. Never say the son placed or moved something '
+                'unless two different frames show that action. No small talk about objects. '
                 'When the user asks which one, pick one and say why.'}]}}
 
 
@@ -288,7 +293,7 @@ class LiveBridge:
         self.ws = await connect(url, open_timeout=10, close_timeout=2, max_size=4 * 1024 * 1024,
                                 logger=WIRE_LOGGER)
         try:
-            setup = live_setup(self.model, self.session.pack.system_prompt + personas.style_block(self.session.persona) +
+            setup = live_setup(self.model, self.session.pack.system_prompt + personas.style_block(self.session.persona, live=True) +
                     ' When you talk about a specific visible object, name it plainly with a short noun (for example '
                     '"the red wire", "the resistor", "the wide end"); the app draws a box on what you name. '
                     'Use local memory tools only when requested. '
@@ -342,7 +347,8 @@ class LiveBridge:
         if os.getenv('LIVE_CONTEXT_ENABLED', '1') != '0':
             from server.context_agent import LiveContextBuilder
             self.context_builder = LiveContextBuilder(self.session, self.publish_context, self.stop,
-                                                       lambda text: self.stop_line(text, True))
+                                                       lambda text: self.stop_line(text, True),
+                                                       can_stop=lambda: not self.audio_input_open)
             self.context_builder.start()
 
     async def close_context(self):
@@ -540,6 +546,8 @@ class LiveBridge:
         if final:
             self.audio_input_open = False
             await self._input({'realtimeInput': {'audioStreamEnd': True}})
+            if self.context_builder:
+                await self.context_builder.release_stop()
 
     async def text(self, text):
         if not self.active or not privacy.google_allowed():
@@ -629,6 +637,8 @@ class LiveBridge:
         await self.stage('done')
 
     async def caption(self, text):
+        if not any(char.isalnum() for char in text):
+            return
         msg = say(text)
         msg.update(turn_id=self.turn_id, utterance_id=self.utterance_id, part=self.caption_part)
         self.caption_part += 1
@@ -639,6 +649,12 @@ class LiveBridge:
             return
         require_consent()
         first = not self.speaking
+        if first and not self.audio_buffer and not any(char.isalnum() for char in self.output):
+            return
+        # A real caption must register the utterance before PCM; a placeholder
+        # would create the silent filler turn, and a late caption cancels playback.
+        if first and not final and not any(char.isalnum() for char in self.output):
+            return
         # Hold audio duration, not time since a packet arrived: Live can generate
         # faster than playback. Release the checked initial buffer, including its tail.
         if not final and first and len(self.audio_buffer) < int(self.rate * FIRST_AUDIO_HOLD) * 2:
@@ -659,7 +675,7 @@ class LiveBridge:
             if not self.caption_part:
                 # Register the utterance before PCM so a late first caption does
                 # not look like a new turn and cancel already queued audio.
-                await self.caption(self.output.strip() or '…')
+                await self.caption(self.output.strip())
         while self.audio_buffer and (final or first or len(self.audio_buffer) >= size):
             if self.blocked or self.closed:
                 return
@@ -796,6 +812,8 @@ class LiveBridge:
                 task.cancel()
         for field, output in (('inputTranscription', False), ('outputTranscription', True)):
             text = content.get(field, {}).get('text', '')
+            if output and not any(char.isalnum() for char in self.output + text):
+                continue
             if text:
                 if not output and not self.input_turn_open:
                     if self.scope_redirected and not self.safety_stopped:
@@ -832,7 +850,7 @@ class LiveBridge:
                     # Box the object as soon as Live names it, not after the reply ends.
                     self.pointed = True
                     asyncio.create_task(self._auto_point(self.output))
-                if output and not self.blocked:
+                if output and not self.blocked and any(char.isalnum() for char in text):
                     await self.send(message('reply_delta', agent='helper', turn_id=self.turn_id, text=text))
                     if self.speaking and text.strip():
                         await self.caption(text)
@@ -884,7 +902,7 @@ class LiveBridge:
                 if self.session.context_agent:
                     self.session.context_agent.ingest(self.question)
                 self.session.recent_memory.note_transcript(self.question, 'user')
-            if not self.blocked and self.output.strip():
+            if not self.blocked and any(char.isalnum() for char in self.output):
                 line = self.stop_line(self.output, True)
                 if line:
                     await self.stop(line)
@@ -892,9 +910,10 @@ class LiveBridge:
                     self.session.recent_memory.note_transcript(self.output.strip(), 'helper')
             if not self.blocked:
                 await self.flush_audio(final=True)
-            if not self.blocked and not self.pointed and self.output.strip():
+            if not self.blocked and not self.pointed and any(char.isalnum() for char in self.output):
                 asyncio.create_task(self._auto_point(self.output))
-            await self.stage('done')
+            if self.received or self.speaking or self.blocked:
+                await self.stage('done')
             # A stop stays latched until new user input; late provider packets
             # and interruption acknowledgements must never restart playback.
             if not self.blocked:
