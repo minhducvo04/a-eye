@@ -171,6 +171,31 @@ def test_two_minutes_ago_plurals_and_synonyms():
     assert log.find('where did I put the screwdriver a minute ago?') is None
 
 
+def test_where_was_mug_a_minute_ago_uses_last_caption_not_current_desk():
+    """Mug at t=0, desk without mug at t=40 s, "where was the mug a minute ago?" at t=70 s."""
+    log = RecentMemory(clock=lambda: 70, started=0)
+    log.add(scene('A travel mug on the desk next to the keyboard'), 0)
+    log.add(scene('A wooden desk with a keyboard and monitor'), 40)
+    hit = log.find('Where was the mug a minute ago?')
+    assert hit and hit['found']
+    assert 'on the desk next to the keyboard' in hit['say']
+    assert '70' in hit['say'] or 'minute' in hit['say']
+    assert log.find('Where was the screwdriver a minute ago?') is None
+
+    async def check():
+        session = SimpleNamespace(recent_memory=log, rewind=None, private=False)
+        result = await answer(session, 'Where was the mug a minute ago?')
+        assert result['found'] and 'on the desk next to the keyboard' in result['say']
+        missed = await answer(session, 'Where was the screwdriver a minute ago?')
+        assert not missed['found'] and "didn't see that in my notes" in missed['say']
+        fresh = RecentMemory(clock=lambda: 70, started=0)
+        fresh.add(scene('A travel mug in the current camera view'), 68)
+        session.recent_memory = fresh
+        now_cam = await answer(session, 'Where was the mug a minute ago?')
+        assert not now_cam['found'] and "didn't see that in my notes" in now_cam['say']
+    asyncio.run(check())
+
+
 def test_last_week_reads_task_history_and_never_invents_one():
     from datetime import datetime, timedelta, timezone
 

@@ -7,11 +7,17 @@ from time import monotonic, time
 
 KEEP_S = 600       # the RAM log keeps 10 minutes, so "two minutes ago" still has notes
 RECENT_MAX_S = 300  # an asked age up to 5 minutes reads the RAM log; older goes to Rewind
+CURRENT_CAMERA_S = 10  # a live frame is never evidence of a past "where" question
 AGE = re.compile(r'\b(a|an|one|two|three|\d+)\s+(seconds?|minutes?) ago\b', re.I)
 LONG = re.compile(r'\b(yesterday|last time|last call|previous call|last week|days? ago|a week ago|last weekend|'
                   r'other day|last session|previous session|earlier call|another call)\b', re.I)
 STEP = re.compile(r'\bstep\s+(\d+)\b', re.I)
 CURRENT_STEP = re.compile(r'\b(?:what|which) step\b', re.I)
+WHERE = re.compile(r'\bwhere\b', re.I)
+PLACE = re.compile(
+    r'\b(?:on top of|next to|in front of|in back of|to the (?:left|right) of|'
+    r'on|in|at|under|over|beside|by|near|against|behind)\s+'
+    r'(?:the\s+|a\s+|an\s+)?[\w][\w\s,-]{1,80}', re.I)
 STOP = set('what where when did do i my the a an was were is are it put leave left see saw just now ago '
            'minute minutes second seconds one two three earlier in this call happened recently please '
            'you remember last time yesterday picked up set place placed keep kept go went with to on of for '
@@ -60,6 +66,24 @@ def _norm(word):
 def words(text):
     raw = set(re.findall(r'[a-z0-9]+', text.lower())) - STOP
     return {_norm(w) for w in raw} - STOP
+
+
+def surroundings(note):
+    """Place or nearby objects from a caption; the whole caption if none is marked."""
+    match = PLACE.search(note or '')
+    if not match:
+        return (note or '').strip().rstrip('.')
+    return match.group(0).split('.')[0].strip(' .,')
+
+
+def ago_words(seconds):
+    seconds = max(0, int(round(seconds)))
+    if seconds < 90:
+        unit = 'second' if seconds == 1 else 'seconds'
+        return f'about {seconds} {unit} ago'
+    minutes = max(1, int(round(seconds / 60)))
+    unit = 'minute' if minutes == 1 else 'minutes'
+    return f'about {minutes} {unit} ago'
 
 
 class RecentMemory:
@@ -131,12 +155,14 @@ class RecentMemory:
 
     def find(self, question):
         self.prune()
+        now = self.clock()
         entries = list(self.entries)
         if self.store is not None and self.store.remembering():
             entries = [e for e in self.store.recent_records(self.call_id)
-                       if self.clock() - e['observed_at'] <= KEEP_S]
+                       if now - e['observed_at'] <= KEEP_S]
         step = STEP.search(question)
         current_step = CURRENT_STEP.search(question)
+        where = WHERE.search(question)
         target = words(AGE.sub('', question))
         if step:
             entries = [e for e in entries if (m := STEP.search(e['step'])) and m[1] == step[1]]
@@ -147,12 +173,28 @@ class RecentMemory:
             if target:
                 entries = [e for e in entries if target <= words(' '.join([e['note'], *e['labels']]))]
         age = age_seconds(question)
+        if where and target:
+            # Last note that mentions X. A later scene without X is not a new place, and the
+            # live camera is never evidence of a past "where" question.
+            if age is not None:
+                entries = [e for e in entries if now - e['observed_at'] >= CURRENT_CAMERA_S]
+                latest = now - age + max(20, age * .25)
+                entries = [e for e in entries if e['observed_at'] <= latest]
+            if not entries:
+                return None
+            hit = entries[-1]
+            note = hit['note'] or ', '.join(hit['labels'])
+            place = surroundings(note) or note
+            stamp = f"{int(hit['t_s']) // 60}:{int(hit['t_s']) % 60:02d}"
+            return dict(source='recent', found=True, t_s=hit['t_s'],
+                        say=f"At {stamp} in this call, {ago_words(now - hit['observed_at'])}, "
+                            f"it was {place}.")
         if age is not None:
             # A sighting far away from the requested moment isn't evidence for that moment.
-            entries = [e for e in entries if abs(self.clock() - e['observed_at'] - age) <= max(20, age * .25)]
+            entries = [e for e in entries if abs(now - e['observed_at'] - age) <= max(20, age * .25)]
         if not entries:
             return None
-        hit = (min(entries, key=lambda e: abs(self.clock() - e['observed_at'] - age))
+        hit = (min(entries, key=lambda e: abs(now - e['observed_at'] - age))
                if age is not None else entries[-1])
         note = hit['step'] if step or current_step else hit['note'] or ', '.join(hit['labels'])
         return dict(source='recent', found=True, t_s=hit['t_s'],
