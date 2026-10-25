@@ -2177,3 +2177,6 @@ body.headset {
   background: var(--helper, #8eb6ff);
   color: #0b1220;
 }
+
+/* Owner: the slogan stays on one line at every width. */
+.intro-title { white-space: nowrap; font-size: clamp(1.35rem, 6.2vw, 3.6rem); }
