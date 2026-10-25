@@ -62,6 +62,22 @@ HOT_TOOL = Gate(
     "Do not touch the hot soldering iron tip; leave it in its stand.")
 
 
+# Electrical state must describe the conductor/device, not a nearby hot iron
+# or the product name "Live" in a context summary.
+_CONDUCTOR = r"\b(?:wire\w*|rewir\w*|outlet|socket|breaker|panel|fuse|electrical circuit|light fixture|switch)\b"
+_LIVE_POWER = (
+    r"\b(?:live|hot|powered)\s+(?:(?:electrical|mains)\s+)?" + _CONDUCTOR + r"|"
+    + _CONDUCTOR + r"[^.!?;,\n]{0,35}\b(?:is|are|remains?)\s+(?:still\s+)?(?:live|powered)\b|"
+    r"\b(?:power (?:is )?(?:still )?on|without (?:turning|switching|shutting) (?:the )?(?:power|breaker|it) off)\b"
+    r"[^.!?\n]{0,50}" + _CONDUCTOR + r"|"
+    + _CONDUCTOR + r"[^.!?\n]{0,50}\b(?:power (?:is )?(?:still )?on|"
+    r"while (?:it's|it is) on|plugged (?:in|into)|without (?:turning|switching|shutting) "
+    r"(?:the )?(?:power|breaker|it) off)\b|"
+    r"\bplugged (?:in|into)\b[^.!?\n]{0,50}" + _CONDUCTOR + r"|"
+    r"\b(?:psu|power supply)\b[^.!?\n]{0,50}\b(?:live|power (?:is )?(?:still )?on)\b|"
+    r"\b(?:live|power (?:is )?(?:still )?on)\b[^.!?\n]{0,50}\b(?:psu|power supply)\b")
+
+
 GATES = (
     _stop('open_microwave', _pair(
         r"\b(open\w*|pry\w*|unscrew\w*|disassembl\w*|inside|internal)\b", r"\bmicrowave\b"),
@@ -109,14 +125,7 @@ GATES = (
          "Leave now and get everyone out. Don't touch light switches or anything electric, and don't light "
          "anything. Once you're outside, call 911 or the gas company."),
     Gate('live_power',
-         _re(r"\b(live|hot|powered|power (is )?(still )?on|while (it's|it is) (on|plugged in)|without (turning|switching|shutting) "
-             r"(the )?(power|breaker|it) off|plugged in)\b.{0,50}\b(wire\w*|wiring|outlet|socket|breaker|panel|fuse|electric\w*|"
-             r"light fixture|switch)\b|\b(wire\w*|wiring|outlet|socket|breaker|panel|fuse|light "
-             r"fixture)\b.{0,50}\b(live|power (is )?(still )?on|while (it's|it is) on|plugged in|without (turning|switching|shutting) "
-             r"(the )?(power|breaker|it) off)\b|\b(psu|power supply)\b.{0,50}\b(live|power (is )?(still )?on)\b|"
-             r"\b(live|power (is )?(still )?on)\b.{0,50}\b(psu|power supply)\b"),
-         _re(r"\b(live|power (is )?(still )?on)\b.{0,60}\b(wire\w*|outlet|socket|breaker|panel|psu|electric\w*)\b|"
-             r"\b(wire\w*|outlet|socket|breaker|panel|psu)\b.{0,60}\b(live|power (is )?(still )?on)\b"),
+         _re(_LIVE_POWER), _re(_LIVE_POWER),
          _re(r"\b(is|it's|that's)\s+(\w+\s+)?" + _OK + r"\b|\bno need to (turn|switch|shut)\b|\b(leave|keep) (it|the power) on\b"),
          "Turn the power off first, at the breaker or by unplugging it, and check it's dead before you touch "
          "anything. If you're not sure, stop and call an electrician."),
@@ -146,7 +155,8 @@ def before(question):
     """The fixed line for a hazard question, or None. Runs before any model."""
     ordered = sorted(GATES, key=lambda g: g.id != 'gas_smell')
     for gate in ordered:
-        if gate.ask.search(question or ''):
+        pattern = gate.wrong if gate is HOT_TOOL else gate.ask
+        if pattern.search(question or ''):
             return gate.line
     return None
 
