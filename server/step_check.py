@@ -19,6 +19,8 @@ import httpx
 from PIL import Image
 
 MAX_AGE = 1.5
+# Leave most of MAX_AGE for inference; never re-stamp an older camera frame.
+FRESH_FRAME_AGE = .1
 RETRY_LINE = 'Show me the valve again, closer.'
 FORMAT = {'type': 'object', 'additionalProperties': False,
           'required': ['state', 'confidence'], 'properties': {
@@ -184,6 +186,8 @@ class Checker:
         self.method, self.threshold, self.timeout = method, threshold, timeout
 
     async def check(self, frame, closed_reference=None, open_reference=None, *, captured_at=None):
+        # Both admission and the returned verdict age from this image's capture,
+        # not from when the caller finally starts inference.
         started = monotonic() if captured_at is None else captured_at
         try:
             if self.method is None or not 0 <= monotonic() - started <= MAX_AGE:

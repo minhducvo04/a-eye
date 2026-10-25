@@ -48,10 +48,11 @@ def test_step_note_puts_the_named_part_first_and_stays_short():
     assert 'faucet cartridge' in sink and 'ask a hardware store' in sink and 'Listing' not in sink
 
 
-def test_dialogue_warms_only_cards_for_the_current_task():
+def test_dialogue_warms_only_cards_for_the_current_step():
     shelf = parts_shelf.shelf()
     assert 'adjustable wrench' not in shelf.note('ee_led', 2, ['do I need a wrench?'])
-    assert 'multimeter' in shelf.note('ee_resistor', 1, ['which multimeter should I use'])
+    assert 'multimeter' not in shelf.note('ee_resistor', 1, ['which multimeter should I use'])
+    assert 'multimeter' in shelf.note(texts=['which multimeter should I use'])
     assert 'adjustable wrench' in shelf.note(texts=['where is my adjustable wrench'])
     assert shelf.note(texts=['light an LED']).startswith('LED:')
 

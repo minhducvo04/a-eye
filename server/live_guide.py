@@ -11,6 +11,7 @@ import os
 import re
 
 from server import cloud_vision, parts_shelf, pointer, privacy, safety
+from server.packs.home import NEXT
 
 
 def ui_detail(detail):
@@ -24,9 +25,10 @@ START_HOME = re.compile(r'\b(sink|faucet|supply line|dripping tap|leaky tap|leak
                         r'breaker|tripped)\b', re.I)
 START_EE = re.compile(r'\b(light an? led|blink an? led|arduino|resistor bands?|resistor colou?rs?|led polarity)\b', re.I)
 # "It's off" asks for the check. Saying it never passes the check by itself.
-OFF = re.compile(r"\b(it'?s|it is|water(?: is)?|valve(?: is)?|tap(?: is)?)\s+(?:now\s+)?(off|closed|shut)\b", re.I)
+OFF = re.compile(r"\b(?:(?:it['’]?s|it is|water(?: is)?|valve(?: is)?|tap(?: is)?)"
+                 r"\s+(?:now\s+)?(?:off|closed|shut)|(?:closed|shut)\s+(?:it|the valve)|"
+                 r"turned\s+(?:it|the valve|the water)\s+off)\b", re.I)
 CONTROL = re.compile(r'\b(walk me through it|try again|retry|forget my progress)\b', re.I)
-NEXT = re.compile(r'\b(next|done|continue|ready)\b', re.I)
 DEBOUNCE = .3
 RULE = ('Say only this step in your own words; do not skip ahead; do not say a step is done; '
         'the app decides when to move on. When the user says done or next, say nothing; the app checks and tells you.')
@@ -40,6 +42,7 @@ class LiveGuide:
         self.version = 0
         self.published = 0
         self.task = None
+        self.running = False
 
     @property
     def guide(self):
@@ -53,6 +56,8 @@ class LiveGuide:
         """Should code, not Live, answer this finished user transcript?"""
         text = text or ''
         guide = self.guide
+        if guide and re.fullmatch(r'forget my progress[.!]?', text.strip(), re.I):
+            return True
         start = self._task_for(text)
         if start and (not guide or guide.completed or start != guide.task):
             return True
@@ -70,7 +75,10 @@ class LiveGuide:
         return None
 
     def schedule(self, text):
-        # Debounced like Prefetch: a still-growing transcript replaces the pending run.
+        # Replace only the debounce. Once checking, trailing transcription must
+        # not cancel the check, consume another fixture, or advance twice.
+        if self.running:
+            return
         if self.task and not self.task.done() and self.task is not asyncio.current_task():
             self.task.cancel()
         self.task = asyncio.create_task(self.run(text))
@@ -131,6 +139,11 @@ class LiveGuide:
         b = self.bridge
         if b.closed or b.safety_stopped:
             return
+        # A partial "next" can grow into "next to the cabinet", which no longer
+        # claims a guide turn and therefore does not call schedule again.
+        if asyncio.current_task() is self.task and b.question.startswith(text):
+            text = b.question
+        self.running = True
         try:
             await self._run(text)
         except asyncio.CancelledError:
@@ -138,6 +151,8 @@ class LiveGuide:
         except Exception:
             # Never log transcripts or provider errors; the held turn stays silent, as a stop would.
             pass
+        finally:
+            self.running = False
 
     async def _run(self, text):
         from server.agent import check_water_off
@@ -150,30 +165,51 @@ class LiveGuide:
             return
         if not self.claims(text):
             # The transcript grew into an ordinary question: let Live answer it.
-            await b.prompt_turn(text)
+            await self._prompt(text)
             return
         await b.stage('thinking', detail='Step: checking')
+        if b.closed or b.safety_stopped:
+            return
         self._choose(text)
         guide = self.guide
         was_completed = guide.completed
         store = self._store()
-        spoken = text + ' done' if OFF.search(text) and not NEXT.search(text) else text
+        spoken = text + ', done' if OFF.search(text) and not NEXT.search(text) else text
         if re.fullmatch(r'forget my progress[.!]?', text.strip(), re.I):
             if s.growth:
                 s.growth.forget()
-            line = 'Your progress has been forgotten.'
+            from server.packs.home import HomeGuide
+            from server.packs.electronics import ElectronicsGuide
+            if self.kind == 'ee':
+                s.ee_guide = ElectronicsGuide(task=guide.task, growth=s.growth, usb_off=guide.usb_off)
+            else:
+                s.home_guide = HomeGuide(task=guide.task, growth=s.growth)
+            guide = self.guide
+            s.checker_test_verdict = None
+            line = guide.reply('')
+            await b.fixed_say('Your progress has been forgotten.')
+            if b.closed or b.safety_stopped:
+                return
         elif self.kind == 'ee':
             line = guide.reply(spoken)
         else:
             testing = bool(b.app is not None and getattr(b.app.state, 'presenter', False) and s.checker_test_mode)
             fixture = s.checker_test_verdict
-            s.checker_test_verdict = None
             # A previous turn's pass never authorizes this turn.
             guide.water_off_passed = False
             line = guide.reply(spoken, store)
             if line == safety.WATER_OFF_LINE and not s.pack.refuse(text):
                 await b.stage('thinking', detail=ui_detail('Valve: checking'))
+                if b.closed or b.safety_stopped:
+                    return
+                epoch = getattr(s.growth, 'epoch', None)
                 result = await check_water_off(s, store, testing, fixture)
+                if s.checker_test_verdict is fixture:
+                    s.checker_test_verdict = None
+                # A hazard or replaced/forgotten guide makes this result stale.
+                if (b.closed or b.safety_stopped or guide is not self.guide
+                        or epoch != getattr(s.growth, 'epoch', None)):
+                    return
                 # No await between granting the gate and consuming it.
                 try:
                     guide.water_off_passed = result.passed
@@ -186,6 +222,10 @@ class LiveGuide:
                     guide.water_off_passed = False
                 await b.stage('thinking', detail=ui_detail(('Valve: test closed' if testing else 'Valve: closed')
                               if result.passed else 'Valve: unsure'))
+            elif s.checker_test_verdict is fixture:
+                s.checker_test_verdict = None
+        if b.closed or b.safety_stopped:
+            return
         fixed = line in safety.LINES or line in EE_LINES or line in (RETRY_LINE, 'Your progress has been forgotten.')
         if guide.completed and not was_completed and not fixed:
             self.line = ''
@@ -218,8 +258,12 @@ class LiveGuide:
             asyncio.create_task(self.point(target))
 
     async def _prompt(self, ask):
+        if self.bridge.closed or self.bridge.safety_stopped:
+            return
         if await self.bridge.prompt_turn(self.block() + ' ' + ask):
-            self.published = self.version
+            # A speaking prompt is not a sticky background publication. The
+            # bridge's existing idle hook must publish this GUIDE again.
+            self.published = -1
 
     def target(self):
         from server.packs.home import TARGETS

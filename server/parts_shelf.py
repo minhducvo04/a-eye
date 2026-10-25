@@ -128,9 +128,9 @@ class Shelf:
         named = self.match(line, limit=len(self.cards))
         cards.sort(key=lambda c: c not in named)
         for text in texts:
-            # During a task only that task's cards warm, so "light an LED" never pulls in sink tools.
+            # Dialogue must not introduce parts belonging to a later step.
             cards += [c for c in self.match(text) if c not in cards
-                      and (not task or task in _list(c['task_ids']))]
+                      and (not task or f'{task}:{step}' in _list(c['step_keys']))]
         lines, length = [], 0
         for card in cards:
             text = self.line(card, listings=len(lines) < 2)
