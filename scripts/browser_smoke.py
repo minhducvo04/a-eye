@@ -6,7 +6,7 @@ Runs a real Chromium (Playwright) with a fake camera and microphone against a ru
     (first time only: uv run --with playwright python -m playwright install chromium)
 
 Checks: no console errors or page errors from load to the end; the pack picker starts a session; Camera on flips
-its state and frames start; Mic flips its state; Hold to talk can be pressed; a typed question gets a reply
+its state and frames start; Mic flips its state; Hold to talk can be pressed; a socket question gets a reply
 caption; Settings shows Use my phone first and scrolls with the wheel; no long task over 300 ms after a find card. Exit 0 on pass. Synthetic media only (Chromium's fake devices).
 """
 import json
@@ -59,10 +59,22 @@ def main():
 
         page.goto(page_url())
         page.wait_for_timeout(1200)
-        page.wait_for_function("/^Pictures saved: [0-9]+$/.test(document.getElementById('proof-pictures').textContent)")
+        # The proof counters now live in the API, not in the call page DOM.
+        def proof(session_id=''):
+            return page.evaluate("""async (sessionId) => {
+              const { ownerQuery } = await import('./call-owner.js');
+              const query = new URLSearchParams(location.search);
+              if (sessionId) query.set('session_id', sessionId);
+              const response = await fetch('/api/proof?' + query + ownerQuery());
+              if (!response.ok) throw new Error('Proof request failed');
+              return response.json();
+            }""", session_id)
+        assert isinstance(proof()['pictures_saved'], int)
         page.click('button[data-pack="general"]')
         page.wait_for_timeout(600)
-        page.wait_for_function("document.getElementById('proof-cloud-calls').textContent === 'Cloud AI calls: 0' && document.getElementById('proof-cloud-bytes').textContent === 'Bytes to cloud: 0'")
+        hello = next(json.loads(f) for f in sent if isinstance(f, str) and json.loads(f).get('type') == 'hello')
+        counts = proof(hello['session_id'])
+        assert counts['cloud_ai_calls'] == 0 and counts['bytes_to_cloud'] == 0, counts
         if page.locator("#start-overlay:not(.hidden)").count():
             page.click("#start-overlay")
             page.wait_for_timeout(400)
@@ -102,12 +114,11 @@ def main():
             page.wait_for_timeout(600)
             page.mouse.up()
 
-        page.fill('input[placeholder="Type a message"]', "what do you see?")
-        page.keyboard.press("Enter")
-        page.wait_for_timeout(6000)
-        text = page.locator("body").inner_text()
-        if "Helper" not in text:
-            problems.append("no helper reply caption after a typed question")
+        # The voice-first page no longer has a typed-message input. Exercise the same question contract.
+        page.evaluate("""() => window.__ws[window.__ws.length - 1].send(JSON.stringify({
+          v: 2, type: 'user_text', text: 'what do you see?', final: true, source: 'typed'
+        }))""")
+        page.wait_for_function("document.getElementById('replies').textContent.trim().length > 0", timeout=6000)
 
         # Settings: the phone pairing button is first and in view; the sheet scrolls with the mouse wheel.
         page.locator("#call .open-settings").click()

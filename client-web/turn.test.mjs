@@ -154,11 +154,22 @@ for (const [headset, home, live, policy] of [[false, false], [true, false], [fal
     }
     choose();
     await settle();
+    if (policy === 'optout') {
+      assert.equal(Socket.all.length, 0, 'Live opt-out must not silently start a different transport');
+      assert.equal(node('settings').classList.contains('hidden'), false);
+      assert.equal(node('live-start-notice').classList.contains('hidden'), false);
+      assert.match(node('live-start-notice').textContent, /turn on Gemini Live \(Google\)/);
+      node('cloud-google').checked = true;
+      node('cloud-google').handlers.change();
+      node('ring-hint').handlers.click();
+      await settle();
+      assert.equal(node('live-start-notice').classList.contains('hidden'), true);
+    }
     const socket = Socket.all[0];
     assert.ok(socket);
     socket.open();
     assert.equal(socket.messages[0].camera, false);
-    if (policy === 'optout' || policy === 'private') {
+    if (policy === 'private') {
       assert.equal(new URL(socket.url).searchParams.get('mode'), null);
       assert.equal(socket.messages[0].pack, 'general');
       assert.equal(Boolean(socket.messages[0].private), policy === 'private');

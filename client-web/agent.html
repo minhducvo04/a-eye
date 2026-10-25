@@ -56,7 +56,7 @@
       <div class="ring-bottom">
         <div class="ring-label" aria-live="polite">
           <p id="ring-title" class="ring-title">Memory</p>
-          <p id="ring-hint" class="ring-hint">tap to start</p>
+          <button type="button" id="ring-hint" class="ring-hint">tap to start</button>
         </div>
         <div id="ring" class="ring">
           <button type="button" data-mode="general" data-pack="general" aria-label="General"><span class="disc"><svg><use href="#i-sparkles"/></svg></span><span class="ring-name" aria-hidden="true">General</span></button>
@@ -206,6 +206,7 @@
       <p id="settings-title" class="sheet-title">Settings</p>
       <button type="button" id="settings-done" class="text-btn strong">Done</button>
     </div>
+    <p id="live-start-notice" class="permission-text hidden" role="alert"></p>
 
     <p class="group-title">Phone camera</p>
     <div class="group">
