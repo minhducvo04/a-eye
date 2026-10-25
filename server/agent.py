@@ -355,6 +355,29 @@ async def plan_scene(session, planner, base_system, user, scene, seq, text, emit
     note = head.get('note') if isinstance(head.get('note'), str) else ''
     return clean, safe_speech(note)[:160], head.get('speak') is True
 
+async def check_water_off(session, store, testing=False, fixture=None):
+    """The trusted valve verdict for the current frame. Missing camera, checker or error is never a pass."""
+    from server.step_check import Verdict, configured_checker
+    from server.step_check_api import load_references
+    result = Verdict()
+    try:
+        if testing:
+            if fixture and monotonic() - fixture[1] <= 15:
+                result = Verdict(fixture[0], 1.0)
+        elif session.camera and session.frame:
+            import base64
+            checker = session.step_checker
+            if checker is None:
+                checker = session.step_checker = configured_checker()
+            result = await checker.check(base64.b64decode(session.frame['jpeg_b64'], validate=True),
+                                         *load_references(store), captured_at=session.frame_time)
+        if not session.camera and not testing:
+            result = Verdict()
+    except Exception:
+        result = Verdict()
+    return result
+
+
 async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None, planner=None, stt_ms=None,
                    app=None, route=None, context_block=None):
     """One voice turn. With planner set (talker + thinker mode), llm only talks and planner draws in parallel."""
@@ -467,26 +490,10 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         refusal = session.home_guide.reply(text, store)
         from server.safety import WATER_OFF_LINE
         if refusal == WATER_OFF_LINE and not session.pack.refuse(text):
-            from server.step_check import Verdict, configured_checker, RETRY_LINE
-            from server.step_check_api import load_references
+            from server.step_check import RETRY_LINE
             await emit(message('turn', turn_id=turn_id, stage='thinking', detail='Valve: checking',
                                at_ms=int(time() * 1000)))
-            result = Verdict()
-            try:
-                if testing:
-                    if fixture and monotonic() - fixture[1] <= 15:
-                        result = Verdict(fixture[0], 1.0)
-                elif session.camera and session.frame:
-                    import base64
-                    checker = session.step_checker
-                    if checker is None:
-                        checker = session.step_checker = configured_checker()
-                    result = await checker.check(base64.b64decode(session.frame['jpeg_b64'], validate=True),
-                                                 *load_references(store), captured_at=session.frame_time)
-                if not session.camera and not testing:
-                    result = Verdict()
-            except Exception:
-                result = Verdict()
+            result = await check_water_off(session, store, testing, fixture)
             # No await between granting the gate and consuming it. Cancellation cannot leave a pass.
             try:
                 session.home_guide.water_off_passed = result.passed

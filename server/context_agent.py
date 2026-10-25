@@ -354,7 +354,9 @@ class LiveContextBuilder:
         if not line:
             evidence = json.dumps(dict(scene=scene_note,
                 scene_age_s=round(max(0, observed - s.scene_time), 1) if scene else None,
-                dialogue=dialogue, personal=personal, previous=self.block))
+                dialogue=dialogue, personal=personal, previous=self.block,
+                # The code-owned step, so the summary never describes a different step than the guide.
+                guide=getattr(s, 'live_guide_note', None)))
             result = await assess_live_context(s, evidence)
             if not result:
                 return
