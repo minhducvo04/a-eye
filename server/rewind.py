@@ -256,7 +256,7 @@ def encode_mp4(frames):
     rate = max(1.0, len(frames) / duration)
     scale = ("scale='if(gt(iw,ih),-2,360)':'if(gt(iw,ih),360,-2)',"
              "scale='min(iw,1280)':-2,pad=ceil(iw/2)*2:ceil(ih/2)*2")
-    command = ['ffmpeg', '-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', f'{rate:.4f}', '-i', '-',
+    command = ['ffmpeg', '-y', '-loglevel', 'error', '-f', 'image2pipe', '-c:v', 'mjpeg', '-framerate', f'{rate:.4f}', '-i', '-',
                '-vf', scale, '-t', f'{duration:.3f}', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-an',
                '-movflags', 'frag_keyframe+empty_moov+default_base_moof', '-f', 'mp4', 'pipe:1']
     payload = b''.join(jpeg for _, jpeg in frames)
