@@ -336,13 +336,13 @@ class LiveGuide:
                           'Engineering: complete' if guide.task == 'ee_led' else 'Guide: complete'))
             if line:
                 # Growth numbers ("Last time you used 3 tries") must be exact: fixed voice.
-                await b.stop(line)
+                await b.stop(line, source='guide')
             else:
                 await self._prompt('The user finished the task. Acknowledge it in one short sentence.')
             return
         if fixed:
             await b.stage('thinking', detail='Stopped by code')
-            await b.stop(line)
+            await b.stop(line, source='plan_step' if self.kind == 'plan' else 'guide')
             return
         step = re.sub(r'^(?:Step \d+: |You can take this one step at a time\. )', '', line or '')
         self.line = step

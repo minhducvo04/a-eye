@@ -152,6 +152,34 @@ GATES = (
 LINES = {gate.line for gate in GATES}
 
 
+def precaution_text(text):
+    """Remove only bounded preventive instructions from generated-text checks.
+
+    This is not a whole-step exemption: later clauses and explicit live-state
+    reports still face every gate. User questions are never rewritten here.
+    """
+    text = text or ''
+    if re.search(r"\b(?:don't|don’t|do not|never|without|skip|shouldn't|shouldn’t|mustn't|mustn’t)\b|"
+                 r"\bnot\s+(?:make sure|check|ensure|unplug|disconnect|let)\b",
+                 text, re.I):
+        return text
+    device = r'(?:the |your )?(?:headphones|device)'
+    destination = r'(?:a |any |the |your )?(?:phone|device|power source)'
+    text = re.sub(
+        r'\b(?:make sure|check|ensure) (?:that )?' + device
+        + r' (?:is|are) not plugged (?:in|into ' + destination + r')\b',
+        'Device disconnected', text, flags=re.I)
+    text = re.sub(
+        r'\b(?:unplug|disconnect) ' + device
+        + r' if (?:it is |they are )?plugged (?:in|into ' + destination + r')\b',
+        'Disconnect device', text, flags=re.I)
+    text = re.sub(
+        r'\blet (?:the |your )?(?:soldering )?iron cool(?: completely)? before '
+        r'(?:touching|handling) (?:the |its )?(?:hot )?(?:tip|iron)\b',
+        'Wait for the tool to cool', text, flags=re.I)
+    return text
+
+
 def before(question):
     """The fixed line for a hazard question, or None. Runs before any model."""
     ordered = sorted(GATES, key=lambda g: g.id != 'gas_smell')

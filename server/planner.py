@@ -100,6 +100,8 @@ def enabled():
 
 
 def unsafe_gate(text, *, output=False, led_build=True, water_text=None):
+    if output:
+        text = safety.precaution_text(text)
     # A hot-tip warning is valid output, but user intent to touch it still stops.
     # Preserve the other conservative request gates, including live-power work.
     for gate in safety.GATES:
