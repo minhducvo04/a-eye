@@ -3,7 +3,7 @@ import { liveSettings } from './gemini-live.js';
 import { triggerClient } from './trigger.js';
 import { setupFamily } from './family-note.js';
 import { createValveCard } from './step-check.js';
-import { isHeadset, requestLocalMedia } from './headset.js';
+import { isHeadset, requestLocalMedia, headsetStep } from './headset.js';
 import { bootPairCamera, phoneMicRoute, setupPairCall } from './pair.js';
 import { callOwner, ownerHeaders, ownerQuery, resetCallOwner } from './call-owner.js';
 // Agent call page. Speaks the v2 WebSocket contract on /ws2.
@@ -110,6 +110,7 @@ function boot() {
   function armControls() {
     window.clearTimeout(controlsTimer);
     setControls(false);
+    if (headset) return;
     controlsTimer = window.setTimeout(() => setControls(true), CONTROLS_HIDE_MS);
   }
   function stopControls() {
@@ -165,6 +166,10 @@ function boot() {
   const waitPct = document.getElementById("wait-pct");
   const waitEyebrow = document.getElementById("wait-eyebrow");
   const waitLine = document.getElementById("wait-line");
+  const stepCard = document.getElementById("step-card");
+  const stepEyebrow = document.getElementById("step-eyebrow");
+  const stepLine = document.getElementById("step-line");
+  let lastStepLine = "";
   const scanEl = document.getElementById("scan");
   const scanBand = scanEl.querySelector(".scan-band");
   const scanPath = document.getElementById("scan-path");
@@ -1805,6 +1810,8 @@ function boot() {
     agents = { helper: "idle", shopper: "idle" };
     wait = null;
     micRoute = { phone: false, resume: false };
+    lastStepLine = "";
+    stepCard?.classList.add("hidden");
     if (headset) {
       headsetPanel.classList.remove("connected");
       document.getElementById("headset-sound").textContent = "Enable sound";
@@ -1982,6 +1989,7 @@ function boot() {
     noticeEl.textContent = notes.join(" ");
     noticeEl.classList.toggle("hidden", notes.length === 0);
     renderReplies(st);
+    renderStepCard(st);
     renderListen(st);
     renderTranscript(st);
     muteBtn.setAttribute("aria-pressed", st.muted ? "true" : "false");
@@ -2017,6 +2025,22 @@ function boot() {
     captionEyebrow.textContent = shopper ? "SHOPPER" : "A-EYE";
     captionSpeaker.textContent = shopper ? "Shopper" : "Helper";
     captionEl.classList.toggle("hidden", !lines.length && !st.error);
+  }
+
+  function renderStepCard(st) {
+    if (!stepCard) return;
+    if (!headset || !pack) {
+      stepCard.classList.add("hidden");
+      return;
+    }
+    const valveEl = document.getElementById("valve-check");
+    const valve = valveEl && !valveEl.classList.contains("hidden") ? String(valveEl.textContent || "").trim() : "";
+    const caption = replyLines(st).map((line) => line.text).join(" ").trim();
+    if (caption) lastStepLine = caption;
+    const model = headsetStep(pack, { valve, caption: lastStepLine });
+    if (stepEyebrow) stepEyebrow.textContent = model.eyebrow;
+    if (stepLine) stepLine.textContent = model.line;
+    stepCard.classList.remove("hidden");
   }
 
   // ListeningStrip.swift: waveform and heard line while voice input is available; "MIC OFF" while the mic is off.

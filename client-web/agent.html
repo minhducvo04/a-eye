@@ -127,6 +127,10 @@
           <span class="wait-ring" aria-hidden="true"><svg viewBox="0 0 44 44"><circle class="track" cx="22" cy="22" r="22"/><circle id="wait-arc" class="arc" cx="22" cy="22" r="22" pathLength="100" stroke-dasharray="0 100"/></svg><span id="wait-pct">0%</span></span>
           <span class="wait-text" aria-hidden="true"><span id="wait-eyebrow" class="wait-eyebrow">SCANNING</span><span id="wait-line" class="wait-line">Hold the camera steady…</span></span>
         </div>
+        <div id="step-card" class="step-card glass hidden" role="status">
+          <p class="eyebrow"><span id="step-eyebrow">SINK</span></p>
+          <p id="step-line" class="step-line"></p>
+        </div>
         <div id="caption" class="caption glass hidden" aria-live="polite">
           <p class="eyebrow"><span id="caption-eyebrow" aria-hidden="true">A-EYE</span><span id="caption-speaker" class="sr-only">Helper</span></p>
           <p id="replies" class="caption-text"></p>
@@ -137,6 +141,10 @@
           <canvas id="wave" class="wave" aria-hidden="true"></canvas>
           <p id="interim" class="listen-text" aria-hidden="true">LISTENING</p>
         </div>
+        <form id="composer" class="typed glass" autocomplete="off">
+          <input id="typed" name="typed" type="text" autocomplete="off" enterkeyhint="send" placeholder="Type next or a question">
+          <button type="submit" class="send" aria-label="Send"><svg><use href="#i-send"/></svg></button>
+        </form>
         <div id="power-gate" class="power-gate hidden">
           <button type="button" id="power-off" class="power-btn"><svg aria-hidden="true"><use href="#i-bolt-off"/></svg>Power is off</button>
           <p>Switch the PSU off and unplug it first.</p>

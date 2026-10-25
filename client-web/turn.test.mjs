@@ -78,7 +78,7 @@ test('early final uses latest interim at 700ms and never sends a late correction
   assert.equal(sent.length, 2);
 });
 
-for (const [headset, home, live, policy] of [[false, false, false, "engineering"], [false, false], [true, false], [false, true], [false, false, true], [false, false, true, "general"], [false, false, true, "optout"], [false, false, true, "private"]]) test(live ? `${policy || 'live'}: Live defaults to Google and uses existing hello and caption messages` : home ? 'sink selection and presenter controls use real client contracts' : headset ? 'headset call never acquires local video through camera or permission controls' : 'call page toggles camera, keeps voice-only hello, retries text, reconnects, and renders streamed replies', async () => {
+for (const [headset, home, live, policy] of [[false, false, false, "engineering"], [false, false], [true, false], [true, true], [false, true], [false, false, true], [false, false, true, "general"], [false, false, true, "optout"], [false, false, true, "private"]]) test(live ? `${policy || 'live'}: Live defaults to Google and uses existing hello and caption messages` : home ? 'sink selection and presenter controls use real client contracts' : headset ? 'headset call never acquires local video through camera or permission controls' : 'call page toggles camera, keeps voice-only hello, retries text, reconnects, and renders streamed replies', async () => {
   const saved = new Map();
   const put = (key, value) => { saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { value, configurable: true, writable: true }); };
   const nodes = new Map(), intervals = new Map(), timeouts = new Map();
@@ -220,6 +220,18 @@ for (const [headset, home, live, policy] of [[false, false, false, "engineering"
       assert.equal(socket.messages.at(-1).source, 'typed');
       socket.message({ type: 'turn', stage: 'speaking', detail: 'Home: complete' });
       assert.equal(Boolean(node('family-panel').open), false, 'no contact means no sharing suggestion');
+      if (headset) {
+        node('start-camera').handlers.click();
+        await settle();
+        assert.equal(gets, 0);
+        socket.message({ type: 'say', agent: 'helper', utterance_id: 'sink1', text: 'Show the dripping tap or supply line and the surrounding floor.' });
+        assert.equal(node('step-eyebrow').textContent, 'SINK');
+        assert.match(node('step-line').textContent, /dripping tap/);
+        socket.message({ type: 'draw', agent: 'helper', seq: 1, ops: [
+          { kind: 'box', id: 'valve', bbox: [0.2, 0.3, 0.25, 0.25], role: 'target', label: 'shutoff' },
+          { kind: 'arrow', id: 'to-valve', from: [0.5, 0.85], to: [0.32, 0.42], role: 'target' },
+        ]});
+      }
       node('persona-pick').value = 'funny-dad';
       node('persona-pick').handlers.change();
       assert.equal(socket.readyState, 3, 'persona changes end the active call');
@@ -257,6 +269,13 @@ for (const [headset, home, live, policy] of [[false, false, false, "engineering"
       node('devices-allow').handlers.click();
       await settle();
       assert.equal(constraints.some(c => c.video), false);
+      socket.message({ type: 'say', agent: 'helper', utterance_id: 'g1', text: 'That is the shutoff valve.' });
+      assert.equal(node('step-eyebrow').textContent, 'GENERAL');
+      assert.match(node('step-line').textContent, /shutoff valve/);
+      socket.message({ type: 'draw', agent: 'helper', seq: 1, ops: [
+        { kind: 'box', id: 'mug', bbox: [0.3, 0.3, 0.2, 0.2], role: 'target', label: 'mug' },
+        { kind: 'arrow', id: 'to-mug', from: [0.5, 0.8], to: [0.4, 0.4], role: 'target' },
+      ]});
       socket.message({ type: 'pair_status', role: 'call', state: 'joined' });
       assert.equal(node('headset-status').textContent, 'Phone camera connected');
       const before = gets;
@@ -266,6 +285,7 @@ for (const [headset, home, live, policy] of [[false, false, false, "engineering"
       socket.message({ type: 'pair_status', role: 'call', state: 'left' });
       assert.equal(node('headset-status').textContent, 'Waiting for your phone camera');
       node('end-call').handlers.click();
+      assert.equal(node('step-card').classList.contains('hidden'), true);
       return;
     }
     node('start-camera').handlers.click();
