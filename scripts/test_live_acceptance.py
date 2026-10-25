@@ -147,6 +147,12 @@ def test_private_rejects_nonlocal_brain(provider):
     assert judge('private', [[detail('Brain: ' + provider), say('A mug.')]])[0]
 
 
+def test_private_requires_grounded_timely_answer_not_availability_filler():
+    assert judge('private', [[say('The brain is unavailable. Please try again.')]])[0]
+    assert judge('private', [[say('A blue mug.', t=6.1)]])[0]
+    assert not judge('private', [[detail('Local camera note'), say('A blue mug.', t=5.9)]])[0]
+
+
 def test_server_failure_invalidates_otherwise_passing_turn():
     assert judge('ask', [VALID['ask'][0] + [dict(type='error', code='internal')]])[0]
     assert judge('ask', [VALID['ask'][0] + [dict(type='turn', stage='failed')]])[0]

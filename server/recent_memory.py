@@ -14,6 +14,7 @@ LONG = re.compile(r'\b(yesterday|last time|last call|previous call|last week|day
 STEP = re.compile(r'\bstep\s+(\d+)\b', re.I)
 CURRENT_STEP = re.compile(r'\b(?:what|which) step\b', re.I)
 WHERE = re.compile(r'\bwhere\b', re.I)
+OPENING = re.compile(r'\b(?:at )?the (?:start|beginning) of (?:the|this) call\b', re.I)
 PLACE = re.compile(
     r'\b(?:on top of|next to|in front of|in back of|to the (?:left|right) of|'
     r'on|in|at|under|over|beside|by|near|against|behind)\s+'
@@ -22,11 +23,20 @@ STOP = set('what where when did do i my the a an was were is are it put leave le
            'minute minutes second seconds one two three earlier in this call happened recently please '
            'you remember last time yesterday picked up set place placed keep kept go went with to on of for '
            'from at that there have had back think recall dad hey ok okay um uh about few couple go gone end '
-           'ended'.split())
+           'ended show showed shown'.split())
 # Simple synonyms so "mug" finds a "cup" note. Plurals are folded in words().
 SYNONYMS = {'cup': 'mug', 'spanner': 'wrench', 'rag': 'towel', 'cloth': 'towel', 'pail': 'bucket',
             'cellphone': 'phone', 'mobile': 'phone', 'key': 'keys', 'glass': 'glasses', 'spectacles': 'glasses',
             'tap': 'faucet', 'countertop': 'counter', 'bench': 'workbench', 'scissor': 'scissors'}
+
+
+def current_view_question(text, *, partial=False):
+    """Closed present-view forms; never bypass temporal routing for an appended past clause."""
+    q = text.strip().lower().rstrip('?.!').strip()
+    if partial and q in ('what is on', 'what is on the', 'what is in', 'what is in the'):
+        return True
+    return bool(re.fullmatch(r"what(?: is|'s) (?:on the (?:table|desk|counter)|"
+                             r"in (?:the (?:view|camera view)|front of me))(?: (?:right )?now)?", q))
 
 
 def age_seconds(text):
@@ -48,7 +58,7 @@ def source_for(text, rewind_on=False):
     if re.search(r'\b(just now|just do|just did|recently)\b', text, re.I) or (
             (STEP.search(text) or CURRENT_STEP.search(text)) and re.search(r'\b(was|did|earlier)\b', text, re.I)):
         return 'recent'
-    if re.search(r'\b(earlier|before|start of (?:the|this) call)\b', text, re.I):
+    if OPENING.search(text) or re.search(r'\b(earlier|before|start of (?:the|this) call)\b', text, re.I):
         return 'rewind' if rewind_on else 'recent'
     if re.search(r"\b(what did i)\b", text, re.I):
         return 'recent'
@@ -163,13 +173,18 @@ class RecentMemory:
         step = STEP.search(question)
         current_step = CURRENT_STEP.search(question)
         where = WHERE.search(question)
-        target = words(AGE.sub('', question))
+        opening = OPENING.search(question)
+        target = words(AGE.sub('', OPENING.sub('', question)))
         if step:
             entries = [e for e in entries if (m := STEP.search(e['step'])) and m[1] == step[1]]
         elif current_step:
             entries = [e for e in entries if e['kind'] == 'instruction' and e['step']]
         else:
             entries = [e for e in entries if e['kind'] == 'scene']
+            if opening:
+                # Only an opening observation is evidence of the opening. If those notes expired,
+                # a later retained scene must not become the "start" of the call.
+                entries = [e for e in entries if e['t_s'] <= 10]
             if target:
                 entries = [e for e in entries if target <= words(' '.join([e['note'], *e['labels']]))]
         age = age_seconds(question)
@@ -194,8 +209,8 @@ class RecentMemory:
             entries = [e for e in entries if abs(now - e['observed_at'] - age) <= max(20, age * .25)]
         if not entries:
             return None
-        hit = (min(entries, key=lambda e: abs(now - e['observed_at'] - age))
-               if age is not None else entries[-1])
+        hit = (min(entries, key=lambda e: abs(now - e['observed_at'] - age)) if age is not None else
+               min(entries, key=lambda e: e['observed_at']) if opening else entries[-1])
         note = hit['step'] if step or current_step else hit['note'] or ', '.join(hit['labels'])
         return dict(source='recent', found=True, t_s=hit['t_s'],
                     say=f"At {int(hit['t_s']) // 60}:{int(hit['t_s']) % 60:02d} in this call, "

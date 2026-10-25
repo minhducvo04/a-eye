@@ -213,3 +213,7 @@ Test: `git diff --check` - PASS.
 Limits: synthetic media and fake providers only; no `.env` read, real Gemini call,
 push, deployment or physical-device proof. Local branch: `pkg/scope-fix`.
 Full evidence: [scope-fix](docs/results/scope-fix.md).
+
+## accept-fix
+
+See its docs/results report.
