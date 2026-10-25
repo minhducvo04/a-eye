@@ -240,10 +240,14 @@ function playMemory(doc, pane, hit) {
         if (disposed || failed) return;
         try { video.currentTime = start; play(); } catch { fallback(); }
       }
+      // In the pane before any source is attached, like the proven raw player.
+      pane.append(video, loading);
       video.addEventListener('playing', () => {
         if (disposed || failed) return;
         video.hidden = false;
-        loading.hidden = true;
+        // `.memory-loading { display: grid }` beats the `[hidden]` default, so hiding it left the text on
+        // top of the playing clip; take it out of the pane instead.
+        loading.remove();
         if (img) img.hidden = true;
         stopFrames();
       });
@@ -267,7 +271,6 @@ function playMemory(doc, pane, hit) {
         hls.loadSource(hit.clip_url);
         hls.attachMedia(video);
       }
-      pane.append(video, loading);
     }
   }
   return () => {
