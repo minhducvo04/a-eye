@@ -755,3 +755,97 @@ The offline SDK failure is reproduced and fixed; the original live exception was
 not captured, so attribution of that specific call remains a strong inference.
 Live model acceptance and latency still need an authorized real call. Local
 commit only in this worktree.
+
+
+## Planner Live round 10 — 2026-10-25
+
+Base: `8efa591`, branch `pkg/planner-live10`. The reported real call returned in
+5668 ms but was rejected as `missing_steps`; that timing and rejection are user
+supplied, not remeasured here. No provider response from that call was available.
+
+Inspected the actual POST `/v1/messages` body built by installed anthropic 2.3.0
+through production `planner.claude`, the shared async client and an in-process
+`httpx2.MockTransport`. Before this change, `task` and `steps` were already
+required at the top level and the parser already scanned all content blocks for
+`submit_plan`. Neither missing schema nesting nor reading only content[0] was
+reproduced. JSON-string steps did reproduce a local rejection (`schema`, not
+`missing_steps`); truncation remains a hypothesis.
+
+The serialized tool schema now requires top-level `task` and `steps`, with
+`steps` an array of 2–8 simple objects containing `say`, `show`, `target`, `check`
+and `safety`; `say` is required, and existing required `show` and `safety` remain
+aligned with the local validator. Existing length, privacy,
+spoken-preparation and unsafe-action checks still run over normalized values.
+The schema and prompt request at least two generated steps; the local checker
+retains compatibility with existing single-step plans and legacy object steps.
+
+`validate()` decodes JSON-string steps before the existing checks. Malformed
+strings still reject, and unsafe decoded actions still receive the code-owned
+safety replacement. The request and prompt use 1200 output tokens. One forced
+tool, zero retries, timeout, model override and text-only evidence are unchanged.
+When a tool input has no top-level `steps`, `planner_tool_input` logs only its
+sorted top-level key names plus the fixed cause code; it does not log values or
+nested content. Unexpected nesting remains rejected, with keys available to
+diagnose it on the next authorized live run.
+
+Saved `server/fixtures/planner_tool_use.json` is a realistic synthetic recording,
+not a captured provider response. It contains a text block followed by a
+`submit_plan` tool_use block. The real SDK regression replays list steps,
+JSON-string steps and missing/nested steps for default and overridden model/
+timeout settings. It checks the serialized request and typed response parsing,
+including names-only diagnostics. Separate checks cover schema bounds, missing
+show rejection, malformed strings and safety enforcement after decoding.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py -k 'installed_sdk_request or submit_plan_schema or json_string_steps' --tb=short` - FAIL before fix
+(8 failed, 5 passed, 97 deselected in 1.05s; summary read).
+Proof: `/private/tmp/planner-live10-before.log`.
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py -k 'installed_sdk_request or submit_plan_schema or json_string_steps or sdk_one_call' --tb=short` - PASS
+(15 passed, 95 deselected in 0.67s; summary read).
+Proof: `/private/tmp/planner-live10-targeted.log`.
+
+The first full run caught an over-broad omission normalization: defaulting missing
+`show` to `say` accepted existing bad case `bad11`. Removed that normalization
+and retained required `show`/`safety` in both schema and validator. The challenge
+bank and its thresholds were not changed.
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL, intermediate state
+(17 failed, 1287 passed, 2 warnings in 100.94s; summary and failure traces read).
+Sixteen failures are the existing denied-loopback/downstream startup failures;
+the additional checker failure is corrected in the final source.
+Proof: `/private/tmp/planner-live10-full.log`.
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py eval/swap/test_checker_regressions.py -k 'installed_sdk_request or submit_plan_schema or json_string_steps or sdk_one_call or production_checker_challenge_bank' --tb=short` - PASS, final source
+(16 passed, 153 deselected in 0.77s; summary read).
+Proof: `/private/tmp/planner-live10-final-targeted.log`.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL, final source
+(16 failed, 1288 passed, 2 warnings in 101.33s; exit 1; summary and failure traces
+read). All planner and checker tests pass. Fifteen failures are denied local
+socket binds (PermissionError); the remaining hazard-state KeyError follows
+Live startup PermissionError. These match the previously documented 16 failures.
+No network permissions were changed or retried outside the sandbox.
+Proof: `/private/tmp/planner-live10-final-full.log`.
+Test: `git diff --check` - PASS.
+
+Final failed node IDs:
+
+- `server/test_bg_context.py::test_live_publishes_context_while_next_build_waits_and_cancels_on_close`
+- `server/test_cloud_meter.py::test_real_websocket_send_boundary`
+- `server/test_gemini_live.py::test_fake_live_recent_step_transcripts_and_scene_stay_local`
+- `server/test_gemini_live.py::test_fake_live_wire_audio_tools_captions_and_revocation`
+- `server/test_gemini_live.py::test_reconnect_once_then_fallback_and_close`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[False-False]`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[True-False]`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[True-True]`
+- `server/test_limits.py::test_live_minutes_stop_idle_connection`
+- `server/test_live_prefetch.py::test_slow_tool_does_not_delay_audio`
+- `server/test_live_prefetch.py::test_streaming_prefetch_card_cache_and_idle_publication`
+- `server/test_live_streaming.py::test_fake_live_streams_before_complete_and_stops_mid_reply[False]`
+- `server/test_live_streaming.py::test_fake_live_streams_before_complete_and_stops_mid_reply[True]`
+- `server/test_live_streaming.py::test_ws2_hazard_sends_stop_caption_and_fixed_audio`
+- `server/test_step_check.py::test_real_loopback_api_to_qwen_protocol_keeps_pictures_zero`
+- `scripts/test_ready.py::test_live_pair_request_on_fake_socket`
+
+Files changed: `server/planner.py`, `server/test_planner.py`,
+`server/fixtures/planner_tool_use.json`, `docs/results/planner-live.md`, `RESULT.md`.
+Limits: no .env read, network access, real provider call, push, merge or deployment.
+The fixture is synthetic. The live failure cause, provider acceptance and latency
+with the larger token budget remain unverified. Local commit in this worktree.

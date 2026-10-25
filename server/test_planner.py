@@ -788,7 +788,7 @@ def test_sdk_one_call_text_only_retries_off(monkeypatch, tmp_path, model, budget
         assert all(c['model'] == (model or 'claude-haiku-5-5')
                    and isinstance(c['messages'][0]['content'], str) for c in calls)
         assert all(o == dict(max_retries=0, timeout=float(budget or 20)) for o in options)
-        assert calls[0]['max_tokens'] == 700
+        assert calls[0]['max_tokens'] == 1200
         assert 'temperature' not in calls[0]
         assert calls[0]['tool_choice'] == {'type': 'tool', 'name': 'submit_plan'}
         assert [t['name'] for t in calls[0]['tools']] == ['submit_plan']
@@ -799,7 +799,8 @@ def test_sdk_one_call_text_only_retries_off(monkeypatch, tmp_path, model, budget
 
 
 @pytest.mark.parametrize('model,budget', [(None, None), ('fixture-model', '30')])
-def test_installed_sdk_request_with_mock_transport(monkeypatch, model, budget):
+@pytest.mark.parametrize('steps_shape', ['list', 'json_string', 'missing'])
+def test_installed_sdk_request_with_mock_transport(monkeypatch, capsys, model, budget, steps_shape):
     import anthropic
     # Anthropic 2.x uses httpx2 and rejects httpx clients; use its transport types.
     import httpx2 as httpx
@@ -807,16 +808,20 @@ def test_installed_sdk_request_with_mock_transport(monkeypatch, model, budget):
 
     requests, clients = [], []
     constructor = anthropic.AsyncAnthropic
+    # Saved realistic synthetic response, not a captured provider call or user data.
+    response = json.loads((Path(__file__).parent / 'fixtures/planner_tool_use.json').read_text())
+    expected = response['content'][1]['input']
+    tool_input = dict(expected)
+    if steps_shape == 'json_string':
+        tool_input['steps'] = json.dumps(tool_input['steps'])
+    elif steps_shape == 'missing':
+        tool_input = {'task': expected['task'], 'plan': {'steps': expected['steps']}}
+    response['content'][1]['input'] = tool_input
+    response['model'] = model or 'claude-haiku-5-5'
 
     def respond(request):
         requests.append(request)
-        return httpx.Response(200, json={
-            'id': 'msg_fixture', 'type': 'message', 'role': 'assistant',
-            'model': model or 'claude-haiku-5-5', 'stop_reason': 'tool_use',
-            'stop_sequence': None, 'usage': {'input_tokens': 10, 'output_tokens': 20},
-            'content': [{'type': 'tool_use', 'id': 'tool_fixture',
-                         'name': 'submit_plan', 'input': plan()}],
-        })
+        return httpx.Response(200, json=response)
 
     def client():
         result = constructor(api_key='synthetic', base_url='https://planner.invalid',
@@ -836,7 +841,11 @@ def test_installed_sdk_request_with_mock_transport(monkeypatch, model, budget):
     async def trial():
         try:
             result = await planner.claude(planner.PLAN, json.dumps({'task': plan()['task']}))
-            assert planner.validate(result, plan()['task']) == plan()
+            if steps_shape == 'missing':
+                with pytest.raises(ValueError, match='^missing_steps$'):
+                    planner.validate(result, expected['task'])
+            else:
+                assert planner.validate(result, expected['task']) == expected
             assert llm._shared_anthropic() is clients[0]
         finally:
             for instance in clients:
@@ -848,13 +857,52 @@ def test_installed_sdk_request_with_mock_transport(monkeypatch, model, budget):
     assert request.method == 'POST' and request.url.path == '/v1/messages'
     body = json.loads(request.content)
     assert body['model'] == (model or 'claude-haiku-5-5')
-    assert body['max_tokens'] == 700 and 'temperature' not in body
+    assert body['max_tokens'] == 1200 and 'temperature' not in body
     assert body['tool_choice'] == {'type': 'tool', 'name': 'submit_plan'}
     assert [tool['name'] for tool in body['tools']] == ['submit_plan']
     assert body['tools'][0]['input_schema'] == planner.PLAN_SCHEMA
     assert body['messages'] == [{'role': 'user', 'content': json.dumps({'task': plan()['task']})}]
     assert request.extensions['timeout']['read'] == float(budget or 20)
     assert request.headers['x-stainless-retry-count'] == '0'
+    output = capsys.readouterr().out
+    diagnostics = [row['reason'] for line in output.splitlines()
+                   if (row := json.loads(line))['event'] == 'planner_tool_input']
+    assert diagnostics == ([{'cause': 'missing_steps', 'keys': ['plan', 'task']}]
+                           if steps_shape == 'missing' else [])
+    assert 'headphones' not in output and 'Disconnect' not in output
+
+
+def test_submit_plan_schema_requires_bounded_steps():
+    from jsonschema import Draft202012Validator
+    schema = planner.PLAN_SCHEMA
+    validator = Draft202012Validator(schema)
+    assert set(schema['required']) == {'task', 'steps'}
+    steps = schema['properties']['steps']
+    assert (steps['minItems'], steps['maxItems']) == (2, 8)
+    assert 'say' in steps['items']['required']
+    for count in (2, 8):
+        validator.validate(plan(count=count))
+    for value in ({'task': 'fix the headphones'}, plan(count=1), plan(count=9)):
+        assert not validator.is_valid(value)
+    missing_show = plan()
+    del missing_show['steps'][0]['show']
+    assert not validator.is_valid(missing_show)
+    with pytest.raises(ValueError, match='^schema$'):
+        planner.validate(missing_show, missing_show['task'])
+
+
+@pytest.mark.parametrize('steps', ['not json', '[{"say":', 'null', '[]', '"steps"'])
+def test_invalid_json_string_steps_rejected(steps):
+    with pytest.raises(ValueError, match='^schema$'):
+        planner.validate(dict(task='fix the headphones', steps=steps), 'fix the headphones')
+
+
+def test_json_string_steps_keep_safety_checks():
+    value = plan()
+    value['steps'][0]['say'] = 'Hold the hot soldering iron tip.'
+    value['steps'] = json.dumps(value['steps'])
+    checked = planner.validate(value, value['task'])
+    assert planner.is_safety_step(checked['steps'][0])
 
 
 @pytest.mark.parametrize('error', [TypeError, ValueError])
