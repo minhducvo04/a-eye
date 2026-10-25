@@ -1,3 +1,4 @@
+import pytest
 """The coded step guide inside the Live call, with synthetic provider packets only (no network)."""
 import asyncio
 import base64
@@ -12,6 +13,17 @@ from server.packs.home import HINTS, TASKS
 from server.safety import WATER_OFF_LINE
 from server.step_check import RETRY_LINE
 
+
+
+@pytest.fixture(autouse=True)
+def _guide_ui(monkeypatch):
+    monkeypatch.setenv('LIVE_GUIDE_UI', '1')
+
+
+def test_new_screens_stay_off_by_default(monkeypatch):
+    from server.live_guide import ui_detail
+    monkeypatch.delenv('LIVE_GUIDE_UI')
+    assert ui_detail('Valve: unsure') == 'Guide: unsure' and ui_detail('Home: complete') == 'Guide: complete'
 
 def bridge_for(monkeypatch, app=None, growth=None):
     monkeypatch.setattr(live_guide, 'DEBOUNCE', 0)

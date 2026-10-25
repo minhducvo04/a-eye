@@ -7,9 +7,18 @@ Safety lines, the valve retry line and growth numbers are spoken by fixed_say, n
 Never emits the 'Home: sink' detail: the web client treats it as a pack switch out of Live.
 """
 import asyncio
+import os
 import re
 
 from server import cloud_vision, pointer, privacy, safety
+
+
+def ui_detail(detail):
+    """The valve card and the end-of-task share prompt are new screens in the Call. They stay off until the
+    owner approves them (LIVE_GUIDE_UI=1); the client ignores the 'Guide: ...' form, so the screen is unchanged."""
+    if os.environ.get('LIVE_GUIDE_UI') == '1':
+        return detail
+    return 'Guide: ' + detail.split(': ', 1)[-1]
 
 START_HOME = re.compile(r'\b(sink|faucet|supply line|dripping tap|leaky tap|leaking tap|hinge|cabinet door|'
                         r'breaker|tripped)\b', re.I)
@@ -162,7 +171,7 @@ class LiveGuide:
             guide.water_off_passed = False
             line = guide.reply(spoken, store)
             if line == safety.WATER_OFF_LINE and not s.pack.refuse(text):
-                await b.stage('thinking', detail='Valve: checking')
+                await b.stage('thinking', detail=ui_detail('Valve: checking'))
                 result = await check_water_off(s, store, testing, fixture)
                 # No await between granting the gate and consuming it.
                 try:
@@ -174,15 +183,15 @@ class LiveGuide:
                         line = RETRY_LINE
                 finally:
                     guide.water_off_passed = False
-                await b.stage('thinking', detail=('Valve: test closed' if testing else 'Valve: closed')
-                              if result.passed else 'Valve: unsure')
+                await b.stage('thinking', detail=ui_detail(('Valve: test closed' if testing else 'Valve: closed')
+                              if result.passed else 'Valve: unsure'))
         fixed = line in safety.LINES or line in EE_LINES or line in (RETRY_LINE, 'Your progress has been forgotten.')
         if guide.completed and not was_completed and not fixed:
             self.line = ''
             self.version += 1
             self.note()
-            await b.stage('thinking', detail='Home: complete' if guide.task == 'sink' else
-                          'Engineering: complete' if guide.task == 'ee_led' else 'Guide: complete')
+            await b.stage('thinking', detail=ui_detail('Home: complete' if guide.task == 'sink' else
+                          'Engineering: complete' if guide.task == 'ee_led' else 'Guide: complete'))
             if line:
                 # Growth numbers ("Last time you used 3 tries") must be exact: fixed voice.
                 await b.stop(line)
