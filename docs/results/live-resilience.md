@@ -44,15 +44,15 @@ Fail-before check: the focused new selection produced **7 failed, 1 passed,
 27 deselected in 0.84s** before implementation (missing setup fields, retry
 allowance, and early audio); the 59.9-second control passed.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_gemini_live.py server/test_live_streaming.py --tb=short` - PASS (43 passed in 3.26s).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server/test_gemini_live.py server/test_live_streaming.py --tb=short` - PASS (43 passed in 3.26s).
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_live_prefetch.py --tb=short` - PASS (12 passed in 1.22s).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server/test_live_prefetch.py --tb=short` - PASS (12 passed in 1.22s).
 
 First server-suite run: **2 failed, 816 passed, 2 warnings in 48.73s**.
 Both failures were the 150 ms-only prefetch fixtures described above.
 Log: `/private/tmp/aeye-live-resilience-server.log`.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server` - PASS (**818 passed, 2 warnings in 45.07s**).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server` - PASS (**818 passed, 2 warnings in 45.07s**).
 Summary line read from `/private/tmp/aeye-live-resilience-server-final.log`;
 process exit status 0. Both warnings are short test JWT key warnings in
 `server/test_identity.py`.

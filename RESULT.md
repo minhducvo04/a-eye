@@ -142,9 +142,9 @@ Files changed: `server/gemini_live.py`, `server/test_gemini_live.py`,
 the reconnect path, and `flush_audio()`; memory-turn implementation is unchanged.
 Two prefetch fixtures now send enough synthetic PCM for the duration-based hold.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_gemini_live.py server/test_live_streaming.py --tb=short` - PASS (43 passed in 3.26s).
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_live_prefetch.py --tb=short` - PASS (12 passed in 1.22s).
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server` - PASS (818 passed, 2 warnings in 45.07s; summary read, exit 0).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server/test_gemini_live.py server/test_live_streaming.py --tb=short` - PASS (43 passed in 3.26s).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server/test_live_prefetch.py --tb=short` - PASS (12 passed in 1.22s).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server` - PASS (818 passed, 2 warnings in 45.07s; summary read, exit 0).
 Test: `git diff --check` - PASS.
 
 Proof: `/private/tmp/aeye-live-resilience-server-final.log`.
