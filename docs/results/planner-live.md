@@ -426,3 +426,84 @@ Limits: real local Python execution with synthetic packets and fake providers;
 no live Claude/Gemini latency, physical playback, merge, or deployment proof.
 The fix covers the recorded regression and the existing gate bank; regex gates
 remain conservative text backstops, not general semantic safety verification.
+
+## Round 6 — forced plan submission and first-reply protection — 2026-10-25
+
+Branch `pkg/planner-live6`, base `111aaa8` (main's planner-live5 merge).
+The reported real Haiku rejection (`schema`, 67 input characters) did not include
+its output, so the exact rejected payload cannot be diagnosed offline. These
+changes address the strict text-output path and the reproduced timing failures.
+
+- The research call remains text-only. The second Anthropic call declares only
+  `submit_plan`, with the plan JSON Schema, and forces that tool using
+  `tool_choice={"type":"tool","name":"submit_plan"}`. Its parsed `input` goes
+  through the same local validator as cached and text plans. There is no tool
+  execution or additional request; the two-call budget, no retries, and shared
+  12-second deadline remain.
+- Text fallback strips code fences and decodes the first JSON object, accepting
+  surrounding prose but never substituting a later object after validation fails.
+  Missing `target` and `check` become empty strings; surrounding whitespace is
+  trimmed, and a single step object becomes a one-element list. Unknown fields,
+  missing required fields, unsafe/private content, more than eight steps and
+  overlong speech still reject the whole plan. The prompt/tool description asks
+  for at most 22 words; code retains the 24-word ceiling.
+- Rejections log allowlisted codes: `not_json`, `missing_steps`,
+  `too_many_steps`, `too_long`, or `schema`, alongside the existing safety/privacy
+  outcomes. Neither response content nor provider exception text enters logs.
+- A trailing “Next step?” in the same triggering utterance cannot claim Live's
+  initial reply, whether planning is pending or installed. Subsequent next-step
+  requests retain their bounded wait. The three-second deadline now includes
+  guide debounce, planning, and provider-idle waiting; it no longer adds a second
+  three-second idle wait. Provider generation/transport time is not an audio SLA.
+
+### Verification
+
+The selected pre-fix regressions failed **10/10**: fenced/prose JSON, four short
+rejection codes, tool-only SDK outputs (two model settings), suppressed initial
+PCM, and a follow-up exceeding the shared wait budget.
+
+Recorded synthetic Haiku-like examples live in `server/test_planner_output.py`:
+fenced JSON with whitespace/omitted fields/single step, prose plus two JSON
+objects, a nine-step plan, and an exactly 30-word step. They are realistic test
+records, **not captured provider responses**. Existing SDK text-response tests
+continue exercising the fallback; the SDK boundary test now supplies parsed
+`tool_use` input and checks the forced tool/schema. Existing adversarial safety,
+cache, privacy and coded-guide tests remain in the focused set.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner_output.py server/test_planner.py server/test_live_guide.py eval/swap/test_checker_regressions.py --tb=short` - PASS
+(157 passed in 14.71s; exit 0; summary read).
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(1260 passed, 16 failed, 2 warnings in 64.37s; exit 1; summary and failure traces read).
+Fifteen failures raise `PermissionError` for denied loopback sockets. The hazard
+case instead raises `KeyError: 'state'` after `live_start_failed` records the same
+`PermissionError`. Warnings concern short synthetic JWT keys. No network or
+socket permission escalation was requested.
+
+Failed node IDs:
+
+- `server/test_bg_context.py::test_live_publishes_context_while_next_build_waits_and_cancels_on_close`
+- `server/test_cloud_meter.py::test_real_websocket_send_boundary`
+- `server/test_gemini_live.py::test_fake_live_recent_step_transcripts_and_scene_stay_local`
+- `server/test_gemini_live.py::test_fake_live_wire_audio_tools_captions_and_revocation`
+- `server/test_gemini_live.py::test_reconnect_once_then_fallback_and_close`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[False-False]`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[True-False]`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[True-True]`
+- `server/test_limits.py::test_live_minutes_stop_idle_connection`
+- `server/test_live_prefetch.py::test_slow_tool_does_not_delay_audio`
+- `server/test_live_prefetch.py::test_streaming_prefetch_card_cache_and_idle_publication`
+- `server/test_live_streaming.py::test_fake_live_streams_before_complete_and_stops_mid_reply[False]`
+- `server/test_live_streaming.py::test_fake_live_streams_before_complete_and_stops_mid_reply[True]`
+- `server/test_live_streaming.py::test_ws2_hazard_sends_stop_caption_and_fixed_audio`
+- `server/test_step_check.py::test_real_loopback_api_to_qwen_protocol_keeps_pictures_zero`
+- `scripts/test_ready.py::test_live_pair_request_on_fake_socket`
+
+Test: `git diff --check` - PASS.
+Logs: `/private/tmp/planner-live6-targeted.log`, `/private/tmp/planner-live6-full.log`.
+
+Changed files: `server/planner.py`, `server/live_guide.py`, `server/gemini_live.py`,
+`server/test_planner.py`, `server/test_planner_output.py`, this report, `RESULT.md`.
+Limits: no `.env` access, external network, real API call, raw media, push, merge,
+or deployment. Real Haiku tool acceptance and actual first-audio latency still
+need an authorized live call; offline packet timing does not establish either.

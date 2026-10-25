@@ -467,7 +467,6 @@ def test_live_planner_diagnostics_without_client(monkeypatch, capsys, text, outc
     lambda p: p.update(steps=p['steps'] * 5),
     lambda p: p['steps'][0].update(say='word ' * 25),
     lambda p: p['steps'][0].update(target=['headphones']),
-    lambda p: p['steps'][0].pop('check'),
     lambda p: p.update(task='another task'),
 ])
 def test_schema_reject(change):
@@ -730,8 +729,9 @@ def test_sdk_two_calls_text_only_retries_off(monkeypatch, tmp_path, model):
 
         async def create(self, **kwargs):
             calls.append(kwargs)
-            text = 'Facts' if len(calls) == 1 else json.dumps(plan())
-            return SimpleNamespace(content=[SimpleNamespace(type='text', text=text)], usage=None)
+            block = (SimpleNamespace(type='text', text='Facts') if len(calls) == 1 else
+                     SimpleNamespace(type='tool_use', name='submit_plan', input=plan()))
+            return SimpleNamespace(content=[block], usage=None)
 
     async def trial():
         b, emitted, fixed, wire, fake, store, points = setup(monkeypatch, tmp_path)
@@ -746,6 +746,11 @@ def test_sdk_two_calls_text_only_retries_off(monkeypatch, tmp_path, model):
         assert all(c['model'] == (model or 'claude-haiku-5-5')
                    and isinstance(c['messages'][0]['content'], str) for c in calls)
         assert all(o == dict(max_retries=0, timeout=12) for o in options)
+        assert 'tools' not in calls[0]
+        assert calls[1]['tool_choice'] == {'type': 'tool', 'name': 'submit_plan'}
+        assert [t['name'] for t in calls[1]['tools']] == ['submit_plan']
+        from jsonschema import validate
+        validate(plan(), calls[1]['tools'][0]['input_schema'])
         await b.guide.close()
     asyncio.run(trial())
 

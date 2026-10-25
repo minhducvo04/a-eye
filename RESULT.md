@@ -428,3 +428,27 @@ See its docs/results report.
 ## planner-live2
 
 See its docs/results report.
+
+## planner-live6 — 2026-10-25
+
+Forced Anthropic `submit_plan` tool output, normalized harmless schema omissions,
+and retained strict safety/size checks. Schema failures emit short content-free
+codes. The triggering utterance cannot hold Live's first reply; a pending-plan
+follow-up shares one three-second deadline with the provider-idle wait.
+
+Files changed: `server/planner.py`, `server/live_guide.py`, `server/gemini_live.py`,
+`server/test_planner.py`, `server/test_planner_output.py`,
+`docs/results/planner-live.md`, `RESULT.md`.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner_output.py server/test_planner.py server/test_live_guide.py eval/swap/test_checker_regressions.py --tb=short` - PASS
+(157 passed in 14.71s; summary read).
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(1260 passed, 16 failed, 2 warnings in 64.37s; summary/traces read; all failures
+trace to denied local sockets, including one downstream hazard-state KeyError).
+Test: `git diff --check` - PASS.
+
+Pre-fix proof: 10 selected regressions failed. Final logs and all failed node IDs
+are linked/listed in [the round 6 report](docs/results/planner-live.md).
+Limits: fixtures are synthetic Haiku-like records; no real provider acceptance
+or physical audio timing claim. No `.env` read, network escalation, push, merge,
+or deployment. Local commit only on `pkg/planner-live6`.

@@ -66,6 +66,10 @@ class LiveGuide:
         start = self._task_for(text)
         if start and (not guide or guide.completed or start != guide.task):
             return True
+        # A trailing "next step?" in the triggering utterance is still Live's
+        # first reply, even if the background plan has already installed.
+        if self.is_plan_trigger(text):
+            return False
         if self.pending_plan(text):
             return True
         return bool(guide and not guide.completed and (NEXT.search(text) or
@@ -74,10 +78,15 @@ class LiveGuide:
 
     def pending_plan(self, text):
         pending = self.planner.task
-        if (not self.guide and NEXT.search(text) and pending and not pending.done()
+        if (not self.is_plan_trigger(text)
+                and not self.guide and NEXT.search(text) and pending and not pending.done()
                 and self.planner.allowed()):
             return pending
         return None
+
+    def is_plan_trigger(self, text):
+        return (self.planner.trigger_turn == self.bridge.turn_id
+                and text.startswith(self.planner.trigger_text))
 
     @staticmethod
     def _task_for(text):
@@ -221,7 +230,7 @@ class LiveGuide:
                 return
         self.running = True
         try:
-            await self._run(text, pending_plan)
+            await self._run(text, pending_plan, deadline if pending_plan is not None else None)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -230,7 +239,7 @@ class LiveGuide:
         finally:
             self.running = False
 
-    async def _run(self, text, pending_plan=None):
+    async def _run(self, text, pending_plan=None, deadline=None):
         from server.agent import check_water_off
         from server.packs.electronics import LINES as EE_LINES
         from server.step_check import RETRY_LINE
@@ -244,12 +253,12 @@ class LiveGuide:
             if (pending_plan is not self.planner.task or not self.planner.allowed()):
                 return
             if not self.guide or self.kind != 'plan' or not NEXT.search(text):
-                await self._prompt(text)
+                await self._prompt(text, deadline)
                 return
             first_step = True
         if not self.claims(text):
             # The transcript grew into an ordinary question: let Live answer it.
-            await self._prompt(text)
+            await self._prompt(text, deadline)
             return
         await b.stage('thinking', detail='Step: checking')
         if b.closed or b.safety_stopped:
@@ -344,16 +353,17 @@ class LiveGuide:
         if step:
             s.recent_memory.note_step(step)
         await self._prompt('Say this step now in one or two sentences.' if step else
-                           'Say only "Go ahead when you are ready."')
+                           'Say only "Go ahead when you are ready."', deadline)
         target = self.target()
         if target and step:
             b.pointed = True
             asyncio.create_task(self.point(target))
 
-    async def _prompt(self, ask):
+    async def _prompt(self, ask, deadline=None):
         if self.bridge.closed or self.bridge.safety_stopped:
             return
-        if await self.bridge.prompt_turn(self.block() + ' ' + ask):
+        options = {} if deadline is None else {'idle_timeout': max(0, deadline - monotonic())}
+        if await self.bridge.prompt_turn(self.block() + ' ' + ask, **options):
             # A speaking prompt is not a sticky background publication. The
             # bridge's existing idle hook must publish this GUIDE again.
             self.published = -1
