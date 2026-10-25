@@ -197,6 +197,8 @@ class LiveBridge:
         self.prefetch = Prefetch(session, self._lookup_memory, self._prefetch_ready)
         self.input_turn_open = False
         self.guide_observed = False
+        self.guide_boundary_seen = False
+        self.guide_judged = ''
         self.pending_memory = None
         # Set while the provider is not generating; a guide prompt waits for it.
         self.provider_idle = asyncio.Event()
@@ -218,6 +220,8 @@ class LiveBridge:
         self.scope_redirected = False
 
     def _reset_output(self):
+        if self.guide:
+            self.guide.cancel_observation()
         self.turn_id = uuid4().hex
         self.received = False
         self.output = ''
@@ -419,20 +423,27 @@ class LiveBridge:
                 guide.published = version
 
     def new_input_turn(self):
+        if self.guide:
+            self.guide.cancel_observation()
         self.cancel_tools()
         self.prefetch.new_turn()
         self.pending_memory = None
         self.input_turn_open = True
         self.guide_observed = False
+        self.guide_boundary_seen = False
+        self.guide_judged = ''
         self.memory.reset()
 
     def observe_guide(self):
-        # Live sends deltas, sometimes without finished. Observe the assembled input once,
-        # at finished or turnComplete, before _reset_reply clears it.
+        # Only a positive decision latches the turn. A rejected early segment must
+        # not prevent the completed utterance from requesting a plan.
+        if self.guide:
+            self.guide.cancel_observation()
         if (self.guide and self.question.strip() and not self.guide_observed
+                and self.question != self.guide_judged and not self.closed
                 and not self.safety_stopped and not self.scope_redirected):
-            self.guide_observed = True
-            self.guide.observe(self.question)
+            self.guide_judged = self.question
+            self.guide_observed = bool(self.guide.observe(self.question))
 
     def memory_allowed(self, result):
         if self.closed or self.session.private or not privacy.google_allowed():
@@ -817,8 +828,16 @@ class LiveBridge:
                     from server.context_agent import DISMISS
                     if self.session.context_agent and DISMISS.fullmatch(self.question) and not self.blocked:
                         await self.dismiss_followup(self.question)
-        if content.get('inputTranscription', {}).get('finished'):
-            self.observe_guide()
+        boundary = (content.get('inputTranscription', {}).get('finished')
+                    or content.get('modelTurn') or content.get('outputTranscription') or response.get('toolCall'))
+        # Start once at the speech boundary, then reset the debounce only for new
+        # input. Streaming model audio must not keep postponing the decision.
+        if self.guide and not self.guide_observed:
+            first_boundary = boundary and not self.guide_boundary_seen
+            if boundary:
+                self.guide_boundary_seen = True
+            if first_boundary or (self.guide_boundary_seen and content.get('inputTranscription', {}).get('text')):
+                self.guide.observe_later()
         if not self.blocked:
             for part in content.get('modelTurn', {}).get('parts', []):
                 blob = part.get('inlineData')

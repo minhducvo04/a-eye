@@ -324,23 +324,24 @@ class BackgroundPlanner:
         if rejection == 'coded':
             self.cancel()
         if rejection or not self.allowed():
-            event('planner', reason={'result': 'rejected', 'cause': rejection or 'disabled'})
-            return
+            event('planner', reason={'result': 'rejected', 'cause': rejection or 'disabled', 'chars': len(text)})
+            return False
         if owner.kind in ('ee', 'tie', 'home') and owner.guide and not owner.guide.completed:
-            event('planner', reason={'result': 'rejected', 'cause': 'coded_active'})
-            return
+            event('planner', reason={'result': 'rejected', 'cause': 'coded_active', 'chars': len(text)})
+            return False
         if task == self.request and not (owner.kind == 'plan' and owner.guide and owner.guide.completed):
-            return
+            return True
         self.cancel()
         if owner.kind == 'plan':
             owner.clear_plan()
         self.request = task
         self.task = asyncio.create_task(self.build(task, text))
+        return True
 
     async def build(self, task, transcript):
         started, reason = monotonic(), 'error'
         task_hash = hashlib.sha256(task.encode()).hexdigest()[:16]
-        event('planner', reason={'task_hash': task_hash, 'result': 'started'})
+        event('planner', reason={'task_hash': task_hash, 'result': 'started', 'chars': len(transcript)})
         try:
             async with asyncio.timeout(TIMEOUT):
                 store = self.store or await asyncio.to_thread(cache)
@@ -389,7 +390,7 @@ class BackgroundPlanner:
         except Exception:
             pass  # provider exception text may contain evidence or credentials
         finally:
-            outcome = {'task_hash': task_hash, 'result': reason}
+            outcome = {'task_hash': task_hash, 'result': reason, 'chars': len(transcript)}
             if reason not in {'valid', 'timeout', 'no_client', 'cancelled', 'error'}:
                 outcome.update(result='rejected', cause=reason)
             event('planner', reason=outcome, ms=round((monotonic() - started) * 1000))

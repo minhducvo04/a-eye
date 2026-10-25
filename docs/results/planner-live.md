@@ -189,3 +189,89 @@ Test: `git diff --check` - PASS.
 
 Limits: synthetic packets, fake provider transport and local execution only.
 No real provider call, physical-device playback, deployment or merge was tested.
+
+## Merged-main repair on pkg/planner-live3 — 2026-10-25
+
+Base: `c83d4a1`, containing both `pkg/checker` and `pkg/planner-live2`.
+Work stays in this worktree; no push, `.env` access, or network permission change.
+
+### A. Soldering failure attribution
+
+Reproduced both reported `test_live_intent_packets` failures: 2 failed, 7 passed
+(72 deselected). Both requests produced `started`, then `rejected/unsafe` after
+the fake provider's two calls. `task_decision` accepted the requests; neither
+the task itself nor Live's input safety gate refused soldering.
+
+Checker commit `4d606db` added the requirement for spoken ventilation preparation
+in the first step whenever the plan/task mentions soldering. Planner-live2 commit
+`96ebe58` added soldering packet cases using the generic fake headphone-inspection
+plan, which has no ventilation. That fixture was invalid under the merged checker.
+The fix supplies an actual three-step soldering fixture: disconnect device power
+and arrange ventilation, prepare the iron stand, then solder the disconnected
+wire joint with cooling and hot-tip precautions. Both packet tests assert that
+this plan installs, and that the old unprepared plan still fails validation.
+No checker or intent safety rule was relaxed.
+
+### B. Live timing reproduction and fix
+
+`LiveGuide.observe` forwarded text unchanged. The bridge's `observe_guide` set
+`guide_observed = True` before knowing whether the decision was positive. An early
+`inputTranscription.finished` on `dad` therefore emitted one `no_intent` event and
+prevented the later full utterance from being judged, including at `turnComplete`.
+The former bridge also waited until `turnComplete` if `finished` was absent,
+even when model output had already begun.
+
+The new regression sends these deltas as separate `serverContent` messages with
+event-loop delays: `dad`, ` The wire on my`, ` headphones broke near`,
+` the plug. How do I fix it?`. Before production changes, the early-finished
+variants reproduced the lone rejection and no plan; the first-output variant
+failed to start planning before the reply ended. The completed-input variant
+already planned, but failed the new missing-`chars` assertion (4 failures total).
+This demonstrates the early-finished hypothesis in executable code; without
+provider packet capture it does not prove that the reported real call sent that
+exact boundary sequence. Plain chunks followed only by `turnComplete` already
+worked on the base and remain covered by the existing app/client regression.
+
+The bridge now starts a 150 ms debounce on `finished` or first model output
+(audio, output transcription, or tool call). Later input resets that debounce;
+continued model output does not postpone it. The decision reads the current
+assembled question. `turnComplete` flushes it before clearing the question, and
+typed input remains immediate. Only an accepted request latches the turn;
+unchanged rejected text is deduplicated, but longer input can retry. Existing
+per-task request and spending limits remain in place. Turn reset, interruption,
+and close cancel deferred observations; safety is rechecked before observation.
+
+Every planner diagnostic now includes `reason.chars`, the input text length only.
+For the timed repair regression, `started` and `valid` have `chars: 67`; a deliberately
+late delta can first produce `rejected/no_intent` with `chars: 3`, followed by the
+successful full-text decision. Neither event contains the transcript.
+
+Seven timed cases cover final/early `finished`, no `finished`, audio-only output,
+output before the last input delta, continued output, and input after an initial
+rejection. Each installs step 1 before `turnComplete`, then the exact follow-up
+`Okay, what is the next step?` advances to step 2 without another provider build.
+Three cancellation cases cover stop, interruption/new input, and close.
+
+Changed files: `server/gemini_live.py`, `server/live_guide.py`, `server/planner.py`,
+`server/test_planner.py`, this report, and `RESULT.md`.
+
+### Verification
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py server/test_live_guide.py eval/swap/test_checker_regressions.py --tb=short` - PASS
+(133 passed in 7.45s; summary read). Includes the unchanged checker challenge bank
+and all existing planner privacy, safety, budget, cache, and pending-plan checks.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(1236 passed, 16 failed, 2 warnings in 57.25s; exit 1; summary and each failure
+trace read). Fifteen failures are denied loopback socket operations. The sixteenth,
+`server/test_live_streaming.py::test_ws2_hazard_sends_stop_caption_and_fixed_audio`,
+is a downstream `KeyError: 'state'` after `live_start_failed` with `PermissionError`.
+The node IDs match the sixteen socket-dependent failures listed earlier in this
+report. No planner/checker regression failed. The warnings concern short synthetic
+JWT keys. Network permissions were not lifted or retried.
+Full local output: `.pytest_cache/planner-live3-full.log` (gitignored).
+
+Test: `git diff --check` - PASS.
+
+Limits: local execution with synthetic packets and fake provider transport.
+No real Gemini/Claude call, device playback, merge, or deployment was tested.

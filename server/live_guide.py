@@ -26,6 +26,7 @@ OFF = re.compile(r"\b(?:(?:it['’]?s|it is|water(?: is)?|valve(?: is)?|tap(?: i
                  r"turned\s+(?:it|the valve|the water)\s+off)\b", re.I)
 CONTROL = re.compile(r'\b(walk me through it|try again|retry|forget my progress)\b', re.I)
 DEBOUNCE = .3
+OBSERVE_DEBOUNCE = .15
 PLAN_WAIT = 3.0
 RULE = ('Say only this step in your own words; do not skip ahead; do not say a step is done; '
         'the app decides when to move on. When the user says done or next, say nothing; the app checks and tells you.')
@@ -39,6 +40,7 @@ class LiveGuide:
         self.version = 0
         self.published = 0
         self.task = None
+        self.observation = None
         self.running = False
         self.planned_guide = None
         self.planner = planner.BackgroundPlanner(self)
@@ -95,6 +97,9 @@ class LiveGuide:
         self.task = asyncio.create_task(self.run(text, pending_plan, monotonic() + PLAN_WAIT))
 
     async def close(self):
+        self.cancel_observation()
+        if self.observation:
+            await asyncio.gather(self.observation, return_exceptions=True)
         await self.planner.close()
         if self.task and not self.task.done():
             self.task.cancel()
@@ -132,7 +137,20 @@ class LiveGuide:
         self.guide.growth = s.growth
 
     def observe(self, text):
-        self.planner.observe(text)
+        return self.planner.observe(text)
+
+    def cancel_observation(self):
+        if self.observation and self.observation is not asyncio.current_task():
+            self.observation.cancel()
+
+    def observe_later(self):
+        self.cancel_observation()
+        self.observation = asyncio.create_task(self._observe_later())
+
+    async def _observe_later(self):
+        # Input transcription can trail finished/first output by a few packets.
+        await asyncio.sleep(OBSERVE_DEBOUNCE)
+        self.bridge.observe_guide()
 
     def clear_plan(self):
         if self.task and not self.task.done() and self.task is not asyncio.current_task():

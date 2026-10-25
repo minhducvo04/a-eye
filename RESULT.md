@@ -1,3 +1,37 @@
+## Planner Live merged-main fix — pkg/planner-live3, 2026-10-25
+
+Base: `c83d4a1` with checker and planner-live2 merged. The two soldering failures
+were invalid fake plans missing the checker's newly required ventilation step;
+requests were accepted by `task_decision`. Tests now supply a safe soldering
+lesson and still reject unprepared plans. No safety checker was weakened.
+
+Reproduced the early-finished transcription latch: judging only `dad` rejected
+once and suppressed the final repair request. Live now debounces finished/first
+model output for 150 ms, refreshes on trailing input, and latches only positive
+decisions. `turnComplete` flushes before reset. Planner diagnostics include text
+length as `reason.chars`; full repair text yields 67. Seven timed packet cases
+verify step 1 installation and the exact next-step follow-up; three cases verify
+deferred work cannot survive stop, interruption, or close.
+
+Changed files: `server/gemini_live.py`, `server/live_guide.py`, `server/planner.py`,
+`server/test_planner.py`, `docs/results/planner-live.md`, `RESULT.md`.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py server/test_live_guide.py eval/swap/test_checker_regressions.py --tb=short` - PASS
+(133 passed in 7.45s; summary read).
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(1236 passed, 16 failed, 2 warnings in 57.25s; summary and failure traces read).
+Fifteen failures are sandbox-denied loopback sockets; one hazard assertion fails
+after fake Live startup reports `PermissionError`. Full output is retained at
+`.pytest_cache/planner-live3-full.log`. No planner/checker regression failed.
+Test: `git diff --check` - PASS.
+
+Limits: no `.env` read, network access granted, real provider call, push, merge,
+deployment, or physical-device proof. The real call's exact packet sequence is
+unknown; the early-finished failure is reproduced with synthetic timed packets.
+Details: [planner-live](docs/results/planner-live.md).
+
+---
+
 ## Planner Live regression fix — 2026-10-25
 
 Fixed the problem-first headphone repair trigger and the exact follow-up
