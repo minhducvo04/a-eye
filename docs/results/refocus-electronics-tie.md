@@ -13,7 +13,7 @@ Implemented on `pkg/refocus` in this worktree. No push or deployment.
 
 ## Verification
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts` - PASS (**968 passed, 2 warnings in 53.16s**, exit 0; summary read).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts` - PASS (**968 passed, 2 warnings in 53.16s**, exit 0; summary read).
 
 The two warnings are existing JWT identity fixtures using an 11-byte synthetic HMAC key.
 
