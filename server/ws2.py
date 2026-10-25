@@ -271,7 +271,7 @@ async def websocket(ws: WebSocket):
 
     async def send(msg):
         validate('server_message_v2', msg)
-        if session and msg['type'] == 'say' and msg.get('agent') == 'helper':
+        if session and session.ee_guide is None and msg['type'] == 'say' and msg.get('agent') == 'helper':
             session.recent_memory.note_step(msg['text'])
         if msg['type'] == 'metrics' and 'turn_id' in msg:
             event('turn_end', session.session_id if session else None,
@@ -378,7 +378,7 @@ async def websocket(ws: WebSocket):
             # router is off or unsure. Past/object questions and spoken forget go to memory and Rewind.
             home_turn = session.home_guide is not None or (session.pack.id == 'general' and
                 re.fullmatch(r'(?:fix (?:the |a )?)?sink[.!]?', text.strip(), re.I))
-            fixed_turn = home_turn or bool(session.pack.refuse(text)) or bool(
+            fixed_turn = home_turn or session.ee_guide is not None or bool(session.pack.refuse(text)) or bool(
                 re.fullmatch(r'forget my progress[.!]?', text.strip(), re.I))
             temporal = recent_memory.source_for(text, bool(getattr(session, 'rewind', None) and session.rewind.on))
             if not fixed_turn and not forget_request(text) and temporal:
@@ -630,7 +630,9 @@ async def websocket(ws: WebSocket):
                     await pairing.camera_socket(ws, incoming)
                     return
                 try:
-                    new_session = Session(incoming['session_id'], packs.get(incoming['pack']),
+                    pack_id = ('engineering' if ws.query_params.get('mode') == 'engineering'
+                               and incoming['pack'] == 'general' else incoming['pack'])
+                    new_session = Session(incoming['session_id'], packs.get(pack_id),
                                           incoming.get('board_id', 'demo-b650'), incoming.get('tts', 'browser'))
                 except (OSError, ValueError, ValidationError, KeyError):
                     await send(message('error', code='bad_message', message='Unknown or invalid board or pack.'))

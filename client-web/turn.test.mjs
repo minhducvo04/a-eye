@@ -78,7 +78,7 @@ test('early final uses latest interim at 700ms and never sends a late correction
   assert.equal(sent.length, 2);
 });
 
-for (const [headset, home, live, policy] of [[false, false], [true, false], [false, true], [false, false, true], [false, false, true, "general"], [false, false, true, "optout"], [false, false, true, "private"]]) test(live ? `${policy || 'live'}: Live defaults to Google and uses existing hello and caption messages` : home ? 'sink selection and presenter controls use real client contracts' : headset ? 'headset call never acquires local video through camera or permission controls' : 'call page toggles camera, keeps voice-only hello, retries text, reconnects, and renders streamed replies', async () => {
+for (const [headset, home, live, policy] of [[false, false, false, "engineering"], [false, false], [true, false], [false, true], [false, false, true], [false, false, true, "general"], [false, false, true, "optout"], [false, false, true, "private"]]) test(live ? `${policy || 'live'}: Live defaults to Google and uses existing hello and caption messages` : home ? 'sink selection and presenter controls use real client contracts' : headset ? 'headset call never acquires local video through camera or permission controls' : 'call page toggles camera, keeps voice-only hello, retries text, reconnects, and renders streamed replies', async () => {
   const saved = new Map();
   const put = (key, value) => { saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { value, configurable: true, writable: true }); };
   const nodes = new Map(), intervals = new Map(), timeouts = new Map();
@@ -147,7 +147,7 @@ for (const [headset, home, live, policy] of [[false, false], [true, false], [fal
   try {
     await import(`./agent.js?headset-test=${headset}&home=${home}&live=${live}&policy=${policy}`);
     assert.equal(node('ring-title').textContent, 'Gemini Live', 'Live is selected at launch');
-    const choose = () => node('picker').handlers.click({ target: { closest: () => ({ getAttribute: name => policy === 'general' ? 'general' : live ? 'gemini-live' : home ? (name === 'data-pack' ? 'home' : 'plumbing') : 'general' }) } });
+    const choose = () => node('picker').handlers.click({ target: { closest: () => ({ getAttribute: name => policy === 'engineering' ? 'engineering' : policy === 'general' ? 'general' : live ? 'gemini-live' : home ? (name === 'data-pack' ? 'home' : 'plumbing') : 'general' }) } });
     if (!live && !home) {
       node('cloud-google').checked = false;
       node('cloud-google').handlers.change();
@@ -187,6 +187,17 @@ for (const [headset, home, live, policy] of [[false, false], [true, false], [fal
       node('cloud-google').checked = false;
       node('cloud-google').handlers.change();
       assert.equal(socket.readyState, 3, 'revoking Google closes its session');
+      return;
+    }
+    if (policy === 'engineering') {
+      assert.equal(new URL(socket.url).searchParams.get('mode'), 'engineering');
+      assert.equal(socket.messages[0].pack, 'general');
+      socket.message({ type: 'agent_state', agent: 'helper', state: 'listening' });
+      assert.equal(socket.messages[1].text, 'light an LED');
+      socket.message({ type: 'agent_state', agent: 'helper', state: 'listening' });
+      assert.equal(socket.messages.length, 2);
+      socket.message({ type: 'turn', stage: 'speaking', detail: 'Engineering: complete' });
+      assert.equal(Boolean(node('family-panel').open), false);
       return;
     }
     if (home) {
@@ -325,7 +336,7 @@ for (const [headset, home, live, policy] of [[false, false], [true, false], [fal
     assert.ok([...timeouts.keys()].every(id => id <= lastTimer), 'End call does not schedule a reconnect');
     assert.equal(node('call').classList.contains('hidden'), true);
   } finally {
-    if (home || live) node('end-call').handlers.click();
+    if (home || live || policy === 'engineering') node('end-call').handlers.click();
     Date.now = realNow;
     for (const [key, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; }
   }

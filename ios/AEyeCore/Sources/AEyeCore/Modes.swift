@@ -30,7 +30,7 @@ public enum Modes {
         Mode(id: "memory", title: "Memory", symbol: "mappin.and.ellipse", pack: "memory", requiresPowerOff: false),
         Mode(id: "mechanic", title: "Mechanic", symbol: "car", pack: nil, requiresPowerOff: false),
         Mode(id: "plumbing", title: "Sink", symbol: "drop", pack: "home", requiresPowerOff: false),
-        Mode(id: "engineering", title: "Engineering", symbol: "gearshape.2", pack: nil, requiresPowerOff: false),
+        Mode(id: "engineering", title: "Engineering", symbol: "gearshape.2", pack: "general", requiresPowerOff: false),
         Mode(id: "gemini-live", title: "Gemini Live", symbol: "waveform", pack: "general", requiresPowerOff: false),
     ]
 
@@ -40,4 +40,9 @@ public enum Modes {
     /// The `home` pack waits for a task word; the web sends "sink" as soon as the helper first listens.
     public static let homePack = "home"
     public static let homeStartText = "sink"
+
+    public static func startText(for mode: Mode) -> String? {
+        if mode.id == "engineering" { return "light an LED" }
+        return mode.pack == homePack ? homeStartText : nil
+    }
 }

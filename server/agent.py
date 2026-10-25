@@ -62,6 +62,7 @@ class Session:
     expert_failures: dict = field(default_factory=dict, repr=False)
     expert_step: str = ''
     home_guide: object = field(default=None, repr=False)
+    ee_guide: object = field(default=None, repr=False)
     growth: object = field(default=None, repr=False)
     step_checker: object = field(default=None, repr=False)
     private: bool = False
@@ -74,6 +75,9 @@ class Session:
         if self.pack.id == 'home':
             from server.packs.home import HomeGuide
             self.home_guide = HomeGuide()
+        if self.pack.id == 'engineering':
+            from server.packs.electronics import ElectronicsGuide
+            self.ee_guide = ElectronicsGuide()
 
 
 def message(kind, **fields):
@@ -384,6 +388,58 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         if app is not None and getattr(app.state, 'presenter', False) and session.private:
             await proof('Presenter available')
     forgetting = bool(re.fullmatch(r'forget my progress[.!]?', text.strip(), re.I))
+    if session.ee_guide is not None:
+        from server.packs.electronics import ElectronicsGuide, LINES as EE_LINES, refuse as ee_refuse
+        from server import recent_memory
+        guide = session.ee_guide
+        guide.growth = session.growth
+        stop = ee_refuse(text) or session.pack.refuse(text)
+        # Only a fresh caption of this exact frame may supply an observed stop.
+        if (not stop and session.camera and session.frame and session.scene
+                and session.scene_seq == session.frame['seq']
+                and monotonic() - session.frame_time < pointer.BUDGET_S
+                and session.scene.get('source') == 'ollama'):
+            from server.packs.electronics import USB
+            observed = ee_refuse(session.scene.get('caption', ''))
+            if observed == USB:
+                guide.usb_off = False
+                if guide.task == 'ee_led' and guide.index < 5:
+                    stop = observed
+            else:
+                stop = observed
+        if forgetting:
+            if session.growth:
+                session.growth.forget()
+            session.ee_guide = ElectronicsGuide(task=guide.task, growth=session.growth, usb_off=guide.usb_off)
+            answer = 'Your progress has been forgotten.'
+        elif not stop and (recent_memory.source_for(text) or re.search(
+                r'\bwhere did i (put|leave)\b', text, re.I)):
+            answer = (await recent_memory.answer(session, text, vision))['say']
+        elif stop:
+            answer = guide.stop(stop)
+        else:
+            was_completed = guide.completed
+            answer = guide.reply(text)
+            if guide.completed and not was_completed:
+                await proof('Engineering: complete' if guide.task == 'ee_led' else 'Engineering: practice complete')
+        from server.safety import LINES
+        if answer in EE_LINES or answer in LINES:
+            await proof('Stopped by code')
+        if answer:
+            msg = say(answer)
+            msg.update(turn_id=turn_id, part=0, final=True)
+            session.recent_memory.note_step(answer)
+            await emit(message('reply_delta', agent='helper', turn_id=turn_id, text=answer))
+            await emit(msg)
+            if session.speak:
+                async for audio in session.speak(msg):
+                    await emit(audio)
+            if answer.startswith('Step ') and guide.target:
+                drawing = await pointer.ground(session, vision, guide.target)
+                if drawing:
+                    await emit(drawing)
+        remember()
+        return messages
     if forgetting:
         if session.growth:
             session.growth.forget()

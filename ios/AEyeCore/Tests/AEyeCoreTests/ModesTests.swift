@@ -4,8 +4,8 @@ import XCTest
 final class ModesTests: XCTestCase {
     func testRingContents() {
         XCTAssertEqual(Modes.all.filter(\.isAvailable).compactMap(\.pack),
-                       ["general", "pc_build", "cooking", "assemble", "memory", "home", "general"])
-        XCTAssertEqual(Modes.all.filter { !$0.isAvailable }.map(\.title), ["Mechanic", "Engineering"])
+                       ["general", "pc_build", "cooking", "assemble", "memory", "home", "general", "general"])
+        XCTAssertEqual(Modes.all.filter { !$0.isAvailable }.map(\.title), ["Mechanic"])
         XCTAssertEqual(Modes.all[Modes.defaultIndex].id, "gemini-live")
         XCTAssertEqual(Modes.all.filter(\.requiresPowerOff).map(\.id), ["pc_build"])
     }
@@ -15,6 +15,18 @@ final class ModesTests: XCTestCase {
         XCTAssertEqual(Modes.all.map(\.id),
                        ["general", "pc_build", "cooking", "assemble", "memory", "mechanic", "plumbing", "engineering", "gemini-live"])
         XCTAssertEqual(Modes.all.first { $0.id == "plumbing" }?.title, "Sink")
+    }
+
+    func testEngineering() {
+        let mode = Modes.all.first { $0.id == "engineering" }!
+        XCTAssertTrue(mode.isAvailable)
+        XCTAssertEqual(mode.pack, "general")
+        XCTAssertEqual(Modes.startText(for: mode), "light an LED")
+        let base = URL(string: "ws://localhost/ws2?token=fixture")!
+        let url = LiveConfiguration.url(base, live: false, google: true, privateMode: true, engineering: true)!
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertTrue(query.contains(URLQueryItem(name: "mode", value: "engineering")))
+        XCTAssertFalse(query.contains { $0.name == "google" })
     }
 
     func testHomeStart() {
