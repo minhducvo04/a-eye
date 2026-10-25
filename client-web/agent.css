@@ -2299,3 +2299,5 @@ body.headset {
 /* Owner 2026-10-24: one-line slogan on the start screen at every width (overrides the two-line layout). */
 .start-screen .intro-title { white-space: nowrap; font-size: clamp(22px, 6.4vw, 84px); }
 .start-screen .intro-line { display: inline; }
+/* Owner 2026-10-24: the small line under the slogan stays on one line too. */
+.start-screen .intro-note { max-width: none; white-space: nowrap; font-size: clamp(11px, 3.3vw, 18px); }
