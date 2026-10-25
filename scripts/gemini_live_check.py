@@ -5,6 +5,7 @@ import base64
 import io
 import json
 import os
+import re
 from pathlib import Path
 import sys
 from time import perf_counter
@@ -17,7 +18,7 @@ async def check():
     from PIL import Image
     from websockets.asyncio.client import connect
     from server import privacy
-    from server.gemini_live import discover_model, ENDPOINT, WIRE_LOGGER
+    from server.gemini_live import discover_model, live_setup, ENDPOINT, WIRE_LOGGER
 
     if privacy.local_only():
         print('Private: Google blocked')
@@ -29,16 +30,16 @@ async def check():
         Image.new('RGB', (320, 240), 'blue').save(buffer, 'JPEG')
         async with connect(ENDPOINT + '?key=' + quote(os.environ['GEMINI_API_KEY'], safe=''),
                            open_timeout=10, close_timeout=2, logger=WIRE_LOGGER) as ws:
-            await ws.send(json.dumps({'setup': {'model': model,
-                'generationConfig': {'responseModalities': ['AUDIO']}, 'outputAudioTranscription': {}}}))
+            await ws.send(json.dumps({'setup': live_setup(model)}))
             ready = json.loads(await asyncio.wait_for(ws.recv(), 15))
             if 'setupComplete' not in ready:
                 raise ValueError('setup failed')
-            started = perf_counter()
             await ws.send(json.dumps({'realtimeInput': {'video': {'mimeType': 'image/jpeg',
                 'data': base64.b64encode(buffer.getvalue()).decode()}}}))
-            await ws.send(json.dumps({'clientContent': {'turns': [{'role': 'user',
-                'parts': [{'text': 'what do you see?'}]}], 'turnComplete': True}}))
+            # Pre-roll the camera before asking; no expected color in the prompt.
+            await asyncio.sleep(1)
+            started = perf_counter()
+            await ws.send(json.dumps({'realtimeInput': {'text': 'what do you see?'}}))
             first_audio, reply = None, []
             async with asyncio.timeout(40):
                 while True:
@@ -56,11 +57,18 @@ async def check():
             print('model: ' + model)
             print('first-audio ms: ' + (str(first_audio) if first_audio is not None else 'none'))
             print('reply text: ' + ''.join(reply))
-            return 0 if first_audio is not None and reply else 1
+            passed = first_audio is not None and sees_blue(''.join(reply))
+            print('blue-image check: ' + ('PASS' if passed else 'FAIL'))
+            return 0 if passed else 1
     except Exception:
         # Provider exceptions may include the key in their request URL. Never print them.
         print('Live check failed (discovery, connection or reply unavailable)')
         return 1
+
+
+def sees_blue(reply):
+    return bool(re.search(r'\bblue\b', reply, re.I)) and not re.search(
+        r"\b(?:can't|cannot|don't|do not|unable to)\s+(?:see|have eyes)|\bnot blue\b", reply, re.I)
 
 
 def main():

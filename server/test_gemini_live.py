@@ -21,6 +21,38 @@ def jpeg():
     return base64.b64encode(out.getvalue()).decode()
 
 
+def test_camera_precedes_realtime_question():
+    async def trial():
+        from time import monotonic
+        privacy.set_call({'google': True})
+        wire = []
+        async def send(raw):
+            wire.append((monotonic(), json.loads(raw)))
+        async def emit(msg):
+            pass
+        session = Session('s', frame=dict(seq=1, jpeg_b64=jpeg()))
+        bridge = LiveBridge(session, None, None, emit, emit)
+        bridge.active = True
+        bridge.ws = SimpleNamespace(send=send)
+        assert await bridge.text('what do you see?')
+        assert len(wire) == 2
+        assert wire[0][1]['realtimeInput']['video']['mimeType'] == 'image/jpeg'
+        assert wire[1][1] == {'realtimeInput': {'text': 'what do you see?'}}
+        assert wire[1][0] - wire[0][0] >= .25
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('reply,expected', [
+    ('I see a solid blue image.', True),
+    ("I don't have eyes, so I can't see anything.", False),
+    ('I cannot see a blue image.', False),
+    ('A red image.', False),
+])
+def test_probe_requires_blue_visual_reply(reply, expected):
+    from scripts.gemini_live_check import sees_blue
+    assert bool(sees_blue(reply)) is expected
+
+
 @pytest.mark.parametrize('private,google,local', [(True, True, False), (False, False, False), (False, True, True)])
 def test_privacy_before_discovery_and_connection(monkeypatch, private, google, local):
     async def trial():
@@ -69,7 +101,7 @@ def test_fake_live_wire_audio_tools_captions_and_revocation(monkeypatch):
             async for raw in ws:
                 msg = json.loads(raw)
                 received.append(msg)
-                if 'clientContent' in msg:
+                if 'text' in msg.get('realtimeInput', {}):
                     await ws.send(json.dumps({'serverContent': {'inputTranscription': {'text': 'What is here?'}}}))
                     await ws.send(json.dumps({'toolCall': {'functionCalls': [{'id': 't1', 'name': 'find_item', 'args': {'name': 'keys'}}]}}))
                 if 'toolResponse' in msg:
@@ -92,6 +124,10 @@ def test_fake_live_wire_audio_tools_captions_and_revocation(monkeypatch):
             bridge = LiveBridge(session, None, SimpleNamespace(state=SimpleNamespace()), emit, fixed_say,
                                 discover=discover, endpoint=endpoint)
             assert await bridge.start()
+            setup = received[0]['setup']
+            assert setup['generationConfig']['responseModalities'] == ['AUDIO']
+            assert setup['realtimeInputConfig']['turnCoverage'] == 'TURN_INCLUDES_ALL_INPUT'
+            assert 'live camera' in setup['systemInstruction']['parts'][0]['text']
             await bridge.audio(base64.b64encode(b'\x00\x00' * 160).decode(), True)
             await bridge.video()
             await bridge.video()  # at most one picture per second
