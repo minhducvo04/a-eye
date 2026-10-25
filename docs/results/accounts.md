@@ -128,10 +128,10 @@ coverage includes forged Google/session signatures, wrong issuer/audience/nonce,
 guest expiry without another visit, restart-persistent quota, cross-user view/export/delete isolation,
 active-call shutdown, revoked writers, pending cloud deletion/recovery, and exhausted-budget data access.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_accounts.py` — PASS
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server/test_accounts.py` — PASS
 (`15 passed in 1.22s`).
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q contracts device server vision voice market eval boxsvc router scripts --tb=short` — FAIL
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q contracts device server vision voice market eval boxsvc router scripts --tb=short` — FAIL
 (`1 failed, 1103 passed, 2 warnings in 61.63s (0:01:01)`).
 
 The sole failure is `vision/test_gemini.py::test_recorded_payment_failure_is_reported_and_cleared`:
@@ -143,7 +143,7 @@ are existing short synthetic HMAC keys in identity tests. This is not a green fu
 Test: `node --test client-web/` — PASS
 (`tests 161; pass 161; fail 0; cancelled 0; skipped 0; todo 0; duration_ms 1279.330916`).
 
-Test: `uv run --offline --no-project --with playwright python scripts/accounts_smoke.py --python /Users/minhducvo/Projects/a-eye/.venv/bin/python` — PASS
+Test: `uv run --offline --no-project --with playwright python scripts/accounts_smoke.py --python $HOME/Projects/a-eye/.venv/bin/python` — PASS
 (`ACCOUNTS HTTPS BROWSER PASS: Guest, Secure/HttpOnly cookie, isolated data, ZIP export, delete, other user preserved`).
 The smoke script starts a temporary local HTTPS server and two isolated browser contexts with synthetic
 media and temporary storage, then stops it. Screenshot: `/tmp/aeye-accounts-smoke.png` (local evidence,

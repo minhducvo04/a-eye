@@ -41,9 +41,9 @@ The Private-mode teardown regression also failed before its fix. Fake-backend te
 isolation cases, ciphertext substitution, private-mode request blocking, media exclusion, history ordering,
 prefix matching, consent, temporal bounds, retention and probe cleanup after a possibly committed failure.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_memory_places.py server/test_memory.py server/test_memory_capture.py server/test_recent_memory.py` - PASS (`85 passed in 1.72s`).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server/test_memory_places.py server/test_memory.py server/test_memory_capture.py server/test_recent_memory.py` - PASS (`85 passed in 1.72s`).
 
-Test: `make -k test PY=/Users/minhducvo/Projects/a-eye/.venv/bin/python` - FAIL overall (exit 2), with these final summary lines:
+Test: `make -k test PY=$HOME/Projects/a-eye/.venv/bin/python` - FAIL overall (exit 2), with these final summary lines:
 
 ```text
 FAILED vision/test_gemini.py::test_recorded_payment_failure_is_reported_and_cleared
@@ -64,7 +64,7 @@ test keys. All 158 web tests passed.
 The initial restricted run could not bind the loopback sockets used by ten tests. The full suite was then
 run with loopback networking permitted; `-k` lets Make also run the web suite after a Python failure.
 
-Test: `make places-live-check PY=/Users/minhducvo/Projects/a-eye/.venv/bin/python` - SKIP:
+Test: `make places-live-check PY=$HOME/Projects/a-eye/.venv/bin/python` - SKIP:
 
 ```text
 SpacetimeDB env: SPACETIMEDB_URI=unset, SPACETIMEDB_MODULE=unset, SPACETIMEDB_TOKEN=unset
