@@ -25,9 +25,22 @@ DOCUMENTED_MODEL = 'gemini-3.8-live'
 ENDPOINT = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent'
 FALLBACK_LINE = 'Gemini Live is unavailable. I am switching to the normal pipeline.'
 MAX_AUDIO = 24000 * 2 * 60
+VIDEO_LEAD_SECONDS = .3
 # websockets debug logs include the handshake URL and raw media. Never emit them.
 WIRE_LOGGER = logging.Logger('aeye.live.transport')
 WIRE_LOGGER.disabled = True
+
+
+def live_setup(model, instruction=''):
+    """Shared camera context for the bridge and the real transport probe."""
+    return {'model': model,
+            'generationConfig': {'responseModalities': ['AUDIO']},
+            'inputAudioTranscription': {}, 'outputAudioTranscription': {},
+            'realtimeInputConfig': {'turnCoverage': 'TURN_INCLUDES_ALL_INPUT'},
+            'systemInstruction': {'parts': [{'text':
+                "You see the user's live camera through the video frames provided to you. "
+                'Answer visual questions from those frames. If no frame is available, say so; '
+                'do not invent visual details. Keep spoken answers brief. ' + instruction}]}}
 
 
 def require_consent():
@@ -113,6 +126,7 @@ class LiveBridge:
         self.closed = False
         self.reconnects = 0
         self.lock = asyncio.Lock()
+        self.video_lock = asyncio.Lock()
         self.last_video = -float('inf')
         self.last_seq = None
         self.model = None
@@ -160,16 +174,15 @@ class LiveBridge:
         self.ws = await connect(url, open_timeout=10, close_timeout=2, max_size=4 * 1024 * 1024,
                                 logger=WIRE_LOGGER)
         try:
-            await self._send({'setup': {'model': self.model,
-                'generationConfig': {'responseModalities': ['AUDIO']},
-                'inputAudioTranscription': {}, 'outputAudioTranscription': {},
-                'systemInstruction': {'parts': [{'text': self.session.pack.system_prompt +
+            setup = live_setup(self.model, self.session.pack.system_prompt +
                     ' Use point_at to point at visible objects. Use local memory tools only when requested. '
-                    'Never claim a memory is saved or deleted before a tool confirms it.'}]},
-                'tools': [{'functionDeclarations': declarations(self.rewind_on())}]}})
+                    'Never claim a memory is saved or deleted before a tool confirms it.')
+            setup['tools'] = [{'functionDeclarations': declarations(self.rewind_on())}]
+            await self._send({'setup': setup})
             response = json.loads(await asyncio.wait_for(self.ws.recv(), 10))
             if 'setupComplete' not in response:
                 raise ValueError('Live setup rejected')
+            self.last_video, self.last_seq = -float('inf'), None
         except BaseException:
             await self.ws.close()
             self.ws = None
@@ -227,16 +240,22 @@ class LiveBridge:
         if line:
             await self.stop(line)
             return True
-        return await self._input({'clientContent': {'turns': [{'role': 'user', 'parts': [{'text': text}]}],
-                                                   'turnComplete': True}})
+        await self.video()
+        # Realtime streams have no cross-modality acknowledgement. Give a newly
+        # sent frame a short lead; keep text on the same realtime input path.
+        await asyncio.sleep(max(0, VIDEO_LEAD_SECONDS - (monotonic() - self.last_video)))
+        return await self._input({'realtimeInput': {'text': text}})
 
     async def video(self):
+        async with self.video_lock:
+            await self._video()
+
+    async def _video(self):
         frame = self.session.frame
         if (not self.active or not privacy.google_allowed() or not self.session.camera or not frame
                 or monotonic() - self.session.frame_time > 1.5
                 or frame['seq'] == self.last_seq or monotonic() - self.last_video < 1):
             return
-        self.last_video, self.last_seq = monotonic(), frame['seq']
         from server.ws2 import small_jpeg
         try:
             image = await asyncio.to_thread(small_jpeg, frame['jpeg_b64'])
@@ -245,6 +264,7 @@ class LiveBridge:
         if not self.session.camera or self.session.frame is not frame:
             return
         if await self._input({'realtimeInput': {'video': {'mimeType': 'image/jpeg', 'data': image}}}):
+            self.last_video, self.last_seq = monotonic(), frame['seq']
             meter = cloud_meter.CURRENT.get()
             if meter:
                 meter.add(pictures=1)
