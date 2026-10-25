@@ -1,7 +1,7 @@
 // Draw-layer model for v2_draw. Coordinates are 0..1 of the sent frame.
 // Canvas calls live in paintDraw; everything else is pure and safe to import from Node.
 
-import { clampRect, coverTransform } from "./overlay.js?v=1792947000";
+import { clampRect, coverTransform } from "./overlay.js?v=1792947100";
 
 export const DRAW_IN_MS = 250;
 export const DRAW_FADE_MS = 350;

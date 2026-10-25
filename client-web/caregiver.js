@@ -1,6 +1,6 @@
 // Caregiver page: consents, things and their homes, allowed rooms, keeping time and the stop switch.
 // Everything is stored through /api/memory/settings (memory.js); nothing goes to localStorage.
-import { cleanSettings, createMemoryApi, parseTag, retentionLine, ROOMS, roomAllowed } from "./memory.js?v=1792947000";
+import { cleanSettings, createMemoryApi, parseTag, retentionLine, ROOMS, roomAllowed } from "./memory.js?v=1792947100";
 
 const api = createMemoryApi();
 const $ = (id) => document.getElementById(id);
