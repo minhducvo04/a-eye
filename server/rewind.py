@@ -13,6 +13,7 @@ import base64
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from functools import wraps
 import json
 import os
 import re
@@ -108,6 +109,21 @@ def local_only():
     """TwelveLabs is off for this call: its switch is off, Private mode, or LOCAL_ONLY=1 (server/privacy.py)."""
     from server.privacy import twelvelabs_allowed
     return not twelvelabs_allowed()
+
+
+def _call_cloud(function):
+    """HTTP tasks have no hello context: use the Rewind's own mutable consent switches."""
+    @wraps(function)
+    async def bound(rewind, *args, **kwargs):
+        from server import privacy
+        switches = privacy.SWITCHES.set(rewind.cloud_switches)
+        private = privacy.PRIVATE.set(privacy.PRIVATE.get() or rewind.private)
+        try:
+            return await function(rewind, *args, **kwargs)
+        finally:
+            privacy.PRIVATE.reset(private)
+            privacy.SWITCHES.reset(switches)
+    return bound
 
 
 def identity(connection):
@@ -260,6 +276,8 @@ def kept_calls(owner):
 async def _keep_and_record(rewind):
     """'Remember this call': upload the rest, then remember the call's videos so later calls can search them."""
     await rewind.flush(wait=True)
+    if rewind.owner == 'local':
+        return  # Open demo callers have call-scoped recall, never a shared saved-call library.
     clips = [dict(video_id=c.video_id, start_s=c.start_s, key_s=c.key_s) for c in rewind.clips if c.video_id]
     if not clips:
         return
@@ -292,6 +310,9 @@ class Rewind:
         self.wall = wall
         self.encoder = encoder
         self.on = False
+        self.cloud_switches = None
+        self.private = False
+        self.ended = False
         self.started = clock()
         self.started_wall = wall()
         self.ring = deque()
@@ -320,11 +341,27 @@ class Rewind:
         return self.clock() - self.started
 
     def set_on(self, value):
-        self.on = bool(value) and not local_only()   # LOCAL_ONLY=1 keeps Rewind cloud off
+        from server import privacy
+        switches = privacy.SWITCHES.get()
+        self.cloud_switches = switches if switches is not None else dict(privacy.DEFAULTS, twelvelabs=bool(value))
+        self.private = privacy.PRIVATE.get()
+        self.on = bool(value) and self.cloud_switches[privacy.TWELVELABS] and not privacy.local_only()
         if not self.on:
             self.ring.clear()
-            # Unsent clips are dropped when the user turns Rewind off.
-            self.clips = [c for c in self.clips if c.status not in ('open', 'pending')]
+            # Stop sampling immediately; pruning shares the upload lock so no video id is lost.
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return asyncio.run(self._drop_unsent())
+            return loop.create_task(self._drop_unsent())
+
+    async def _drop_unsent(self):
+        async with self.lock:
+            if not self.on:
+                self.clips = [c for c in self.clips if c.video_id or c.status not in ('open', 'pending')]
+
+    def cloud_allowed(self):
+        return self.on and (not self.ended or self.keep) and not local_only()
 
     def add_frame(self, jpeg_b64):
         if not self.on:
@@ -394,9 +431,12 @@ class Rewind:
             if clip.status == 'open':
                 clip.status = 'pending'
 
+    @_call_cloud
     async def flush(self, wait=False, timeout=600):
         """Upload every finished clip as MP4 bytes from memory; nothing is written to disk."""
         async with self.lock:
+            if not self.cloud_allowed():
+                return []
             ready = [c for c in self.clips if c.status == 'pending' and c.frames]
             if not ready:
                 return []
@@ -410,10 +450,15 @@ class Rewind:
                           error=type(exc).__name__)
                     return []
             for clip in ready:
+                if not self.cloud_allowed():
+                    break
                 clip.status = 'uploading'
                 started = monotonic()
                 try:
                     video = await asyncio.to_thread(self.encoder, clip.frames)   # MP4 bytes in memory, no file
+                    if not self.cloud_allowed():
+                        clip.status = 'pending'
+                        break
                     metadata = dict(call=self.call_tag(), start_s=round(clip.start_s, 2),
                                     end_s=round(clip.end_s, 2), started_at=int(self.started_wall))
                     clip.task_id, clip.video_id = await self.client.upload(self.index_id, video, metadata)
@@ -446,19 +491,30 @@ class Rewind:
                 task.add_done_callback(self.waits.discard)
         return ready
 
+    @_call_cloud
     async def wait_ready(self, clip, timeout=600):
         """Poll the upload task with backoff (poll_delays) until ready, failed or `timeout` seconds of waiting."""
         delays, waited, n = poll_delays(), 0.0, 0
+        errors = 0
         while waited < timeout:
             delay = delays[min(n, len(delays) - 1)]
             n += 1
             await _sleep(delay)
             waited += delay
+            if not self.cloud_allowed():
+                return False
             try:
                 status = (await self.client.task(clip.task_id)).get('status')
+            except httpx.TransportError:
+                errors += 1
+                if errors <= 3:
+                    continue
+                clip.status = 'failed'
+                return False
             except Exception:
                 clip.status = 'failed'
                 return False
+            errors = 0
             if status == 'ready':
                 clip.status = 'ready'
                 return True
@@ -499,8 +555,11 @@ class Rewind:
                     indexing=counts.get('indexing', 0) + counts.get('uploading', 0),
                     pending=counts.get('pending', 0) + counts.get('open', 0))
 
+    @_call_cloud
     async def search_kept(self, query, limit=3):
         """Hits in this owner's earlier kept calls ("Remember this call"), newest call first."""
+        if not self.cloud_allowed() or self.owner == 'local':
+            return []
         past = {c['video_id']: (call, c) for call in kept_calls(self.owner)
                 if call.get('session_id') != self.session_id for c in call.get('clips', [])}
         if not past:
@@ -518,8 +577,11 @@ class Rewind:
                              past_call=True, call_started_wall=call.get('started_wall')))
         return hits
 
+    @_call_cloud
     async def search(self, query, limit=3, before_s=None):
         """Hits in this call, best first: call time, clip window and the nearest kept frame."""
+        if not self.cloud_allowed():
+            return []
         clips = {c.video_id: c for c in self.clips if c.video_id and c.status == 'ready'
                  and (before_s is None or c.end_s <= before_s)}
         if not clips:
@@ -595,8 +657,11 @@ class Rewind:
         return f"I'm not sure I saw it. Maybe {times}. Here's my best guess.", hit
 
     async def forget(self, local=True):
-        """Delete this call's TwelveLabs videos (logs ids only). local=True also drops every clip and frame;
-        local=False (call end) keeps the in-memory frames so the end-of-call recap can still run."""
+        """Wait for in-flight uploads before deleting; deletion never needs cloud/spend consent."""
+        async with self.lock:
+            return await self._forget_locked(local)
+
+    async def _forget_locked(self, local):
         for task in list(self.waits):
             task.cancel()
         await asyncio.gather(*self.waits, return_exceptions=True)
@@ -604,7 +669,7 @@ class Rewind:
         for clip in self.clips:
             if clip.video_id and self.index_id:
                 try:
-                    await self.client.delete_video(self.index_id, clip.video_id)
+                    await self.client.delete_video(self.index_id, clip.video_id, force=True)
                     self.deleted.append(clip.video_id)
                     print(json.dumps(dict(ts=datetime.now(timezone.utc).isoformat(), level='info',
                                           event='rewind_deleted', video_id=clip.video_id)), flush=True)
@@ -612,14 +677,12 @@ class Rewind:
                     failed.append(clip)
                     event('dependency_error', self.session_id, dependency='twelvelabs', level='error',
                           error=type(exc).__name__)
+        for clip in self.clips:
+            clip.frames = []
+            if clip not in failed:
+                clip.status, clip.video_id = 'deleted', None
         if local:
-            self.clips = failed        # only clips whose cloud copy could not be deleted stay listed
-            for clip in failed:
-                clip.frames = []
-        else:
-            for clip in self.clips:
-                if clip not in failed and clip.video_id:
-                    clip.status, clip.video_id = 'deleted', None
+            self.clips = failed        # keep failed deletion ids so cleanup can retry
         self.ring.clear()
         return dict(deleted=len(self.deleted), failed=len(failed))
 
@@ -698,6 +761,9 @@ class Registry:
         if self.encoder is not None:
             kwargs.setdefault('encoder', self.encoder)
         old = self.calls.get(session_id)
+        if old is not None and old.owner == owner and not old.ended:
+            old.set_on(on)
+            return old
         rewind = Rewind(session_id, client=self.client, **kwargs)
         rewind.owner = owner
         rewind.memories = self.memories
@@ -730,21 +796,29 @@ class Registry:
         task.add_done_callback(self.background.discard)
         return task
 
-    def end(self, session_id):
+    def end(self, rewind, session=None):
         """End of call: delete the call's TwelveLabs videos unless the user keeps them (then upload the rest)."""
-        rewind = self.calls.get(session_id)
+        # String callers are retained for local scripts; sockets must pass their own object.
+        if isinstance(rewind, str):
+            rewind = self.calls.get(rewind)
         if rewind is None:
             return None
+        if self.calls.get(rewind.session_id) is not rewind or (session is not None and rewind.session is not session):
+            return None
+        if rewind.ended:
+            return rewind.end_task
+        rewind.ended = True
         rewind.close()
         if self.memories is not None:
-            self.memories.detach(session_id)      # local memory stops writing when the call ends
+            self.memories.detach(rewind.session_id)      # local memory stops writing when the call ends
         rewind.memory_writer = None
         if rewind.keep and rewind.on:
             rewind.end_task = self.spawn(_keep_and_record(rewind))
         elif any(c.video_id for c in rewind.clips) or rewind.waits or rewind.lock.locked():
             rewind.end_task = self.spawn(self._end_and_forget(rewind))
         else:
-            rewind.clips = [c for c in rewind.clips if c.status not in ('open', 'pending')]
+            rewind.clips = []
+            rewind.ring.clear()
             rewind.end_task = None
         return rewind.end_task
 
@@ -966,10 +1040,11 @@ def recap_prompt(mode):
             '. Answer as JSON.')
 
 
+@_call_cloud
 async def recap(rewind, mode=None, encoder=None):
     """Ordered steps with call times, plus typical steps that look skipped. Uses only clips already uploaded."""
     mode = mode or getattr(rewind, 'mode', None) or 'general'
-    clips = sorted((c for c in rewind.clips if c.status in ('indexing', 'ready', 'deleted') and c.frames),
+    clips = sorted((c for c in rewind.clips if rewind.cloud_allowed() and c.status in ('indexing', 'ready') and c.frames),
                    key=lambda c: c.start_s)
     frames = [f for c in clips for f in c.frames][:RECAP_MAX_FRAMES]
     if not frames:
@@ -978,6 +1053,8 @@ async def recap(rewind, mode=None, encoder=None):
     started = monotonic()
     timed = [(i * RECAP_STEP_S, jpeg) for i, (_, jpeg) in enumerate(frames)]
     video = await asyncio.to_thread(encoder or rewind.encoder, timed)    # MP4 bytes in memory, no file
+    if not rewind.cloud_allowed() or any(c.status not in ('indexing', 'ready') for c in clips):
+        return dict(steps=[], skipped=[], mode=mode, ms=0, usage={}, note='Rewind is off; nothing to recap.')
     duration = clip_duration(timed)
     text, usage = await rewind.client.analyze(video, recap_prompt(mode), schema=RECAP_SCHEMA)
     try:

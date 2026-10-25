@@ -123,6 +123,7 @@ def test_poll_backoff_counts_and_waits(monkeypatch):
             return {'status': 'ready' if self.polls == 4 else 'indexing'}
 
     rewind = rewind_mod.Rewind('s', client=Slow(), encoder=fake_encoder)
+    rewind.set_on(True)
     clip = rewind_mod.Clip(start_s=0, end_s=5, task_id='t1')
     assert asyncio.run(rewind.wait_ready(clip)) is True
     assert waits == [2, 4, 8, 8] and rewind.client.polls == 4      # no poll before the first wait

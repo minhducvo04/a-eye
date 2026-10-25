@@ -573,7 +573,7 @@ async def websocket(ws: WebSocket):
         if voice:
             audio_tasks[notice['utterance_id']] = asyncio.create_task(audio(notice))
 
-    async def end_rewind():
+    async def end_rewind(end_call=True):
         nonlocal rewind_task
         if rewind_task:
             rewind_task.cancel()
@@ -584,8 +584,8 @@ async def websocket(ws: WebSocket):
             session.scene_memory.entries.clear()
             if session.context_agent:
                 session.context_agent.block = ''
-        if session is not None and getattr(session, 'rewind', None):
-            rewind_mod.registry(ws.app).end(session.session_id)   # uploads the rest after the call
+        if end_call and session is not None and getattr(session, 'rewind', None):
+            rewind_mod.registry(ws.app).end(session.rewind, session=session)
 
     async def cancel_yolo():
         nonlocal yolo_task
@@ -665,7 +665,8 @@ async def websocket(ws: WebSocket):
                 await cancel_scene()
                 await cancel_yolo()
                 await close_voice()
-                await end_rewind()
+                same_call = session is not None and session.session_id == new_session.session_id
+                await end_rewind(end_call=not same_call)
                 reset_audio()
                 # Private mode (hello.private): local brain, Kokoro, server STT (browser STT may send audio to
                 # Google), no crops, no Rewind cloud. Every task started from here on inherits it.
@@ -851,7 +852,9 @@ async def websocket(ws: WebSocket):
                     await emit(say('Thanks. What are we working on?'))
             elif kind == 'rewind':
                 privacy.update(privacy.TWELVELABS, incoming['on'])  # the Rewind toggle is the video-search consent
-                session.rewind.set_on(incoming['on'])
+                stopping = session.rewind.set_on(incoming['on'])
+                if stopping is not None:
+                    await stopping
                 session.rewind.keep = incoming.get('keep', session.rewind.keep)
                 await send(rewind_mod.state_message(session.rewind))
                 if live and live.active:

@@ -64,10 +64,12 @@ def test_rewind_age_filter_and_off_switch(monkeypatch):
 
     async def check():
         rewind = Rewind('fixture', client=Client(), clock=lambda: 100)
+        rewind.set_on(True)
         rewind.clips = [Clip(10, 15, video_id='old', status='ready'),
                         Clip(85, 90, video_id='new', status='ready')]
         hits = await rewind.search('resistor', before_s=80)
         assert [h['video_id'] for h in hits] == ['old']
+        rewind.set_on(False)
         log = RecentMemory(clock=lambda: 100, started=0)
         session = SimpleNamespace(recent_memory=log, rewind=rewind)
         async def forbidden(*args, **kwargs):
@@ -112,6 +114,8 @@ def test_ws_recent_answer_without_brain_and_cleanup(monkeypatch):
 
 def test_fixture_sources_and_honest_fallback(tmp_path, monkeypatch):
     from scripts.recent_memory_bench import benchmark, fixture
+    from server.privacy import set_call
+    set_call(rewind=True)  # The fake recording path models an explicitly opted-in call.
 
     async def check():
         monkeypatch.delenv('LOCAL_ONLY', raising=False)

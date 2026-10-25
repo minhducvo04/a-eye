@@ -57,13 +57,11 @@ def update(name, on):
 
 
 def allowed(name):
-    """Is this provider allowed for the current call? Outside a call (HTTP routes such as the Rewind recap,
-    unit code) there is no per-call switch: only Private/LOCAL_ONLY apply, and Rewind's own per-call state
-    (set when its switch was on) decides whether any clip exists to touch."""
+    """Provider consent for this call; missing context uses the opt-in defaults."""
     if server_local_only() or PRIVATE.get():
         return False
     switches = SWITCHES.get()
-    return True if switches is None else switches[name]
+    return (DEFAULTS if switches is None else switches).get(name, DEFAULTS.get(name, False))
 
 
 def claude_allowed():
