@@ -6,7 +6,7 @@ from time import monotonic
 
 from contracts import validate
 
-BUDGET_S = 1.5
+BUDGET_S = 3.0  # demo: tunnel + home GPU grounding needs ~1-2 s
 TTL_MS = 2500
 RULES = (' When your answer names a visible object, finish with one silent [POINT: object phrase] tag. '
          'Copy the object phrase exactly from your spoken answer, including colour or side; use words, not an ID. '
@@ -106,7 +106,8 @@ async def ground(session, vision, name, *, allow_cloud=False):
             return None
         obj = objects[0]
         x, y, w, h = obj['bbox']
-        if (obj['label'].casefold() != name.casefold() or obj['conf'] < .7
+        if (not (name.casefold() in obj['label'].casefold() or obj['label'].casefold() in name.casefold())
+                or obj['conf'] < .6
                 or not all(math.isfinite(value) for value in [x, y, w, h, obj['conf']])
                 or w <= 0 or h <= 0 or x + w > 1 or y + h > 1):
             return None
