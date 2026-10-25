@@ -169,8 +169,10 @@ def test_question_and_query_words():
     assert is_rewind_question('When did I plug in the CPU fan?')
     assert is_rewind_question('where did I put the screw')
     assert not is_rewind_question('which header does the CPU fan go in?')
-    assert query_from('When did I plug in the CPU fan?') == 'plug in the CPU fan'
+    assert query_from('When did I plug in the CPU fan?') == 'CPU fan'
     assert target_from('plug in the CPU fan') == 'CPU fan'
+    assert query_from('Dad what did I show you last call?') == 'Dad what did I show you last call?'
+    assert query_from('Where was my water bottle two days ago?') == 'water bottle'
     from server.rewind import fmt_offset
     assert [fmt_offset(s) for s in (2, 42, 60, 130)] == [
         'right at the start of the call', 'about 42 seconds in', 'about 1 minute in', 'about 2 minutes 10 seconds in']
@@ -309,6 +311,8 @@ def test_http_client_creates_index_and_searches_with_filter(monkeypatch):
     assert rows[0]['video_id'] == 'v'
     form = seen[-1].content.decode()
     assert 'name="query_text"' in form and '{"id": ["v"]}' in form and 'name="search_options"' in form
+    assert 'visual' in form and 'audio' not in form and 'transcription' not in form
+    assert 'name="page_limit"' in form
 
 
 def test_http_client_needs_key(monkeypatch):
@@ -507,3 +511,28 @@ def test_recap_route_and_typed_recap_over_ws2():
         body = client.post('/api/rewind/recap', json={'session_id': 's'}).json()
         assert body['mode'] == 'pc_build' and body['steps'] == []  # not kept: no new upload after deletion
         assert all(not c.frames for c in rewind.clips)
+
+
+def test_object_query_score_and_low_confidence():
+    rows = [dict(video_id='vid-1', start=0, end=5, rank=1, score=0.2),
+            dict(video_id='vid-2', start=0, end=5, rank=2, score=0.9, confidence='low')]
+    rewind = ready_rewind(rows)
+    vision = FakeVision([dict(id='b', label='water bottle', bbox=[0, 0, 1, 1], conf=0.9)])
+    text, hit = asyncio.run(rewind.answer('Dad where did I put my water bottle last call', vision=vision))
+    assert rewind.client.searches[0][1] == 'water bottle'
+    assert hit['video_id'] == 'vid-2' and hit['score'] == 0.9
+    assert hit['sure'] is False and 'best guess' in text and 'not sure' in text
+
+
+def test_clip_caption_prefers_object_over_higher_scored_phone():
+    from types import SimpleNamespace
+    from server.recent_memory import RecentMemory
+    rewind = ready_rewind([
+        dict(video_id='vid-1', start=0, end=5, rank=1, score=0.99),
+        dict(video_id='vid-2', start=0, end=5, rank=2, score=0.8)])
+    log = RecentMemory(clock=lambda: 30, started=0)
+    log.add(dict(caption='A phone on the desk', objects=[]), 3)
+    log.add(dict(caption='A water bottle on the shelf', objects=[]), 20)
+    rewind.session = SimpleNamespace(recent_memory=log)
+    hits = asyncio.run(rewind.search('Dad where is my water bottle'))
+    assert hits[0]['video_id'] == 'vid-2'

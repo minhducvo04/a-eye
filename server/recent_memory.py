@@ -350,15 +350,11 @@ async def answer(session, question, vision=None, *, on_hit=None, scope=None):
         if guess:
             return guess
     if requested == 'long-term' and rewind is not None:
-        from server.rewind import kept_calls, past_call_line, shared_demo_library
-        # Generic recall has no visual object to search. Remove question/temporal filler.
-        target = words(DAYS.sub('', LONG.sub('', question))) - {
-            'me', 'we', 'us', 'our', 'previous', 'session', 'can', 'could', 'tell', 'happen',
-            'anything', 'something', 'everything', 'thing', 'talk', 'discuss', 'about'}
+        from server.rewind import kept_calls, past_call_line, query_from, shared_demo_library
         # Owner decision: always ask TwelveLabs first for past calls; it returns the best moment even for generic questions.
         if True:
             try:
-                hits = await rewind.search_kept(question if target else 'what we worked on')
+                hits = await rewind.search_kept(query_from(question))
                 if hits:
                     hit = dict(hits[0], sure=False, objects=[], alternatives=[h['t_s'] for h in hits[1:2]])
                     if on_hit:
@@ -374,7 +370,7 @@ async def answer(session, question, vision=None, *, on_hit=None, scope=None):
                     summary = call.get('summary')
                     if isinstance(summary, str) and summary.strip():
                         spoken += f" In that call: {summary[:600]}."
-                    return dict(source='rewind', found=True, say=spoken, t_s=hit['t_s'])
+                    return dict(source='rewind', found=True, sure=hit['sure'], say=spoken, t_s=hit['t_s'])
             except Exception:
                 pass  # Search availability must not block the local text fallback.
         owner = getattr(rewind, 'owner', None)

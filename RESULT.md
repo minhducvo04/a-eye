@@ -856,3 +856,29 @@ The sole failure is `test_recent_tool_temporal_routes_and_local_result_cards` (e
 Test: `git diff --check` - PASS (no whitespace errors).
 
 Limits: verified with real loopback WebSockets serving synthetic messages and fake handshake failures, not the live Gemini service or a physical call. Loopback tests needed sandbox escalation. No client changes, server restart, .env access, main-worktree edits, push, or merge.
+
+
+## acc-a — object-focused clip search
+
+Files: server/rewind.py, server/recent_memory.py, server/test_rewind.py,
+server/test_past_calls.py, RESULT.md.
+Object queries preserve noun order and strip question/time filler with existing
+words/DAYS/LONG helpers, falling back to the original question when empty.
+Visual-only search was already configured; searches now request at least five
+candidates, retain score/confidence, and sort score before rank. Matching saved
+summary observations or scene notes within the clip window take preference over
+nonmatching candidates. Saved questions/helper conversation are not caption proof.
+Low API confidence cannot become sure=True even after local vision confirmation;
+unverified cards remain best guesses and spoken saved-call replies say not sure.
+
+Fail-before: both new same-call regressions failed (filler query and wrong phone clip).
+Test: /Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_rewind.py server/test_past_calls.py server/test_recent_memory.py - FAIL (55 passed, 6 failed in 6.11s; final summary read).
+Baseline before edits: 52 passed, the same 6 failed in 6.41s. Existing failures:
+three generic last-call summary expectations, save_snapshots_text_before_cleanup,
+summary_bound_and_legacy_record_fallback, fixture_sources_and_honest_fallback.
+All three new regressions passed, including saved summary selection and low-confidence card emission.
+Limits: synthetic fake clients and in-process routes; no live TwelveLabs or owner
+call verification. Uses API confidence='low', not an uncalibrated score threshold.
+No UI edits, restart, .env read, main-checkout edit, push, or merge.
+
+Test: git diff --check - PASS (acc-a final diff).
