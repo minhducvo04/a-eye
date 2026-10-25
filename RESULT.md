@@ -1,3 +1,24 @@
+## Whole-index past-call search — pkg/whole-index
+
+Saved clip search now uses up to six concurrent batches of 60 IDs, newest first,
+merges by rank/score and enforces the total result limit. One four-second deadline
+includes index lookup and shared-index fallback; completed hits survive slow or
+failed batches. HTTP failures log status only. Owner/demo rules are unchanged.
+
+Files changed: `server/rewind.py`, `server/test_past_calls.py`,
+`docs/results/whole-index-search.md`, `RESULT.md`.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_rewind.py server/test_past_calls.py server/test_clip_play.py` - FAIL (39 passed, 7 failed in 6.18s; summary read).
+All seven new cases passed. All seven failures reproduce with unchanged HEAD
+Rewind source (32 passed, 7 failed, 6 deselected); no existing assertions changed.
+Test: `git diff --check` - PASS.
+
+Limits: six batches cover at most 360 saved IDs per index. Offline audit hook
+blocked network and `.env` access; no real provider proof or push.
+Details, baseline method and local logs: [whole-index report](docs/results/whole-index-search.md).
+
+---
+
 ## Found-memory clip playback — pkg/clip-play
 
 The existing found card plays bounded this-call JPEG flipbooks and optional native
