@@ -524,15 +524,23 @@ svg .fill {
 .listen-text[data-tone="talking"] { color: var(--helper); }
 .listen-text[data-tone="muted"] { color: var(--warn); }
 
-/* WaitCard.swift: 44 px ring, eyebrow and line, glass, radius 20. */
+/* WaitCard.swift on iOS shows a ring, eyebrow and line. The web keeps only the ring with the percentage,
+   a small round chip centred above the subtitle, so the camera and the words keep the space. The eyebrow and
+   line stay in the DOM for the wait logic and its tests but are not shown. */
 .wait-card {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 12px 14px;
-  border-radius: 20px;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  margin: 0 auto;
+  border-radius: 50%;
   --accent: var(--helper);
   animation: wait-in 0.25s ease-out;
+}
+
+.wait-card .wait-text {
+  display: none;
 }
 
 .wait-card[data-agent="shopper"] {
