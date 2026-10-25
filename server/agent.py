@@ -421,7 +421,9 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         await emit(message('turn', turn_id=turn_id, stage='speaking', detail=detail,
                            at_ms=int(time() * 1000)))
 
-    from server.task_scope import task_for, home_enabled
+    from server.task_scope import task_for, home_enabled, refuse_home
+    # A product-scope answer is separate from pack safety and only inspects user input.
+    scope_reply = refuse_home(text) if not (session.pack.requires_power_off and not session.power_off) else None
     chosen = task_for(text) if not session.pack.refuse(text) else None
     if not home_enabled():
         session.home_guide = None
@@ -456,7 +458,7 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
             session.tie_guide = TieGuide(growth=session.growth)
             answer = 'Your progress has been forgotten.'
         else:
-            answer = session.pack.refuse(text) or guide.reply(text)
+            answer = session.pack.refuse(text) or scope_reply or guide.reply(text)
         if answer:
             msg = say(answer)
             msg.update(turn_id=turn_id, part=0, final=True)
@@ -496,6 +498,8 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
                 session.growth.forget()
             session.ee_guide = ElectronicsGuide(task=guide.task, growth=session.growth, usb_off=guide.usb_off)
             answer = 'Your progress has been forgotten.'
+        elif not stop and scope_reply:
+            answer = scope_reply
         elif not stop and (recent_memory.source_for(text) or re.search(
                 r'\bwhere did i (put|leave)\b', text, re.I)):
             answer = (await recent_memory.answer(session, text, vision))['say']
@@ -530,7 +534,7 @@ async def run_turn(session, text, *, vision, llm, started_at=None, turn_id=None,
         if session.home_guide:
             from server.packs.home import HomeGuide
             session.home_guide = HomeGuide(task=session.home_guide.task, growth=session.growth)
-    refusal = 'Your progress has been forgotten.' if forgetting else session.pack.refuse(text)
+    refusal = 'Your progress has been forgotten.' if forgetting else session.pack.refuse(text) or scope_reply
     if session.home_guide is not None and not forgetting:
         session.home_guide.growth = session.growth
         was_completed = session.home_guide.completed

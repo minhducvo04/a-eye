@@ -193,3 +193,23 @@ See its docs/results report.
 ## refocus
 
 See docs/results/refocus-electronics-tie.md.
+
+## scope-fix — 2026-10-25
+
+Scope replies now inspect only user input, suppress only the rejected Live turn,
+and allow the next question to receive audio. Cabinet/valve scene captions and
+Live speech no longer trigger scope stops. Classic home requests receive the
+electronics/tie scope line with existing safety gates preserved.
+
+Changed files: `server/packs/__init__.py`, `server/gemini_live.py`, `server/agent.py`,
+`server/test_refocus.py`, `server/test_gemini_live.py`, `docs/results/scope-fix.md`,
+`RESULT.md`. Completed the coordinator's inherited partial changes.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts` - PASS
+(1034 passed, 2 warnings in 51.45s; summary read, exit 0).
+Test: focused refocus and mic-hold regressions - PASS (26 passed in 0.91s).
+Test: `git diff --check` - PASS.
+
+Limits: synthetic media and fake providers only; no `.env` read, real Gemini call,
+push, deployment or physical-device proof. Local branch: `pkg/scope-fix`.
+Full evidence: [scope-fix](docs/results/scope-fix.md).
