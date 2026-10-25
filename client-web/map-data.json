@@ -2,7 +2,7 @@
  "version": 1,
  "title": "A-Eye system map",
  "measured_note": "Measured on real Gemini Live calls on 2026-10-25 with synthetic speech. Anything else says not measured.",
- "cost_note": "Two cost views: provider list prices (estimate, from the price pages) and our own meter (budget weights; overcounts status polls). One 2.5 min Live call with Rewind: about $1.40 on the meter, measured; about $0.12 at list, estimate. Local models cost $0 cloud.",
+ "cost_note": "Costs are provider list prices, estimates from the price pages. Local models cost $0 cloud. Our safety meter counts high on purpose; its figures are in the Cost panel.",
  "zones": [
   {
    "id": "device",
@@ -184,7 +184,7 @@
      "$0.016 / min (mic + 1 fps video, 50/50 talk) to $0.025 / min (full duplex), estimate"
     ],
     [
-     "Our meter",
+     "our safety meter (counts high on purpose)",
      "$0.10 / connection-minute (GEMINI_LIVE_USD_PER_MINUTE), billed at connect and every 60 s, idle included"
     ],
     [
@@ -498,7 +498,7 @@
      "about $0.0002 / note, $0.003 / min"
     ],
     [
-     "Our meter",
+     "our safety meter (counts high on purpose)",
      "about $0.01 / note, $0.15 / min, estimate"
     ]
    ],
@@ -792,7 +792,7 @@
      "busy minute (6 clips, 2 searches) about $0.033: index $2.50 / hour of video, search $0.004"
     ],
     [
-     "Our meter",
+     "our safety meter (counts high on purpose)",
      "$0.10 per non-DELETE request; about $2.00 to $3.20 for that minute, overcounts free polls"
     ]
    ],
@@ -1346,7 +1346,7 @@
     "path": "Scene-change cuts (2 s pre-roll + 3 to 12 s) become in-memory MP4 clips sent to TwelveLabs; \"what did I do earlier?\" goes through the router's time scope to a Rewind search.",
     "out": "Silent clips to TwelveLabs (opt-in, per call); deleted at call end unless kept.",
     "latency": "Searchable 35 to 40 s after the event, measured on the 60 s flush; 11 to 20 s with flush 0, estimate. Search 0.3 to 1.1 s, measured.",
-    "cost": "Busy minute about $0.033 at list, estimate; our meter about $2.00 to $3.20 (polls overcounted).",
+    "cost": "Busy minute about $0.033 at list, estimate.",
     "runs": "While Rewind is on for the call."
    }
   },
@@ -1385,9 +1385,9 @@
     "node": "safety"
    },
    {
-    "text": "~$1.40 per 2.5 min call (meter)",
+    "text": "about $0.10 to $0.15 per 2.5 min call (list price, est.)",
     "tone": "cost",
-    "node": "gemini"
+    "panel": "cost"
    }
   ]
  },
@@ -1454,15 +1454,15 @@
      ],
      [
       "Live, no Rewind",
-      "list about $6 to $8; our meter about $75"
+      "list about $6 to $8"
      ],
      [
       "Live + Rewind",
       "add about $0.42 at list"
      ],
      [
-      "2.5 min demo call with Rewind",
-      "list about $0.12, estimate; meter $1.40, measured"
+      "One 2.5 min call",
+      "about $0.10 to $0.15 at list, estimate (see the Cost panel)"
      ]
     ]
    }
@@ -1491,6 +1491,54 @@
    [
     "TwelveLabs rate limits",
     "https://docs.twelvelabs.io/v1.3/docs/get-started/plans-and-billing/rate-limits/new-billing"
+   ]
+  ]
+ },
+ "call_cost": {
+  "title": "Cost of one 2.5 min call",
+  "note": "List price, estimate, from the team numbers sheet and the provider price pages.",
+  "rows": [
+   [
+    "Gemini Live",
+    "$0.04 to $0.06 (list $0.016 to $0.025 / min)"
+   ],
+   [
+    "Haiku context notes",
+    "about $0.01 (list about $0.003 / min)"
+   ],
+   [
+    "Rewind, when Recall is on",
+    "about $0.08 (list about $0.033 / busy min)"
+   ],
+   [
+    "Total with Recall",
+    "about $0.13 to $0.15"
+   ],
+   [
+    "Total without Recall",
+    "about $0.05 to $0.07"
+   ],
+   [
+    "Guest / local",
+    "$0 cloud"
+   ]
+  ],
+  "meter": [
+   "Our safety meter (counts high on purpose)",
+   "One 2.5 min Live call with Rewind measured about $1.40 on it. It bills Gemini at $0.10 per connection-minute, Haiku by budget weights and TwelveLabs at $0.10 per request including free status polls, so the daily cap trips early rather than late."
+  ],
+  "sources": [
+   [
+    "Gemini API pricing",
+    "https://ai.google.dev/gemini-api/docs/pricing"
+   ],
+   [
+    "Claude Haiku 5.5",
+    "https://platform.claude.com/docs/en/models/haiku-5-5/overview"
+   ],
+   [
+    "TwelveLabs pricing",
+    "https://www.twelvelabs.io/overage"
    ]
   ]
  }

@@ -375,6 +375,10 @@ function scalePanel() {
   const sc = data.scale;
   return `<h2>${esc(sc.title)}</h2><p class="kind">${esc(sc.note)}</p>${sc.sections.map((x) => `<p class="sec">${esc(x.head)}</p><ul class="facts">${x.rows.map(([k, v]) => `<li><b>${esc(k)}</b>${esc(v)}</li>`).join('')}</ul>`).join('')}${linksHtml(sc.sources)}`;
 }
+function costPanel() {
+  const c = data.call_cost;
+  return `<h2>${esc(c.title)}</h2><p class="kind">${esc(c.note)}</p><ul class="facts">${c.rows.map(([k, v]) => `<li><b>${esc(k)}</b><span class="co">${esc(v)}</span></li>`).join('')}</ul><p class="sec">${esc(c.meter[0])}</p><p class="kind">${esc(c.meter[1])}</p>${linksHtml(c.sources)}`;
+}
 function flowPanel(f) {
   const x = f.detail || {};
   const rows = [['Path', x.path], ['Data that leaves', x.out], ['Latency', x.latency], ['Cost', x.cost], ['How long it runs', x.runs]].filter(([, v]) => v);
@@ -481,7 +485,7 @@ for (const c of data.headline.chips) {
   const b = document.createElement('button');
   b.className = 't-' + c.tone;
   b.textContent = c.text;
-  b.addEventListener('click', () => select({ kind: 'node', id: c.node }));
+  b.addEventListener('click', () => (c.panel === 'cost' ? (selected = null, applyFocus(), openPanel(costPanel())) : select({ kind: 'node', id: c.node })));
   document.getElementById('chips').appendChild(b);
 }
 function markFlows() { for (const b of flowsEl.children) b.setAttribute('aria-pressed', String(!!flow && b.dataset.flow === flow.id)); sayEl.textContent = flow ? flow.say : defaultSay;
@@ -743,6 +747,7 @@ const sel = params.get('select');
 if (sel && (nodes[sel] || edges[sel])) { REDUCED || (tween = null); select({ kind: nodes[sel] ? 'node' : 'edge', id: sel }); }
 if (params.get('panel') === 'index') openPanel(indexPanel());
 if (params.get('panel') === 'scale') openPanel(scalePanel());
+if (params.get('panel') === 'cost') openPanel(costPanel());
 // play "Ask a question" once on a plain load to lead the eye (never under reduced motion)
 if (!REDUCED && !location.search) setFlow(data.flows.find((f) => f.id === 'ask'), true);
 requestAnimationFrame(tick);

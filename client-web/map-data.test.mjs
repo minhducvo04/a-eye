@@ -54,6 +54,14 @@ test('final focus: no home-repair words anywhere on the map', () => {
   for (const f of data.flows) assert.ok(f.detail && f.detail.latency && f.detail.cost, f.id);
 });
 
+test('the $1.40 meter figure appears only in the Cost panel, labelled as the safety meter', () => {
+  const { call_cost, ...rest } = data;
+  assert.doesNotMatch(JSON.stringify(rest), /1\.40/);
+  assert.match(call_cost.meter[1], /1\.40/);
+  assert.match(call_cost.meter[0], /counts high on purpose/);
+  assert.match(data.headline.chips[2].text, /list price, est\./);
+});
+
 test('visible text has no em or en dashes', () => {
   assert.doesNotMatch(readFileSync(new URL('./map-data.json', import.meta.url), 'utf8'), /[–—]/);
   assert.doesNotMatch(readFileSync(new URL('./map.html', import.meta.url), 'utf8'), /[–—]/);

@@ -4,6 +4,13 @@ Interactive 3D map of the A-Eye system for judges, served at `/map.html` next to
 per call, all driven by one JSON file. Branch `pkg/system-map`; the commit sha is in the git log of that branch (this
 file is part of that commit).
 
+## Cost chip round (owner, 2026-10-25)
+
+The headline chip now reads "about $0.10 to $0.15 per 2.5 min call (list price, est.)" and opens a Cost panel:
+Gemini $0.04 to $0.06, Haiku notes about $0.01, Rewind about $0.08 with Recall on; totals about $0.13 to $0.15 with
+Recall and $0.05 to $0.07 without. The $1.40 meter figure appears only in that panel, under "Our safety meter (counts
+high on purpose)"; a test enforces this. Captures: `1280-cost-panel.png`, `390-cost-panel.png`, headline shots.
+
 ## Numbers round (team numbers sheet, 2026-10-25)
 
 1. Scale panel filled from the sheet: per-user caps, what breaks first at 10 / 100 / 1,000 / 100,000 users, monthly
