@@ -167,3 +167,21 @@ See its docs/results report.
 ## fix-guide
 
 See its docs/results report.
+
+## fix-bridge — 2026-10-25
+
+Mic chunks preserve guide/memory holds and the safety latch. The inherited
+`prompt_turn()` post-wait safety/closed checks already cover the second finding;
+two new regression functions cover both findings (eight cases).
+
+Changed files: `server/gemini_live.py`, `server/test_gemini_live.py`,
+`docs/results/fix-bridge.md`, `RESULT.md`.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router` - PASS
+(908 passed, 2 warnings in 50.90s; summary read, exit 0).
+Test: targeted bridge regressions - PASS (8 passed, 36 deselected in 0.76s).
+Test: `git diff --check` - PASS.
+
+Limits: fake providers and synthetic media only; no `.env` read, real Gemini
+call, push, deployment or physical-device proof. Initial full run needed a rerun
+with local socket access. Full evidence: [fix-bridge](docs/results/fix-bridge.md).
