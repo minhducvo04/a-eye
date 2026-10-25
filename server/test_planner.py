@@ -23,6 +23,16 @@ def plan(task='fix the headphones', count=2):
         safety='Keep the device disconnected.') for _ in range(count)])
 
 
+def solder_plan(task):
+    return dict(task=task, steps=[
+        dict(say='Disconnect device power and arrange ventilation.', show='Show the disconnected device and extractor.',
+             target='device', check='Check that power is disconnected and ventilation is running.', safety='Wear eye protection.'),
+        dict(say='Place the iron in its stand.', show='Show the stable iron stand.', target='iron stand',
+             check='Check that the stand is stable.', safety='Keep fingers away from the hot tip.'),
+        dict(say='Solder the disconnected wire joint.', show='Show the wire joint.', target='wire joint',
+             check='Let the joint cool before inspecting it.', safety='Keep ventilation running.')])
+
+
 class FakeLLM:
     def __init__(self, result=None):
         self.calls = []
@@ -132,7 +142,8 @@ def test_real_live_repair_chunks_use_app_client_and_advance(monkeypatch, tmp_pat
 ])
 def test_live_intent_packets(monkeypatch, tmp_path, text, expected):
     async def trial():
-        b, emitted, fixed, wire, fake, store, points = setup(monkeypatch, tmp_path)
+        result = solder_plan(expected) if expected and 'solder' in expected else None
+        b, emitted, fixed, wire, fake, store, points = setup(monkeypatch, tmp_path, FakeLLM(result))
         try:
             await b.handle({'serverContent': {'inputTranscription': {'text': text, 'finished': True}}})
             await b.handle({'serverContent': {'turnComplete': True}})
@@ -141,8 +152,85 @@ def test_live_intent_packets(monkeypatch, tmp_path, text, expected):
                 await b.guide.planner.task
                 assert len(fake.calls) == 2
                 assert b.guide.guide.task == expected and b.guide.guide.index == 0
+                if result:
+                    assert b.guide.guide.plan == result
+                    assert planner.check_plan(plan(expected)) is None  # missing soldering preparation still drops
             else:
                 assert b.guide.planner.task is None and not fake.calls and not store.rows
+        finally:
+            await b.memory.close()
+            await b.guide.close()
+            await b.prefetch.close()
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('boundary', ['finished', 'output', 'audio_output', 'output_before_tail',
+                                     'streaming_output', 'early_finished', 'late_delta'])
+def test_live_timed_transcription_plans_before_reply_ends(monkeypatch, tmp_path, capsys, boundary):
+    async def trial():
+        b, emitted, fixed, wire, fake, store, points = setup(monkeypatch, tmp_path)
+        chunks = ('dad', ' The wire on my', ' headphones broke near', ' the plug. How do I fix it?')
+        try:
+            for index, chunk in enumerate(chunks):
+                await b.handle({'serverContent': {'inputTranscription': {
+                    'text': chunk, 'finished': boundary in ('early_finished', 'late_delta') and index == 0}}})
+                # A provider may finish a segment before the rest of the utterance arrives.
+                await asyncio.sleep(.2 if boundary == 'late_delta' and index == 0 else .01)
+                if boundary == 'output_before_tail' and index == 2:
+                    await b.handle({'serverContent': {'outputTranscription': {'text': 'Let us '}}})
+            if boundary == 'finished':
+                await b.handle({'serverContent': {'inputTranscription': {'finished': True}}})
+            elif boundary == 'audio_output':
+                await b.handle({'serverContent': {'modelTurn': {'parts': [{'inlineData': {
+                    'mimeType': 'audio/pcm;rate=24000', 'data': 'AAA='}}]}}})
+            else:
+                await b.handle({'serverContent': {'outputTranscription': {'text': 'Let us inspect it.'}}})
+            # The model's reply has started, but turnComplete has NOT arrived yet.
+            for _ in range(10):
+                await asyncio.sleep(.02)
+                if boundary == 'streaming_output':
+                    await b.handle({'serverContent': {'outputTranscription': {'text': ' More.'}}})
+            assert b.guide.planner.task is not None, 'final input must plan before model turnComplete'
+            await b.guide.planner.task
+            assert len(fake.calls) == 2
+            assert fake.calls[0][1]['question'] == ''.join(chunks)
+            assert b.guide.guide.task == 'fix the wire on the headphones near the plug'
+            assert b.guide.guide.index == 0
+            await b.handle({'serverContent': {'turnComplete': True}})
+            await say_user(b, 'Okay, what is the next step?')
+            assert b.guide.guide.index == 1 and len(fake.calls) == 2
+        finally:
+            await b.memory.close()
+            await b.guide.close()
+            await b.prefetch.close()
+    asyncio.run(trial())
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    reasons = [e['reason'] for e in events if e['event'] == 'planner']
+    started = [r for r in reasons if r['result'] == 'started']
+    assert len(started) == 1 and started[0]['chars'] == 67
+    rejections = [r for r in reasons if r['result'] == 'rejected']
+    assert len(rejections) == (2 if boundary == 'late_delta' else 1)
+    if boundary == 'late_delta':
+        assert rejections[0] == dict(result='rejected', cause='no_intent', chars=3)
+    assert 'headphones' not in json.dumps(events)
+
+
+@pytest.mark.parametrize('action', ['stop', 'interrupted', 'close'])
+def test_live_deferred_decision_cannot_outlive_turn(monkeypatch, tmp_path, action):
+    async def trial():
+        b, emitted, fixed, wire, fake, store, points = setup(monkeypatch, tmp_path)
+        try:
+            await b.handle({'serverContent': {'inputTranscription': {
+                'text': 'help me fix my headphones', 'finished': True}}})
+            if action == 'stop':
+                await b.stop('Stop and disconnect power.')
+            elif action == 'interrupted':
+                await b.handle({'serverContent': {'interrupted': True}})
+                await b.handle({'serverContent': {'inputTranscription': {'text': 'hello dad'}, 'turnComplete': True}})
+            else:
+                await b.guide.close()
+            await asyncio.sleep(.2)
+            assert b.guide.planner.task is None and not fake.calls and not store.rows
         finally:
             await b.memory.close()
             await b.guide.close()
@@ -302,7 +390,8 @@ def test_live_planner_diagnostics_without_client(monkeypatch, capsys, text, outc
     asyncio.run(trial())
     events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     reasons = [e['reason'] for e in events if e['event'] == 'planner']
-    assert [{k: v for k, v in r.items() if k != 'task_hash'} for r in reasons] == outcomes
+    assert [{k: v for k, v in r.items() if k not in ('task_hash', 'chars')} for r in reasons] == outcomes
+    assert all(r['chars'] == len(text) for r in reasons)
     assert 'headphones' not in json.dumps(events) and 'hello Dad' not in json.dumps(events)
 
 
@@ -499,7 +588,9 @@ def test_bad_plan_falls_back_without_cache_or_speech(monkeypatch, tmp_path, caps
         assert len(fake.calls) == 2 and not b.guide.guide and not b.blocked
         assert not store.rows and not store.path.exists() and not wire and not fixed and not points
     asyncio.run(trial())
-    assert '"result":"rejected","cause":"unsafe"' in capsys.readouterr().out
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert any(e['event'] == 'planner' and e['reason']['result'] == 'rejected'
+               and e['reason']['cause'] == 'unsafe' for e in events)
 
 
 def test_cache_rechecks_home_scope(monkeypatch, tmp_path):
