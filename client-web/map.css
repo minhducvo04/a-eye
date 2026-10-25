@@ -154,6 +154,7 @@ button:focus-visible { outline: 2px solid var(--label-speed); outline-offset: 2p
   body.sheet .tagline, body.sheet .chips, body.sheet .flows, body.sheet .say { display: none; }
   .legend { left: 14px; bottom: 12px; max-width: calc(100vw - 28px); gap: 10px; font-size: 11.5px; }
   #modeNote { display: none; }
+  body.cost-mode #modeNote { display: inline; color: var(--label-cost); }
   .panel { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 58vh; border-radius: 16px 16px 0 0; padding: 18px 16px 28px; animation-name: rise; }
   @keyframes rise { from { opacity: 0; transform: translateY(24px); } }
   .lab { font-size: 11.5px; padding: 2px 6px 3px; }

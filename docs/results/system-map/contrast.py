@@ -7,7 +7,7 @@ def lum(c):
     c = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
     return 0.2126 * c[..., 0] + 0.7152 * c[..., 1] + 0.0722 * c[..., 2]
 out = {}
-for name in ['1536-name', '1280-name', '1280-speed', '1280-cost', '390-name', '390-speed', '390-cost']:
+for name in ['1536-name', '1280-name', '1280-speed', '1280-cost', '390-name', '390-speed', '390-cost', '390-cost-selected']:
     img = np.asarray(Image.open(D / f'{name}.png').convert('RGB')).astype(float)
     scale = img.shape[1] / (1536 if name.startswith('1536') else 1280 if name.startswith('1280') else 390)
     ratios = []

@@ -4,6 +4,21 @@ Interactive 3D map of the A-Eye system for judges, served at `/map.html` next to
 per call, all driven by one JSON file. Branch `pkg/system-map`; the commit sha is in the git log of that branch (this
 file is part of that commit).
 
+## Polish round (after SIGN-OFF WITH NOTES, 8 of 10, on b035759)
+
+1. Ambient pulse heads 1.6x the first build (2.4 vs 1.5), thin tails that fade out over the last 10% of each line, so
+   nothing smears into a node; the flow packet keeps the full fix-round strength.
+2. The fit keeps a band for the legend and its footnote, and includes the zone captions, so in Speed mode Saved
+   calls and MEMORY sit clear of the footnote (`1280-speed.png`).
+3. At 390 in Cost mode only non-zero values show; $0 local parts show their name, with the footnote "Name only = $0
+   (local). Tap a part to see its zone." Selecting a part shows its zone's values (`390-cost.png`,
+   `390-cost-selected.png`).
+4. Now merged on main and shown as working: parts shelf (39 guide cards linked to scraped product rows, parts note in
+   Live context), the router time-scope head and saved-call recall. Time scope: 86% on an independent 300-question set
+   with 0 "now" questions held by mistake (coordinator's figure; not in a tracked file), and 96 of 100 with 0 of 20
+   "now" held in `router/results/scope_heldout_eval.json`; about 45 ms on CPU (route() median 45.7 ms, commit 7d3ee3f).
+   The "building" legend entry is gone because nothing is building now.
+
 ## Fix round 1 (after the Media lead FIX on 00c2283)
 
 1. Headline strip under the title: one sentence on what A-Eye does and three chips, voice in 0.6 to 1.1 s, hazard
@@ -37,8 +52,7 @@ file is part of that commit).
   from, knowledge cards (Saved calls, Step guide), privacy switches with jump links, and the parts shelf as a
   10,001-point cloud (one point per listing; positions decorative).
 - Index button: list twin of the map with shared selection, works with motion off.
-- Building tonight, drawn dashed/wireframe and labelled "building": parts shelf, router time scope, saved-call recall.
-  No flow plays a building line.
+- A building item would be drawn dashed/wireframe and labelled "building"; none is building after the polish round.
 - URL state for demos and captures: `?mode=speed|cost`, `?select=<node or edge id>`, `?flow=<id>`, `?panel=index`.
 - To add a branch later: add a node, edge or flow in `map-data.json`; `client-web/map-data.test.mjs` checks that
   every reference resolves.
@@ -50,7 +64,8 @@ file is part of that commit).
 | End of speech to first voice | 0.6 to 1.1 s | real Live calls tonight, synthetic speech (brief) |
 | Box after object named | 1.8 to 2.3 s | same |
 | Hazard stop line | 86 ms after speech, Gemini muted | same |
-| Router | p50 43 ms, p90 49.5 ms, 96 of 100 held-out | `router/results/heldout_eval.json` |
+| Router lanes | p50 43 ms, p90 49.5 ms, 96 of 100 held-out | `router/results/heldout_eval.json` |
+| Router time scope | 86% of 300 independent, 0 "now" held; 96 of 100 held-out; about 45 ms on CPU | coordinator; `router/results/scope_heldout_eval.json`; commit 7d3ee3f |
 | Haiku as router (comparison only) | 97 of 100, p50 803 ms | same file |
 | Rewind searchable | about 35 to 40 s; flush now 15 s, not re-measured | brief; code default `REWIND_FLUSH_S` 60 |
 | Context builder | every ~4 s; speed per note not measured | `server/context_agent.py` (`interval=4`) |
@@ -80,7 +95,7 @@ Recipe: `python -m http.server 8471 --bind 127.0.0.1` inside `client-web`, then 
 
 | Metric | Result |
 |---|---|
-| Frame time | p95 16.7 to 16.8 ms, p50 16.7 ms in all 19 captures (about 127 frames each, after 30 warm-up frames; vsync bound at 60 Hz). `frames.json` |
+| Frame time | p95 16.7 to 16.8 ms, p50 16.7 ms in all captures (about 127 frames each, after 30 warm-up frames; vsync bound at 60 Hz). `frames.json` |
 | Label contrast, from pixels | brightest text vs chip median per visible label (chips now 0.9 opaque): worst 9.0:1 (1280 cost), 11.9:1 (1280 speed), 15.0:1 (1536 name), 11.8:1 (390 cost); zone captions worst 6.6:1. `contrast.json` |
 | Token contrast, computed | muted #a3afc2 9.1:1 on canvas, 7.2:1 on a bright chip (#1a2232); danger #ff6b78 7.4:1 / 5.8:1; speed 13.8:1; cost 14.4:1 |
 | Assets | page code 79.7 KB raw (html 1.8, js 37.9, css 12.4, json 27.6); three.js 829.8 KB raw (core 415.8, module 392.8, OrbitControls 21.1), 199.7 KB gzip |
