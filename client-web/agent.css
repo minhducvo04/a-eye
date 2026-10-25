@@ -2167,3 +2167,13 @@ body.headset {
   .bottom:has(#flip-camera:not([hidden])) { gap: 4px; }
   .bottom:has(#flip-camera:not([hidden])) .r56 { width: 36px; height: 44px; }
 }
+
+/* One-button start: the Call button stands alone under the slogan. */
+.ring-hint.call-button {
+  font-size: 1.15rem;
+  font-weight: 600;
+  padding: 0.85rem 2.6rem;
+  border-radius: 999px;
+  background: var(--helper, #8eb6ff);
+  color: #0b1220;
+}

@@ -74,7 +74,7 @@ const EXTRA_MODES = [
   { id: "engineering", title: "Engineering", pack: "engineering" },
 ];
 let MODES = CORE_MODES;
-const DEFAULT_MODE = 0;
+const DEFAULT_MODE = 1; // One "Call" button: the dad call always starts in General (Gemini Live).
 const RING_SLOT = 84;
 const PACK_LABEL = Object.fromEntries([...CORE_MODES, ...EXTRA_MODES].filter((m) => m.pack).map((m) => [m.pack, m.title]));
 const PRESENCE_STATES = ["idle", "listening", "thinking", "speaking"];
@@ -1626,7 +1626,8 @@ function boot() {
         const flags = await response.json();
         MODES = flags.extra_modes === true ? [...CORE_MODES, ...EXTRA_MODES] : CORE_MODES;
         const wanted = params.get("mode") === "gemini-live" ? "general" : params.get("mode");
-        ringIndex = Math.max(0, MODES.findIndex(m => m.id === wanted));
+        const found = MODES.findIndex(m => m.id === wanted);
+        ringIndex = found >= 0 ? found : DEFAULT_MODE;
         renderRing();
         scrollRingTo(ringIndex, false);
       }
@@ -1841,7 +1842,7 @@ function boot() {
     });
     const mode = MODES[ringIndex];
     ringTitle.textContent = mode.title;
-    ringHint.textContent = mode.pack ? "tap to start" : "coming soon";
+    ringHint.textContent = mode.pack ? "Call" : "coming soon";
     ringHint.disabled = !mode.pack;
   }
 

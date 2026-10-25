@@ -155,7 +155,7 @@ for (const [headset, home, live, policy] of [[false, false, false, "engineering"
   Date.now = () => now;
   try {
     await import(`./agent.js?headset-test=${headset}&home=${home}&live=${live}&policy=${policy}`);
-    assert.equal(node('ring-title').textContent, 'Sink', 'Sink is selected at launch');
+    assert.equal(node('ring-title').textContent, 'General', 'the one Call button starts the dad call (General) at launch');
     await settle();
     assert.deepEqual(node('ring').children.filter(b => !b.classList.contains('hidden')).map(b => b.getAttribute('data-mode')), policy === 'engineering' ? ringModes : ringModes.slice(0, 3));
     const choose = () => node('picker').handlers.click({ target: { closest: () => ({ getAttribute: name => policy === 'engineering' ? 'engineering' : policy === 'general' ? 'general' : live ? 'general' : home ? (name === 'data-pack' ? 'home' : 'plumbing') : 'general' }) } });
