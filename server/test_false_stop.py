@@ -88,7 +88,11 @@ def test_voice_reply_after_output_stop(monkeypatch, boundary):
     asyncio.run(trial())
 
 
-def test_background_repair_summary(monkeypatch):
+@pytest.mark.parametrize('summary', [
+    'Live is explaining wire repair using a hot soldering iron.',
+    'Dad explained the headphone cable repair. The wire is plugged into a phone.',
+])
+def test_background_repair_summary(monkeypatch, summary):
     from server import context_agent
 
     async def trial():
@@ -96,7 +100,7 @@ def test_background_repair_summary(monkeypatch):
         published = []
 
         async def assess(*args):
-            return dict(hazard='', context='Live is explaining wire repair using a hot soldering iron.')
+            return dict(hazard='', context=summary)
 
         async def publish(block):
             published.append(block)
