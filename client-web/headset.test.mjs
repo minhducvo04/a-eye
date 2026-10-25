@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isHeadset, requestLocalMedia } from './headset.js';
+import { isHeadset, requestLocalMedia, headsetStep } from './headset.js';
 
 const safari = 'Mozilla/5.0 (Apple Vision Pro; CPU visionOS 2_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15';
 test('explicit headset flag and visionOS Safari; desktop Safari stays a laptop', () => {
@@ -20,4 +20,24 @@ test('headset video requests never reach getUserMedia, including combined permis
   assert.equal(await requestLocalMedia(media, true, { audio: true }), 'stream');
   assert.equal(await requestLocalMedia(media, false, { video: true }), 'stream');
   assert.deepEqual(calls, [{ audio: true }, { video: true }]);
+});
+test('headset step card keeps Sink and General instructions readable', () => {
+  assert.deepEqual(headsetStep('home'), { eyebrow: 'SINK', line: 'Show the sink. Say next when you are ready.' });
+  assert.deepEqual(headsetStep('general'), { eyebrow: 'GENERAL', line: 'Ask what you are looking at.' });
+  assert.deepEqual(
+    headsetStep('home', { caption: 'Gently close the sink shutoff.' }),
+    { eyebrow: 'SINK', line: 'Gently close the sink shutoff.' },
+  );
+  assert.deepEqual(
+    headsetStep('home', { valve: 'Checking the valve...', caption: 'older step' }),
+    { eyebrow: 'SINK', line: 'Checking the valve...' },
+  );
+  assert.deepEqual(
+    headsetStep('general', { caption: 'That is the shutoff valve.' }),
+    { eyebrow: 'GENERAL', line: 'That is the shutoff valve.' },
+  );
+  assert.deepEqual(
+    headsetStep('general', { valve: 'Water is off', caption: 'That is the mug.' }),
+    { eyebrow: 'GENERAL', line: 'That is the mug.' },
+  );
 });
