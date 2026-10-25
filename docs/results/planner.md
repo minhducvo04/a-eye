@@ -58,7 +58,7 @@ with zero model calls. One planner event records only task hash, elapsed millise
 
 ## Verification
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts` -
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts` -
 **FAIL (1064 passed, 17 failed, 2 warnings in 51.38s)** on the final implementation.
 Full local proof: `.pytest_cache/planner-suite.log` (ignored, not committed).
 
