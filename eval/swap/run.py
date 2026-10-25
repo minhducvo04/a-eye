@@ -38,11 +38,21 @@ def model_name(model):
     return model
 
 
-def fixture_path(component, model):
-    return ROOT / 'eval/swap/fixtures' / component / (model_name(model) + '.jsonl')
+def fixture_path(component, model, case_source='claude'):
+    directory = ROOT / 'eval/swap/fixtures' / component
+    if case_source != 'claude':
+        directory /= case_source
+    return directory / (model_name(model) + '.jsonl')
 
 
-def load_cases(component):
+def load_cases(component, case_source='claude'):
+    if case_source not in ('claude', 'grok'):
+        raise ValueError('unknown case source')
+    if case_source == 'grok':
+        if component != 'planner':
+            raise ValueError('Grok supplies planner inputs and talker rubrics, not checker plans or decision cases')
+        return (read_jsonl(ROOT / 'eval/cases/grok_planner_rewrite.jsonl')
+                + read_jsonl(ROOT / 'eval/cases/grok_planner_new.jsonl'))
     if component == 'decision':
         return decision.cases(ROOT)
     if component == 'checker':
@@ -137,7 +147,9 @@ def collect_live(component, cases, model):
 def write_report(report, out):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
-    path = out / f'swap-{report["component"]}-{model_name(report["model"])}.json'
+    source = report.get('case_source', 'claude')
+    suffix = '' if source in ('claude', None) else f'-{source}'
+    path = out / f'swap-{report["component"]}-{model_name(report["model"])}{suffix}.json'
     path.write_text(json.dumps(report, indent=2, allow_nan=False) + '\n')
     table = out / 'swap.md'
     header = '| component | model | date (UTC) | evidence | n | metrics | worst ids | result |\n|---|---|---|---|---:|---|---|---|\n'
@@ -145,7 +157,7 @@ def write_report(report, out):
         if table.stat().st_size == 0:
             stream.write(header)
         stream.write(f'| {report["component"]} | {report["model"]} | {report["date"]} | {report["evidence"]} | '
-                     f'{report["n"]} | {json.dumps(report["metrics"], sort_keys=True)} | '
+                     f'{report["n"]} | source={source}; {json.dumps(report["metrics"], sort_keys=True)} | '
                      f'{", ".join(report["worst_ids"])} | {report["result"]} |\n')
     return path
 
@@ -166,6 +178,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('component', choices=('planner', 'checker', 'decision'))
     parser.add_argument('--model', required=True)
+    parser.add_argument('--case-source', choices=('claude', 'grok'), default='claude',
+                        help='case author; independent banks are scored separately (default: claude)')
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--fixture', action='store_true', help='offline (default)')
     mode.add_argument('--live', action='store_true', help='coordinator only; may spend money')
@@ -182,8 +196,8 @@ def main(argv=None):
         parser.error('checker is code: use offline --model current')
     try:
         model_name(args.model)
-        cases = load_cases(args.component)
-        path = args.fixture_file or fixture_path(args.component, args.model)
+        cases = load_cases(args.component, args.case_source)
+        path = args.fixture_file or fixture_path(args.component, args.model, args.case_source)
         if args.live and args.record and path.exists():
             raise ValueError('recording already exists; use a new --fixture-file to preserve comparison evidence')
         if args.live:
@@ -211,6 +225,7 @@ def main(argv=None):
         evidence = 'fixture (hand-written; not model evidence)' if synthetic else ('production code on hand-written plans' if not records else records[0]['source'])
         worst = sorted(rows, key=lambda r: (r['ok'], r.get('must_recall') or 0, r['id']))[:2]
         report = {'v': VERSION, 'component': args.component, 'model': args.model,
+                  'case_source': args.case_source if args.component != 'decision' else None,
                   'date': datetime.now(timezone.utc).isoformat(timespec='seconds'), 'fixture': synthetic,
                   'evidence': evidence, 'n': len(rows), 'metrics': metrics, 'checks': checks,
                   'result': 'PASS' if all(checks.values()) else 'FAIL',

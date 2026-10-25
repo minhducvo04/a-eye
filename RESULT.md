@@ -316,3 +316,7 @@ See its docs/results report.
 ## evals
 
 See its docs/results report.
+
+## checker
+
+See its docs/results report.

@@ -30,6 +30,9 @@ _WATER = r"\b(water|wet|leak\w*|drip\w*|puddle)\b"
 _ELECTRIC = r"\b(outlet|socket|live cord|powered cord|plugged.in cord|extension cord|psu|power supply|charger|power strip|computer|laptop)\b"
 _PANEL = r"\b(electrical panel|electric panel|breaker (box|panel)|fuse box)\b"
 _OPEN = r"\b(open\w*|remov\w*|unscrew\w*|take off|inside)\b"
+_SUPPLY = r"\b(charger|power (?:brick|supply)|psu|ac adapter)\b"
+_CELL = r"\b(lithium(?:[- ]ion)?|li[- ]?ion|lipo|18650|pouch|battery|cell)\b"
+_CAPACITOR = r"\bcapacitors?\b"
 _LADDER = r"\b(ladder|stepladder)\b"
 _UNSAFE = r"\b(top (rung|step)|wobbl\w*|unstable|uneven|overreach\w*|lean\w* sideways)\b"
 _WATER_ON = r"\bwater(?: supply)?\s+(?:(?:is|was)\s+)?(?:still\s+on|(?:still\s+)?running|not\s+off)\b"
@@ -52,6 +55,20 @@ def _stop(id, pattern, line):
 
 
 GATES = (
+    _stop('open_power_supply', _pair(
+        r"\b(open\w*|pry\w*|unscrew\w*|disassembl\w*|inside|internal)\b", _SUPPLY),
+          "Stop; keep the power supply sealed. Replace it or have a qualified technician inspect it."),
+    _stop('damaged_battery', _pair(
+        r"\b(punctur\w*|pok\w*|pierc\w*|drill\w*|squeez\w*|swollen|puffy|bulg\w*)\b", _CELL),
+          "Stop; do not puncture, squeeze or use the damaged battery. Keep away and contact a battery disposal service."),
+    _stop('capacitor_discharge', _pair(_CAPACITOR,
+        r"(?:\b(discharg\w*|screwdriver|microwave|television|crt|camera flash|high[- ]voltage)\b|"
+        r"\bshort(?:ing|ed)?\b.{0,25}\b(terminals?|leads?|capacitor)\b)"),
+          "Stop; stored charge can be dangerous even after unplugging. Leave capacitor discharge to a qualified technician."),
+    _stop('solder_fumes', _pair(r"\b(solder\w*|desolder\w*|iron|flux)\b",
+        r"(?:\b(?:no|without|skip\w*|avoid\w*)\s+(?:any\s+|the\s+)?(?:ventilation|fume extraction|extractor|fan)\b|"
+        r"\b(?:unventilated|sealed room|breath\w* (?:in )?(?:the )?(?:fumes|smoke))\b)"),
+          "Stop soldering until ventilation moves fumes away from your face. Use eye protection and an iron stand."),
     _stop('water_electric', _pair(_WATER, _ELECTRIC),
           "Stop and move away from the wet area; don't touch cords, outlets or switches. "
           "Keep others away and call an electrician before continuing."),
