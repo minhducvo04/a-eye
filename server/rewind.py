@@ -88,6 +88,9 @@ def identity(connection):
     server.auth.authorized() verified on this request or socket counts (connection.state.access_email); an
     unverified cookie or header never does. Token owners are random per-call capabilities verified by auth."""
     import hashlib
+    account = getattr(getattr(connection, 'state', None), 'account_owner', '')
+    if account:
+        return account
     email = getattr(getattr(connection, 'state', None), 'access_email', '')
     if isinstance(email, str) and email:
         return 'access:' + hashlib.sha256(email.lower().encode()).hexdigest()[:16]

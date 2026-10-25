@@ -88,6 +88,11 @@ class Store:
         self.dir = Path(base or root()) / memory_id
         self.cipher = cipher or Cipher()
         self.clock = clock
+        self.revoked = False
+
+    def writable(self):
+        if self.revoked:
+            raise PermissionError('This memory was deleted.')
 
     # ---- files ----
     def _path(self, name):
@@ -103,6 +108,7 @@ class Store:
             return default
 
     def _write_json(self, name, value):
+        self.writable()
         self.dir.mkdir(parents=True, exist_ok=True)
         tmp = self._path(name + '.tmp')
         tmp.write_bytes(self.cipher.seal(json.dumps(value).encode()))
@@ -134,11 +140,13 @@ class Store:
         return out
 
     def append(self, record):
+        self.writable()
         self.dir.mkdir(parents=True, exist_ok=True)
         with open(self._path('log.jsonl'), 'ab') as handle:
             handle.write(self.cipher.seal(json.dumps(record, separators=(',', ':')).encode()) + b'\n')
 
     def _rewrite(self, records):
+        self.writable()
         self.dir.mkdir(parents=True, exist_ok=True)
         tmp = self._path('log.jsonl.tmp')
         with open(tmp, 'wb') as handle:
@@ -147,6 +155,7 @@ class Store:
         tmp.replace(self._path('log.jsonl'))
 
     def save_crop(self, jpeg):
+        self.writable()
         crop_id = uuid4().hex[:16]
         (self.dir / 'crops').mkdir(parents=True, exist_ok=True)
         (self.dir / 'crops' / f'{crop_id}.jpg').write_bytes(self.cipher.seal(jpeg))
@@ -735,9 +744,20 @@ class Memories:
         self.embedder = embedder
         self.person_check = person_check
         self.calls = {}           # session_id -> (store, writer)
+        self.stores = {}
 
     def store(self, memory_id):
-        return Store(memory_id, base=self.base)
+        if memory_id not in self.stores:
+            self.stores[memory_id] = Store(memory_id, base=self.base)
+        return self.stores[memory_id]
+
+    def retire(self, memory_id):
+        store = self.stores.pop(memory_id, None)
+        if store:
+            store.revoked = True
+        for session_id, (attached, _) in list(self.calls.items()):
+            if attached.id == memory_id:
+                self.detach(session_id)
 
     def for_owner(self, owner):
         store = self.store(person_id(owner))

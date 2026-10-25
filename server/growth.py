@@ -6,7 +6,7 @@ Identity comes from the authenticated connection, never a message field.
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from server.memory import Store, memories, person_id
+from server.memory import memories, person_id
 
 
 class GrowthLog:
@@ -61,5 +61,5 @@ def for_owner(app, owner):
     if not hasattr(app.state, 'growth_logs'):
         app.state.growth_logs = {}
     if owner not in app.state.growth_logs:
-        app.state.growth_logs[owner] = GrowthLog(Store(person_id(owner), base=memories(app).base))
+        app.state.growth_logs[owner] = GrowthLog(memories(app).store(person_id(owner)))
     return app.state.growth_logs[owner]

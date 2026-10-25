@@ -32,8 +32,9 @@ def fetch_certs(url):
 
 class AccessKeys:
     """One team cache, bounded refreshes even for failures and arbitrary kids."""
-    def __init__(self, fetcher=fetch_certs, clock=monotonic):
+    def __init__(self, fetcher=fetch_certs, clock=monotonic, *, path='/cdn-cgi/access/certs', dependency='cf_access_certs'):
         self.fetcher, self.clock = fetcher, clock
+        self.path, self.dependency = path, dependency
         self.issuer = None
         self.keys = {}
         self.last_fetch = float('-inf')
@@ -50,7 +51,7 @@ class AccessKeys:
             if (kid not in self.keys or age >= 3600) and age >= 60:
                 self.last_fetch = self.clock()
                 try:
-                    body = self.fetcher(issuer + '/cdn-cgi/access/certs')
+                    body = self.fetcher(issuer + self.path)
                     keys = {}
                     for item in body['keys']:
                         if (item.get('kty') == 'RSA' and item.get('use', 'sig') == 'sig'
@@ -61,7 +62,7 @@ class AccessKeys:
                     self.keys, self.unavailable = keys, False
                 except Exception:
                     self.keys, self.unavailable = {}, True
-                    event('dependency_error', level='error', dependency='cf_access_certs')
+                    event('dependency_error', level='error', dependency=self.dependency)
             if self.unavailable:
                 return None, 'certs_unavailable'
             return self.keys.get(kid), 'unknown_kid'
@@ -106,6 +107,13 @@ def rejected(reason):
 
 
 def authorized(connection):
+    # Explicit legacy credentials retain their existing precedence. Cookies never supply an owner unverified.
+    from server.accounts import COOKIE, authenticate_session
+    if (connection.cookies.get(COOKIE) and not connection.headers.get('authorization')
+            and not connection.query_params.get('token')
+            and not connection.headers.get('cf-access-jwt-assertion')
+            and not connection.cookies.get('CF_Authorization')):
+        return authenticate_session(connection)
     expected = os.environ.get('A_EYE_TOKEN', '')
     team = os.environ.get('CF_ACCESS_TEAM_DOMAIN', '')
     audience = os.environ.get('CF_ACCESS_AUD', '')

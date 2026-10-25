@@ -19,8 +19,9 @@ def owner_key(connection):
 
 
 class Limits:
-    def __init__(self, clock=monotonic):
+    def __init__(self, clock=monotonic, guest_turn=None):
         self.clock = clock
+        self.guest_turn = guest_turn
         self.lock = Lock()
         self.sockets = defaultdict(int)
         self.turns = {}
@@ -49,7 +50,11 @@ class Limits:
                     del self.turns[key]
             keys = [('ip', ip), ('owner', owner)]
             limit = int(os.getenv('TURNS_PER_MINUTE', '30'))
+            if owner.startswith('guest:'):
+                limit = min(limit, 10)
             if len(self.turns) >= 8192 or any(len(self.turns.get(k, ())) >= limit for k in keys):
+                return False
+            if owner.startswith('guest:') and self.guest_turn and not self.guest_turn(owner):
                 return False
             for key in keys:
                 self.turns.setdefault(key, deque()).append(now)
