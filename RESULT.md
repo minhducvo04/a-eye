@@ -151,3 +151,31 @@ Proof: `/private/tmp/aeye-live-resilience-server-final.log`.
 Limits: no `.env` read and no real Gemini calls. Real provider acceptance of the
 new setup fields, real 2–3 minute continuity, latency and physical playback are
 not verified. All test media and provider responses were synthetic.
+
+## Sink guide review fixes — 2026-10-25
+
+Branch: `pkg/fix-guide`; local commit only, no push.
+Handoff: [docs/results/fix-guide-review.md](docs/results/fix-guide-review.md).
+
+Fixed all eight requested guide findings: in-flight check cancellation, fresh-frame
+selection with the original capture timestamp and age gate, explicit NEXT intent,
+OFF phrase coverage, sticky GUIDE publication, post-await hazard checks, parts
+restricted to the current step, and immediate reset/republication on forget.
+Eight reproduction test functions cover the bugs (14 cases).
+
+Files changed: `server/live_guide.py`, `server/packs/home.py`, `server/agent.py`,
+`server/step_check.py`, `server/parts_shelf.py`, `server/test_guide_review.py`,
+`server/test_parts_shelf.py`, `docs/results/fix-guide-review.md`, and `RESULT.md`.
+
+Test: targeted guide/home/checker/shelf suite - PASS (60 passed in 2.93s).
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server` - PASS
+(867 passed, 2 warnings in 48.47s; summary read, exit 0).
+Test: `git diff --check` - PASS.
+
+Limits: no `.env` read, real Gemini calls, or physical-device proof. Synthetic
+loopback HTTP passed with no saved pictures. Real checker activation still needs
+validated non-synthetic evaluation evidence; stale frames remain unable to pass.
+The separate bridge owner must retain the planned post-wait safety latch and
+mic/hold reset fixes. No additional bridge API is needed; the existing idle
+`publish_guide()` hook sends the pending background GUIDE. Other builders' six
+named files were not edited.

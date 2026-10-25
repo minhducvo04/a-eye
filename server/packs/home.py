@@ -38,7 +38,11 @@ TASKS = {
         'Move your fingers clear and gently test the door. Show the hinge and the gap as the door closes.',
     ),
 }
-_NEXT = re.compile(r"\b(next|done|continue|ready)\b", re.I)
+# A whole completion/request clause, including "the water is off, next".
+# Narration ("next to") and negation ("not done") are not completion intent.
+NEXT = re.compile(r"(?:^|[,;.!?]\s*)(?:(?:ok(?:ay)?|please)[, ]+)?"
+                  r"(?:next(?: step)?|done|continue|ready|i(?:['’]m| am) done|what(?:['’]s| is) next)"
+                  r"\s*[.!?]*\s*$", re.I)
 HINTS = {
     'sink': ('Show the leak and floor.', 'Locate the shutoff.', TASKS['sink'][2],
              'Check the fitting instructions.', 'Hand-snug only if permitted; otherwise stop for a plumber.',
@@ -118,7 +122,7 @@ class HomeGuide:
             self.full_steps = True
         if re.fullmatch(r'(try again|retry)[.!]?', text.strip(), re.I):
             self.tries += 1
-        if not changed and self.introduced and _NEXT.search(text):
+        if not changed and self.introduced and NEXT.search(text.strip()):
             if self.task == 'sink' and self.index >= 2:
                 stop = safety.plumbing_stop(self.water_off_passed)
                 if stop:

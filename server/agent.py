@@ -357,7 +357,7 @@ async def plan_scene(session, planner, base_system, user, scene, seq, text, emit
 
 async def check_water_off(session, store, testing=False, fixture=None):
     """The trusted valve verdict for the current frame. Missing camera, checker or error is never a pass."""
-    from server.step_check import Verdict, configured_checker
+    from server.step_check import FRESH_FRAME_AGE, MAX_AGE, Verdict, configured_checker
     from server.step_check_api import load_references
     result = Verdict()
     try:
@@ -369,8 +369,20 @@ async def check_water_off(session, store, testing=False, fixture=None):
             checker = session.step_checker
             if checker is None:
                 checker = session.step_checker = configured_checker()
-            result = await checker.check(base64.b64decode(session.frame['jpeg_b64'], validate=True),
-                                         *load_references(store), captured_at=session.frame_time)
+            # Transcription/debounce may have spent most of the image's age budget.
+            # The camera receiver can supply a newer frame while this turn waits.
+            deadline = monotonic() + MAX_AGE
+            while session.camera:
+                frame, captured_at = session.frame, session.frame_time
+                if frame and 0 <= monotonic() - captured_at <= FRESH_FRAME_AGE:
+                    break
+                if monotonic() >= deadline:
+                    return result
+                await asyncio.sleep(.02)
+            if not session.camera:
+                return result
+            result = await checker.check(base64.b64decode(frame['jpeg_b64'], validate=True),
+                                         *load_references(store), captured_at=captured_at)
         if not session.camera and not testing:
             result = Verdict()
     except Exception:
