@@ -37,7 +37,7 @@ EXPECTED = {
     'water': 'Sink guide starts; harmless water sentence gets a reply without a code stop.',
     'memory': 'After A then B, recall names A; unseen wrench receives an honest no.',
     'parts': 'LED request followed by resistor question gets a 220 ohm answer.',
-    'private': 'Private hello gets a reply with no cloud brain detail.',
+    'private': 'Private hello names an A object within 4 s, with no cloud brain detail.',
 }
 
 
@@ -332,6 +332,10 @@ def evaluate(flow, turns, events, aliases):
                 'Resistor answer did not mention 220 ohm')
     elif flow == 'private':
         require(bool(texts[0]) and any(c.isalpha() for c in texts[0]), 'Private turn had no reply')
+        require(mentions(texts[0], aliases), 'Private reply did not name a visible A object')
+        reply_times = [e['t'] - turns[0]['speech_end'] for e in windows[0]
+                       if e.get('type') == 'say' and mentions(e.get('text', ''), aliases)]
+        require(bool(reply_times) and min(reply_times) <= 4, 'No grounded private reply within 4 s')
         brains = [e.get('detail', '') for e in events if 'brain:' in e.get('detail', '').lower()]
         require(not any(not re.search(r'Brain:\s*(local|ollama|llama\.cpp|mlx)\b', d, re.I) for d in brains),
                 'Cloud or unknown brain detail in private call')

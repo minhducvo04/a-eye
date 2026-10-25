@@ -189,3 +189,30 @@ with local socket access. Full evidence: [fix-bridge](docs/results/fix-bridge.md
 ## acceptance
 
 See its docs/results report.
+
+## Acceptance fixes — 2026-10-25
+
+Branch: `pkg/accept-fix`; no push. Full analysis: [acceptance-fixes.md](docs/results/acceptance-fixes.md).
+
+Changed:
+
+- `server/agent.py`: reuse recent local captions for private scene questions; first-speech timeout for private/local streams.
+- `server/recent_memory.py`: opening-call selection and shared closed current-view question matching.
+- `server/live_memory.py`: avoid holding/restarting the ordinary current-view Live answer.
+- `scripts/live_acceptance.py`: require a grounded private answer within 4 s; timeout filler fails.
+- `server/test_agent.py`, `server/test_recent_memory.py`, `server/test_live_memory.py`, `server/test_pipeline.py`,
+  `scripts/test_live_acceptance.py`: 12 added regression cases, all passed in the final full run.
+- `docs/results/acceptance-fixes.md`, `docs/results/acceptance-fixes-tests.txt`, `RESULT.md`: evidence and handoff.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts` - FAIL
+(1007 passed, 17 failed, 2 warnings, 51.02 s; 16 sandbox socket-related failures, one unchanged stale ready-test assertion).
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_pipeline.py::test_private_audio_turn_answers_from_local_caption_without_talker server/test_recent_memory.py::test_generic_opening_caption_does_not_inherit_live_mug_claim` - PASS
+(2 passed in 0.85 s; synthetic in-process protocol/voice and caption-provenance checks).
+
+Test: `git diff --check` - PASS (no whitespace errors).
+
+Limits: no network or real-model timing; no proof of the original local mug caption. The 2 s ask target remains;
+the private 4 s check measures grounded reply text, not audio playback. The private general-model deadline is an
+availability bound, not a successful-answer guarantee. No `.env` read; protected builder files untouched.
+Owner/integrator must rerun live acceptance and the full suite where loopback sockets are permitted.

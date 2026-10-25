@@ -41,6 +41,27 @@ def test_temporal_routes():
         assert source_for(text, on) == want
 
 
+def test_start_of_call_selects_opening_scene_not_latest_or_transcript():
+    log = RecentMemory(clock=lambda: 60, started=0)
+    log.add(scene('A blue mug on the table', 'the object'), 1)
+    log.add(scene('A red apple on the table', 'the object'), 25)
+    log.note_transcript('You showed a wrench.', 'helper')
+    hit = log.find('what did I show you at the start of this call?')
+    assert hit and hit['t_s'] == 1 and 'mug' in hit['say'] and 'apple' not in hit['say']
+    assert log.find('did you see my wrench earlier?') is None
+    log.prune(602)
+    assert log.find('what did I show you at the start of this call?') is None
+
+
+def test_generic_opening_caption_does_not_inherit_live_mug_claim():
+    log = RecentMemory(clock=lambda: 60, started=0)
+    log.add(scene('An object on the table', 'the object'), 1)
+    log.note_transcript('I see a blue mug.', 'helper')
+    hit = log.find('what did I show you at the start of this call?')
+    assert hit and 'object' in hit['say'] and 'mug' not in hit['say']
+    assert log.find('did you see a mug earlier?') is None
+
+
 def test_recent_never_calls_cloud_and_no_wrong_time_fallback():
     async def check():
         log = RecentMemory(clock=lambda: 100, started=0)
