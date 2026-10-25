@@ -72,7 +72,9 @@ def test_fake_live_streams_before_complete_and_stops_mid_reply(monkeypatch, haza
                 await bridge.text('Describe the cup.')
                 await asyncio.wait_for(finished.wait(), 2)
                 await asyncio.sleep(.1)
-                assert .24 <= times['client_audio'] - times['provider_audio'] < .65
+                # The second packet supplies >=250 ms of PCM after the 80 ms
+                # transcript delay; playback no longer waits 250 ms of wall time.
+                assert .07 <= times['client_audio'] - times['provider_audio'] < .65
                 chunks = [m for m in emitted if m['type'] == 'audio' and m['pcm16_b64']]
                 assert all(3200 <= len(base64.b64decode(m['pcm16_b64'])) <= 6400 for m in chunks)
                 assert len({m['utterance_id'] for m in chunks}) == 1

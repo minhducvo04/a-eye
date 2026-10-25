@@ -35,6 +35,7 @@ def test_slow_tool_does_not_delay_audio(monkeypatch):
                 dict(id='slow', name='recent_memory', args={'question': 'Where was the resistor earlier?'})]}}))
             await started.wait()
             await ws.send(json.dumps(audio_content('Let me check.')))
+            await ws.send(json.dumps(audio_content()))  # 300 ms PCM clears the 250 ms initial hold.
             async for raw in ws:
                 wire.append(json.loads(raw))
                 if 'toolResponse' in wire[-1]:
@@ -99,6 +100,7 @@ def test_streaming_prefetch_card_cache_and_idle_publication(monkeypatch):
             # Lookup began on a partial transcript, before Live output / end of speech.
             assert searches == [(question, 220)]
             await ws.send(json.dumps(audio_content('Let me check.')))
+            await ws.send(json.dumps(audio_content()))  # 300 ms PCM clears the 250 ms initial hold.
             await asyncio.wait_for(audio.wait(), 1)
             release.set()
             await asyncio.wait_for(card.wait(), 1)

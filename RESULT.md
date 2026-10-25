@@ -123,3 +123,31 @@ Evidence under `/private/tmp/`: `aeye-bg-merge-targeted.log`,
 `aeye-bg-merge-rewind.log`, `aeye-bg-merge-real-latency.log`, and
 `aeye-bg-merge-real-camera.log`. The initial sandboxed targeted attempt could
 not bind loopback sockets; the reported test pass used permitted socket access.
+
+## Live resilience — 2026-10-25
+
+Branch: `pkg/live-resilience`; committed locally, no push.
+Full handoff: [docs/results/live-resilience.md](docs/results/live-resilience.md).
+
+Setup now requests session resumption and sliding-window compression. The latest
+resumable handle is reused on disconnect/goAway, and a healthy minute renews the
+single retry allowance. A stopped session keeps its audio latch and drops the
+handle. First audio releases after 250 ms of PCM is buffered and safety checks
+pass, including the initial partial chunk. The setup text limits catchphrases
+and asks for a choice with a reason.
+
+Files changed: `server/gemini_live.py`, `server/test_gemini_live.py`,
+`server/test_live_streaming.py`, `server/test_live_prefetch.py`,
+`docs/results/live-resilience.md`, `RESULT.md`. Production edits stay in setup,
+the reconnect path, and `flush_audio()`; memory-turn implementation is unchanged.
+Two prefetch fixtures now send enough synthetic PCM for the duration-based hold.
+
+Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_gemini_live.py server/test_live_streaming.py --tb=short` - PASS (43 passed in 3.26s).
+Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_live_prefetch.py --tb=short` - PASS (12 passed in 1.22s).
+Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server` - PASS (818 passed, 2 warnings in 45.07s; summary read, exit 0).
+Test: `git diff --check` - PASS.
+
+Proof: `/private/tmp/aeye-live-resilience-server-final.log`.
+Limits: no `.env` read and no real Gemini calls. Real provider acceptance of the
+new setup fields, real 2–3 minute continuity, latency and physical playback are
+not verified. All test media and provider responses were synthetic.
