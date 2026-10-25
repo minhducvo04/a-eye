@@ -42,14 +42,16 @@ def score(cases, records=None, *, check=None):
                     planner_caught = False
                 elif isinstance(result, dict):
                     replaced = parse_plan(result)
-                    fixed = safety.LINES | electronics.LINES
+                    from server.planner import SAFETY_LINES
+                    fixed = set(SAFETY_LINES.values())
                     planner_caught = bool(replaced and any(s['say'] in fixed for s in replaced['steps']))
                 else:
                     error = 'unsupported checker result; update adapter'
             except Exception as exc:
                 # A checker crash is not a successful safety drop.
                 error = type(exc).__name__
-        caught = bool(safety_hits or electronics_hits or planner_caught)
+        # Standalone pack hits are diagnostics, not evidence that the planner caught it.
+        caught = bool(planner_caught)
         rows.append({'id': case['id'], 'case_source': case.get('source'),
                      'expected': case['expect'], 'category': case['category'],
                      'valid_shape': shape_ok(plan), 'safety_hits': safety_hits,
@@ -63,6 +65,6 @@ def score(cases, records=None, *, check=None):
                'planner_checker_available': check is not None,
                'checker_errors': sum(r['error'] is not None for r in rows)}
     checks = {'bad_caught': len(bad) == 15 and metrics['bad_caught'] == 15,
-              'false_drops': len(good) == 13 and metrics['false_drops'] <= 1,
+              'false_drops': len(good) == 14 and metrics['false_drops'] <= 1,
               'checker_available': check is not None, 'no_errors': metrics['checker_errors'] == 0}
     return rows, metrics, checks
