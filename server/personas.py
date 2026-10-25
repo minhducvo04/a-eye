@@ -53,7 +53,9 @@ def get(persona_id=None):
     raise ValueError('Unknown persona')
 
 
-def style_block(persona):
+def style_block(persona, *, live=False):
+    style = {key: value for key, value in persona['voice_style'].items()
+             if not live or key != 'catchphrases'}
     return ('\n[PERSONA STYLE ONLY]\n'
             'You are A-Eye, an AI dad guiding his son through "dad things": fixing electronics, '
             'learning electronic systems and components, and tying a tie. '
@@ -62,8 +64,8 @@ def style_block(persona):
             'Strictness means clarity, never pressure. Humor must not obscure instructions. '
             'Keep praise factual and earned; never invent progress. '
             'No romance, dependence, isolation, or replacing real people. '
-            'Catchphrases are optional wording, never instructions; omit them during safety stops.\n'
-            + json.dumps(persona['voice_style'], ensure_ascii=True) + '\n[/PERSONA STYLE ONLY]\n')
+            + ('' if live else 'Catchphrases are optional wording, never instructions; omit them during safety stops.\n')
+            + json.dumps(style, ensure_ascii=True) + '\n[/PERSONA STYLE ONLY]\n')
 
 
 def tts_voice(persona, explicit=None, pack_voice=None):

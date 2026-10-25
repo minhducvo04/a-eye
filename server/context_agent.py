@@ -292,8 +292,10 @@ async def assess_live_context(session, evidence):
 
 class LiveContextBuilder:
     """Single cancellable worker; events coalesce and builds start at most every 4 s."""
-    def __init__(self, session, publish, stop, safety_line, *, interval=4):
+    def __init__(self, session, publish, stop, safety_line, *, interval=4, can_stop=lambda: True):
         self.session, self.publish, self.stop, self.safety_line = session, publish, stop, safety_line
+        self.can_stop = can_stop
+        self.pending_stop = None
         self.interval = interval
         self.pending = asyncio.Event()
         self.task = None
@@ -301,6 +303,14 @@ class LiveContextBuilder:
         self.observed_at = self.updated_at = 0
         self.last_stop = None
         self.failures = 0
+
+    async def release_stop(self):
+        """Background findings wait for mic final; direct input gates never wait here."""
+        if self.pending_stop and self.can_stop():
+            line, self.pending_stop = self.pending_stop, None
+            if line != self.last_stop:
+                self.last_stop = line
+                await self.stop(line)
 
     def request(self):
         self.pending.set()
@@ -317,6 +327,7 @@ class LiveContextBuilder:
             self.task.cancel()
             await asyncio.gather(self.task, return_exceptions=True)
         self.block = ''
+        self.pending_stop = None
 
     async def run(self):
         last_started = -float('inf')
@@ -368,9 +379,8 @@ class LiveContextBuilder:
             # stays in the context (Live hears it) instead of interrupting: it fired on a plain desk.
             line = self.safety_line(result['hazard'] + '\n' + result['context'])
         if line:
-            if line != self.last_stop:
-                await self.stop(line)
-                self.last_stop = line
+            self.pending_stop = line
+            await self.release_stop()
             return
         self.last_stop = None
         summary = ' '.join(result['context'].split()[:100])[:1000]

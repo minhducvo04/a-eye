@@ -4,6 +4,9 @@ import re
 
 HOME_TOPIC = re.compile(r'\b(sinks?|faucets?|valves?|plumb\w*|hinges?|breakers?|cabinet door|'
                         r'supply line|dripping tap|leaky tap|leaking tap|tripped)\b', re.I)
+HOME_REPAIR = re.compile(r'\b(fix\w*|repair\w*|help|adjust\w*|install\w*|replac\w*|tighten\w*|'
+                         r'loosen\w*|unclog\w*|reset\w*|turn\w*|remov\w*|open\w*|clos\w*|'
+                         r'connect\w*|disconnect\w*|leak\w*|drip\w*|broken|stuck|tripped)\b', re.I)
 SCOPE_LINE = 'Let’s work on electronics or tying a tie. Which would you like to try?'
 
 
@@ -12,7 +15,8 @@ def home_enabled():
 
 
 def refuse_home(text):
-    return SCOPE_LINE if not home_enabled() and HOME_TOPIC.search(text or '') else None
+    return SCOPE_LINE if (not home_enabled() and HOME_TOPIC.search(text or '')
+                          and HOME_REPAIR.search(text or '')) else None
 
 
 def task_for(text):

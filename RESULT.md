@@ -593,3 +593,7 @@ Test: `git diff --check` - PASS.
 
 Limits: no `.env` read, network access, provider call, push, merge, deployment,
 or physical-device proof. Full report: [fix-false-stop](docs/results/fix-false-stop.md).
+
+## live-polish
+
+See its docs/results report.
