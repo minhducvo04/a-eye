@@ -233,7 +233,10 @@ function renderLabels() {
     l.el.className = `lab ${l.kind} m-${mode}`;
     if (l.kind === 'node') {
       const b = item.status === 'building' ? '<span class="b">building</span>' : '';
-      l.el.innerHTML = mode === 'name' ? `<span class="v">${esc(item.name)}</span>${b}`
+      const selZone = selected && selected.kind === 'node' ? nodes[selected.id].zone : selected ? nodes[edges[selected.id].from].zone : null;
+      const quiet = mode === 'cost' && innerWidth <= 760 && /^\$0/.test(value || '') && item.zone !== selZone;
+      if (quiet) l.el.className = `lab ${l.kind} m-name`;
+      l.el.innerHTML = mode === 'name' || quiet ? `<span class="v">${esc(item.name)}</span>${b}`
         : `<span class="v">${esc(value || 'not measured')}</span><span class="n">${esc(item.name)}</span>${b}`;
       l.show = true;
     } else {
@@ -246,7 +249,7 @@ function renderLabels() {
     l.dirty = true;
   }
   const note = document.getElementById('modeNote');
-  note.textContent = mode === 'speed' ? data.measured_note : mode === 'cost' ? 'Costs are meter estimates; local models cost $0. Open a node for the source.' : '';
+  note.textContent = mode === 'speed' ? data.measured_note : mode === 'cost' ? (innerWidth <= 760 ? 'Name only = $0 (local). Tap a part to see its zone.' : 'Costs are meter estimates; local models cost $0. Open a node for the source.') : '';
 }
 
 // ---------- focus: selection and flows dim everything unrelated ----------
@@ -392,12 +395,12 @@ function frame() {
   const narrow = camera.aspect < 0.8;
   root.rotation.z = narrow ? -Math.PI / 2 : 0;
   root.updateMatrixWorld(true);
-  const pts = data.nodes.map((n) => world(n.pos));
+  const pts = data.nodes.map((n) => world(n.pos)).concat(data.zones.filter((z) => z.label_at).map((z) => world(z.label_at)));
   const box = new THREE.Box3().setFromPoints(pts);
   const W = innerWidth, H = innerHeight;
   const barBottom = document.querySelector('.bar').getBoundingClientRect().bottom;
   const side = Math.min(95, W * 0.19);
-  const safe = { l: side, r: W - side, t: barBottom + 12, b: H - (narrow ? 70 : 76) };
+  const safe = { l: side, r: W - side, t: barBottom + 12, b: H - (narrow ? 96 : 104) }; // keeps the legend and its footnote line clear
   const dir = narrow ? new THREE.Vector3(0.1, 0.22, 1).normalize() : new THREE.Vector3(0.16, 0.3, 1).normalize();
   const target = box.getCenter(new THREE.Vector3());
   let dist = 32;
@@ -485,6 +488,7 @@ function setFlow(f, once = false) {
 const seg = document.querySelectorAll('.seg button');
 function setMode(m) {
   mode = m;
+  document.body.classList.toggle('cost-mode', m === 'cost');
   seg.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.mode === m)));
   renderLabels();
   if (!panel.hidden && !selected) openPanel(indexPanel());
@@ -547,6 +551,7 @@ function resize() {
   frame();
 }
 addEventListener('resize', resize);
+addEventListener('resize', () => renderLabels());
 resize();
 let wasNarrow = camera.aspect < 0.8;
 addEventListener('resize', () => { const n = camera.aspect < 0.8; if (n !== wasNarrow) { wasNarrow = n; camera.position.copy(home.pos); controls.target.copy(home.target); } });
@@ -562,7 +567,7 @@ let last = performance.now();
 const frameTimes = [];
 window.__map = { frameTimes, ready: false, reduced: REDUCED };
 
-function writePulse(i, edgeId, t, reverse, color, scale, alpha) {
+function writePulse(i, edgeId, t, reverse, color, scale, alpha, packet = false) {
   const o = edgeObj[edgeId];
   let n = i;
   for (let k = 0; k < TRAIL; k++) {
@@ -572,8 +577,10 @@ function writePulse(i, edgeId, t, reverse, color, scale, alpha) {
     o.curve.getPoint(u, tmpA);
     pPos[n * 3] = tmpA.x; pPos[n * 3 + 1] = tmpA.y; pPos[n * 3 + 2] = tmpA.z;
     const fall = 1 - k / TRAIL;
-    pSize[n] = (k === 0 ? 2.8 : 1.7 * fall + 0.2) * scale;
-    pAlpha[n] = alpha * (k === 0 ? 1 : 0.85 * Math.pow(fall, 1.6)) * o.dim;
+    // ambient: heads 1.6x the first build, thin tails that fade out before the node; the flow packet stays full strength
+    pSize[n] = packet ? (k === 0 ? 2.8 : 1.7 * fall + 0.2) * scale : (k === 0 ? 2.4 : 0.8 * fall + 0.08) * scale;
+    const ends = packet ? 1 : Math.min(1, tt / 0.1, (1 - tt) / 0.1);
+    pAlpha[n] = alpha * ends * (k === 0 ? 1 : (packet ? 0.85 : 0.6) * Math.pow(fall, packet ? 1.6 : 2.2)) * o.dim;
     pCol[n * 3] = color.r; pCol[n * 3 + 1] = color.g; pCol[n * 3 + 2] = color.b;
     n++;
   }
@@ -652,7 +659,7 @@ function tick(now) {
       continue;
     }
     cTmp.set(TONE.speed).lerp(white, 0.2);
-    n = writePulse(n, id, fp.wait > 0 ? -1 : fp.t, rev, cTmp, 1.05, 1);
+    n = writePulse(n, id, fp.wait > 0 ? -1 : fp.t, rev, cTmp, 1.05, 1, true);
   }
   if (pendingClear) { pendingClear = false; setFlow(null); }
   for (let i = n; i < MAXP; i++) pAlpha[i] = 0;

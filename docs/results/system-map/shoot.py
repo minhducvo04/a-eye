@@ -13,6 +13,7 @@ SHOTS = [
     ('390-autoplay', 390, 844, ''),
     ('390-cost', 390, 844, '?mode=cost'),
     ('390-index', 390, 844, '?panel=index'),
+    ('390-cost-selected', 390, 844, '?mode=cost&select=gemini'),
     ('1280-speed', 1280, 800, '?mode=speed'),
     ('1280-cost', 1280, 800, '?mode=cost'),
     ('1280-router-panel', 1280, 800, '?mode=speed&select=router'),

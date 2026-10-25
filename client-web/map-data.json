@@ -224,33 +224,37 @@
    ],
    "size": 0.55,
    "status": "working",
-   "building": "Time scope (just now / earlier this call / earlier calls) is being built tonight.",
    "name": "Router",
-   "speed": "~43 ms",
+   "speed": "~45 ms",
    "cost": "$0 (local)",
-   "kind": "Decision model: EmbeddingGemma + logistic regression",
-   "what": "Embeds each question and picks a lane in about 43 ms: answer from now (camera), from the past (memory) or ask the expert. Small and local, so it never waits on the cloud.",
+   "kind": "Decision model: EmbeddingGemma + logistic regression, with a time-scope head",
+   "what": "Embeds each question and picks a lane: answer from now (camera), from memory, or ask the expert. A time-scope head then picks how far back: seconds, minutes, earlier this call or earlier calls. A past question holds Gemini's reply until code has looked it up. Local, about 45 ms on CPU.",
    "code": [
     "router/route.py",
-    "router/embed_local.py",
-    "router/results/heldout_eval.json"
+    "router/scope.py",
+    "server/live_memory.py",
+    "router/results/scope_heldout_eval.json"
    ],
    "facts": [
     [
-     "Held-out accuracy",
-     "96 of 100 (router/results/heldout_eval.json)"
+     "Time scope, independent set",
+     "86% of 300 questions, 0 \"now\" questions held by mistake (team report tonight)"
+    ],
+    [
+     "Time scope, held-out file",
+     "96 of 100, 0 of 20 \"now\" held (router/results/scope_heldout_eval.json)"
     ],
     [
      "Latency",
-     "p50 43 ms, p90 49.5 ms"
+     "about 45 ms on CPU (route() median 45.7 ms, p90 47.9 ms)"
+    ],
+    [
+     "Lane model, held-out",
+     "96 of 100, p50 43 ms (router/results/heldout_eval.json)"
     ],
     [
      "Claude Haiku as router",
      "97 of 100, p50 803 ms"
-    ],
-    [
-     "Regex baseline",
-     "64 of 100"
     ]
    ],
    "look": {
@@ -297,7 +301,7 @@
       ]
      }
     ],
-    "foot": "From router/results/heldout_eval.json."
+    "foot": "Lane accuracy from router/results/heldout_eval.json. Time scope: 86% on an independent 300-question set, 0 \"now\" held by mistake."
    }
   },
   {
@@ -653,10 +657,10 @@
       "label": "Earlier calls",
       "who": "Saved calls",
       "tone": "memory",
-      "status": "building"
+      "status": "working"
      }
     ],
-    "foot": "The router's time scope picks the row. Time scope is being built tonight."
+    "foot": "The router's time-scope head picks the row; a past question holds Gemini until code has the answer."
    }
   },
   {
@@ -732,15 +736,15 @@
    ],
    "size": 0.55,
    "status": "working",
-   "building": "Recall from saved calls into a live call is being built tonight.",
    "name": "Saved calls",
-   "speed": "recall: building",
+   "speed": "not measured",
    "cost": "$0 (local)",
    "kind": "Long-term local memory (server/memory.py)",
-   "what": "With memory consent, a call is saved on this Mac, encrypted on disk when the memory key is set. Pulling it back into a new call is the recall pipeline, still being built.",
+   "what": "With memory consent, a call is saved on this Mac, encrypted on disk when the memory key is set. Questions about earlier calls are routed here by the time-scope head and answered by code from task history and dated sightings.",
    "code": [
     "server/memory.py",
-    "server/memory_capture.py"
+    "server/memory_capture.py",
+    "server/live_memory.py"
    ],
    "facts": [
     [
@@ -757,7 +761,7 @@
     ],
     [
      "Recall",
-     "building"
+     "working: past-call questions answered from task history and dated sightings (server/live_memory.py)"
     ]
    ],
    "look": {
@@ -779,8 +783,8 @@
      },
      {
       "head": "Recall",
-      "body": "Being built tonight.",
-      "tone": "building"
+      "body": "Routed by the time-scope head; not-found is spoken by code, so no made-up place.",
+      "tone": "server"
      }
     ]
    }
@@ -794,17 +798,17 @@
     -1.0
    ],
    "size": 0.5,
-   "status": "building",
+   "status": "working",
    "cloud_points": 10001,
    "name": "Parts shelf",
    "speed": "not measured",
-   "cost": "not measured",
+   "cost": "$0 (local)",
    "kind": "Team SpacetimeDB, Apify scrape",
-   "what": "10,001 Amazon tool and electronics listings scraped with Apify by Shivam and stored in the team SpacetimeDB, so A-Eye can suggest a part that fits. Hooking it into the call is being built tonight.",
+   "what": "10,001 Amazon tool and electronics listings scraped with Apify by Shivam into the team SpacetimeDB. 39 guide cards link to real product rows, and the step guide adds a short \"parts for this step\" note to Gemini's context.",
    "code": [
     "market/apify.py",
-    "market/search.py",
-    "market/compat.py"
+    "market/compat.py",
+    "server/live_guide.py"
    ],
    "facts": [
     [
@@ -812,16 +816,16 @@
      "10,001"
     ],
     [
-     "Store",
-     "team SpacetimeDB"
+     "Guide cards",
+     "39, linked to real product rows (data/kb)"
+    ],
+    [
+     "In the call",
+     "code-owned parts note in Live context"
     ],
     [
      "Fit check",
      "market/compat.py decides in code; unknown spec is unverified"
-    ],
-    [
-     "Status",
-     "building"
     ]
    ],
    "look": {
@@ -925,9 +929,9 @@
    "status": "working",
    "rate": 0.8,
    "name": "question",
-   "speed": "43 ms",
+   "speed": "~45 ms",
    "cost": "$0",
-   "what": "Each finished question is routed in about 43 ms (p50, held-out set)."
+   "what": "Each finished question is routed in about 45 ms on CPU (lane and time scope)."
   },
   {
    "id": "rt-ground",
@@ -968,12 +972,12 @@
    "id": "rt-saved",
    "from": "router",
    "to": "saved",
-   "status": "building",
+   "status": "working",
    "rate": 0.3,
    "name": "earlier calls",
-   "speed": "building",
-   "cost": "",
-   "what": "Recall from saved calls. Being built tonight, so no data flows here yet."
+   "speed": "",
+   "cost": "$0",
+   "what": "Questions about earlier calls go to saved-call memory; code answers or says it was not found."
   },
   {
    "id": "srv-safe",
@@ -1133,13 +1137,13 @@
    "id": "parts-srv",
    "from": "parts",
    "to": "server",
-   "status": "building",
+   "status": "working",
    "rate": 0.2,
    "bend": 1.0,
-   "name": "part that fits",
-   "speed": "building",
-   "cost": "",
-   "what": "Part suggestions from the shelf. Being built tonight."
+   "name": "parts for this step",
+   "speed": "",
+   "cost": "$0",
+   "what": "The guide adds a short code-owned note of parts for the current step to Gemini's context."
   },
   {
    "id": "priv-gem",
@@ -1188,7 +1192,7 @@
     "-srv-gem",
     "-cap-srv"
    ],
-   "say": "Voice and frames reach the server, the router picks a lane in 43 ms, Gemini answers with the latest scene note. First voice 0.6 to 1.1 s after you stop."
+   "say": "Voice and frames reach the server, the router picks a lane in about 45 ms, Gemini answers with the latest scene note. First voice 0.6 to 1.1 s after you stop."
   },
   {
    "id": "find",
