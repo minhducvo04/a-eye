@@ -94,8 +94,10 @@ TOOL_DESCRIPTIONS = {
 
 def declarations(rewind_on):
     return [dict(name=name, description=TOOL_DESCRIPTIONS[name], parameters=dict(
-        type='object', properties={p: dict(type='string', minLength=1, maxLength=300) for p in fields},
-        required=list(fields), additionalProperties=False))
+        # Gemini's function schema is an OpenAPI subset: no additionalProperties or string length keys.
+        # Tool arguments are still validated strictly in code before any tool runs.
+        type='object', properties={p: dict(type='string') for p in fields},
+        required=list(fields)))
         for name, fields in TOOL_ARGS.items() if name != 'rewind_search' or rewind_on]
 
 
@@ -192,11 +194,21 @@ class LiveBridge:
 
     async def start(self):
         if not privacy.google_allowed() or not os.environ.get('GEMINI_API_KEY'):
+            from server.logs import event
+            event('live_start_refused', level='warning',
+                  reason='google_consent' if not privacy.google_allowed() else 'no_key')
             return False
         try:
             self.model = await self.discover()
             await self._open()
-        except Exception:
+        except Exception as error:
+            from server.logs import event
+            # Class name only: provider messages may contain the key or media.
+            rcvd = getattr(error, 'rcvd', None)
+            key = os.environ.get('GEMINI_API_KEY', '')
+            reason = (getattr(rcvd, 'reason', '') or '')[:200].replace(key, '***') if key else ''
+            event('live_start_failed', level='warning', error=type(error).__name__,
+                  code=getattr(rcvd, 'code', None), reason=reason)
             return False
         self.active = True
         self.task = asyncio.create_task(self._run())
@@ -290,7 +302,9 @@ class LiveBridge:
         if not tool:
             return 'Tool unavailable.'
         try:
-            validate(args, tool['parameters'])
+            strict = dict(tool['parameters'], additionalProperties=False, properties={
+                key: dict(type='string', minLength=1, maxLength=300) for key in tool['parameters']['properties']})
+            validate(args, strict)
         except Exception:
             return 'Invalid tool arguments.'
         line = self.stop_line(' '.join(args.values()))
