@@ -31,6 +31,7 @@ public enum Modes {
         Mode(id: "mechanic", title: "Mechanic", symbol: "car", pack: nil, requiresPowerOff: false),
         Mode(id: "plumbing", title: "Sink", symbol: "drop", pack: "home", requiresPowerOff: false),
         Mode(id: "engineering", title: "Engineering", symbol: "gearshape.2", pack: nil, requiresPowerOff: false),
+        Mode(id: "gemini-live", title: "Gemini Live", symbol: "waveform", pack: "general", requiresPowerOff: false),
     ]
 
     /// The pack that is the product focus: Memory is centred at launch, as on the web.

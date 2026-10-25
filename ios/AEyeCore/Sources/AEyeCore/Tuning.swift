@@ -9,6 +9,8 @@ public enum Tuning {
     public static let demoBoardId = "demo-b650"
     /// Expected wait for an answer before the server has measured any turns (`typical_ms`).
     public static let defaultTypicalWaitMs: Double = 3000
+    /// The model always sees the whole frame; the sweep animation is off so the screen does not suggest otherwise.
+    public static let showScanSweep = false
     /// A wait card older than this is hidden, in case the server never sends the turn's end.
     public static let maxWaitMs: Double = 30000
 }

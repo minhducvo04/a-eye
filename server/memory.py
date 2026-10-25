@@ -28,6 +28,7 @@ from time import monotonic, time
 from uuid import uuid4
 
 from server.logs import event
+from server import privacy
 
 ROOT = Path(__file__).resolve().parents[1] / 'data' / 'private' / 'memory'
 CROP_SIDE = 224
@@ -364,12 +365,26 @@ class PersonCheck:
         return any(d['label'].strip().casefold() == 'person' for d in detections)
 
 
+class MemoryVision:
+    """Local Qwen grounding, independent of the general scene backend setting."""
+
+    async def call(self, operation, payload):
+        from vision.ollama import OllamaBackend
+        def local():
+            backend = OllamaBackend()
+            try:
+                return getattr(backend, operation)(payload, 'ok')
+            finally:
+                backend.client.close()
+        return await asyncio.to_thread(local)
+
+
 class Writer:
     """Turns scans of one call into memory lines. Stores only changed notes."""
 
     def __init__(self, store, call_id, embedder=None, person_check=None, vision=None):
         self.store = store
-        self.vision = vision        # our own vision host, to ground tagged objects (no cloud call)
+        self.vision = vision        # injected local grounding client, or MemoryVision in production
         self.grounded_at = 0.0
         self.call_id = call_id
         self.embedder = embedder or GemmaEmbedder()
@@ -408,10 +423,20 @@ class Writer:
 
     async def observe(self, scene, jpeg_b64):
         """One keyframe scan: scene (caption, objects) and the frame it was made from."""
+        original_scene = scene
+        enriched = False
+        if privacy.google_allowed():
+            from vision.gemini import GeminiBackend
+            queries = [t['label'] for t in self.store.tags().values()][:3]
+            candidate = await asyncio.to_thread(GeminiBackend().scene,
+                                                dict(image_b64=jpeg_b64, queries=queries))
+            if candidate.get('caption') and candidate['caption'] != 'unsure':
+                scene, enriched = candidate, True
         note = ' '.join((scene.get('caption') or '').split())[:200]
         objects = [o for o in scene.get('objects', []) if o.get('label') and not _GENERIC.match(o['label'])]
         tags = self.store.tags()
-        objects += await self.ground(tags, jpeg_b64, note)
+        if not enriched:
+            objects += await self.ground(tags, jpeg_b64, note)
         hits = []
         for obj in objects:
             for tag in tags.values():
@@ -448,7 +473,7 @@ class Writer:
         if hits:
             # Faces never stored: no crop when a person is in the frame or the check cannot run (fail closed).
             try:
-                person = await self.person_check(jpeg_b64, scene)
+                person = await self.person_check(jpeg_b64, original_scene)
             except Exception:
                 person, record['skipped'] = True, 'person_check_unavailable'
             if person:
@@ -754,8 +779,7 @@ def memories(app):
     if not hasattr(app.state, 'memories'):
         vision = getattr(app.state, 'vision_v2', None)
         if vision is None:
-            from server.ws2 import SceneClient
-            vision = SceneClient()
+            vision = MemoryVision()
         app.state.memories = Memories(vision=vision)
     return app.state.memories
 

@@ -50,6 +50,10 @@ smoke:            ## end to end: photo -> server -> fake vision -> box + step
 llm-probe:        ## one router call with .env loaded: make llm-probe Q="your question"
 	$(PY) -m server.llm_probe "$(Q)"
 
+.PHONY: gemini-live-check
+gemini-live-check: ## synthetic camera probe with .env loaded; never prints credentials
+	$(PY) scripts/gemini_live_check.py
+
 keys:             ## which keys are set (length only, never the value)
 	@for k in ANTHROPIC_API_KEY CARTESIA_API_KEY APIFY_TOKEN BRIGHTDATA_API_KEY; do v=$$(printenv $$k); echo "$$k: $${#v} chars"; done
 

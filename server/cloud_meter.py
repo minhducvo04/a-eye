@@ -42,12 +42,14 @@ def is_local(url):
 class Meter:
     calls: int = 0
     bytes: int = 0
+    pictures_sent: int = 0
     lock: Lock = field(default_factory=Lock, repr=False)
 
-    def add(self, calls=0, size=0):
+    def add(self, calls=0, size=0, pictures=0):
         with self.lock:
             self.calls += calls
             self.bytes += size
+            self.pictures_sent += pictures
 
     def snapshot(self):
         with self.lock:

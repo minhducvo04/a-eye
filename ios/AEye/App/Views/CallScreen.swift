@@ -32,7 +32,7 @@ struct CallScreen: View {
             // Viewfinder sweep while the helper reads the picture. Memory mode keeps the screen still.
             if !isMemory {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
-                    if let wait = visibleWait(state, at: context.date), wait.agent == .helper {
+                    if Tuning.showScanSweep, let wait = visibleWait(state, at: context.date), wait.agent == .helper {
                         ScanSweep(color: Palette.helper)
                             .ignoresSafeArea()
                             .transition(.opacity)
@@ -46,7 +46,9 @@ struct CallScreen: View {
                 waitCard(state: state)
                 CaptionCard(caption: state.caption, errorText: state.errorText, isLarge: isMemory)
                 if controller.isInputResolved, controller.inputMode == .voice {
-                    ListeningStrip(listener: controller.listener)
+                    ListeningStrip(levels: controller.isLive ? controller.liveAudio.levels : controller.listener.levels,
+                                   heard: controller.isLive ? controller.liveAudio.interim : controller.listener.interim,
+                                   isMuted: controller.isMuted)
                 }
                 powerOffGate(state: state)
                 typedBar
@@ -255,7 +257,7 @@ struct CallScreen: View {
     /// (`#mic[aria-pressed="true"]`). Inactive while typing is the input (permission off, or no on-device speech).
     private var micButton: some View {
         let isVoice = controller.isInputResolved && controller.inputMode == .voice
-        let isMuted = controller.listener.isMuted
+        let isMuted = controller.isMuted
         let isHearing = isVoice && !isMuted
         return Button {
             controller.toggleMute()

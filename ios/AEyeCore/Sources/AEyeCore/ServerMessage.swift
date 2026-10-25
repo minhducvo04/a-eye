@@ -1,9 +1,10 @@
 import Foundation
 
 /// A message from the server on `/ws2`, reduced to what the app acts on.
-/// Types the app does not use (`metrics`, `track`, `audio`, ...) and known types that fail to decode
+/// Types the app does not use (`metrics`, `track`, ...) and known types that fail to decode
 /// become `.ignored`, so state never changes on them.
 public enum ServerMessage: Equatable {
+    case audio(ServerAudio)
     case draw(agent: Agent, seq: Int, ops: [DrawOp])
     case say(agent: Agent, utteranceId: String, text: String)
     case agentState(agent: Agent, state: PresenceState)
@@ -21,6 +22,10 @@ public enum ServerMessage: Equatable {
         let ignored = ServerMessage.ignored(type: probe.type)
 
         switch probe.type {
+        case "audio":
+            guard let audio = try? decoder.decode(ServerAudio.self, from: data),
+                  audio.isValid else { return ignored }
+            return .audio(audio)
         case "draw":
             guard let p = try? decoder.decode(DrawPayload.self, from: data) else { return ignored }
             return .draw(agent: p.agent, seq: p.seq, ops: p.ops)

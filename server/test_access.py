@@ -154,10 +154,17 @@ def test_browser_socket_url():
 import assert from 'node:assert/strict';
 import { ownerQuery } from './client-web/call-owner.js';
 globalThis.location = {protocol: 'https:', host: 'demo.test', search: ''};
+let pack = 'general', cloud = {google: false}, privateMode = false;
 ''' + function + '''
 assert.equal(wsUrl(), 'wss://demo.test/ws2');
 location.search = '?token=a%26b';
 assert.equal(new URL(wsUrl()).searchParams.get('token'), 'a&b');
+pack = 'gemini-live'; cloud.google = true;
+assert.equal(new URL(wsUrl()).searchParams.get('mode'), 'gemini-live');
+assert.equal(new URL(wsUrl()).searchParams.get('google'), '1');
+assert.equal(new URL(wsUrl()).searchParams.get('token'), 'a&b');
+privateMode = true;
+assert.equal(new URL(wsUrl()).searchParams.get('google'), '0');
 '''], check=True, capture_output=True)
 
 
