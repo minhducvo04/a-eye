@@ -617,6 +617,9 @@ class Rewind:
             return []
         if self.index_id is None:
             self.index_id = await self.client.ensure_index(self.index_name)
+        # TwelveLabs returns nothing for very long id filters: search the newest saved clips only.
+        newest = list(past)[-60:]  # kept file is in save order: the last entries are the newest calls
+        past = {v: past[v] for v in newest}
         rows = await self.client.search(self.index_id, query, video_ids=list(past), limit=limit)
         if not rows and self.index_name != INDEX_NAME:
             # Saved calls may live in the shared index (open demo calls upload there), not this caller's own index.
