@@ -58,7 +58,8 @@ async def run_tool(name, args, session, vision=None, app=None, turn_id=None):
         query = str((args or {}).get('query') or '').strip()[:300]
         result = await rewind.search_past(session, query, vision=vision, app=app)
         card = rewind.hit_message(dict(result, query=query), turn_id)
-        result.pop('frame_b64', None)
+        for key in ('frame_b64', 'frames_b64', 'fps', 'clip_url'):
+            result.pop(key, None)
         return result, [card] if card else []
     if name == 'recap_call':
         result = await rewind.recap_call(session, app=app)

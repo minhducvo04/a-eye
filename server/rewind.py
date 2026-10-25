@@ -210,6 +210,12 @@ class TwelveLabsClient:
             response.raise_for_status()
             return response.json()
 
+    async def retrieve_video(self, index_id, video_id):
+        async with self._client(timeout=2) as client:
+            response = await client.get(f'/indexes/{index_id}/videos/{video_id}')
+            response.raise_for_status()
+            return response.json()
+
     async def analyze(self, mp4_bytes, prompt, schema=None, model=None, max_tokens=800):
         """Pegasus over POST /analyze with the video as base64 (30 MB limit). Returns (text, usage)."""
         body = dict(model_name=model or os.environ.get('REWIND_PEGASUS_MODEL', 'pegasus1.5'),
@@ -621,7 +627,8 @@ class Rewind:
             at = clip['start_s'] + float(row.get('start', 0))
             hits.append(dict(t_s=round(at, 1), start_s=round(at, 1), end_s=round(clip['start_s'] + float(row.get('end', 0)), 1),
                              rank=row.get('rank'), video_id=row.get('video_id'), frame=None, candidates=[],
-                             past_call=True, call_started_wall=call.get('started_wall')))
+                             past_call=True, video_t_s=float(row.get('start', 0)),
+                             call_started_wall=call.get('started_wall')))
         return hits
 
     @_call_cloud
@@ -891,6 +898,53 @@ def small_frame(jpeg, size=480):
         return base64.b64encode(out.getvalue()).decode()
 
 
+def clip_frames(rewind, hit):
+    """At most twelve small frames around the hit, from this call's in-memory clips only."""
+    at = hit['t_s']
+    timed = sorted({t: jpeg for clip in rewind.clips for t, jpeg in clip.frames
+                    if at - 3 <= t <= at + 3}.items())
+    if len(timed) > 12:
+        timed = [timed[round(i * (len(timed) - 1) / 11)] for i in range(12)]
+    frames = []
+    times = []
+    for t, jpeg in timed:
+        try:
+            frames.append(small_frame(jpeg, 320))
+            times.append(t)
+        except Exception:
+            continue
+    if not frames:
+        return {}
+    fps = min(4.0, (len(times) - 1) / max(times[-1] - times[0], 0.25)) if len(times) > 1 else 1
+    return dict(frames_b64=frames, fps=fps)
+
+
+@_call_cloud
+async def hit_media(rewind, hit):
+    """Client-only playback fields. Saved-video retrieval is optional and bounded to two seconds."""
+    fields = {}
+    if hit.get('frame'):
+        try:
+            fields['frame_b64'] = await asyncio.to_thread(small_frame, hit['frame'])
+        except Exception:
+            pass
+    if not hit.get('past_call'):
+        fields.update(await asyncio.to_thread(clip_frames, rewind, hit))
+        return fields
+    retrieve = getattr(rewind.client, 'retrieve_video', None)
+    if retrieve is None or not rewind.cloud_allowed():
+        return fields
+    try:
+        video = await asyncio.wait_for(retrieve(rewind.index_id, hit['video_id']), timeout=2)
+        url = (video.get('hls') or {}).get('video_url')
+        if isinstance(url, str) and url.startswith('https://') and rewind.cloud_allowed():
+            at = max(0, hit.get('video_t_s', 0))
+            fields.update(clip_url=url, start_s=max(0, at - 3), end_s=at + 3)
+    except Exception:
+        pass  # Missing HLS, timeout or provider failure must never hide the existing hit.
+    return fields
+
+
 _ITEM = re.compile(r"\b(where (are|is|did i (put|leave)|have i (put|left)) (my|the)|where'?s my|have you seen (my|the))\b",
                    re.I)
 _FORGET = re.compile(r"\bforget (that|it|them|today|everything|all of it)\b", re.I)
@@ -923,7 +977,7 @@ def wants_rewind(session, text):
 
 
 def hit_message(result, turn_id=None):
-    """The client card for a search_past result (frame with the object boxed), or None without a frame."""
+    """The client card for a search_past result, or None without a hit."""
     from server.agent import message
     if result.get('call_time_s') is None:
         return None
@@ -934,8 +988,9 @@ def hit_message(result, turn_id=None):
                   if result.get('box') else [])
     if turn_id:
         fields['turn_id'] = turn_id
-    if result.get('frame_b64'):
-        fields['frame_b64'] = result['frame_b64']
+    for key in ('frame_b64', 'frames_b64', 'fps', 'clip_url'):
+        if result.get(key):
+            fields[key] = result[key]
     return message('rewind_hit', **fields)
 
 
@@ -1183,11 +1238,7 @@ async def search_past(session, query, vision=None, app=None):
     result = dict(sure=hit['sure'], call_time_s=hit['t_s'], label=best['label'] if best else hit['target'],
                   box=best['bbox'] if best else None, clip_id=hit['video_id'], alternatives=hit['alternatives'],
                   start_s=hit['start_s'], end_s=hit['end_s'], say=spoken)
-    if hit.get('frame'):
-        try:
-            result['frame_b64'] = await asyncio.to_thread(small_frame, hit['frame'])
-        except Exception:
-            pass
+    result.update(await hit_media(rewind, hit))
     return result
 
 

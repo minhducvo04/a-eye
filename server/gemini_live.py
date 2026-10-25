@@ -470,7 +470,7 @@ class LiveBridge:
         return True
 
     async def _lookup_memory(self, question, scope=None):
-        from server.rewind import small_frame
+        from server.rewind import hit_media
         cards = []
         turn_id = self.turn_id
 
@@ -479,8 +479,8 @@ class LiveBridge:
                           end_s=hit.get('end_s', hit['t_s']), sure=hit['sure'],
                           alternatives=hit.get('alternatives', [])[:3], objects=hit.get('objects', []),
                           turn_id=turn_id)
-            if hit.get('frame'):
-                fields['frame_b64'] = await asyncio.to_thread(small_frame, hit['frame'])
+            if hit.get('video_id') or hit.get('frame'):
+                fields.update(await hit_media(self.session.rewind, hit))
             cards.append(message('rewind_hit', **fields))
 
         result = await recent_memory.answer(self.session, question, self.vision, on_hit=on_hit, scope=scope)
