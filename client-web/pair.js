@@ -1,6 +1,6 @@
-import { drawQr } from './qr.js';
-import { writeFrame } from './live.js';
-import { createVoice } from './voice.js';
+import { drawQr } from './qr.js?v=1792947000';
+import { writeFrame } from './live.js?v=1792947000';
+import { createVoice } from './voice.js?v=1792947000';
 
 export function pairMode(search) {
   const query = new URLSearchParams(search);

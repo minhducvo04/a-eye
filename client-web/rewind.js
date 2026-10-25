@@ -81,7 +81,7 @@ export function renderRecap(doc, body, recap) {
 }
 
 // POST /api/rewind/recap with the page token when there is one (same rule as the other /api calls).
-import { ownerHeaders } from './call-owner.js';
+import { ownerHeaders } from './call-owner.js?v=1792947000';
 
 export async function fetchRecap(sessionId, search = globalThis.location ? globalThis.location.search : "") {
   const token = new URLSearchParams(search).get("token");

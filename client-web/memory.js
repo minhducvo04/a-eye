@@ -10,7 +10,7 @@
 //   PUT  /api/memory/settings  settings     -> settings (server checks consents and refused rooms again)
 //   find answers: v2 `rewind_hit` today; a local `find_item` later with the same fields plus `place`.
 
-import { fmtCallTime } from "./rewind.js";
+import { fmtCallTime } from "./rewind.js?v=1792947100";
 
 export const REFUSED_ROOMS = Object.freeze(["bedroom", "bathroom"]);
 export const ROOMS = Object.freeze(["kitchen", "living room", "hallway", "entryway", "office", "garage", "bedroom", "bathroom"]);
@@ -122,7 +122,7 @@ export function cleanSettings(s) {
 // /api/memory route is called (a 404 would also be a console error): the count is this call's Rewind clips,
 // Forget is this call's Rewind forget, and settings live in an in-page preview store (`preview: true`).
 // TODO(rewind builder): add `features: { memory: true }` to /api/status when the routes above exist.
-import { ownerHeaders } from './call-owner.js';
+import { ownerHeaders } from './call-owner.js?v=1792947100';
 
 export function createMemoryApi({ fetch: doFetch = globalThis.fetch, search = globalThis.location ? globalThis.location.search : "" } = {}) {
   const token = new URLSearchParams(search).get("token");
@@ -238,9 +238,12 @@ function playMemory(doc, pane, hit) {
     video.play?.().catch?.(() => {});
   } else if (hit.clip_url) {
     const candidate = doc.createElement('video');
-    const nativeHls = candidate.canPlayType('application/vnd.apple.mpegurl');
     const HlsLib = globalThis.Hls;
-    if (nativeHls || (HlsLib && HlsLib.isSupported && HlsLib.isSupported())) {
+    const hlsJs = Boolean(HlsLib && HlsLib.isSupported && HlsLib.isSupported());
+    // Chromium (Chrome, Brave) answers "maybe" to native HLS and then fails the source with MEDIA_ERR_SRC_NOT_SUPPORTED
+    // (the card stayed on "Loading the clip…"); hls.js wins whenever it is loaded, native is Safari's path only.
+    const nativeHls = !hlsJs && candidate.canPlayType('application/vnd.apple.mpegurl');
+    if (nativeHls || hlsJs) {
       video = candidate;
       video.muted = true;
       video.playsInline = true;
