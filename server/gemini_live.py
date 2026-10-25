@@ -35,7 +35,7 @@ WIRE_LOGGER = logging.Logger('aeye.live.transport')
 WIRE_LOGGER.disabled = True
 
 
-def live_setup(model, instruction='', voice=None):
+def live_setup(model, instruction='', voice=None, handle=None):
     """Shared camera context for the bridge and the real transport probe."""
     generation = {'responseModalities': ['AUDIO']}
     if voice:
@@ -43,11 +43,15 @@ def live_setup(model, instruction='', voice=None):
     return {'model': model,
             'generationConfig': generation,
             'inputAudioTranscription': {}, 'outputAudioTranscription': {},
+            'sessionResumption': {'handle': handle} if handle else {},
+            'contextWindowCompression': {'slidingWindow': {}},
             'realtimeInputConfig': {'turnCoverage': 'TURN_INCLUDES_ALL_INPUT'},
             'systemInstruction': {'parts': [{'text':
                 "You see the user's live camera through the video frames provided to you. "
                 'Answer visual questions from those frames. If no frame is available, say so; '
-                'do not invent visual details. Keep spoken answers brief. ' + instruction}]}}
+                'do not invent visual details. Keep spoken answers brief. ' + instruction +
+                ' Use the persona catchphrase at most once per call. '
+                'When the user asks which one, pick one and say why.'}]}}
 
 
 def require_consent():
@@ -280,12 +284,14 @@ class LiveBridge:
                     'Use gather_context only rarely for a specific missing personal detail. '
                     'If a GUIDE block is present, code owns the steps: follow it, never skip ahead, '
                     'never declare a step done. ',
-                    voice=self.session.persona.get('gemini_live_voice'))
+                    voice=self.session.persona.get('gemini_live_voice'),
+                    handle=getattr(self, 'resumption_handle', None))
             setup['tools'] = [{'functionDeclarations': declarations(self.rewind_on())}]
             await self._send({'setup': setup})
             response = json.loads(await asyncio.wait_for(self.ws.recv(), 10))
             if 'setupComplete' not in response:
                 raise ValueError('Live setup rejected')
+            self.connected_at = monotonic()
             self.last_video, self.last_seq = -float('inf'), None
         except BaseException:
             await self.ws.close()
@@ -555,8 +561,10 @@ class LiveBridge:
         if self.blocked or self.closed:
             return
         require_consent()
-        if not final and (self.audio_started_at is None or
-                          monotonic() - self.audio_started_at < FIRST_AUDIO_HOLD):
+        first = not self.speaking
+        # Hold audio duration, not time since a packet arrived: Live can generate
+        # faster than playback. Release the checked initial buffer, including its tail.
+        if not final and first and len(self.audio_buffer) < int(self.rate * FIRST_AUDIO_HOLD) * 2:
             return
         # Recheck the question before releasing anything, including audio-only
         # responses in packs with a power-off gate.
@@ -575,7 +583,7 @@ class LiveBridge:
                 # Register the utterance before PCM so a late first caption does
                 # not look like a new turn and cancel already queued audio.
                 await self.caption(self.output.strip() or '…')
-        while self.audio_buffer and (final or len(self.audio_buffer) >= size):
+        while self.audio_buffer and (final or first or len(self.audio_buffer) >= size):
             if self.blocked or self.closed:
                 return
             pcm = pcm16(bytes(self.audio_buffer[:size]), self.rate)
@@ -808,6 +816,8 @@ class LiveBridge:
             while not self.closed:
                 try:
                     while not self.closed:
+                        if monotonic() - self.connected_at >= 60:
+                            self.reconnects = 0
                         if monotonic() - self.budget_minute >= 60:
                             cloud_meter.charge(float(os.getenv('GEMINI_LIVE_USD_PER_MINUTE', '0.10')), admit=True)
                             self.budget_minute = monotonic()
@@ -819,16 +829,31 @@ class LiveBridge:
                             await self.flush_audio()
                             continue
                         response = json.loads(raw)
+                        update = response.get('sessionResumptionUpdate', {})
+                        if update.get('resumable') and update.get('newHandle'):
+                            self.resumption_handle = update['newHandle']
+                        # goAway is an advance notice: reconnect now using the
+                        # latest usable handle, without waiting for server closure.
                         if 'goAway' in response or 'error' in response:
                             raise ConnectionError('Live ended')
                         await self.handle(response)
                 except Exception:
+                    # Also cover a disconnect arriving just as the minute elapses.
+                    if monotonic() - self.connected_at >= 60:
+                        self.reconnects = 0
                     await self.close_tools()
                     await self.prefetch.close()
                     self.pending_memory = None
                     self.input_turn_open = False
                     await self.close_context()
+                    stopped, safety_line = self.safety_stopped, self.safety_line
                     self._reset_reply()
+                    if stopped:
+                        # A stop (including explicit context deletion) must not
+                        # resume stale provider content or re-arm its audio.
+                        self.resumption_handle = None
+                        self.blocked = self.safety_stopped = True
+                        self.safety_line = safety_line
                     if self.ws:
                         await self.ws.close()
                     if self.closed:

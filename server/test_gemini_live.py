@@ -247,6 +247,8 @@ def test_fake_live_wire_audio_tools_captions_and_revocation(monkeypatch):
             setup = received[0]['setup']
             assert setup['generationConfig']['responseModalities'] == ['AUDIO']
             assert setup['realtimeInputConfig']['turnCoverage'] == 'TURN_INCLUDES_ALL_INPUT'
+            assert setup['sessionResumption'] == {}
+            assert setup['contextWindowCompression'] == {'slidingWindow': {}}
             assert 'live camera' in setup['systemInstruction']['parts'][0]['text']
             from server import personas
             assert personas.style_block(session.persona) in setup['systemInstruction']['parts'][0]['text']
@@ -303,6 +305,145 @@ def test_reconnect_once_then_fallback_and_close(monkeypatch):
             assert fixed == [FALLBACK_LINE]
             await bridge.close()
             assert bridge.task.done()
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('go_away,stopped', [(False, False), (True, False), (True, True)])
+def test_reconnect_reuses_latest_resumable_handle(monkeypatch, go_away, stopped):
+    async def trial():
+        monkeypatch.setenv('GEMINI_API_KEY', 'synthetic-key')
+        monkeypatch.setenv('LIVE_CONTEXT_ENABLED', '0')
+        privacy.set_call({'google': True})
+        setups, fixed, emitted = [], [], []
+        resumed = asyncio.Event()
+        async def fake(ws):
+            setups.append(json.loads(await ws.recv())['setup'])
+            await ws.send('{"setupComplete": {}}')
+            if len(setups) == 1:
+                for update in [dict(resumable=True, newHandle='older'),
+                               dict(resumable=True, newHandle='latest'),
+                               dict(resumable=False, newHandle='')]:
+                    await ws.send(json.dumps({'sessionResumptionUpdate': update}))
+                if stopped:
+                    await ws.send(json.dumps({'serverContent': {'outputTranscription': {
+                        'text': 'Open the electrical panel.'}}}))
+                if go_away:
+                    await ws.send('{"goAway": {"timeLeft": "30s"}}')
+                    # The bridge must reconnect without waiting for server closure.
+                    await ws.wait_closed()
+                else:
+                    await ws.close()
+            else:
+                resumed.set()
+                await ws.wait_closed()
+        async def emit(msg):
+            emitted.append(msg)
+        async def speak(text):
+            fixed.append(text)
+        async def discover():
+            return 'models/fake'
+        async with serve(fake, '127.0.0.1', 0) as server:
+            bridge = LiveBridge(Session('resume', camera=False), None, None, emit, speak,
+                discover=discover, endpoint=f'ws://127.0.0.1:{server.sockets[0].getsockname()[1]}')
+            assert await bridge.start()
+            try:
+                await asyncio.wait_for(resumed.wait(), 2)
+                assert setups[0]['sessionResumption'] == {}
+                assert setups[1]['sessionResumption'] == ({} if stopped else {'handle': 'latest'})
+                assert bridge.active and bool(fixed) == stopped
+                if stopped:
+                    assert bridge.blocked and bridge.safety_stopped
+                    from server.test_live_streaming import audio_content
+                    await bridge.handle(audio_content('Stale reply.', turnComplete=True))
+                    assert not any(m['type'] == 'audio' for m in emitted)
+            finally:
+                await bridge.close()
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('healthy_seconds,expected_connections', [(59.9, 2), (60, 3), (121, 3)])
+def test_reconnect_budget_resets_after_healthy_minute(monkeypatch, healthy_seconds, expected_connections):
+    async def trial():
+        from server import gemini_live
+        monkeypatch.setenv('GEMINI_API_KEY', 'synthetic-key')
+        monkeypatch.setenv('LIVE_CONTEXT_ENABLED', '0')
+        privacy.set_call({'google': True})
+        clock, setups, fixed = [0.0], [], []
+        monkeypatch.setattr(gemini_live, 'monotonic', lambda: clock[0])
+        class Socket:
+            def __init__(self, index):
+                self.index, self.reads = index, 0
+            async def send(self, raw):
+                setups.append(json.loads(raw)['setup'])
+            async def recv(self):
+                self.reads += 1
+                if self.reads == 1:
+                    return '{"setupComplete": {}}'
+                if self.index == 1 and self.reads == 2:
+                    clock[0] += healthy_seconds
+                    return '{"sessionResumptionUpdate": {"resumable": true, "newHandle": "healthy"}}'
+                raise ConnectionError('synthetic disconnect')
+            async def close(self):
+                pass
+        async def connect(*args, **kwargs):
+            return Socket(len(setups))
+        async def emit(msg):
+            pass
+        async def speak(text):
+            fixed.append(text)
+        async def discover():
+            return 'models/fake'
+        monkeypatch.setattr(gemini_live, 'connect', connect)
+        bridge = LiveBridge(Session('reset', camera=False), None, None, emit, speak, discover=discover)
+        assert await bridge.start()
+        try:
+            await asyncio.wait_for(bridge.task, 2)
+            assert len(setups) == expected_connections
+            assert fixed == [gemini_live.FALLBACK_LINE]
+            if expected_connections == 3:
+                assert setups[-1]['sessionResumption'] == {'handle': 'healthy'}
+        finally:
+            await bridge.close()
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('rate', [16000, 24000])
+def test_first_audio_releases_at_buffered_250ms_and_stop_cuts_tail(monkeypatch, rate):
+    async def trial():
+        from server import gemini_live
+        privacy.set_call({'google': True})
+        # Audio can arrive faster than real time: no wall-clock delay is needed.
+        monkeypatch.setattr(gemini_live, 'monotonic', lambda: 0.0)
+        emitted, fixed = [], []
+        async def emit(msg):
+            emitted.append(msg)
+        async def speak(text):
+            fixed.append(text)
+        bridge = LiveBridge(Session('early', camera=False), None, None, emit, speak)
+        bridge.model = 'models/fake'
+        def audio(samples, text=None):
+            content = {'modelTurn': {'parts': [{'inlineData': {
+                'mimeType': f'audio/pcm;rate={rate}',
+                'data': base64.b64encode(b'\x01\x00' * samples).decode()}}]}}
+            if text:
+                content['outputTranscription'] = {'text': text}
+            return {'serverContent': content}
+        await bridge.handle(audio(rate // 4 - 1, 'A blue cup. '))
+        assert not any(m['type'] == 'audio' for m in emitted)
+        await bridge.handle(audio(1))
+        chunks = [m for m in emitted if m['type'] == 'audio']
+        assert chunks and sum(len(base64.b64decode(m['pcm16_b64'])) for m in chunks) == 8000
+        assert not bridge.audio_buffer
+        assert emitted.index(next(m for m in emitted if m['type'] == 'say')) < emitted.index(chunks[0])
+        await bridge.handle(audio(rate // 10, 'Open the electrical '))
+        await bridge.handle(audio(rate // 10, 'panel.'))
+        stopped_at = len(emitted)
+        assert fixed and bridge.blocked and not bridge.audio_buffer
+        await bridge.handle({'serverContent': {'interrupted': True}})
+        await bridge.handle(audio(rate))
+        await bridge.handle({'serverContent': {'turnComplete': True}})
+        assert not any(m['type'] == 'audio' for m in emitted[stopped_at:])
+        await bridge.close()
     asyncio.run(trial())
 
 
