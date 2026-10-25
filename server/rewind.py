@@ -367,7 +367,7 @@ class Rewind:
         self.memories = None        # server.memory.Memories, set by the registry, for auto attach
         self.memory_activity_at = None
         self.session = None
-        self.keep = False       # True: the user keeps the TwelveLabs videos after the call
+        self.keep = shared_demo_library()  # owner demo: every call kept; else True only when the user ticks Remember
         self.deleted = []       # video ids deleted from TwelveLabs (ids only)
         self.last_sig = None    # newest frame signature (32x32 gray), for local activity
         self.last_activity = float('-inf')
