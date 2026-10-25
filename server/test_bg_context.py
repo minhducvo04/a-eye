@@ -144,6 +144,54 @@ def test_builder_hazards_are_fixed_stops_even_after_word_limit(monkeypatch):
     asyncio.run(trial())
 
 
+@pytest.mark.parametrize('summary,hazard,gate', [
+    ('The user is repairing headphones and asks, "Okay, what is the next step?" '
+     'The headphones, cord and plug are on a clear desk. Next, inspect the cable. '
+     'Keep hands dry and keep water away from cords and plugs.', '', None),
+    ('Make sure there is no water near the cord.', '', None),
+    ('There is no water near the cord.', '', None),
+    ('The charger is not smoking.', '', None),
+    ("Never touch a wet plug; don't touch the outlet.", '', None),
+    ('Avoid water near the cord.', '', None),
+    ('Keep the plug dry.', '', None),
+    ('Check whether the charger is smoking.', '', None),
+    ('The plan mentions opening a power supply.', '', None),
+    ('The charger is smoking.', '', 'burning_device'),
+    ('Water is pooling around the plug.', '', 'water_electric'),
+    ('There is no water near the cord, but the charger is smoking.', '', 'burning_device'),
+    ('Keep hands dry; the charger is smoking.', '', 'burning_device'),
+    ('The charger is smoking; do not touch it.', '', 'burning_device'),
+    ('The desk is clear.', 'water near the cord', 'water_electric'),
+    ('The desk is clear.', 'opening a power supply', 'open_power_supply'),
+])
+def test_builder_summary_facts_not_headphone_precautions(monkeypatch, summary, hazard, gate):
+    async def trial():
+        from server import safety
+        privacy.set_call({'google': True})
+        session = Session('headphone-next-step', camera=False)
+        session.context_agent = ContextAgent(session)
+        published, fixed = [], []
+        async def publish(block):
+            published.append(block)
+            return True
+        async def stop(line):
+            fixed.append(line)
+        async def assess(session, evidence):
+            return {'context': summary, 'hazard': hazard}
+        monkeypatch.setattr(context_agent, 'assess_live_context', assess)
+        bridge = LiveBridge(session, None, None, stop, stop)
+        builder = context_agent.LiveContextBuilder(
+            session, publish, stop, lambda text: bridge.stop_line(text, True))
+        await builder.build()
+        if gate:
+            assert fixed == [next(g.line for g in safety.GATES if g.id == gate)]
+            assert not published and not builder.block
+        else:
+            assert not fixed
+            assert published and builder.block == published[0]
+    asyncio.run(trial())
+
+
 def test_live_publishes_context_while_next_build_waits_and_cancels_on_close(monkeypatch):
     from websockets.asyncio.server import serve
     from server.test_live_streaming import audio_content
