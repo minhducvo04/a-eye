@@ -1,3 +1,30 @@
+## Found-memory clip playback — pkg/clip-play
+
+The existing found card plays bounded this-call JPEG flipbooks and optional native
+HLS windows for saved calls. Boxes and layout are retained; routing is unchanged.
+Server media stays out of model tool results; retrieval has a two-second timeout.
+Playback stops on sheet close/replacement. Optional v2 schema/type/examples updated
+for the explicitly requested wire fields. No new dependency.
+
+Changed files and limits: [docs/results/clip-play.md](docs/results/clip-play.md).
+
+Python commands ran with `PYTHONPATH=.pytest_cache/clip-play/offline:.` to block
+network and `.env` access. The Makefile was not invoked because it includes `.env`.
+
+Test: ~/Projects/a-eye/.venv/bin/python -m pytest -q server - FAIL (1146 passed, 22 failed, 2 warnings; final source; summary read).
+Test: node --test client-web/*.test.mjs - PASS (175 passed).
+Test: ~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_clip_play.py server/test_live_prefetch.py::test_rewind_consent_revocation_blocks_lookup_and_cached_evidence - PASS (8 passed).
+Test: targeted contracts/Rewind/past-call/Live-memory/review checks - FAIL (136 passed, 5 baseline failures; contract examples passed).
+Test: ~/Projects/a-eye/.venv/bin/python -m pytest -q - FAIL (1750 passed, 25 failed, 4 errors; before final text-only-hit fix, subsequently verified by the final server run).
+Test: git diff --check - PASS.
+
+Final server failures: 15 network-dependent checks blocked, 7 non-network failures
+reproduced against original f5bbfc5. The repository-wide run additionally hit
+blocked device sockets and a denied synthetic `.env` read. No tests weakened.
+No real provider/browser/device proof, network access, `.env` reads, or push.
+
+---
+
 ## Past-call recall — pkg/past-calls, 2026-10-25
 
 Saved calls now retain bounded local text; past-call questions search saved

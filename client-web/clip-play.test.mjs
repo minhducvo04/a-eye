@@ -1,0 +1,82 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { renderSplit } from './memory.js';
+
+function page(nativeHls = false) {
+  const timers = new Map();
+  let next = 0;
+  function element(tag) {
+    return {
+      tag, children: [], style: {}, events: {}, hidden: false,
+      append(...children) { this.children.push(...children); },
+      replaceChildren(...children) { this.children = children; },
+      setAttribute(name, value) { this[name] = value; },
+      removeAttribute(name) { delete this[name]; },
+      addEventListener(name, fn) { this.events[name] = fn; },
+      canPlayType() { return nativeHls ? 'maybe' : ''; },
+      play() { this.playing = true; return Promise.resolve(); },
+      pause() { this.playing = false; },
+      load() {},
+    };
+  }
+  const doc = {
+    createElement: element, createElementNS: (_, tag) => element(tag),
+    defaultView: {
+      setInterval(fn, delay) { timers.set(++next, { fn, delay }); return next; },
+      clearInterval(id) { timers.delete(id); },
+    },
+  };
+  const body = element('div');
+  const pane = () => body.children[1].children[0];
+  return { doc, body, timers, pane };
+}
+
+test('found card cycles frames, loops, preserves boxes, and disposes the timer', () => {
+  const { doc, body, timers, pane } = page();
+  const update = renderSplit(doc, body, { hit: { t_s: 5, frames_b64: ['a', 'b', 'c'], fps: 2,
+    objects: [{ label: 'keys', bbox: [0.1, 0.2, 0.3, 0.4] }] }, line: 'Found' });
+  const img = pane().children.find(el => el.tag === 'img');
+  assert.equal(img.src, 'data:image/jpeg;base64,a');
+  const timer = [...timers.values()][0];
+  assert.equal(timer.delay, 500);
+  timer.fn(); assert.equal(img.src, 'data:image/jpeg;base64,b');
+  timer.fn(); assert.equal(img.src, 'data:image/jpeg;base64,c');
+  timer.fn(); assert.equal(img.src, 'data:image/jpeg;base64,a');
+  assert.equal(pane().children.find(el => el.className === 'rewind-box').style.left, '10%');
+  update.dispose();
+  assert.equal(timers.size, 0);
+});
+
+test('single frame stays still; unsupported HLS uses the existing fallback', () => {
+  const { doc, body, timers, pane } = page();
+  const update = renderSplit(doc, body, { hit: { t_s: 5, frames_b64: ['a'],
+    clip_url: 'https://media.invalid/clip.m3u8' }, line: 'Found' });
+  assert.equal(timers.size, 0);
+  assert.equal(pane().children.find(el => el.tag === 'img').src, 'data:image/jpeg;base64,a');
+  assert.ok(!pane().children.some(el => el.tag === 'video'));
+  update.dispose();
+});
+
+test('native HLS seeks and loops within the hit; errors restore the flipbook', async () => {
+  const { doc, body, timers, pane } = page(true);
+  const update = renderSplit(doc, body, { hit: { t_s: 105, start_s: 2, end_s: 8,
+    frames_b64: ['a', 'b'], fps: 1, clip_url: 'https://media.invalid/clip.m3u8' }, line: 'Found' });
+  const video = pane().children.find(el => el.tag === 'video');
+  const img = pane().children.find(el => el.tag === 'img');
+  assert.ok(video.muted && video.playsInline);
+  video.events.loadedmetadata();
+  await Promise.resolve();
+  assert.equal(video.currentTime, 2);
+  video.events.playing();
+  assert.equal(timers.size, 0);
+  video.currentTime = 8.1;
+  video.events.timeupdate();
+  assert.equal(video.currentTime, 2);
+  video.events.error();
+  assert.equal(video.hidden, true);
+  assert.equal(img.hidden, false);
+  assert.equal(timers.size, 1);
+  update.dispose();
+  assert.equal(timers.size, 0);
+  assert.equal(video.playing, false);
+});

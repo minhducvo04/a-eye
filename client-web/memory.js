@@ -176,8 +176,86 @@ export function createMemoryApi({ fetch: doFetch = globalThis.fetch, search = gl
   };
 }
 
-// Split answer: the earlier frame boxed with its time, beside the live view with an arrow to the thing now.
-// Returns update(liveObjects) so the arrow follows fresh `track` boxes while the sheet is open.
+// Playback stays in the existing image area. Native HLS is optional; the flipbook/still is the fallback.
+function playMemory(doc, pane, hit) {
+  const clock = doc.defaultView || globalThis;
+  const frames = (hit.frames_b64 || []).filter(Boolean).slice(0, 12);
+  if (!frames.length && hit.frame_b64) frames.push(hit.frame_b64);
+  let timer = null, index = 0, disposed = false, video = null, failed = false;
+  const img = frames.length ? doc.createElement('img') : null;
+  const stopFrames = () => { if (timer !== null) clock.clearInterval(timer); timer = null; };
+  function startFrames() {
+    if (disposed || !img) return;
+    img.hidden = false;
+    if (frames.length > 1 && timer === null) {
+      const fps = Math.min(4, Math.max(0.1, Number(hit.fps) || 2));
+      timer = clock.setInterval(() => {
+        index = (index + 1) % frames.length;
+        img.src = `data:image/jpeg;base64,${frames[index]}`;
+      }, 1000 / fps);
+    }
+  }
+  if (img) {
+    img.decoding = 'async';
+    img.alt = `Moment at ${fmtCallTime(hit.t_s)} into the call`;
+    img.src = `data:image/jpeg;base64,${frames[0]}`;
+    pane.append(img);
+    startFrames();
+  }
+  if (hit.clip_url) {
+    const candidate = doc.createElement('video');
+    if (candidate.canPlayType('application/vnd.apple.mpegurl')) {
+      video = candidate;
+      video.muted = true;
+      video.playsInline = true;
+      video.setAttribute('playsinline', '');
+      video.preload = 'metadata';
+      video.hidden = true;
+      const start = Math.max(0, Number(hit.start_s) || 0);
+      const end = Math.max(start + 0.1, Number(hit.end_s) || start + 6);
+      function fallback() {
+        if (disposed) return;
+        failed = true;
+        video.pause();
+        video.hidden = true;
+        startFrames();
+      }
+      function play() {
+        if (disposed || failed) return;
+        video.play().catch(fallback);
+      }
+      video.addEventListener('loadedmetadata', () => {
+        if (disposed || failed) return;
+        try { video.currentTime = start; play(); } catch { fallback(); }
+      });
+      video.addEventListener('playing', () => {
+        if (disposed || failed) return;
+        video.hidden = false;
+        if (img) img.hidden = true;
+        stopFrames();
+      });
+      video.addEventListener('timeupdate', () => {
+        if (!disposed && !failed && video.currentTime >= end) video.currentTime = start;
+      });
+      video.addEventListener('ended', () => {
+        if (disposed || failed) return;
+        video.currentTime = start;
+        play();
+      });
+      video.addEventListener('error', fallback);
+      video.src = hit.clip_url;
+      pane.append(video);
+    }
+  }
+  return () => {
+    disposed = true;
+    stopFrames();
+    if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
+  };
+}
+
+// Split answer: the earlier moment boxed with its time, beside the live view with an arrow to the thing now.
+// Returns update(liveObjects), with dispose() to stop playback when the sheet closes or is replaced.
 export function renderSplit(doc, body, { hit, line, stream }) {
   body.replaceChildren();
   const split = doc.createElement("div");
@@ -188,13 +266,7 @@ export function renderSplit(doc, body, { hit, line, stream }) {
   thenLabel.className = "memory-tag";
   thenLabel.textContent = `Then · ${fmtCallTime(hit.t_s)}`;
   then.append(thenLabel);
-  if (hit.frame_b64) {
-    const img = doc.createElement("img");
-    img.decoding = "async"; // decode the kept frame off the paint path
-    img.alt = `Frame at ${fmtCallTime(hit.t_s)} into the call`;
-    img.src = `data:image/jpeg;base64,${hit.frame_b64}`;
-    then.append(img);
-  }
+  const dispose = playMemory(doc, then, hit);
   for (const obj of hit.objects || []) {
     const box = doc.createElement("span");
     box.className = "rewind-box";
@@ -256,5 +328,6 @@ export function renderSplit(doc, body, { hit, line, stream }) {
     return live;
   }
   update([]);
+  update.dispose = dispose;
   return update;
 }

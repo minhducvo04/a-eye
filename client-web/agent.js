@@ -948,6 +948,7 @@ function boot() {
   }
 
   function showFind(hit) {
+    if (splitUpdate) splitUpdate.dispose();
     const labels = (hit.objects || []).map((o) => o.label).join(" ");
     const place = hit.place || placeFor(`${hit.query || ""} ${labels}`, memoryItems);
     const callNow = callStartedAt ? (Date.now() - callStartedAt) / 1000 : hit.t_s;
@@ -997,6 +998,7 @@ function boot() {
   }
 
   function openSheet(sheet) {
+    if (sheet !== rewindEl && splitUpdate) { splitUpdate.dispose(); splitUpdate = null; }
     if (sheet !== rewindEl && rewindEl) rewindEl.classList.remove("wide");
     for (const other of [marketEl, settingsEl, rewindEl]) if (other && other !== sheet) other.classList.add("hidden");
     sheet.classList.remove("hidden");
@@ -1005,6 +1007,7 @@ function boot() {
   }
 
   function closeSheets() {
+    if (splitUpdate) { splitUpdate.dispose(); splitUpdate = null; }
     marketEl.classList.add("hidden");
     marketBody.replaceChildren();
     if (settingsEl) settingsEl.classList.add("hidden");

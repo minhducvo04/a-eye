@@ -3021,7 +3021,7 @@
    }
   },
   "v2_rewind_hit": {
-   "description": "Server to client: the call moment that answers a Rewind question. Times are seconds since the call started. sure is false when our own vision did not confirm the object in the frame; objects are boxes on frame_b64, not on the live picture.",
+   "description": "Server to client: the call moment that answers a Rewind question. Times are seconds since the call started. sure is false when our own vision did not confirm the object in the frame; objects are boxes on frame_b64, not on the live picture. Optional frames_b64 (up to 12 small JPEGs) play at fps. With clip_url, start_s/end_s are video-relative playback bounds; t_s remains call-relative.",
    "type": "object",
    "additionalProperties": false,
    "required": [
@@ -3077,6 +3077,24 @@
      "items": {
       "$ref": "#/$defs/scene_object"
      }
+    },
+    "frames_b64": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/jpeg_b64"
+     },
+     "minItems": 1,
+     "maxItems": 12
+    },
+    "fps": {
+     "type": "number",
+     "exclusiveMinimum": 0,
+     "maximum": 4
+    },
+    "clip_url": {
+     "type": "string",
+     "pattern": "^https://",
+     "maxLength": 8192
     }
    }
   },

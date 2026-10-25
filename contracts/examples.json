@@ -1075,7 +1075,23 @@
      ],
      "conf": 0.82
     }
-   ]
+   ],
+   "frames_b64": [
+    "AAAA",
+    "BBBB"
+   ],
+   "fps": 2
+  },
+  {
+   "v": 2,
+   "type": "rewind_hit",
+   "query": "keys last call",
+   "t_s": 103,
+   "start_s": 0,
+   "end_s": 6,
+   "sure": false,
+   "clip_url": "https://media.example.invalid/clip.m3u8",
+   "objects": []
   }
  ],
  "v2_rewind_recap": [
