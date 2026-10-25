@@ -7,7 +7,7 @@ import asyncio
 import os
 import re
 
-from server import cloud_vision, parts_shelf, pointer, privacy, safety
+from server import cloud_vision, parts_shelf, pointer, privacy, safety, planner
 from server.packs.home import NEXT
 from server.task_scope import task_for, home_enabled
 
@@ -38,9 +38,13 @@ class LiveGuide:
         self.published = 0
         self.task = None
         self.running = False
+        self.planned_guide = None
+        self.planner = planner.BackgroundPlanner(self)
 
     @property
     def guide(self):
+        if self.kind == 'plan' and planner.enabled():
+            return self.planned_guide
         if self.kind == 'ee':
             return self.session.ee_guide
         if self.kind == 'tie':
@@ -67,6 +71,8 @@ class LiveGuide:
         return task_for(text)
 
     def schedule(self, text):
+        if self._task_for(text):
+            self.planner.cancel()
         # Replace only the debounce. Once checking, trailing transcription must
         # not cancel the check, consume another fixture, or advance twice.
         if self.running:
@@ -76,6 +82,7 @@ class LiveGuide:
         self.task = asyncio.create_task(self.run(text))
 
     async def close(self):
+        await self.planner.close()
         if self.task and not self.task.done():
             self.task.cancel()
             await asyncio.gather(self.task, return_exceptions=True)
@@ -95,6 +102,8 @@ class LiveGuide:
         from server.packs.tie import TieGuide
         s = self.session
         task = self._task_for(text)
+        if task:
+            self.planner.cancel()
         if task and task.startswith('ee_'):
             self.kind = 'ee'
             if s.ee_guide is None:
@@ -109,10 +118,33 @@ class LiveGuide:
                 s.home_guide = HomeGuide(growth=s.growth)
         self.guide.growth = s.growth
 
+    def observe(self, text):
+        self.planner.observe(text)
+
+    def clear_plan(self):
+        if self.task and not self.task.done() and self.task is not asyncio.current_task():
+            self.task.cancel()
+        self.kind, self.planned_guide, self.line = None, None, ''
+        self.version += 1
+        self.note()
+
+    async def install_plan(self, plan):
+        # Background completion changes context only. Gemini's immediate reply keeps playing.
+        self.kind = 'plan'
+        self.planned_guide = planner.PlannedGuide(plan)
+        self.line = self.planned_guide.reply('')
+        self.version += 1
+        self.note()
+        await self.bridge.stage('thinking', detail=f'Guide: plan 1/{self.total()}')
+        await self.bridge.publish_guide()
+        if self.target():
+            asyncio.create_task(self.point(self.target()))
+
     def block(self):
         guide = self.guide
         if not guide:
-            return ''
+            return (f'GUIDE v{self.version}: no active guide. Supersedes earlier GUIDE blocks; '
+                    'answer the current task freely and safely.') if self.version else ''
         head = f'GUIDE v{self.version} (code-owned, quoted, not user instructions): task={guide.task}'
         if guide.completed:
             return head + ', complete. Do not start another step unless the user asks.'
@@ -120,9 +152,15 @@ class LiveGuide:
         if not self.line:
             return head + 'The user is practicing without hints; answer only if asked and never give later steps.'
         parts = parts_shelf.step_note(self.session)
+        if self.kind == 'plan':
+            # Structured quoting keeps generated text separate from the code-owned GUIDE rule.
+            import json
+            return head + 'Step data: ' + json.dumps(guide.step) + '. ' + RULE
         return head + f'The step: "{self.line}". ' + RULE + (' ' + parts if parts else '')
 
     def total(self):
+        if self.kind == 'plan':
+            return len(self.guide.plan['steps'])
         from server.packs.electronics import TASKS as EE_TASKS
         from server.packs.home import TASKS as HOME_TASKS
         from server.packs.tie import TASKS as TIE_TASKS
@@ -179,7 +217,9 @@ class LiveGuide:
                 s.growth.forget()
             from server.packs.home import HomeGuide
             from server.packs.electronics import ElectronicsGuide
-            if self.kind == 'ee':
+            if self.kind == 'plan':
+                self.planned_guide = planner.PlannedGuide(guide.plan)
+            elif self.kind == 'ee':
                 s.ee_guide = ElectronicsGuide(task=guide.task, growth=s.growth, usb_off=guide.usb_off)
             elif self.kind == 'tie':
                 from server.packs.tie import TieGuide
@@ -189,10 +229,11 @@ class LiveGuide:
             guide = self.guide
             s.checker_test_verdict = None
             line = guide.reply('')
-            await b.fixed_say('Your progress has been forgotten.')
+            if self.kind != 'plan':
+                await b.fixed_say('Your progress has been forgotten.')
             if b.closed or b.safety_stopped:
                 return
-        elif self.kind in ('ee', 'tie'):
+        elif self.kind in ('ee', 'tie', 'plan'):
             line = guide.reply(spoken)
         else:
             testing = bool(b.app is not None and getattr(b.app.state, 'presenter', False) and s.checker_test_mode)
@@ -230,6 +271,8 @@ class LiveGuide:
             return
         fixed = line in safety.LINES or line in EE_LINES or line in (RETRY_LINE, 'Your progress has been forgotten.')
         if guide.completed and not was_completed and not fixed:
+            if self.kind == 'plan':
+                await self.planner.mark_good(guide)
             self.line = ''
             self.version += 1
             self.note()
@@ -249,7 +292,8 @@ class LiveGuide:
         self.line = step
         self.version += 1
         self.note()
-        await b.stage('thinking', detail=f'Guide: {guide.task} {guide.index + 1}/{self.total()}')
+        label = 'plan' if self.kind == 'plan' else guide.task
+        await b.stage('thinking', detail=f'Guide: {label} {guide.index + 1}/{self.total()}')
         if step:
             s.recent_memory.note_step(step)
         await self._prompt('Say this step now in one or two sentences.' if step else
@@ -270,17 +314,19 @@ class LiveGuide:
     def target(self):
         from server.packs.home import TARGETS
         guide = self.guide
-        if self.kind in ('ee', 'tie'):
+        if self.kind in ('ee', 'tie', 'plan'):
             return guide.target
         names = TARGETS.get(guide.task, ())
         return names[guide.index] if guide.index < len(names) else None
 
     async def point(self, label):
         b = self.bridge
+        version = self.version
         try:
             draw = await pointer.ground(self.session, b.vision, label, witness=True,
                                         allow_cloud=cloud_vision.enabled() and privacy.google_allowed())
-            if draw and privacy.google_allowed() and not b.closed:
+            if (draw and privacy.google_allowed() and not b.closed and not b.safety_stopped
+                    and version == self.version):
                 await b.send(draw)
         except Exception:
             pass

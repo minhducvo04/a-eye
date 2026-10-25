@@ -1,3 +1,74 @@
+## Planner merge of local main — 2026-10-25
+
+Merged local `main` at `8ec3ae3` into `pkg/planner` from `e307a60`.
+Resolved `server/gemini_live.py` by preserving main's user-input-only scope
+redirect, separate from the safety latch, before typed planner observation.
+Planner observation at finished-transcription and turn-complete boundaries also
+respects the scope hold. Main's acceptance fixes and all planner wiring remain.
+`RESULT.md` retains both branches' report sections below.
+
+Resolution files: `server/gemini_live.py`, `RESULT.md`. Other merge changes are
+inherited unchanged from local main; planner implementation/tests remain intact.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts` - FAIL
+(1081 passed, 16 failed, 2 warnings in 51.73s; summary read, exit 1).
+Only the authorized sandbox socket exceptions remain: fifteen tests fail directly
+on denied `127.0.0.1` binds. The hazard test raises `KeyError: 'state'` after its
+fake Live server fails to bind; captured output records
+`live_start_failed` with `error: PermissionError` before that assertion.
+Warnings concern short synthetic JWT keys. Full output:
+`/private/tmp/aeye-planner-merge-pytest.log`.
+
+Sandbox socket failures, by pytest node ID:
+
+- `server/test_bg_context.py::test_live_publishes_context_while_next_build_waits_and_cancels_on_close`
+- `server/test_cloud_meter.py::test_real_websocket_send_boundary`
+- `server/test_gemini_live.py::test_fake_live_recent_step_transcripts_and_scene_stay_local`
+- `server/test_gemini_live.py::test_fake_live_wire_audio_tools_captions_and_revocation`
+- `server/test_gemini_live.py::test_reconnect_once_then_fallback_and_close`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[False-False]`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[True-False]`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[True-True]`
+- `server/test_limits.py::test_live_minutes_stop_idle_connection`
+- `server/test_live_prefetch.py::test_slow_tool_does_not_delay_audio`
+- `server/test_live_prefetch.py::test_streaming_prefetch_card_cache_and_idle_publication`
+- `server/test_live_streaming.py::test_fake_live_streams_before_complete_and_stops_mid_reply[False]`
+- `server/test_live_streaming.py::test_fake_live_streams_before_complete_and_stops_mid_reply[True]`
+- `server/test_live_streaming.py::test_ws2_hazard_sends_stop_caption_and_fixed_audio` (secondary failure)
+- `server/test_step_check.py::test_real_loopback_api_to_qwen_protocol_keeps_pictures_zero`
+- `scripts/test_ready.py::test_live_pair_request_on_fake_socket`
+
+Test: `git diff --check` - PASS.
+Limits: no `.env` read, external network, push, real provider or device verification.
+Socket restrictions were not lifted for tests. Reports below describe prior work;
+their historical checks and permissions do not describe this merge run.
+
+---
+
+# RESULT: Background task planner — 2026-10-25
+
+Implemented the two-call background planner on `pkg/planner`; Gemini remains the planned
+guide's only talker. Coded guides win, rejected/timed-out plans fall back to free-form, and
+validated plans cache locally with user-reported completion marked good.
+
+Files changed: `server/planner.py`, `server/live_guide.py`, `server/gemini_live.py`,
+`server/test_planner.py`, `docs/results/planner.md`, `RESULT.md`.
+
+Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts` -
+FAIL (1064 passed, 17 failed, 2 warnings in 51.38s). All 51 planner tests passed. Fifteen failures
+are denied localhost fake-server binds; the other two also reproduce with the unchanged Live
+modules (one home-guide timeout, one hazard test affected by a denied Live start).
+
+Test: `git diff --check` - PASS.
+
+Limits: no real provider/device call, no `.env` read, no UI/contract changes, no push. The
+coordinator owns real-call acceptance before 05:00 PDT. Full design, failure attribution and
+acceptance instructions: [docs/results/planner.md](docs/results/planner.md).
+
+The inherited report follows unchanged.
+
+---
+
 # RESULT: Background context and Live streaming — 2026-10-24
 
 Continued the inherited uncommitted background-context work in `pkg/bg-context`.
