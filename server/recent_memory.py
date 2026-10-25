@@ -320,6 +320,8 @@ async def answer(session, question, vision=None, *, on_hit=None, scope=None):
     requested = source_for(question, on, default_recent=False) or scope or source_for(question, on) or 'recent'
     if requested == 'past_calls':
         requested = 'long-term'
+    if requested == 'recent' and on:
+        requested = 'rewind'  # Owner decision: with Recall on, TwelveLabs search answers in-call past questions; notes are the fallback.
     if requested == 'rewind' and not on:
         requested = 'recent'
     if requested == 'recent':
