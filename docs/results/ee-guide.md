@@ -32,7 +32,7 @@ A same-frame, fresh Ollama caption can also trigger a stop. A visible connected 
 Run from this worktree:
 
 ```sh
-/Users/minhducvo/Projects/a-eye/.venv/bin/python scripts/ee_guide_rehearsal.py
+$HOME/Projects/a-eye/.venv/bin/python scripts/ee_guide_rehearsal.py
 ```
 
 The script starts and stops an isolated loopback server, uses one encrypted scratch identity across five calls, and deletes its temporary text storage afterward. It uses a synthetic frame and a **scripted grounding oracle**, not real object recognition. `LOCAL_ONLY=1` blocks cloud calls; a brain call fails the fixture. The script raises its own process-local turn allowance for the rapid replay. It never reads `.env`.
@@ -60,13 +60,13 @@ Full per-run first-text and completion timings: `/private/tmp/ee-rehearsal-final
 
 Tests were written first: **10 failed** in `/private/tmp/ee-before.log`; Engineering's web selection also failed before activation. Later review reproduced power-state revocation, missing-resistor continuation, visible mains, and contradictory visible/spoken USB state before their fixes. The initial focused integration set passed **74 tests**; expanded EE coverage contains **12 tests** in the full run.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q` — FAIL (**1 failed, 1180 passed, 2 warnings in 60.59s**). Evidence: `/private/tmp/ee-python-final.log`. The sole failure is `vision/test_gemini.py::test_recorded_payment_failure_is_reported_and_cleared`: `vision/fixtures/gemini_payment_required.json` is missing. `git ls-tree -r HEAD vision/fixtures` is empty, and the supplied recent-memory handoff reports the same failure. No fixture was fabricated and no vision files were changed. The warnings concern existing short HMAC test keys. This is not a green full-suite claim.
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q` — FAIL (**1 failed, 1180 passed, 2 warnings in 60.59s**). Evidence: `/private/tmp/ee-python-final.log`. The sole failure is `vision/test_gemini.py::test_recorded_payment_failure_is_reported_and_cleared`: `vision/fixtures/gemini_payment_required.json` is missing. `git ls-tree -r HEAD vision/fixtures` is empty, and the supplied recent-memory handoff reports the same failure. No fixture was fabricated and no vision files were changed. The warnings concern existing short HMAC test keys. This is not a green full-suite claim.
 
 Test: `node --test client-web/` — PASS (**165 tests, 165 pass, 0 fail, 0 skipped**). Evidence: `/private/tmp/ee-node.log`.
 
 Test: `swift test --package-path ios/AEyeCore` — PASS (**64 tests, 0 failures**). Evidence: `/private/tmp/ee-swift.log`. Swift manifest compilation required sandbox escalation; no physical iPhone or full native app build is claimed.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python scripts/ee_guide_rehearsal.py` — PASS (**5/5**). Localhost binding required sandbox escalation. Evidence: `/private/tmp/ee-rehearsal-final.log`.
+Test: `$HOME/Projects/a-eye/.venv/bin/python scripts/ee_guide_rehearsal.py` — PASS (**5/5**). Localhost binding required sandbox escalation. Evidence: `/private/tmp/ee-rehearsal-final.log`.
 
 Test: `git diff --check` — PASS.
 
