@@ -132,8 +132,9 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None, *, pres
 
     @app.get('/api/features')
     async def feature_list():
-        from server import features
-        return {'extra_modes': features.extra_modes(), 'shopping': features.shopping()}
+        from server import features, privacy, rewind
+        return {'extra_modes': features.extra_modes(), 'shopping': features.shopping(),
+                'demo_shared_memory': rewind.shared_demo_library() and not privacy.server_local_only()}
 
     @app.post('/api/call-owner')
     async def call_owner(request: Request):

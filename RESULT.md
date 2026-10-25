@@ -799,3 +799,29 @@ Test: xcodebuild (full command in report) - BLOCKED (sandbox cache permissions a
 Test: git diff --check - PASS.
 
 No iPhone recap view/trigger was present to remove. App-target compilation and physical-device behavior remain unverified. No push, .env reads, or external service calls.
+
+
+## Shared demo Rewind default — pkg/rewind-default
+
+`/api/features` exposes `demo_shared_memory` from A_EYE_DEMO_SHARED_MEMORY,
+with LOCAL_ONLY/cloud-budget lockout respected. The client awaits discovery
+before its first hello and starts each shared demo call with Rewind, TwelveLabs
+consent, retention and the existing badge on. The existing button still turns
+it off; the next call defaults on again. Private calls stay off.
+Existing ws2 hello consent and shared-library retention already implement the
+server behavior, so no WebSocket contract or hello-handler change was needed.
+
+Changed: client-web/agent.js, client-web/rewind.js, client-web/rewind.test.mjs,
+client-web/turn.test.mjs, server/app.py, server/test_ws2.py, RESULT.md.
+No HTML, CSS, start-screen or call-screen layout changes.
+
+Fail-before: new initial-state test failed (false instead of true); all three
+new API flag cases failed because the field was absent.
+Test: node --test client-web/*.test.mjs - PASS (181 passed).
+Test: /Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_ws2.py server/test_rewind.py - PASS (31 passed).
+Test: git diff --check - PASS.
+Proof logs: /private/tmp/rewind-default-node.log and /private/tmp/rewind-default-pytest.log.
+
+Limits: executable client DOM/WebSocket fixtures and in-process HTTP/WebSocket
+tests, not a physical call or live TwelveLabs upload/search. Failed feature
+discovery defaults off. No .env reads, main-checkout edits, push or deployment.

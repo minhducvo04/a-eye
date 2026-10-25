@@ -2,6 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { boxStyle, fmtCallTime, hitCaption } from "./rewind.js";
 
+test("shared demo memory starts Rewind on; normal and private calls stay off", async () => {
+  const { initialRewind, nextRewind } = await import("./rewind.js");
+  assert.equal(initialRewind(true).on, true);
+  assert.equal(initialRewind(false).on, false);
+  assert.equal(initialRewind().on, false);
+  assert.equal(initialRewind(true, true).on, false);
+  assert.equal(nextRewind(initialRewind(true), { type: "switch", on: false }).on, false);
+});
+
 test("call time and caption", () => {
   assert.equal(fmtCallTime(130.4), "2:10");
   assert.equal(fmtCallTime(-3), "0:00");

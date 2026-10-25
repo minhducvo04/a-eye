@@ -99,8 +99,8 @@ export const PROMPTS = Object.freeze([
   { label: "Where did I put…", text: "Where did I put " },
 ]);
 
-export function initialRewind() {
-  return { on: false, clips: 0, noticed: false, notice: false };
+export function initialRewind(sharedDemoMemory = false, privateMode = false) {
+  return { on: sharedDemoMemory === true && !privateMode, clips: 0, noticed: false, notice: false };
 }
 
 // switch: the user flipped either control. server: a rewind_state message. The upload notice shows on the

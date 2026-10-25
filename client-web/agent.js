@@ -241,7 +241,8 @@ function boot() {
   let pendingText = null;
   let seq = 0;
   let cameraOn = false;
-  let rewindOn = false; // off by default; the switch sends clips to TwelveLabs
+  let sharedDemoMemory = false; // server opt-in; applied before each call's first hello
+  let rewindOn = false;
   let rewind = initialRewind(); // one state for the bottom-bar button and the Settings switch
   let rewindNoticeTimer = 0;
   const rewindBtn = document.getElementById("rewind-btn");
@@ -1607,6 +1608,7 @@ function boot() {
       const response = await apiFetch("/api/features");
       if (response.ok) {
         const flags = await response.json();
+        sharedDemoMemory = flags.demo_shared_memory === true;
         MODES = flags.extra_modes === true ? [...CORE_MODES, ...EXTRA_MODES] : CORE_MODES;
         const wanted = params.get("mode") === "gemini-live" ? "general" : params.get("mode");
         const found = MODES.findIndex(m => m.id === wanted);
@@ -1686,6 +1688,15 @@ function boot() {
     }
     document.getElementById('live-start-notice').classList.add('hidden');
     pack = next;
+    await productSettingsReady;
+    if (sharedDemoMemory) {
+      rewind = initialRewind(sharedDemoMemory, privateMode);
+      cloud.twelvelabs = rewind.on;
+      const keep = document.getElementById("rewind-keep");
+      if (keep) keep.checked = rewind.on;
+      showRewind(rewind.on);
+      renderPrivate();
+    }
     renderLeaves();
     homeStartPending = next === 'home' || next === 'engineering';
     document.getElementById('guide-presenter')?.classList.add('hidden');
@@ -2368,7 +2379,7 @@ function boot() {
       safeStorage()?.removeItem("aeye.voice");
     } catch { /* Convenience storage only. */ }
   });
-  void loadProductSettings();
+  const productSettingsReady = loadProductSettings();
   if (voicePick) {
     voicePick.addEventListener("change", onVoicePick);
     void loadVoices();
