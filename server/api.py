@@ -43,6 +43,9 @@ async def scene(request: Request):
 
 @router.post('/market')
 async def market(request: Request):
+    from server import features
+    if not features.shopping():
+        return JSONResponse({'error': 'shopping_disabled'}, status_code=403)
     return await checked(request, 'market_query', 'market_response',
                          lambda body: asyncio.to_thread(search, body))
 

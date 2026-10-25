@@ -43,6 +43,8 @@ struct RootView: View {
         .sheet(isPresented: $showSettings) {
             SettingsSheet(controller: controller)
         }
+        .task(id: controller.serverURLString + controller.accessToken) { await controller.loadProductSettings() }
+        .onChange(of: controller.modes) { _, _ in ringIndex = Modes.defaultIndex }
         .onAppear {
             camera.start()
             autostartIfAsked()
@@ -88,7 +90,7 @@ struct RootView: View {
 
                 Spacer(minLength: 16)
 
-                ModeRing(index: $ringIndex, onStart: startCall)
+                ModeRing(index: $ringIndex, modes: controller.modes, onStart: startCall)
                     .padding(.bottom, 24)
             }
         }
@@ -144,14 +146,14 @@ struct RootView: View {
 
     private var intro: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("I look, point,\nand remember.")
+            Text("Dad, how do I?")
                 .font(.system(size: 34, weight: .semibold))
                 .tracking(-1)
                 .lineSpacing(-2)
                 .foregroundStyle(.white)
                 .accessibilityAddTraits(.isHeader)
 
-            Text("Show me what you are working on, or ask where you left something. Choose a helper below to start.")
+            Text("Meet A-Eye, an AI dad who helps you do things. Start with the sink, ask a question, or find something you left behind.")
                 .font(.body)
                 .lineSpacing(4)
                 .foregroundStyle(Palette.text2)
@@ -175,10 +177,10 @@ struct RootView: View {
     private func autostartIfAsked() {
         let arguments = ProcessInfo.processInfo.arguments
         guard let flag = arguments.firstIndex(of: "-aeye-start"), arguments.indices.contains(flag + 1),
-              let index = Modes.all.firstIndex(where: { $0.id == arguments[flag + 1] })
+              let index = controller.modes.firstIndex(where: { $0.id == arguments[flag + 1] })
         else { return }
         ringIndex = index
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { startCall(Modes.all[index]) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { startCall(controller.modes[index]) }
     }
 
     private func startCall(_ mode: Mode) {

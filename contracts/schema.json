@@ -2009,6 +2009,11 @@
       }
      },
      "description": "Home first: per-call cloud switches. claude = Smarter answers (question + written scene note, sometimes one small close-up); cartesia = Natural voice (reply sentence only); twelvelabs = Video memory search (short silent clips, deleted at call end). Missing: Claude on, Cartesia on, TwelveLabs off (on if rewind). private: all off."
+    },
+    "persona": {
+     "type": "string",
+     "pattern": "^[a-z][a-z0-9-]{0,47}$",
+     "description": "Optional persona registry id. Omitted uses chill-dad. Unknown ids are rejected."
     }
    }
   },

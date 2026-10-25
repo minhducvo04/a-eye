@@ -15,7 +15,7 @@ final class CallStateTests: XCTestCase {
         XCTAssertEqual(back.link, .live)
         XCTAssertFalse(back.powerOffConfirmed)
         XCTAssertTrue(back.draw.visible(nowMs: 0).isEmpty)
-        XCTAssertTrue(back.showsPowerOffButton(for: Modes.all[1]))
+        XCTAssertTrue(back.showsPowerOffButton(for: Modes.extras.first { $0.id == "pc_build" }!))
     }
     func testSayBecomesCaptionAndClearsError() {
         let s = CallState.initial
@@ -51,7 +51,7 @@ final class CallStateTests: XCTestCase {
     }
     func testPowerOffButtonOnlyForPCBuild() {
         XCTAssertFalse(CallState.initial.showsPowerOffButton(for: Modes.all[0]))
-        XCTAssertFalse(CallState.initial.reduce(.powerOffTapped, nowMs: 0).showsPowerOffButton(for: Modes.all[1]))
+        XCTAssertFalse(CallState.initial.reduce(.powerOffTapped, nowMs: 0).showsPowerOffButton(for: Modes.extras.first { $0.id == "pc_build" }!))
     }
 }
 

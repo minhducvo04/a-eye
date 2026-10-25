@@ -103,6 +103,7 @@ def test_pc_confirmed_board_prompt_and_history():
 
 
 def test_shopper(monkeypatch):
+    monkeypatch.setenv('SHOPPING', '1')
     monkeypatch.setenv('MARKET_SOURCE', 'fixture')
     messages = run(llm=LLM(json.dumps(dict(agent='helper', say='I can check.', draw=[], market_category='ram'))))
     result = next(m['result'] for m in messages if m['type'] == 'market_results')

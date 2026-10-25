@@ -110,8 +110,8 @@ final class LiveAudio {
         }
     }
 
-    func play(_ audio: ServerAudio) throws {
-        if utteranceId != audio.utteranceId {
+    func play(_ audio: ServerAudio, queued: Bool = false) throws {
+        if !queued && utteranceId != audio.utteranceId {
             stopPlayback()
             utteranceId = audio.utteranceId
         }

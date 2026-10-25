@@ -3,22 +3,17 @@ import XCTest
 
 final class ModesTests: XCTestCase {
     func testRingContents() {
-        XCTAssertEqual(Modes.all.filter(\.isAvailable).compactMap(\.pack),
-                       ["general", "pc_build", "cooking", "assemble", "memory", "home", "general", "general"])
-        XCTAssertEqual(Modes.all.filter { !$0.isAvailable }.map(\.title), ["Mechanic"])
-        XCTAssertEqual(Modes.all[Modes.defaultIndex].id, "gemini-live")
-        XCTAssertEqual(Modes.all.filter(\.requiresPowerOff).map(\.id), ["pc_build"])
-    }
-
-    func testRingOrderMatchesWeb() {
-        // Same ids and order as client-web/agent.js MODES.
-        XCTAssertEqual(Modes.all.map(\.id),
-                       ["general", "pc_build", "cooking", "assemble", "memory", "mechanic", "plumbing", "engineering", "gemini-live"])
-        XCTAssertEqual(Modes.all.first { $0.id == "plumbing" }?.title, "Sink")
+        XCTAssertEqual(Modes.all.map(\.id), ["plumbing", "general", "memory"])
+        XCTAssertEqual(Modes.all.map(\.title), ["Sink", "General", "Memory"])
+        XCTAssertEqual(Modes.all[Modes.defaultIndex].id, "plumbing")
+        XCTAssertEqual(Modes.available(extraModes: false), Modes.all)
+        XCTAssertEqual(Modes.available(extraModes: true).map(\.id),
+                       ["plumbing", "general", "memory", "pc_build", "cooking", "assemble", "mechanic", "engineering"])
+        XCTAssertEqual(Modes.extras.filter(\.requiresPowerOff).map(\.id), ["pc_build"])
     }
 
     func testEngineering() {
-        let mode = Modes.all.first { $0.id == "engineering" }!
+        let mode = Modes.extras.first { $0.id == "engineering" }!
         XCTAssertTrue(mode.isAvailable)
         XCTAssertEqual(mode.pack, "general")
         XCTAssertEqual(Modes.startText(for: mode), "light an LED")

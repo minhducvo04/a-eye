@@ -101,6 +101,7 @@ final class AEyeSocket {
     private let token: String?
     private let pack: String
     private let boardID: String?
+    private let persona: String?
     private let tts: String
     private let stt: String
     private var socket: URLSessionWebSocketTask?
@@ -110,9 +111,9 @@ final class AEyeSocket {
     private var ready = false
     private var sendingFrame = false
     init(url: URL, token: String? = nil, pack: String = "general", boardID: String? = nil,
-         tts: String = "server", stt: String = "server") {
+         tts: String = "server", stt: String = "server", persona: String? = nil) {
         self.url = url; self.token = token; self.pack = pack; self.boardID = boardID
-        self.tts = tts; self.stt = stt
+        self.tts = tts; self.stt = stt; self.persona = persona
     }
     func connect() {
         disconnect()
@@ -132,6 +133,7 @@ final class AEyeSocket {
             onReset?(); ws.resume()
             do {
                 var hello: [String: Any] = ["pack": pack, "client": "ios", "tts": tts, "stt": stt]
+                if let persona { hello["persona"] = persona }
                 if let boardID { hello["board_id"] = boardID }
                 try await send("hello", hello)
                 while !Task.isCancelled {

@@ -249,7 +249,8 @@ def test_header_with_bent_roles_keeps_draws_and_never_speaks_json():
     asyncio.run(check())
 
 
-def test_shopping_question_brings_in_shopper_even_if_model_forgets():
+def test_shopping_question_brings_in_shopper_even_if_model_forgets(monkeypatch):
+    monkeypatch.setenv('SHOPPING', '1')
     """Seen live: the local brain answered a price question without market_category."""
     from server.agent import shopping_category
     assert shopping_category('Is there cheaper RAM that fits my board?') == 'ram'

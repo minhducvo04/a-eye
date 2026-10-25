@@ -1,10 +1,25 @@
 import asyncio
+import pytest
 from time import monotonic
 
 from server.shopping import Offer, FixtureSource, recommend, shopping_turn
 from server.agent import Session
 from server.privacy import PRIVATE, SWITCHES
 from server.test_agent import FRAME, SCENE, Vision
+
+
+@pytest.fixture(autouse=True)
+def enable_shopping(monkeypatch):
+    # The existing shopping tests exercise the explicitly enabled feature.
+    monkeypatch.setenv('SHOPPING', '1')
+
+
+def test_shopping_default_off_before_dependencies(monkeypatch):
+    monkeypatch.delenv('SHOPPING', raising=False)
+    source, vision = FixtureSource(offers()), Vision()
+    result, line = asyncio.run(shopping_turn(Session('s', frame=FRAME), 'buy this', vision, source))
+    assert result is None and line == 'Shopping is off.'
+    assert source.calls == vision.calls == []
 
 
 def offers():
