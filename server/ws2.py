@@ -241,6 +241,8 @@ async def websocket(ws: WebSocket):
     if not await accept_socket(ws):
         return
     session = None
+    budget_task = None
+    hello_ready = False
     paired_call = None
     turn_task = None
     current_turn = None
@@ -535,8 +537,25 @@ async def websocket(ws: WebSocket):
         await close_live()
         factory = getattr(ws.app.state, 'live_factory_v2', LiveBridge)
         live = factory(session, vision, ws.app, send, live_fixed_line)
-        if not await live.start():
+        if not await live.start() and not cloud_meter.BUDGET.exhausted():
             await live_fixed_line(FALLBACK_LINE)
+
+    async def watch_budget():
+        nonlocal voice
+        while not hello_ready or not cloud_meter.BUDGET.exhausted():
+            await asyncio.sleep(0.25)
+        await close_live()
+        await cancel_turn()
+        await cancel_expert(session)
+        await cancel_audio()
+        await close_voice()
+        candidate = await asyncio.to_thread(adapter.make_adapter)
+        voice = None if isinstance(candidate, FakeAdapter) else candidate
+        session.speak = speech_audio if voice else None
+        notice = say(cloud_meter.CAP_LINE)
+        await send(notice)
+        if voice:
+            audio_tasks[notice['utterance_id']] = asyncio.create_task(audio(notice))
 
     async def end_rewind():
         nonlocal rewind_task
@@ -592,6 +611,7 @@ async def websocket(ws: WebSocket):
         done, ws_read = ws_read, None
         return done.result()
 
+    budget_task = asyncio.create_task(watch_budget())
     try:
         while True:
             try:
@@ -648,6 +668,8 @@ async def websocket(ws: WebSocket):
                 session = new_session
                 session.camera = incoming.get('camera', True)
                 paired_call = pairing.Call(session, send, switch_camera, ident=pairing.verified_identity(ws))
+                from server.limits import owner_key
+                paired_call.limit_owner = owner_key(ws)
                 current_turn = None
                 event('hello', session.session_id, pack=session.pack.id, tts=session.tts, stt=stt_mode)
                 session.emit = emit
@@ -684,6 +706,7 @@ async def websocket(ws: WebSocket):
                 if ws.query_params.get('mode') == 'gemini-live':
                     stt_mode = 'server'
                     await open_live()
+                hello_ready = True
                 await send(state('listening'))
                 if getattr(ws.app.state, 'presenter', False) and private and session.pack.id == 'home':
                     await send(message('turn', turn_id='presenter', stage='done', detail='Presenter available',
@@ -819,6 +842,9 @@ async def websocket(ws: WebSocket):
             for pending in (ws_read, phone_read):
                 if pending is not None:
                     pending.cancel()
+            if budget_task:
+                budget_task.cancel()
+                await asyncio.gather(budget_task, return_exceptions=True)
             await cancel_expert(session)
             if paired_call:
                 with CancelScope(shield=True):

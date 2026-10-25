@@ -122,6 +122,7 @@ registry = Registry()
 class Call:
     def __init__(self, session, send, switch, ident=''):
         self.session, self.send, self.switch = session, send, switch
+        self.limit_owner = ''
         self.local_on = session.camera
         self.camera = None
         self.closed = False
@@ -207,6 +208,7 @@ async def camera_socket(ws, hello, claimed=None):
                                    **({'retry_s': retry} if retry else {})))
         await ws.close(code=4404)
         return
+    ws.state.limit_owner = call.limit_owner
     call.camera = ws  # Reserve before the first await: only one camera can join.
     event('pair_joined', call.session.session_id)
     try:

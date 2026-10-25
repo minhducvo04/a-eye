@@ -175,7 +175,10 @@ class TwelveLabsClient:
             response = await client.post('/analyze', json=body)
             response.raise_for_status()
             result = response.json()
-            return result.get('data') or '', result.get('usage') or {}
+            usage = result.get('usage') or {}
+            from server.cloud_meter import record_tokens
+            record_tokens(usage)
+            return result.get('data') or '', usage
 
     async def search(self, index_id, query, video_ids=None, limit=5):
         data = [('index_id', index_id), ('query_text', query), ('search_options', 'visual'),
