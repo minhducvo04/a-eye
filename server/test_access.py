@@ -206,7 +206,23 @@ def test_httpx_fetch_timeout(monkeypatch):
         return Response()
     monkeypatch.setattr(auth.httpx, 'get', get)
     assert auth.fetch_certs('https://team.test/cdn-cgi/access/certs') == {'keys': []}
-    assert calls == [('https://team.test/cdn-cgi/access/certs', {'timeout': 3}), 'checked']
+    assert calls == [('https://team.test/cdn-cgi/access/certs', {'timeout': 3, 'follow_redirects': False}), 'checked']
+
+
+def test_certs_redirect_is_refused_and_direct_response_works(monkeypatch):
+    import httpx
+    requests = []
+    def handle(request):
+        requests.append(str(request.url))
+        if request.url.path == '/redirect':
+            return httpx.Response(302, headers={'Location': 'https://other.invalid/keys'})
+        return httpx.Response(200, json={'keys': []})
+    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+        monkeypatch.setattr(auth.httpx, 'get', client.get)
+        with pytest.raises(httpx.HTTPStatusError):
+            auth.fetch_certs('https://team.test/redirect')
+        assert requests == ['https://team.test/redirect']
+        assert auth.fetch_certs('https://team.test/certs') == {'keys': []}
 
 
 def test_4401_stops_retries_and_offers_reload():

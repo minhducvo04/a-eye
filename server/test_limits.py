@@ -1,4 +1,4 @@
-"""Limits run even when demo authentication is explicitly open."""
+"""Limits apply to authenticated tunnels and local callers."""
 import asyncio
 from types import SimpleNamespace
 
@@ -24,11 +24,11 @@ def test_turn_windows_and_owners(monkeypatch):
     assert limits.turn('ip1', 'owner')
 
 
-def test_open_tunnel_socket_limits_and_release(monkeypatch):
-    monkeypatch.setenv('A_EYE_OPEN', '1')
+def test_authenticated_tunnel_socket_limits_and_release(monkeypatch):
+    monkeypatch.setenv('A_EYE_TOKEN', 'synthetic-token')
     monkeypatch.setenv('CALLS_PER_IP', '1')
     monkeypatch.setenv('MAX_OPEN_SOCKETS', '2')
-    with TestClient(create_app()) as client:
+    with TestClient(create_app(), headers={'authorization': 'Bearer synthetic-token'}) as client:
         with client.websocket_connect('/ws2', headers={'cf-connecting-ip': 'visitor1'}):
             with client.websocket_connect('/ws', headers={'cf-connecting-ip': 'visitor1'}) as rejected:
                 assert rejected.receive_json()['message'].startswith('Please')
@@ -86,7 +86,6 @@ def test_token_cost_is_recorded_without_turn_metrics(monkeypatch, tmp_path):
 
 def test_text_rate_boundary_and_content_free_log(monkeypatch, capsys):
     from server.test_ws2 import app, receive, send
-    monkeypatch.setenv('A_EYE_OPEN', '1')
     monkeypatch.setenv('TURNS_PER_MINUTE', '1')
     with TestClient(app()) as client, client.websocket_connect('/ws2') as ws:
         send(ws, 'hello', pack='general', camera=False)

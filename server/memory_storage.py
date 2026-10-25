@@ -79,6 +79,7 @@ class SpacetimeStore(Store):
         return response
 
     def _call(self, reducer, *args):
+        self.writable()
         self._request('/call/' + reducer, args=list(args))
 
     def _rows(self, table):
@@ -118,6 +119,7 @@ class SpacetimeStore(Store):
         return True
 
     def _require_owner(self):
+        self.writable()
         if self._owner is None:
             raise PermissionError('claim memory before reading or writing')
 
