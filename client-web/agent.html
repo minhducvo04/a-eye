@@ -30,7 +30,8 @@
     <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></symbol>
     <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5.5c0 4.4-3 8-7 9.5-4-1.5-7-5.1-7-9.5V6z"/></symbol>
     <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></symbol>
-    <symbol id="i-bolt-off" viewBox="0 0 24 24"><path d="M13 3L6 13h5l-1 8 7-10h-5z"/><path d="M3.5 3.5l17 17"/></symbol>
+    <symbol id="i-dots" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/></symbol>
+  <symbol id="i-bolt-off" viewBox="0 0 24 24"><path d="M13 3L6 13h5l-1 8 7-10h-5z"/><path d="M3.5 3.5l17 17"/></symbol>
   </svg>
 
   <main id="stage" class="stage">
@@ -104,14 +105,6 @@
         <p id="link" class="chip glass warn" role="status">Connecting…</p>
         <p id="notice" class="chip glass soft hidden" role="status"></p>
         <p id="pipeline" class="pipeline" role="status">Ready</p>
-        <p id="proof-strip" class="pipeline" aria-live="off">
-          <span id="proof-pictures">Pictures saved: unknown</span> ·
-          <span id="proof-pictures-sent">Pictures sent: unknown</span> ·
-          <span id="proof-cloud-calls" title="Current call: outgoing public provider request attempts, including retries">Cloud AI calls: unknown</span> ·
-          <span id="proof-cloud-bytes" title="Outgoing request payload bytes; excludes headers and network overhead">Bytes to cloud: unknown</span> ·
-          <span id="proof-brain">Brain: awaiting answer</span>
-          <span id="proof-safety" class="hidden"> · Stopped by code</span>
-        </p>
         <p id="valve-check" class="chip glass hidden" role="status" aria-live="polite"></p>
         <div id="guide-presenter" class="hidden pipeline">
           <label><input id="guide-test" type="checkbox"> Presenter checker test mode</label>
@@ -119,30 +112,6 @@
           <button id="guide-pass" type="button" disabled>Test pass + next</button>
           <button id="guide-stop" type="button">Test outlet stop</button>
         </div>
-        <p id="family-proof" class="pipeline"><span id="family-pictures">Pictures sent: 0</span>
-          <span id="family-reply" role="status"></span> <button id="family-replay" hidden>Read reply aloud</button></p>
-        <details id="family-panel">
-          <summary id="family-heading">People</summary>
-          <p>Choose a friend, sibling, relative or coach. Contacts last for this call; there is no default person.</p>
-          <label>Name <input id="family-name" maxlength="60" autocomplete="off"></label>
-          <label>Relation <input id="family-relation" maxlength="40" autocomplete="off"></label>
-          <label><input id="family-consent" type="checkbox"> This person agreed to receive my notes.</label>
-          <button id="family-add" type="button">Add contact</button>
-          <fieldset id="family-sharing" hidden>
-          <label>Send to <select id="family-contact"><option value="">Choose a person</option></select></label>
-          <button id="family-remove" type="button">Never contact this person</button>
-          <label>What I fixed <select id="family-task"></select></label>
-          <label>One detail <select id="family-detail"></select></label>
-          <label><input id="family-complete" type="checkbox"> These facts describe the task I just completed.</label>
-          <button id="family-draft" type="button" disabled>Want to show someone?</button>
-          <p id="family-preview"></p><p id="family-status" role="status"></p>
-          <button id="family-read" type="button" disabled>Read aloud</button>
-          <button id="family-send" type="button" disabled>Send</button>
-          <button id="family-cancel" type="button">Cancel</button>
-          <a id="family-link" hidden target="_blank" rel="noopener noreferrer">Open private delivery link</a>
-          </fieldset>
-        </details>
-        <link rel="stylesheet" href="/family-note.css">
         <!-- Memory aid: what is remembered today, and the two Forget buttons. -->
         <div id="memory" class="memory hidden">
           <button type="button" id="memory-count" class="chip glass soft" aria-expanded="false" aria-controls="memory-actions">Nothing remembered today</button>
@@ -178,11 +147,10 @@
           <button type="button" id="rewind-chip" class="rewind-ask-chip glass" aria-expanded="false" aria-controls="rewind-prompts"><svg aria-hidden="true"><use href="#i-rewind"/></svg>Rewind</button>
           <div id="rewind-prompts" class="rewind-prompts hidden" role="group" aria-label="Ask Rewind"></div>
         </div>
-        <form id="composer" class="typed glass">
-          <input id="typed" type="text" enterkeyhint="send" autocomplete="off" placeholder="Type a message" aria-label="Message">
-          <button type="submit" class="send" aria-label="Send"><svg><use href="#i-send"/></svg></button>
-        </form>
-        <div class="bottom">
+        <!-- Controls fold into one button at the right edge 3 s after the call starts (and after each use), so the
+             caption keeps the lower part of the screen. The dots button opens them again. -->
+        <div id="controls" class="bottom">
+          <button type="button" id="controls-toggle" class="glass round r56" aria-expanded="true" aria-label="Hide controls" title="Hide controls"><svg><use href="#i-dots"/></svg></button>
           <button type="button" id="start-camera" class="glass round r56" aria-pressed="false" aria-label="Camera on"><svg><use id="camera-icon" href="#i-camera-off"/></svg></button>
           <button type="button" id="pair-call" class="glass round r56" aria-label="Use my phone" title="Use my phone (camera + mic)"><svg><use href="#i-phone"/></svg></button>
           <button type="button" id="mic" class="glass round r56" aria-pressed="false" aria-label="Start microphone"><svg><use id="mic-icon" href="#i-mic-off"/></svg></button>

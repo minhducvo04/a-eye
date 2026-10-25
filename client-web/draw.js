@@ -106,6 +106,39 @@ export function visibleOps(state, now) {
   return out;
 }
 
+// Labels of the boxes currently drawn with the target role, longest first so "blue mug" wins over "mug".
+export function targetLabels(state, now) {
+  const seen = new Set();
+  for (const item of visibleOps(state, now)) {
+    const op = item.op;
+    if (op.kind !== "box" || op.role !== "target") continue;
+    const label = String(op.label || "").trim();
+    if (label) seen.add(label);
+  }
+  return [...seen].sort((a, b) => b.length - a.length);
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Split caption text into { text, target } runs so the words naming a boxed object can take the box's colour.
+export function splitByTargets(text, labels) {
+  const source = String(text || "");
+  const names = (labels || []).map((l) => String(l || "").trim()).filter(Boolean);
+  if (!source || !names.length) return source ? [{ text: source, target: false }] : [];
+  const re = new RegExp(`(${names.map(escapeRegExp).join("|")})`, "gi");
+  const out = [];
+  let last = 0;
+  for (const m of source.matchAll(re)) {
+    if (m.index > last) out.push({ text: source.slice(last, m.index), target: false });
+    out.push({ text: m[0], target: true });
+    last = m.index + m[0].length;
+  }
+  if (last < source.length) out.push({ text: source.slice(last), target: false });
+  return out;
+}
+
 // transform: { scale, offsetX, offsetY, srcW, srcH, viewW, viewH }
 // Build one with viewTransform so it matches object-fit: cover.
 export function viewTransform(srcW, srcH, viewW, viewH) {
@@ -284,6 +317,91 @@ function withAlpha(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+// The object we are talking about: a rounded outline with a soft glow, bracket marks on the corners, and a
+// chip above it holding the name. Target boxes get the dot and a tinted edge; other roles a quiet grey chip.
+function paintBox(ctx, px, color, progress, viewW) {
+  const rect = px.rect;
+  const isTarget = px.role === "target";
+  const radius = Math.min(16, rect.w / 2, rect.h / 2);
+  const per = 2 * (rect.w + rect.h);
+  ctx.save();
+  if (isTarget) {
+    ctx.fillStyle = withAlpha(color, 0.06 * progress);
+    roundRect(ctx, rect.x, rect.y, rect.w, rect.h, radius);
+    ctx.fill();
+    ctx.shadowColor = withAlpha(color, 0.45);
+    ctx.shadowBlur = 18 * progress;
+  }
+  ctx.lineWidth = isTarget ? 2.5 : 2;
+  roundRect(ctx, rect.x, rect.y, rect.w, rect.h, radius);
+  if (progress < 1) ctx.setLineDash([Math.max(0.01, per * progress), per]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+  if (isTarget && progress >= 1) drawBrackets(ctx, rect, radius, color);
+  if (px.label && progress > 0.4) drawChip(ctx, px.label, rect, color, isTarget, viewW);
+}
+
+function drawBrackets(ctx, rect, radius, color) {
+  // An L on each corner, set 4 px outside the outline and rounded with the same centre, so it hugs the box.
+  const inset = 4;
+  const r = radius + inset;
+  const arm = Math.min(r + 10, rect.w / 3 + inset, rect.h / 3 + inset);
+  if (arm <= r) return;
+  const corners = [
+    { x: rect.x - inset, y: rect.y - inset, sx: 1, sy: 1 },
+    { x: rect.x + rect.w + inset, y: rect.y - inset, sx: -1, sy: 1 },
+    { x: rect.x - inset, y: rect.y + rect.h + inset, sx: 1, sy: -1 },
+    { x: rect.x + rect.w + inset, y: rect.y + rect.h + inset, sx: -1, sy: -1 },
+  ];
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  for (const c of corners) {
+    ctx.beginPath();
+    ctx.moveTo(c.x, c.y + c.sy * arm);
+    ctx.arcTo(c.x, c.y, c.x + c.sx * arm, c.y, r);
+    ctx.lineTo(c.x + c.sx * arm, c.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawChip(ctx, text, rect, color, isTarget, viewW) {
+  ctx.save();
+  ctx.shadowColor = "transparent";
+  ctx.font = `${isTarget ? 600 : 500} 13px -apple-system, BlinkMacSystemFont, sans-serif`;
+  const padX = 10;
+  const dot = isTarget ? 14 : 0;
+  const height = 28;
+  const width = Math.min(viewW - 16, ctx.measureText(text).width + padX * 2 + dot);
+  let x = rect.x;
+  let y = rect.y - height - 10;
+  if (y < 8) y = rect.y + 8;
+  x = Math.max(8, Math.min(x, viewW - width - 8));
+  ctx.fillStyle = "rgba(8, 10, 14, 0.78)";
+  roundRect(ctx, x, y, width, height, height / 2);
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = isTarget ? withAlpha(color, 0.5) : "rgba(255, 255, 255, 0.18)";
+  ctx.stroke();
+  if (isTarget) {
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x + padX + 3, y + height / 2, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowColor = "transparent";
+  }
+  ctx.fillStyle = isTarget ? "#ffffff" : "rgba(255, 255, 255, 0.72)";
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+  ctx.fillText(text, x + padX + dot, y + height / 2 + 0.5, Math.max(0, width - padX * 2 - dot));
+  ctx.restore();
+}
+
 function paintOne(ctx, px, item, viewW, viewH) {
   const color = roleColor(px.role || item.op.role);
   const alpha = item.fade;
@@ -296,22 +414,7 @@ function paintOne(ctx, px, item, viewW, viewH) {
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
   if (px.kind === "box" && px.rect.w > 0 && px.rect.h > 0) {
-    const rect = px.rect;
-    const radius = Math.min(10, rect.w / 2, rect.h / 2);
-    roundRect(ctx, rect.x, rect.y, rect.w, rect.h, radius);
-    const per = 2 * (rect.w + rect.h);
-    if (progress < 1) ctx.setLineDash([Math.max(0.01, per * progress), per]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    if (px.label && progress > 0.4) {
-      // Same as the iOS overlay: medium monospaced label with a soft dark edge for bright scenes.
-      ctx.font = "500 15px ui-monospace, SFMono-Regular, Menlo, monospace";
-      ctx.textBaseline = "bottom";
-      ctx.shadowColor = "rgba(0, 0, 0, 0.7)";
-      ctx.shadowBlur = 2;
-      ctx.shadowOffsetY = 1;
-      ctx.fillText(px.label, rect.x, Math.max(16, rect.y - 4));
-    }
+    paintBox(ctx, px, color, progress, viewW);
   } else if (px.kind === "highlight" && px.rect.w > 0 && px.rect.h > 0) {
     const rect = px.rect;
     ctx.shadowColor = color;
