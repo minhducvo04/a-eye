@@ -1,0 +1,129 @@
+{
+ "1536-name": {
+  "p50_ms": 16.7,
+  "p95_ms": 16.7,
+  "frames": 129,
+  "errors": [],
+  "reduced": false
+ },
+ "1280-name": {
+  "p50_ms": 16.7,
+  "p95_ms": 16.7,
+  "frames": 126,
+  "errors": [],
+  "reduced": false
+ },
+ "gl_renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Max, Unspecified Version)",
+ "390-name": {
+  "p50_ms": 16.7,
+  "p95_ms": 16.7,
+  "frames": 126,
+  "errors": [],
+  "reduced": false
+ },
+ "1280-autoplay": {
+  "p50_ms": 16.7,
+  "p95_ms": 16.7,
+  "frames": 128,
+  "errors": [],
+  "reduced": false
+ },
+ "390-autoplay": {
+  "p50_ms": 16.7,
+  "p95_ms": 16.7,
+  "frames": 129,
+  "errors": [],
+  "reduced": false
+ },
+ "390-cost": {
+  "p50_ms": 16.7,
+  "p95_ms": 16.7,
+  "frames": 130,
+  "errors": [],
+  "reduced": false
+ },
+ "390-index": {
+  "p50_ms": 16.7,
+  "p95_ms": 16.7,
+  "frames": 126,
+  "errors": [],
+  "reduced": false
+ },
+ "1280-speed": {
+  "p50_ms": 16.7,
+  "p95_ms": 16.7,
+  "frames": 129,
+  "errors": [],
+  "reduced": false
+ },
+ "1280-cost": {
+  "p50_ms": 16.7,
+  "p95_ms": 16.7,
+  "frames": 128,
+  "errors": [],
+  "reduced": false
+ },
+ "1280-router-panel": {
+  "p50_ms": 16.7,
+  "p95_ms": 16.7,
+  "frames": 127,
+  "errors": [],
+  "reduced": false
+ },
+ "1280-safety-panel": {
+  "p50_ms": 16.7,
+  "p95_ms": 16.7,
+  "frames": 127,
+  "errors": [],
+  "reduced": false
+ },
+ "1280-memory-panel": {
+  "p50_ms": 16.7,
+  "p95_ms": 16.7,
+  "frames": 127,
+  "errors": [],
+  "reduced": false
+ },
+ "1280-saved-panel": {
+  "p50_ms": 16.7,
+  "p95_ms": 16.7,
+  "frames": 127,
+  "errors": [],
+  "reduced": false
+ },
+ "1280-flow-hazard": {
+  "p50_ms": 16.7,
+  "p95_ms": 16.7,
+  "frames": 128,
+  "errors": [],
+  "reduced": false
+ },
+ "1280-index": {
+  "p50_ms": 16.7,
+  "p95_ms": 16.7,
+  "frames": 127,
+  "errors": [],
+  "reduced": false
+ },
+ "390-speed": {
+  "p50_ms": 16.7,
+  "p95_ms": 16.7,
+  "frames": 127,
+  "errors": [],
+  "reduced": false
+ },
+ "390-router-panel": {
+  "p50_ms": 16.7,
+  "p95_ms": 16.8,
+  "frames": 128,
+  "errors": [],
+  "reduced": false
+ },
+ "1536-reduced": {
+  "p50_ms": 16.7,
+  "p95_ms": 16.8,
+  "frames": 129,
+  "errors": [],
+  "reduced": true
+ }
+}

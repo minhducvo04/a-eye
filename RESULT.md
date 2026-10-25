@@ -151,3 +151,7 @@ Proof: `/private/tmp/aeye-live-resilience-server-final.log`.
 Limits: no `.env` read and no real Gemini calls. Real provider acceptance of the
 new setup fields, real 2–3 minute continuity, latency and physical playback are
 not verified. All test media and provider responses were synthetic.
+
+## System map (pkg/system-map)
+
+See docs/results/system-map.md and docs/results/system-map-review.md.
