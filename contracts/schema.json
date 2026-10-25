@@ -3095,6 +3095,15 @@
      "type": "string",
      "pattern": "^https://",
      "maxLength": 8192
+    },
+    "past_call": {
+     "type": "boolean"
+    },
+    "call_started_wall": {
+     "type": [
+      "number",
+      "null"
+     ]
     }
    }
   },

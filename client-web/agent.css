@@ -1385,6 +1385,17 @@ svg .fill {
   object-fit: fill; /* boxes and the arrow are fractions of the frame */
 }
 
+.memory-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: #fff;
+  font-size: 0.95rem;
+  pointer-events: none;
+}
+
 .memory-tag {
   position: absolute;
   z-index: 2;

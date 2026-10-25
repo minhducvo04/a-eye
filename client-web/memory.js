@@ -34,6 +34,11 @@ export function agoLine(hitS, callNowS, place) {
   return where ? `${when} · in the ${where.replace(/^(in|on|at)\s+the\s+/i, "").replace(/^the\s+/i, "")}` : when;
 }
 
+// "From your last call · 0:49 into that call": a hit from a saved earlier call, never "Seen just now".
+export function pastCallLine(hit) {
+  return `From your last call · ${fmtCallTime(hit.t_s)} into that call`;
+}
+
 const words = (text) => String(text || "").toLowerCase().match(/[a-z0-9]+/g) || [];
 
 // The live box for the remembered thing: the tracked object sharing a word with its label, most confident first.
@@ -211,28 +216,34 @@ function playMemory(doc, pane, hit) {
       video.muted = true;
       video.playsInline = true;
       video.setAttribute('playsinline', '');
-      video.preload = 'metadata';
-      video.hidden = true;
+      video.loop = true;
+      video.preload = 'auto';
+      // Visible at once: a black pane with nothing on it is the bug this replaces.
+      video.hidden = false;
+      const loading = doc.createElement('p');
+      loading.className = 'memory-loading';
+      loading.textContent = 'Loading the clip…';
       const start = Math.max(0, Number(hit.start_s) || 0);
       const end = Math.max(start + 0.1, Number(hit.end_s) || start + 6);
       function fallback() {
         if (disposed) return;
         failed = true;
         video.pause();
-        video.hidden = true;
-        startFrames();
+        if (img) { video.hidden = true; startFrames(); loading.remove?.(); }
+        else loading.textContent = 'Loading the clip…';   // keep the text, never a black pane
       }
       function play() {
         if (disposed || failed) return;
         video.play().catch(fallback);
       }
-      video.addEventListener('loadedmetadata', () => {
+      function seekAndPlay() {
         if (disposed || failed) return;
         try { video.currentTime = start; play(); } catch { fallback(); }
-      });
+      }
       video.addEventListener('playing', () => {
         if (disposed || failed) return;
         video.hidden = false;
+        loading.hidden = true;
         if (img) img.hidden = true;
         stopFrames();
       });
@@ -246,15 +257,17 @@ function playMemory(doc, pane, hit) {
       });
       video.addEventListener('error', fallback);
       if (nativeHls) {
+        video.addEventListener('loadedmetadata', seekAndPlay);
         video.src = hit.clip_url;
       } else {
         // Chrome, Brave and Firefox cannot play HLS natively; hls.js streams it into the same video element.
         const hls = new HlsLib();
         hls.on(HlsLib.Events.ERROR, (_, data) => { if (data && data.fatal) fallback(); });
+        hls.on(HlsLib.Events.MANIFEST_PARSED, seekAndPlay);
         hls.loadSource(hit.clip_url);
         hls.attachMedia(video);
       }
-      pane.append(video);
+      pane.append(video, loading);
     }
   }
   return () => {

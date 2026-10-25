@@ -479,6 +479,8 @@ class LiveBridge:
                           end_s=hit.get('end_s', hit['t_s']), sure=hit['sure'],
                           alternatives=hit.get('alternatives', [])[:3], objects=hit.get('objects', []),
                           turn_id=turn_id)
+            if hit.get('past_call'):
+                fields.update(past_call=True, call_started_wall=hit.get('call_started_wall'))
             if hit.get('video_id') or hit.get('frame'):
                 fields.update(await hit_media(self.session.rewind, hit))
             cards.append(message('rewind_hit', **fields))
