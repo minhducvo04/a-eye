@@ -155,3 +155,60 @@ not verified. All test media and provider responses were synthetic.
 ## System map (pkg/system-map)
 
 See docs/results/system-map.md and docs/results/system-map-review.md.
+
+## Live acceptance — 2026-10-25
+
+Built on `pkg/acceptance`, starting from `05779b4`. No push, real API calls,
+live acceptance run, `.env` reads, recorded voice assets, or real camera assets.
+
+### Changed files
+
+- `scripts/live_acceptance.py`: eight repeatable audio/frame flows, monotonic message
+  timeline without media payloads, explicit verdicts, timing/cost summaries, Markdown
+  and JSON reports, loopback URL validation, runtime macOS speech synthesis, synthetic
+  mug/apple defaults, optional external prop fixtures, and private/Recall configuration.
+- `scripts/test_live_acceptance.py`: 54 fake-socket/unit cases, including all eight full
+  flow orchestrations, success/failure checks, audio timing, safety leakage, report/exit
+  rules, and Make secret-include isolation with its original default goal preserved.
+- `Makefile`: `acceptance` target; skip global secret include when that goal is requested.
+- `docs/results/live-acceptance.md`: coordinator commands, fixtures, checks, timing,
+  limits, output formats and interpretation.
+- `RESULT.md`: this handoff and verification evidence.
+
+### Verification
+
+Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q scripts/test_live_acceptance.py` - PASS (54 passed in 0.29s).
+
+Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q scripts` - FAIL (101 passed, 2 failed in 1.56s; summary read).
+
+Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q scripts --tb=short` - FAIL (final source state: 101 passed, 2 failed in 1.74s; all 54 new acceptance cases passed).
+
+The two unchanged readiness test failures are:
+
+1. `scripts/test_ready.py::test_live_pair_request_on_fake_socket`: sandbox denies
+   `bind(('127.0.0.1', 0))` with `PermissionError: [Errno 1] Operation not permitted`.
+2. `scripts/test_ready.py::test_local_probes_only_read_settings`: stale assertion
+   expects `calls[2]` to run `xrsimulator`; current `ready.local_checks()` makes only
+   the Tailscale and mock-device subprocess calls. It fails with `IndexError` at line 95.
+
+Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python scripts/live_acceptance.py --help` - PASS (CLI imports and prints usage without a connection).
+
+Test: `git diff --check` - PASS (no whitespace errors).
+
+### Limits and next run
+
+The coordinator must run `make acceptance PY=~/Projects/a-eye/.venv/bin/python`
+against the real server, then repeat with `ACCEPTANCE_ARGS="--rewind"` if Recall
+is in scope. No live acceptance report is fabricated by this build-only session.
+Default generated drawings test object recognition of synthetic props, not a real
+camera scene. External fixtures require the documented A/B labels and no wrench or
+closed-valve proof. Audio is generated only at run time and removed with its temporary
+directory; real macOS speech synthesis was not exercised during unit testing.
+
+Caption matching and box arrival are automated checks, not an independent semantic,
+visual alignment, or network-egress audit. Hazard observation is bounded by the
+configured full response window. Cost stays `not measured` unless server messages
+expose a dollar estimate. Exit 0 means at least one pass for every flow, not all
+repeats passing. The two unrelated readiness failures remain for their owner.
+
+Finished: acceptance runner and offline verification. Next: coordinator live runs. Suggested: gpt-6.1-sol / high.

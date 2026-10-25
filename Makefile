@@ -5,14 +5,22 @@ VISION_PORT ?= 8001
 # Vision backend: fake (canned), ollama (PC GPU), auto (ollama, fake when the PC is unreachable)
 VISION_BACKEND ?= auto
 
-# Load local keys from .env (gitignored) into every recipe. Values are never printed.
+# Acceptance only talks to an already running local server. Never load secrets,
+# even for a mixed invocation such as `make acceptance test-py`.
+ifeq ($(filter acceptance,$(MAKECMDGOALS)),)
+# Load local keys from .env (gitignored) into other recipes. Values are never printed.
 -include .env
+endif
 export
 
 .PHONY: setup test test-py test-web vision server dev smoke phone mock
 
 setup:            ## create .venv and install Python deps
 	uv venv .venv && uv pip install --python .venv/bin/python -r requirements.txt
+
+.PHONY: acceptance
+acceptance:       ## local live acceptance; no .env; optional ACCEPTANCE_ARGS="--repeat 1 --rewind"
+	$(PY) scripts/live_acceptance.py $(ACCEPTANCE_ARGS)
 
 test: test-py test-web   ## every module's tests
 
