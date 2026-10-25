@@ -1,3 +1,27 @@
+## Planner Live regression fix — 2026-10-25
+
+Fixed the problem-first headphone repair trigger and the exact follow-up
+“Okay, what is the next step?”. Completed Live input is observed once, with
+planner start/outcome diagnostics and an explicit missing-client result.
+The packet regression uses the real app/default planner and a fake SDK transport.
+
+Changed files: `server/gemini_live.py`, `server/planner.py`, `server/packs/home.py`,
+`server/test_planner.py`, `docs/results/planner-live.md`, `RESULT.md`.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py server/test_live_guide.py --tb=short` - PASS
+(66 passed in 1.27s).
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(1166 passed, 16 failed, 2 warnings in 51.61s; summary and failure traces read).
+Fifteen failures are sandbox-denied loopback sockets; one is a downstream hazard
+assertion after fake Live startup fails with `PermissionError`.
+Test: `git diff --check` - PASS.
+
+Limits: no `.env` read, external network, real provider call, push or deployment.
+The full suite is not green; network permissions were not lifted.
+Details and retained proof: [planner-live](docs/results/planner-live.md).
+
+---
+
 ## Planner merge of local main — 2026-10-25
 
 Merged local `main` at `8ec3ae3` into `pkg/planner` from `e307a60`.

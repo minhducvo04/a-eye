@@ -22,6 +22,12 @@ INTENT = re.compile(
     r"(?:can|could|would) you (?:please )?(?:help me (?:to )?|teach me |show me how to )|"
     r"help me (?:to )?|teach me |show me how to |how (?:do i|can i|to) |"
     r"i (?:want|would like) to (?:learn (?:how to )?)?|let['’]s )(.+)$", re.I)
+# Spoken repair requests commonly name the problem before asking how to fix "it".
+# Resolve that pronoun only from a bounded breakage clause in this same utterance.
+REPAIR = re.compile(
+    r"^(?:(?:hey )?dad[,! ]+)?((?:the|my|our|a|an) .+?) "
+    r"(?:broke|(?:is|are) broken)([^.!?]*)[.!]\s*"
+    r"how (?:do|can) i (fix|repair) (?:it|this|that)[.!?]*$", re.I)
 OBSERVATION = re.compile(r"\b(?:where|when)\b|\b(?:what (?:am i|is this|is that)|"
                          r"right now|currently|earlier|yesterday|last time|did i|did we)\b|"
                          r"\b(?:what|which)\b.{0,40}\b(?:holding|looking at|seeing|this|that|these|those)\b", re.I)
@@ -60,26 +66,42 @@ def unsafe(text):
 
 def task_request(text):
     """Reuse the memory router's time patterns and coded task starts, then require explicit intent."""
+    return task_decision(text)[0]
+
+
+def task_decision(text):
+    """Return only a normalized task and an allowlisted diagnostic reason."""
     from server.live_memory import explicit
     text = ' '.join((text or '').split())
-    if (not enabled() or len(text) > 500 or task_for(text) or explicit(text, False)
-            or OBSERVATION.search(text) or unsafe(text)):
-        return None
+    if not enabled():
+        return None, 'disabled'
+    if len(text) > 500:
+        return None, 'length'
+    if task_for(text):
+        return None, 'coded'
+    if explicit(text, False) or OBSERVATION.search(text):
+        return None, 'observation'
+    if unsafe(text):
+        return None, 'unsafe'
     match = INTENT.fullmatch(text)
-    if not match:
-        return None
-    requested = match[1].strip(' .!?')
+    repair = REPAIR.fullmatch(text) if not match else None
+    if match:
+        requested = match[1].strip(' .!?')
+    elif repair:
+        requested = f'{repair[3]} {repair[1]}{repair[2]}'.strip()
+    else:
+        return None, 'no_intent'
     if PERSON_CONTEXT.search(requested) or NAMED_PERSON.search(requested):
-        return None
+        return None, 'personal'
     task = requested.casefold()
     task = re.sub(r'\b(?:my|our)\b', 'the', task)
     # Keep only a task, never append conversational context to a durable key.
     if (not 3 <= len(task) <= 120 or PERSONAL.search(task) or
             re.search(r'[,;\n]|\b(?:because|and i|my|our|i am|i have)\b', task)):
-        return None
+        return None, 'personal'
     if re.match(r'(?:remember|recall|chat|talk|feel|see|find|locate|identify|check if)\b', task) or task in ('it', 'this', 'that'):
-        return None
-    return task
+        return None, 'not_task'
+    return task, None
 
 
 def validate(value, task):
@@ -180,8 +202,10 @@ def cache():
 
 async def claude(system, evidence):
     from server import llm
-    if not privacy.claude_allowed() or not os.getenv('ANTHROPIC_API_KEY'):
+    if not privacy.claude_allowed():
         raise ValueError('disabled')
+    if not os.getenv('ANTHROPIC_API_KEY'):
+        raise ValueError('no_client')
     model = os.getenv('PLANNER_MODEL', 'claude-sonnet-5-5')
     # SDK retries would exceed the two-call budget. No tools, images or fallback calls.
     client = llm._shared_anthropic().with_options(max_retries=0, timeout=TIMEOUT)
@@ -245,13 +269,16 @@ class BackgroundPlanner:
     def observe(self, text):
         """Finished transcripts only. Never hold speech or await research in the socket reader."""
         owner = self.owner
-        if task_for(text):
-            self.cancel()
+        if not text.strip():
             return
-        task = task_request(text)
-        if not self.allowed() or not task:
+        task, rejection = task_decision(text)
+        if rejection == 'coded':
+            self.cancel()
+        if rejection or not self.allowed():
+            event('planner', reason={'result': 'rejected', 'cause': rejection or 'disabled'})
             return
         if owner.kind in ('ee', 'tie', 'home') and owner.guide and not owner.guide.completed:
+            event('planner', reason={'result': 'rejected', 'cause': 'coded_active'})
             return
         if task == self.request and not (owner.kind == 'plan' and owner.guide and owner.guide.completed):
             return
@@ -263,6 +290,8 @@ class BackgroundPlanner:
 
     async def build(self, task, transcript):
         started, reason = monotonic(), 'error'
+        task_hash = hashlib.sha256(task.encode()).hexdigest()[:16]
+        event('planner', reason={'task_hash': task_hash, 'result': 'started'})
         try:
             async with asyncio.timeout(TIMEOUT):
                 store = self.store or await asyncio.to_thread(cache)
@@ -307,12 +336,14 @@ class BackgroundPlanner:
             reason = 'cancelled'
             raise
         except ValueError as exc:
-            reason = str(exc) if str(exc) in {'json', 'schema', 'length', 'unsafe', 'personal', 'disabled'} else 'error'
+            reason = str(exc) if str(exc) in {'json', 'schema', 'length', 'unsafe', 'personal', 'disabled', 'no_client'} else 'error'
         except Exception:
             pass  # provider exception text may contain evidence or credentials
         finally:
-            event('planner', reason={'task_hash': hashlib.sha256(task.encode()).hexdigest()[:16],
-                                     'result': reason}, ms=round((monotonic() - started) * 1000))
+            outcome = {'task_hash': task_hash, 'result': reason}
+            if reason not in {'valid', 'timeout', 'no_client', 'cancelled', 'error'}:
+                outcome.update(result='rejected', cause=reason)
+            event('planner', reason=outcome, ms=round((monotonic() - started) * 1000))
 
     async def mark_good(self, guide):
         store = self.store or await asyncio.to_thread(cache)
