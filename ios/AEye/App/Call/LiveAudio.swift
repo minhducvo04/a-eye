@@ -60,11 +60,12 @@ final class LiveAudio {
         engine.connect(player, to: engine.mainMixerNode, format: format)
     }
 
-    func start(microphone: Bool, onChunk: @escaping (Data, Bool) -> Void) throws {
+    func start(microphone: Bool, muted: Bool = false, onChunk: @escaping (Data, Bool) -> Void) throws {
         stop()
         self.onChunk = onChunk
-        isMuted = !microphone
-        if microphone { try installTap() }
+        isMuted = !microphone || muted
+        if microphone && muted { try engine.inputNode.setVoiceProcessingEnabled(true) }
+        if !isMuted { try installTap() }
         try engine.start()
         observer = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange,
                                                           object: engine, queue: .main) { [weak self] _ in

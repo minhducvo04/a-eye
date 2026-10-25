@@ -55,6 +55,10 @@ extension ClientMessage {
         wire(["v": 2, "type": "camera", "session_id": sessionId, "on": on])
     }
 
+    public static func rewind(sessionId: String, on: Bool, keep: Bool) -> Data {
+        wire(["v": 2, "type": "rewind", "session_id": sessionId, "on": on, "keep": keep])
+    }
+
     private static func wire(_ object: [String: Any]) -> Data {
         (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
     }

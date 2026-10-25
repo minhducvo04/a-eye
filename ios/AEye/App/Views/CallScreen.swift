@@ -1,23 +1,17 @@
 import AEyeCore
 import SwiftUI
 
-/// Chrome drawn over the live camera during a call. The camera preview itself lives in `RootView`, so it
-/// never restarts when a call begins or ends. Layout and words follow `client-web/agent.html` `#call`:
-/// pill and badges on top; wait card, caption, listening strip, power gate, typed bar and the button row below.
+/// Call controls remain available even without camera or microphone permission.
 struct CallScreen: View {
     let controller: CallController
-    @ObservedObject var camera: CameraService
 
     /// Text being typed in the message bar.
     @State private var draft = ""
     @State private var showSettings = false
+    @State private var memoryPanel: CallMemoryPanel?
+    @GestureState private var pressingMic = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private static let buttonGap: CGFloat = 10
-
-    /// The calm Memory look: larger caption, reading font in the pill, no scan band.
-    private var isMemory: Bool {
-        controller.mode?.pack == "memory"
-    }
 
     var body: some View {
         let state = controller.state
@@ -30,8 +24,8 @@ struct CallScreen: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
 
-            // Viewfinder sweep while the helper reads the picture. Memory mode keeps the screen still.
-            if !isMemory {
+            // Respect Reduce Motion while the helper reads the picture.
+            if !reduceMotion {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     if Tuning.showScanSweep, let wait = visibleWait(state, at: context.date), wait.agent == .helper {
                         ScanSweep(color: Palette.helper)
@@ -45,24 +39,28 @@ struct CallScreen: View {
                 topBar(state: state)
                 Spacer(minLength: 0)
                 waitCard(state: state)
-                CaptionCard(caption: state.caption, errorText: state.errorText, isLarge: isMemory)
+                CaptionCard(caption: state.caption, errorText: state.errorText, isLarge: false)
                 if controller.isInputResolved, controller.inputMode == .voice {
                     ListeningStrip(levels: controller.isLive ? controller.liveAudio.levels : controller.listener.levels,
                                    heard: controller.isLive ? controller.liveAudio.interim : controller.listener.interim,
                                    isMuted: controller.isMuted)
                 }
-                powerOffGate(state: state)
                 typedBar
                 bottomBar
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 20)
         }
-        .animation(.easeOut(duration: 0.25), value: state.wait?.turnId)
-        .animation(.easeOut(duration: 0.25), value: state.wait == nil)
-        .animation(.easeOut(duration: 0.25), value: state.isExpertChecking)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: state.wait?.turnId)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: state.wait == nil)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: state.isExpertChecking)
         .sheet(item: marketBinding) { presentation in
             MarketSheet(market: presentation.response)
+        }
+        .onChange(of: pressingMic) { _, pressed in controller.setTalking(pressed) }
+        .onDisappear { controller.setTalking(false) }
+        .sheet(item: $memoryPanel) { panel in
+            CallMemorySheet(controller: controller, panel: panel)
         }
         .sheet(isPresented: $showSettings) {
             SettingsSheet(controller: controller)
@@ -75,19 +73,22 @@ struct CallScreen: View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
                 PresenceDot(presence: state.presence)
-                Text("A-eye")
+                Text("A-Eye")
                     .fontWeight(.bold)
                 separator
-                Text(controller.mode?.title ?? "")
-                separator
                 elapsedText
+                separator
+                Button { showSettings = true } label: {
+                    Image(systemName: "gearshape").frame(width: 32, height: 32)
+                }
+                .accessibilityLabel("Settings")
             }
-            .font(.system(.footnote, design: isMemory ? .default : .monospaced).weight(.medium))
+            .font(.system(.footnote).weight(.medium))
             .foregroundStyle(.white)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .callGlass(Capsule())
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: .contain)
 
             // One badge style under the pill. Expert: a stronger model is checking this answer.
             if state.isExpertChecking {
@@ -140,33 +141,6 @@ struct CallScreen: View {
         state.visibleWait(nowMs: date.timeIntervalSince1970 * 1000)
     }
 
-    /// PC Build only: asks the user to confirm the PC is off before the agent goes on.
-    /// It comes back by itself after a reconnect because `CallState` clears the confirmation then.
-    @ViewBuilder
-    private func powerOffGate(state: CallState) -> some View {
-        if let mode = controller.mode, state.showsPowerOffButton(for: mode) {
-            VStack(spacing: 6) {
-                Button {
-                    controller.confirmPowerOff()
-                } label: {
-                    Label("Power is off", systemImage: "bolt.slash")
-                        .font(.headline)
-                        .foregroundStyle(Color.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Palette.warn, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                }
-                .accessibilityHint("Confirms the PSU is switched off and unplugged")
-
-                Text("Switch the PSU off and unplug it first.")
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(Color.white.opacity(0.9))
-                    .shadow(color: .black.opacity(0.6), radius: 3)
-                    .multilineTextAlignment(.center)
-            }
-        }
-    }
-
     // MARK: - Typed input
 
     /// Always shown, as on the web (`#composer`): a keyboard works in a noisy room even when voice is on.
@@ -208,56 +182,52 @@ struct CallScreen: View {
 
     // MARK: - Bottom
 
-    /// Camera, mic, end call, settings: the same four as the web call bar, same sizes and colours.
     private var bottomBar: some View {
-        HStack(spacing: Self.buttonGap) {
+        HStack(spacing: 10) {
             cameraButton
-            Button { camera.flip() } label: {
-                Image(systemName: "arrow.triangle.2.circlepath.camera")
-                    .font(.system(size: 22, weight: .medium))
-                    .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .callGlass(Circle())
-            }
-            .disabled(camera.isSwitching)
-            .accessibilityLabel("Flip camera")
-            .accessibilityValue(camera.isFront ? "Front" : "Back")
             micButton
-
-            Button {
-                controller.end()
-            } label: {
+            Button { controller.end() } label: {
                 Image(systemName: "phone.down.fill")
-                    .font(.system(size: 26, weight: .semibold))
+                    .font(.system(size: 25, weight: .semibold))
                     .foregroundStyle(.white)
-                    .frame(width: 68, height: 68)
+                    .frame(width: 60, height: 60)
                     .background(Palette.endCall, in: Circle())
             }
             .accessibilityLabel("End call")
-
-            Button {
-                showSettings = true
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 22, weight: .medium))
-                    .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .callGlass(Circle())
+            Spacer(minLength: 0)
+            HStack(spacing: 2) {
+                memoryButton(.rewind, symbol: "clock.arrow.circlepath", on: controller.rewind.on)
+                memoryButton(.remember, symbol: "bookmark", on: controller.rewind.keep)
             }
-            .accessibilityLabel("Settings")
+            .padding(4)
+            .callGlass(Capsule())
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Memory controls")
         }
+        .frame(maxWidth: .infinity)
     }
 
-    /// Stops and restarts frames to the server. The live preview stays so the person still sees the room.
+    private func memoryButton(_ panel: CallMemoryPanel, symbol: String, on: Bool) -> some View {
+        Button { memoryPanel = panel } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(on ? Palette.amber : .white)
+                .frame(width: 44, height: 48)
+        }
+        .accessibilityLabel(panel.rawValue)
+        .accessibilityValue(on ? "On" : "Off")
+    }
+
+    /// Stops capture and frame transport together.
     private var cameraButton: some View {
         let isOn = controller.isCameraOn
         return Button {
             controller.toggleCamera()
         } label: {
-            Image(systemName: isOn ? "camera" : "camera.slash")
+            Image(systemName: isOn ? "video" : "video.slash")
                 .font(.system(size: 22, weight: .medium))
                 .foregroundStyle(isOn ? Color.white : Palette.warn)
-                .frame(width: 56, height: 56)
+                .frame(width: 48, height: 48)
                 .callGlass(Circle())
         }
         .accessibilityLabel("Camera")
@@ -271,12 +241,12 @@ struct CallScreen: View {
         let isMuted = controller.isMuted
         let isHearing = isVoice && !isMuted
         return Button {
-            controller.toggleMute()
+            if !controller.holdToTalk { controller.toggleMute() }
         } label: {
             Image(systemName: isHearing ? "mic.fill" : "mic.slash.fill")
                 .font(.system(size: 22, weight: .medium))
                 .foregroundStyle(isHearing ? Color.black : (isVoice ? Palette.warn : Color.white))
-                .frame(width: 56, height: 56)
+                .frame(width: 48, height: 48)
                 .background {
                     if isHearing {
                         Circle().fill(Palette.helper)
@@ -285,11 +255,16 @@ struct CallScreen: View {
                 }
                 .modifier(GlassWhen(isOn: !isHearing))
         }
+        .simultaneousGesture(DragGesture(minimumDistance: 0).updating($pressingMic) { _, pressed, _ in
+            if controller.holdToTalk { pressed = true }
+        })
+        .accessibilityAction(named: "Start talking") { controller.setTalking(true) }
+        .accessibilityAction(named: "Stop talking") { controller.setTalking(false) }
         .disabled(!isVoice)
         .opacity(isVoice ? 1 : 0.5)
         .accessibilityLabel("Microphone")
         .accessibilityValue(isVoice ? (isMuted ? "Muted" : "On") : "Off")
-        .accessibilityHint(isVoice ? "Double tap to mute or unmute" : "Voice input is off. Use the text field.")
+        .accessibilityHint(isVoice ? (controller.holdToTalk ? "Hold while speaking" : "Double tap to mute or unmute") : "Voice input is off. Use the text field.")
     }
 
     // MARK: - Market sheet

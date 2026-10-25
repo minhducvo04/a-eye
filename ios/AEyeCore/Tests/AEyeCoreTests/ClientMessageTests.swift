@@ -6,7 +6,7 @@ final class ClientMessageTests: XCTestCase {
 
     func testHelloForGeneralHasNoBoard() {
         let m = obj(ClientMessage.hello(sessionId: "s1", pack: "general"))
-        XCTAssertEqual(Set(m.keys), ["v", "type", "session_id", "pack", "client", "tts"])
+        XCTAssertEqual(Set(m.keys), ["v", "type", "session_id", "pack", "client", "tts", "cloud"])
         XCTAssertEqual(m["v"] as? Int, 2); XCTAssertEqual(m["type"] as? String, "hello")
         XCTAssertEqual(m["client"] as? String, "ios"); XCTAssertEqual(m["tts"] as? String, "browser")
     }
@@ -20,6 +20,14 @@ final class ClientMessageTests: XCTestCase {
         XCTAssertEqual(registry.personas[0].displayName, "New dad")
         XCTAssertEqual(registry.defaultPersona, "new-dad")
     }
+    func testHelloNeverAllowsPaidVoiceFallback() {
+        for live in [false, true] {
+            let message = obj(ClientMessage.hello(sessionId: "s", pack: "general", serverAudio: live, serverTTS: true))
+            let cloud = message["cloud"] as? [String: Bool]
+            XCTAssertEqual(cloud?["cartesia"], false)
+        }
+    }
+
     func testHelloForPCBuildSendsDemoBoard() {
         let m = obj(ClientMessage.hello(sessionId: "s1", pack: "pc_build"))
         XCTAssertEqual(m["board_id"] as? String, "demo-b650")
