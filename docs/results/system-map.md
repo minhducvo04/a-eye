@@ -4,6 +4,15 @@ Interactive 3D map of the A-Eye system for judges, served at `/map.html` next to
 per call, all driven by one JSON file. Branch `pkg/system-map`; the commit sha is in the git log of that branch (this
 file is part of that commit).
 
+## Number check (2026-10-25)
+
+Chip: "about $0.05 to $0.07 per 2.5 min call ($0.13 to $0.15 with Recall), list price, est.". Changed: voice 0.6 to
+1.1 s -> 0.5 to 1.4 s; box 1.8 to 2.3 s -> about 2 s (throughput now about 0.5 boxes / s, estimate); time scope 86% ->
+91% on the independent 300 set; repo held-out 96 -> 93 of 100 (file `router/results/scope_heldout_eval.json`; the
+coordinator's note said 92); Guest / local first voice 1630 ms (classic path) -> about 1.0 s (latest acceptance
+run); monthly list costs now say estimate. Unchanged and sourced: hazard 86 ms, router 45.7 ms, lane model 96 / Haiku
+97 / regex 64 of 100 and 43 / 803.3 ms (`router/results/heldout_eval.json`), code limits, sheet prices.
+
 ## Cost chip round (owner, 2026-10-25)
 
 The headline chip now reads "about $0.10 to $0.15 per 2.5 min call (list price, est.)" and opens a Cost panel:

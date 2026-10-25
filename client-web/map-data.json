@@ -1,7 +1,7 @@
 {
  "version": 1,
  "title": "A-Eye system map",
- "measured_note": "Measured on real Gemini Live calls on 2026-10-25 with synthetic speech. Anything else says not measured.",
+ "measured_note": "Measured on real Gemini Live calls with synthetic speech (latest runs, 2026-10-25). Anything else says not measured.",
  "cost_note": "Costs are provider list prices, estimates from the price pages. Local models cost $0 cloud. Our safety meter counts high on purpose; its figures are in the Cost panel.",
  "zones": [
   {
@@ -163,7 +163,7 @@
    "status": "working",
    "privacy": "google",
    "name": "Gemini Live talker",
-   "speed": "0.6 to 1.1 s to voice",
+   "speed": "0.5 to 1.4 s to voice",
    "cost": "list $0.016 to $0.025 / min (est.)",
    "kind": "Cloud voice model (gemini-3.8-live)",
    "what": "Hears the voice and sees 1 fps frames, then speaks. It is the only voice in the normal call. Safety gates can mute it mid sentence and speak a fixed line instead.",
@@ -177,7 +177,7 @@
     ],
     [
      "End of speech to first voice",
-     "0.6 to 1.1 s, measured"
+     "0.5 to 1.4 s, measured (latest real calls)"
     ],
     [
      "List price",
@@ -201,15 +201,9 @@
     "ranges": [
      {
       "label": "Speech end to voice",
-      "from": 0.6,
-      "to": 1.1,
+      "from": 0.5,
+      "to": 1.4,
       "tone": "speed"
-     },
-     {
-      "label": "Named to box",
-      "from": 1.8,
-      "to": 2.3,
-      "tone": "gpu"
      }
     ],
     "marks": [
@@ -217,6 +211,11 @@
       "at": 0.086,
       "label": "hazard stop line 86 ms",
       "tone": "danger"
+     },
+     {
+      "at": 2.0,
+      "label": "box about 2 s",
+      "tone": "gpu"
      }
     ],
     "foot": "Measured on real Live calls, 2026-10-25, synthetic speech. Prices: ai.google.dev/gemini-api/docs/pricing (page 2026-10-22)."
@@ -252,11 +251,11 @@
    "facts": [
     [
      "Time scope, independent set",
-     "86% of 300 questions, 0 \"now\" questions held by mistake (team report tonight)"
+     "91% of 300 questions, 0 \"now\" questions held by mistake (independent set, team report)"
     ],
     [
      "Time scope, held-out file",
-     "96 of 100, 0 of 20 \"now\" held (router/results/scope_heldout_eval.json)"
+     "93 of 100, 0 of 20 \"now\" held (router/results/scope_heldout_eval.json)"
     ],
     [
      "Latency",
@@ -315,7 +314,7 @@
       ]
      }
     ],
-    "foot": "Lane accuracy from router/results/heldout_eval.json. Time scope: 86% on an independent 300-question set, 0 \"now\" held by mistake."
+    "foot": "Lane accuracy from router/results/heldout_eval.json. Time scope: 91% on an independent 300-question set, 0 \"now\" held by mistake; 93 of 100 on the repo held-out set."
    }
   },
   {
@@ -361,8 +360,8 @@
     "ranges": [
      {
       "label": "Gemini would speak",
-      "from": 0.6,
-      "to": 1.1,
+      "from": 0.5,
+      "to": 1.4,
       "tone": "cloud"
      }
     ],
@@ -520,10 +519,10 @@
    "size": 0.55,
    "status": "working",
    "name": "Grounding boxes",
-   "speed": "box in 1.8 to 2.3 s",
+   "speed": "box in about 2 s",
    "cost": "$0 (local)",
    "kind": "Qwen 3.5 9B on the home GPU",
-   "what": "When you name an object it finds it in the frame and returns a box, drawn on your screen about 1.8 to 2.3 s after the object is named.",
+   "what": "When you name an object it finds it in the frame and returns a box, drawn on your screen about 2 s after the object is named.",
    "code": [
     "server/vision_client.py",
     "server/pointer.py",
@@ -536,11 +535,11 @@
     ],
     [
      "Box after object named",
-     "1.8 to 2.3 s, measured"
+     "about 2 s, measured"
     ],
     [
      "Throughput",
-     "serial GPU: about 0.4 to 0.5 boxes / s"
+     "serial GPU: about 0.5 boxes / s, estimate"
     ],
     [
      "Capacity",
@@ -557,16 +556,15 @@
     "unit": "s",
     "min": 0,
     "max": 3,
-    "ranges": [
+    "ranges": [],
+    "marks": [
      {
-      "label": "Box",
-      "from": 1.8,
-      "to": 2.3,
+      "at": 2.0,
+      "label": "box about 2 s",
       "tone": "gpu"
      }
     ],
-    "marks": [],
-    "foot": "Measured on real calls tonight."
+    "foot": "Measured on real calls, 2026-10-25."
    }
   },
   {
@@ -641,7 +639,7 @@
    "size": 0.5,
    "status": "working",
    "name": "Guest / local mode",
-   "speed": "first audio 1.63 s",
+   "speed": "first voice about 1.0 s",
    "cost": "$0 cloud",
    "kind": "Whisper + Kokoro (boxsvc) + local brain + local vision",
    "what": "Guest / local mode turns every cloud switch off. Whisper turns speech into text, a local model answers, local vision finds parts, and Kokoro speaks, all on our own machines. $0 cloud.",
@@ -652,8 +650,8 @@
    ],
    "facts": [
     [
-     "First audio",
-     "1630 ms median, classic local brain with typed text and Kokoro, measured"
+     "First voice",
+     "about 1.0 s, measured (latest acceptance run)"
     ],
     [
      "Whisper",
@@ -664,8 +662,8 @@
      "first audio 0.060 s on the box, measured"
     ],
     [
-     "As a Live replacement",
-     "not measured"
+     "Whole call as a Live replacement",
+     "not measured beyond that run"
     ],
     [
      "Cost",
@@ -1024,7 +1022,7 @@
    "rate": 1.0,
    "bend": 1.2,
    "name": "live audio + frames",
-   "speed": "0.6 to 1.1 s",
+   "speed": "0.5 to 1.4 s",
    "cost": "list $0.016 to $0.025 / min (est.)",
    "what": "The live conversation. Gemini hears and sees, then speaks; the reply streams back through the server to the phone.",
    "main": true
@@ -1048,9 +1046,9 @@
    "rate": 0.5,
    "bend": 1.4,
    "name": "find an object",
-   "speed": "box 1.8 to 2.3 s",
+   "speed": "box about 2 s",
    "cost": "$0",
-   "what": "\"Where is the M.2 slot?\" goes to grounding; the box is on screen about 1.8 to 2.3 s after the object is named."
+   "what": "\"Where is the LED?\" goes to grounding; the box is on screen about 2 s after the object is named."
   },
   {
    "id": "rt-recent",
@@ -1286,12 +1284,12 @@
     "-srv-gem",
     "-cap-srv"
    ],
-   "say": "Voice and frames reach the server, the router picks a lane in about 45 ms, Gemini answers with the latest scene note. First voice 0.6 to 1.1 s after you stop.",
+   "say": "Voice and frames reach the server, the router picks a lane in about 45 ms, Gemini answers with the latest scene note. First voice 0.5 to 1.4 s after you stop.",
    "detail": {
     "path": "Phone 1 fps 320 px frames + audio to /ws2 on the Mac, to Gemini Live in the cloud. The router (about 45 ms, local) picks now, memory or expert; the Haiku context builder adds a scene note every ~4 s; safety gates run in code before playback.",
     "out": "Mic audio and downscaled frames to Google. With Claude on: question text, scene note, last dialogue, sometimes one crop.",
-    "latency": "End of speech to first voice 0.6 to 1.1 s, measured. Router 45.7 ms p50, measured. Time to write one note not measured.",
-    "cost": "Gemini list $0.016 to $0.025 / min; Haiku notes $0.003 / min, estimate. Meter $0.10 Gemini + $0.15 Haiku / min, estimate.",
+    "latency": "End of speech to first voice 0.5 to 1.4 s, measured. Router 45.7 ms p50, measured. Time to write one note not measured.",
+    "cost": "Gemini list $0.016 to $0.025 / min; Haiku notes $0.003 / min, estimate.",
     "runs": "Until hang-up; the Gemini connection resumes about every 10 min."
    }
   },
@@ -1304,13 +1302,13 @@
     "rt-ground",
     "-cap-srv"
    ],
-   "say": "\"Where is it?\" routes to grounding on the home GPU; the box is on your screen about 1.8 to 2.3 s after you name it.",
+   "say": "\"Where is it?\" routes to grounding on the home GPU; the box is on your screen about 2 s after you name it.",
    "detail": {
     "path": "Named object to pointer grounding: Qwen 3.5 9B on the home GPU over Tailscale; YOLO can pre-detect; the box is drawn on the live view.",
     "out": "None for the box; frames stay on our GPU (Live still has its own audio and frames).",
-    "latency": "Object named to box on screen 1.8 to 2.3 s, measured.",
+    "latency": "Object named to box on screen about 2 s, measured.",
     "cost": "$0 (GPU, on demand).",
-    "runs": "One grounding call; about 0.4 to 0.5 boxes / s on one GPU."
+    "runs": "One grounding call; about 0.5 boxes / s on one GPU, estimate."
    }
   },
   {
@@ -1365,7 +1363,7 @@
    "detail": {
     "path": "Guest sign-in or Private turns Google, Claude, TwelveLabs and Cartesia off. Camera to local Qwen vision, mic to Whisper, a local brain, Kokoro voice. Safety, steps, recent memory and parts stay on.",
     "out": "Nothing to model providers.",
-    "latency": "First audio 1630 ms median (classic local brain, typed text, Kokoro), measured. As a Live replacement: not measured.",
+    "latency": "First voice about 1.0 s, measured (latest acceptance run).",
     "cost": "$0 cloud; electricity about $0.0007 / session-minute, estimate.",
     "runs": "Guest: 24 h cookie, 10 turns / min, 100 admitted actions."
    }
@@ -1375,7 +1373,7 @@
   "say": "A-Eye lets a dad guide his son through fixing and learning electronics, and tying a tie: it sees through the phone camera, talks each step, and coded gates stop it at a hot soldering iron or live USB.",
   "chips": [
    {
-    "text": "voice in 0.6 to 1.1 s",
+    "text": "voice in 0.5 to 1.4 s",
     "tone": "speed",
     "node": "gemini"
    },
@@ -1385,7 +1383,7 @@
     "node": "safety"
    },
    {
-    "text": "about $0.10 to $0.15 per 2.5 min call (list price, est.)",
+    "text": "about $0.05 to $0.07 per 2.5 min call ($0.13 to $0.15 with Recall), list price, est.",
     "tone": "cost",
     "panel": "cost"
    }
@@ -1454,15 +1452,15 @@
      ],
      [
       "Live, no Rewind",
-      "list about $6 to $8"
+      "list about $6 to $8, estimate"
      ],
      [
       "Live + Rewind",
-      "add about $0.42 at list"
+      "add about $0.42 at list, estimate"
      ],
      [
       "One 2.5 min call",
-      "about $0.10 to $0.15 at list, estimate (see the Cost panel)"
+      "about $0.05 to $0.07 ($0.13 to $0.15 with Recall) at list, estimate (see the Cost panel)"
      ]
     ]
    }

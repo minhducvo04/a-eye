@@ -35,11 +35,11 @@ test('shipped work is marked working: parts shelf, time scope, saved-call recall
 });
 
 test('measured numbers match tonight\'s runs and cloud costs say estimate', () => {
-  assert.match(nodes.get('gemini').speed, /0\.6 to 1\.1 s/);
-  assert.match(nodes.get('ground').speed, /1\.8 to 2\.3 s/);
+  assert.match(nodes.get('gemini').speed, /0\.5 to 1\.4 s/);
+  assert.match(nodes.get('ground').speed, /about 2 s/);
   assert.match(nodes.get('safety').speed, /86 ms/);
   assert.match(nodes.get('router').speed, /45\.7 ms/);
-  assert.ok(nodes.get('router').facts.some(([, v]) => /86% of 300/.test(v)));
+  assert.ok(nodes.get('router').facts.some(([, v]) => /91% of 300/.test(v)));
   assert.match(nodes.get('rewind').speed, /35 to 40 s/);
   for (const id of ['gemini', 'rewind']) assert.match(nodes.get(id).cost, /est\./, id);
 });
