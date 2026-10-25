@@ -355,9 +355,10 @@ async def answer(session, question, vision=None, *, on_hit=None, scope=None):
         target = words(DAYS.sub('', LONG.sub('', question))) - {
             'me', 'we', 'us', 'our', 'previous', 'session', 'can', 'could', 'tell', 'happen',
             'anything', 'something', 'everything', 'thing', 'talk', 'discuss', 'about'}
-        if target:
+        # Owner decision: always ask TwelveLabs first for past calls; it returns the best moment even for generic questions.
+        if True:
             try:
-                hits = await rewind.search_kept(question)
+                hits = await rewind.search_kept(question if target else 'what we worked on')
                 if hits:
                     hit = dict(hits[0], sure=False, objects=[], alternatives=[h['t_s'] for h in hits[1:2]])
                     if on_hit:
