@@ -637,3 +637,33 @@ trigger remains unverified. Existing fixtures are synthetic. No `.env` reads,
 external network, cloud calls, push, merge or deployment. Synthetic localhost
 servers only. Detailed cause, baseline failures and evidence:
 [round 11 report](docs/results/planner-live.md).
+
+
+## Planner Live round 12 — pkg/planner-live12
+
+Fixed generated precaution matching for headphone disconnection and cooling
+before handling a hot tool. Live stops now record an allowlisted source and
+gate ID without text. Real user hazards, negations and later unsafe clauses
+still stop. Six-step synthetic LiveBridge/context replay advances without fixed
+emergency speech. See docs/results/planner-live.md for cause, evidence and limits.
+
+Files changed: server/safety.py, server/gemini_live.py, server/live_guide.py,
+server/planner.py, server/test_planner_safety_steps.py,
+docs/results/planner-live.md, RESULT.md.
+
+All Python commands below ran with `PYTHONPATH=.pytest_cache/offline:.`;
+the audit hook blocks sockets/DNS and `.env` reads.
+
+Test: ~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner_safety_steps.py -k round12 --tb=short - FAIL before fix (3 failed, 1 passed).
+Test: ~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner_safety_steps.py server/test_false_stop.py server/test_planner.py eval/swap/test_checker_regressions.py --tb=short - PASS (227 passed; primary fix).
+Test: ~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner_safety_steps.py --tb=short - PASS (54 passed; final source).
+Test: ~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval - FAIL (1370 passed, 17 failed, 2 warnings in 102.01s; final source).
+Test: ~/Projects/a-eye/.venv/bin/python eval/swap/run.py checker --model current --out .pytest_cache/planner-live12-checker - PASS (15/15 bad plans caught; existing 1/14 good false drop; zero checker errors).
+Test: git diff --check - PASS.
+
+Full-suite failures: 15 blocked network operations, one downstream Live-start
+failure, one blocked read of the publication test's synthetic `.env`.
+Log: .pytest_cache/planner-live12-final-full.log.
+Limits: no network, `.env` read, real provider/physical call, push, merge or
+outside-worktree source changes. Original live-call phrase unverified; synthetic
+reproduction verified. Local commit only, no push.

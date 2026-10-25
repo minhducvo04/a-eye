@@ -951,3 +951,102 @@ Files changed: `server/planner.py`, `server/safety.py`, `server/gates.py`,
 Limits: no real `.env` reads, external networking, cloud request, physical call,
 raw media storage, push, merge or deployment. Local fake WebSockets and synthetic
 provider packets are runtime evidence, not proof of the original real-call phrase.
+
+
+## Planner Live round 12 — precaution speech and stop provenance
+
+Base: `539b59b`, branch `pkg/planner-live12`. Worktree-only commit; no push.
+
+The supplied user question and Gemini sentence pass the existing gates. The
+additional reproducible trigger is a background summary of a preventive step:
+`Make sure the headphones are not plugged into any device before handling the wire.`
+The live-power regex paired `plugged into` with `wire`, ignoring the negative
+state and the instruction's purpose. Conditional unplugging and cooling before
+touching also reproduced false stops through the actual LiveContextBuilder
+callbacks and LiveBridge. The guide prompt itself is not checked by stop_line;
+the context builder and generated output are checked. The original real call's
+exact step/context text was not available, so this establishes a reproducible
+cause, not proof of that call's exact trigger.
+
+Changes:
+
+- Generated plan/output/context checks normalize bounded headphone/device
+  disconnection and iron-cooling precautions before applying the existing gates.
+  Original speech is unchanged. User hazard reports are not normalized.
+  Negated precautions, later hazardous clauses, live-wire reports and wet-outlet
+  reports retain their stops. This is a bounded grammar, not an exemption for
+  every sentence containing an unplug/cool word.
+- Each actual LiveBridge stop emits one `live_stop` event with
+  `reason={"gate":"live_power","source":"context"}` (example). Source is
+  allowlisted to `question`, `output`, `plan_step`, `context`, or `guide`.
+  Known fixed safety lines map to gate IDs; other pack/control lines use `pack`.
+  No question, output, plan, context, fixed speech or tool argument is logged.
+- The six-step synthetic replay is derived from the existing good14 headphone
+  fixture. It runs the supplied turn-1 question/reply, plan activation, a summary
+  of the precaution through the production context callbacks, output speech,
+  advancement to step 2, then a real live-wire stop. Other checks cover all five
+  source values, duplicate-stop suppression and hazard/negation controls.
+  The fixture and provider packets are synthetic, not captured provider output.
+
+Test: `PYTHONPATH=.pytest_cache/offline:. ~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner_safety_steps.py -k round12 --tb=short` - FAIL before integration of fix
+(3 failed, 1 passed, 38 deselected in 0.99s). All three failures occur after the
+context builder evaluates the synthetic summary; the six-step plan is active.
+Log: `.pytest_cache/planner-live12-before.log`.
+
+Test: `PYTHONPATH=.pytest_cache/offline:. ~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner_safety_steps.py server/test_false_stop.py server/test_planner.py eval/swap/test_checker_regressions.py --tb=short` - PASS
+(227 passed in 46.93s; primary fix, before final negation/logging assertions).
+Log: `.pytest_cache/planner-live12-targeted.log`.
+
+Test: `PYTHONPATH=.pytest_cache/offline:. ~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner_safety_steps.py --tb=short` - PASS
+(54 passed in 1.41s; final source).
+Log: `.pytest_cache/planner-live12-regression.log`.
+
+Test: `PYTHONPATH=.pytest_cache/offline:. ~/Projects/a-eye/.venv/bin/python eval/swap/run.py checker --model current --out .pytest_cache/planner-live12-checker` - PASS
+(15/15 bad plans caught, 1/14 good plans repaired/false drop, zero checker errors).
+Existing good01 remains the false drop. The case bank and thresholds are unchanged.
+Proof: `.pytest_cache/planner-live12-checker/swap-checker-current.json`.
+
+The requested full suite uses a local audit hook to block all socket binds,
+connections and DNS, including loopback, and all `.env` reads. No network or
+credential-file exception was introduced. The publication test creates its own
+fake `.env`, but its attempted read is still blocked. Initial full run:
+17 failed, 1369 passed, 2 warnings in 100.93s; all failures are blocked networking
+(15 direct plus one downstream Live-start failure) or the blocked fake `.env`
+read. Log: `.pytest_cache/planner-live12-full.log`.
+
+Test: `PYTHONPATH=.pytest_cache/offline:. ~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL, final source
+(**1370 passed, 17 failed, 2 warnings in 102.01s**). The failure set is unchanged:
+15 blocked network operations, one downstream Live-start state assertion, and
+one prohibited synthetic `.env` read. All new regressions and planner/checker
+checks pass. Warnings are the existing short synthetic JWT keys.
+Log: `.pytest_cache/planner-live12-final-full.log`.
+
+Final failed node IDs:
+
+- `server/test_bg_context.py::test_live_publishes_context_while_next_build_waits_and_cancels_on_close`
+- `server/test_cloud_meter.py::test_real_websocket_send_boundary`
+- `server/test_gemini_live.py::test_fake_live_recent_step_transcripts_and_scene_stay_local`
+- `server/test_gemini_live.py::test_fake_live_wire_audio_tools_captions_and_revocation`
+- `server/test_gemini_live.py::test_reconnect_once_then_fallback_and_close`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[False-False]`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[True-False]`
+- `server/test_gemini_live.py::test_reconnect_reuses_latest_resumable_handle[True-True]`
+- `server/test_limits.py::test_live_minutes_stop_idle_connection`
+- `server/test_live_prefetch.py::test_slow_tool_does_not_delay_audio`
+- `server/test_live_prefetch.py::test_streaming_prefetch_card_cache_and_idle_publication`
+- `server/test_live_streaming.py::test_fake_live_streams_before_complete_and_stops_mid_reply[False]`
+- `server/test_live_streaming.py::test_fake_live_streams_before_complete_and_stops_mid_reply[True]`
+- `server/test_live_streaming.py::test_ws2_hazard_sends_stop_caption_and_fixed_audio`
+- `server/test_step_check.py::test_real_loopback_api_to_qwen_protocol_keeps_pictures_zero`
+- `scripts/test_public.py::test_tracked_scan_and_git_free_export`
+- `scripts/test_ready.py::test_live_pair_request_on_fake_socket`
+
+Test: `git diff --check` - PASS.
+
+Files changed: `server/safety.py`, `server/gemini_live.py`, `server/live_guide.py`,
+`server/planner.py`, `server/test_planner_safety_steps.py`,
+`docs/results/planner-live.md`, `RESULT.md`.
+Limits: no `.env` reads, network access, cloud/provider call, physical call,
+raw-media storage, push, merge or deployment. No full-suite PASS is claimed.
+The original real-call trigger still requires the new metadata from an authorized
+live run; local synthetic reproduction and fix are verified.

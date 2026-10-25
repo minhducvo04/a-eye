@@ -269,6 +269,9 @@ class LiveBridge:
                     and privacy.twelvelabs_allowed())
 
     def stop_line(self, text, output=False):
+        if output:
+            from server.safety import precaution_text
+            text = precaution_text(text)
         if self.session.pack.requires_power_off and not self.session.power_off:
             return POWER_LINE
         line = self.session.pack.refuse(text)
@@ -347,7 +350,9 @@ class LiveBridge:
     def start_context(self):
         if os.getenv('LIVE_CONTEXT_ENABLED', '1') != '0':
             from server.context_agent import LiveContextBuilder
-            self.context_builder = LiveContextBuilder(self.session, self.publish_context, self.stop,
+            async def context_stop(line):
+                await self.stop(line, source='context')
+            self.context_builder = LiveContextBuilder(self.session, self.publish_context, context_stop,
                                                        lambda text: self.stop_line(text, True),
                                                        can_stop=lambda: not self.audio_input_open)
             self.context_builder.start()
@@ -625,9 +630,22 @@ class LiveBridge:
         # caption from fixed_say also cancels playback on non-phone clients.
         await self.send(state('listening'))
 
-    async def stop(self, line, *, output=False):
+    async def stop(self, line, *, output=False, source=None):
         if self.safety_stopped:
             return
+        from server import safety
+        from server.logs import event
+        from server.packs import electronics
+        from server.gates import REFUSAL
+        gate = next((g.id for g in safety.GATES if g.line == line), None)
+        gate = gate or {POWER_LINE: 'power_off', REFUSAL: 'mains',
+                       electronics.HOT: 'hot_tool', electronics.MAINS: 'mains',
+                       electronics.USB: 'usb_power', electronics.SERIES: 'series_resistor',
+                       electronics.RESISTANCE: 'powered_resistance'}.get(line, 'pack')
+        source = source or ('output' if output else 'question')
+        if source not in {'question', 'output', 'plan_step', 'context', 'guide'}:
+            raise ValueError('invalid stop source')
+        event('live_stop', self.session.session_id, reason={'gate': gate, 'source': source})
         self.safety_stopped = True
         self.safety_line = line
         # Output has ended the user's question. Only a subsequent transcript
@@ -710,7 +728,7 @@ class LiveBridge:
             return 'Invalid tool arguments.'
         line = self.stop_line(' '.join(args.values()))
         if line:
-            await self.stop(line)
+            await self.stop(line, source='output')
             return line
         if self.blocked:
             return 'Stopped by code.'
@@ -764,7 +782,8 @@ class LiveBridge:
         context = self.session.context_agent
         deleted = context.dismiss(text)
         # Replace the provider session so it cannot recall a deleted setup/tool note.
-        await self.stop("Okay, I deleted that follow-up." if deleted else "There isn't a follow-up to delete.")
+        await self.stop("Okay, I deleted that follow-up." if deleted else "There isn't a follow-up to delete.",
+                        source='guide')
         if self.ws:
             await self.ws.close()
 
