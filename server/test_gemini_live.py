@@ -251,7 +251,7 @@ def test_fake_live_wire_audio_tools_captions_and_revocation(monkeypatch):
             assert setup['contextWindowCompression'] == {'slidingWindow': {}}
             assert 'live camera' in setup['systemInstruction']['parts'][0]['text']
             from server import personas
-            assert personas.style_block(session.persona) in setup['systemInstruction']['parts'][0]['text']
+            assert personas.style_block(session.persona, live=True) in setup['systemInstruction']['parts'][0]['text']
             assert setup['generationConfig']['speechConfig']['voiceConfig']['prebuiltVoiceConfig']['voiceName'] == session.persona['gemini_live_voice']
             await bridge.audio(base64.b64encode(b'\x00\x00' * 160).decode(), True)
             await bridge.video()

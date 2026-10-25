@@ -31,7 +31,7 @@ def test_one_bad_step_replaced_and_cache_revalidation_is_stable(tmp_path):
     value['steps'] += [sample('Cut the live wire.')['steps'][0], sample()['steps'][0]]
     checked = planner.check_plan(value)
     assert checked is not None and len(checked['steps']) == 3
-    line = next(g.line for g in safety.GATES if g.id == 'live_power')
+    line = planner.SAFETY_LINES['live_power']
     assert checked['steps'][1]['say'] == line
     assert checked['steps'][0] == value['steps'][0]
     assert checked['steps'][2] == value['steps'][2]
@@ -204,5 +204,6 @@ def test_soldering_hazards_still_stop(text):
     assert safety.after(text) != text
     checked = planner.check_plan(sample(text))
     assert planner.is_safety_step(checked['steps'][0])
-    assert checked['steps'][0]['say'] == safety.before(text)
+    assert checked['steps'][0]['say'] not in safety.LINES
+    assert safety.before(checked['steps'][0]['say']) is None
     assert planner.check_plan(checked) == checked

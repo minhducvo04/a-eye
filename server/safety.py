@@ -26,8 +26,8 @@ def _re(pattern):
 
 
 # Conservative text backstops, not a substitute for visual hazard detection.
-_WATER = r"\b(water|wet|leak\w*|drip\w*|puddle)\b"
-_ELECTRIC = r"\b(outlet|socket|live cord|powered cord|plugged.in cord|extension cord|psu|power supply|charger|power strip|computer|laptop)\b"
+_WATER = r"\b(water|wet|spills?|spilled|spilling|drips?|dripping|puddles?)\b"
+_ELECTRIC = r"\b(outlet|socket|cords?|plugs?|extension cord|psu|power supply|charger|power strip|computer|laptop)\b"
 _PANEL = r"\b(electrical panel|electric panel|breaker (box|panel)|fuse box)\b"
 _OPEN = r"\b(open\w*|remov\w*|unscrew\w*|take off|inside)\b"
 _SUPPLY = r"\b(charger|power (?:brick|supply)|psu|ac adapter)\b"
@@ -98,7 +98,8 @@ GATES = (
         r"(?:\b(?:no|without|skip\w*|avoid\w*)\s+(?:any\s+|the\s+)?(?:ventilation|fume extraction|extractor|fan)\b|"
         r"\b(?:unventilated|sealed room|breath\w* (?:in )?(?:the )?(?:fumes|smoke))\b)"),
           "Stop soldering until ventilation moves fumes away from your face. Use eye protection and an iron stand."),
-    _stop('water_electric', _pair(_WATER, _ELECTRIC),
+    _stop('water_electric', _re(_WATER + r'[^.!?\n]{0,100}' + _ELECTRIC + '|'
+                               + _ELECTRIC + r'[^.!?\n]{0,100}' + _WATER),
           "Stop and move away from the wet area; don't touch cords, outlets or switches. "
           "Keep others away and call an electrician before continuing."),
     _stop('electrical_panel', _pair(_OPEN, _PANEL),
@@ -165,7 +166,7 @@ def violation(text, question=''):
     """Return the rejecting output gate, so diagnostics need never include the text."""
     if not text or text in LINES:
         return None
-    text = ' '.join(text.split())
+    text = re.sub(r'[^\S\n]+', ' ', text)
     for gate in GATES:
         about = gate.topic.search(text) or gate.ask.search(question or '')
         if about and gate.wrong.search(text):

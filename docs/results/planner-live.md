@@ -849,3 +849,105 @@ Files changed: `server/planner.py`, `server/test_planner.py`,
 Limits: no .env read, network access, real provider call, push, merge or deployment.
 The fixture is synthetic. The live failure cause, provider acceptance and latency
 with the larger token budget remain unverified. Local commit in this worktree.
+
+## Planner Live round 11 — dry headphone plans and emergency stops
+
+Base: `a585c3c`, worktree `planner-live11`. Local changes only; no push.
+
+### Cause and scope of proof
+
+Round 7 put the live hazard gate's emergency sentence into `say` and retained it
+on cache reload. `LiveGuide` classifies those fixed sentences as code stops;
+`LiveBridge` also runs spoken output through the input refusal gate. A generated
+precaution therefore became evidence of an emergency. The old water regex also
+accepted `leak\w*` (including sound **leakage**) and paired words across sentence
+boundaries. Reproductions: `Check for sound leakage near the laptop.` and
+`Keep water in the cup. Inspect the charger.` both incorrectly hit water_electric.
+Bare `cord` or `plug` did not supply a water word even before this change.
+
+The available realistic headphone fixtures are `good13` and `good14`, both
+explicitly hand-written, not captured provider output. Both validate unchanged;
+regressions now send all eight actual fixture `say` texts through Live's output
+path, rather than merely advancing the guide index. This exposed another mismatch:
+`good14` step 3's ordinary soldering-iron outlet use passed the plan checker but
+hit the old general wall-outlet refusal. The general gate now allows a bounded
+external plug-in instruction, retaining refusal for outlet repair clauses, mains,
+and opened supplies. Water/live-power gates still run independently.
+
+The six-step, 4.3-second real-call response and its exact step texts were not
+present in this worktree or supplied in the request. Its exact triggering phrase
+remains unverified; the timing is user-reported, not remeasured. No outside logs,
+provider calls, or credential files were accessed to fill that gap.
+
+### Changes
+
+- Plan replacements use separate, calm precautions appropriate to their gate.
+  Headphone power preparation says `Unplug the headphones from any device first.`
+  Water-related plan repair says to use a dry workspace; it never inserts the
+  emergency water line. Original model fields are cleared as before.
+- Exact legacy replacement steps migrate to the new precautions during normal
+  validation/cache reload. Repaired plans retain their step count and cache stability.
+- Each replacement logs `planner_step_replaced` with a one-based `reason.step`
+  and `reason.gate`, including preparation gates and legacy migration. No step
+  text, task text, transcript, or media is logged. The water replay records
+  `{"step":2,"gate":"water_electric"}`.
+- Water/electric matching requires an explicit water/wet/spill/puddle/drip word
+  (including ordinary inflections) and an electric word in the same sentence.
+  Plan fields and task text cannot supply the other half of the water pair.
+- Synthetic Live replay checks new and legacy replacements: no fixed emergency
+  audio or stop latch across the first two turns, then a real user hazard report
+  still produces the emergency line and latches the stop. Every generated
+  precaution is also checked against Live's output gate.
+
+### Main failure fixed honestly
+
+`server/test_gemini_live.py::test_fake_live_wire_audio_tools_captions_and_revocation`
+failed on its persona assertion: it expected `personas.style_block(persona)`
+while production intentionally sends `personas.style_block(persona, live=True)`.
+The assertion now checks the correct complete Live block. Audio, captions,
+transport, metering, image-size and consent-revocation assertions remain intact.
+The failure was reproduced on a synthetic localhost WebSocket before the edit;
+an initial sandbox attempt could not bind localhost.
+
+### Verification
+
+Before the production fix, the new water/replacement regression file reported
+8 failed, 4 passed. After the primary changes, focused planner/checker/home-safety
+checks passed 200 tests. All 38 new safety cases plus the two fixture output
+replays are included in the final required suite below. The separate outlet
+checks and headphone replay passed 10 tests after the outlet correction.
+
+The full suite uses a local audit guard in `.pytest_cache/offline/sitecustomize.py`
+to prohibit external sockets/DNS and `.env` reads. Synthetic localhost servers
+are allowed for the requested integration tests. The public-export test writes
+its own temporary fake `.env`; no real `.env` is read. An intermediate run found
+the outlet mismatch, a test text overlap with the held-out bank, and an overly
+broad audit restriction on that synthetic write. The source/test/guard were
+corrected; no held-out check was disabled and no bank entries were changed.
+
+Test: `PYTHONPATH=.pytest_cache/offline:. ~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(**1370 passed, 1 failed, 2 warnings in 103.28s**; final production source).
+The sole failure is `scripts/test_public.py::test_tracked_scan_and_git_free_export`:
+its scanner attempts to read the temporary `.env` it created, and the audit guard
+raises PermissionError. The no-`.env`-read restriction was retained, so a fully
+green suite is not claimed. The named main Live regression and all planner,
+water/electric, headphone output, cache, held-out and safety tests passed.
+Warnings concern deliberately short synthetic JWT keys.
+Log: `.pytest_cache/planner-live11-pytest-final.log`.
+
+Test: `~/Projects/a-eye/.venv/bin/python eval/swap/run.py checker --model current --out .pytest_cache/planner-live11-checker` - PASS
+(**15/15 bad plans caught, 1/14 good plans repaired and counted as a false drop,
+0 checker errors**). The existing `good01` still lacks preparation; both headphone
+fixtures pass unchanged. The bad-case bank and acceptance threshold are unchanged.
+Proof: `.pytest_cache/planner-live11-checker/swap-checker-current.json` and
+`.pytest_cache/planner-live11-checker.log`.
+
+Test: `git diff --check` - PASS.
+
+Files changed: `server/planner.py`, `server/safety.py`, `server/gates.py`,
+`server/test_planner_safety_steps.py`, `server/test_planner.py`,
+`server/test_gates.py`, `server/test_gemini_live.py`,
+`eval/swap/test_checker_regressions.py`, `docs/results/planner-live.md`, `RESULT.md`.
+Limits: no real `.env` reads, external networking, cloud request, physical call,
+raw media storage, push, merge or deployment. Local fake WebSockets and synthetic
+provider packets are runtime evidence, not proof of the original real-call phrase.

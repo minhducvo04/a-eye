@@ -929,10 +929,11 @@ def test_planner_error_logs_class_only(monkeypatch, tmp_path, capsys, error):
     assert 'synthetic-secret' not in output and 'headphones' not in output
 
 
-def test_recorded_headphone_repair_installs_and_reloads(monkeypatch, tmp_path):
+@pytest.mark.parametrize('case_id', ['good13', 'good14'])
+def test_recorded_headphone_repair_installs_and_reloads(monkeypatch, tmp_path, case_id):
     cases = Path(__file__).resolve().parents[1] / 'eval/cases/checker_good_plans.jsonl'
     value = next(row['plan'] for line in cases.read_text().splitlines()
-                 if (row := json.loads(line))['id'] == 'good13')
+                 if (row := json.loads(line))['id'] == case_id)
     assert len(value['steps']) == 8
     assert planner.check_plan(value) == value
     request = 'dad The wire on my headphones broke near the plug. How do I fix it?'
@@ -946,10 +947,14 @@ def test_recorded_headphone_repair_installs_and_reloads(monkeypatch, tmp_path):
             await b.guide.planner.task
             assert b.guide.guide.plan == value and b.guide.kind == 'plan'
             assert planner.PlanCache(store.path).get(value['task']) == value
-            for index in range(1, 8):
-                b._reset_reply()
-                await say_user(b, 'next')
+            for index in range(8):
+                if index:
+                    b._reset_reply()
+                    await say_user(b, 'next')
                 assert b.guide.guide.index == index
+                await b.handle({'serverContent': {'outputTranscription': {
+                    'text': value['steps'][index]['say']}, 'turnComplete': True}})
+                assert not b.safety_stopped and not b.blocked, (index, b.safety_line)
             assert len(fake.calls) == 1 and not fixed
         finally:
             await b.guide.close()

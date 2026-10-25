@@ -99,14 +99,15 @@ def enabled():
     return os.getenv('PLANNER', '1') != '0'
 
 
-def unsafe_gate(text, *, output=False, led_build=True):
+def unsafe_gate(text, *, output=False, led_build=True, water_text=None):
     # A hot-tip warning is valid output, but user intent to touch it still stops.
     # Preserve the other conservative request gates, including live-power work.
     for gate in safety.GATES:
-        if gate.ask.search(text) and (not output or gate.id != 'hot_tool'):
+        candidate = water_text if gate.id == 'water_electric' and water_text is not None else text
+        if gate.ask.search(candidate) and (not output or gate.id != 'hot_tool'):
             return gate.id
     gate = safety.violation(text)
-    if gate:
+    if gate and (gate.id != 'water_electric' or water_text is None or gate.topic.search(water_text)):
         return gate.id
     line = electronics.refuse(text)
     if line and (led_build or line not in {electronics.MAINS, electronics.SERIES, electronics.USB}):
@@ -128,13 +129,52 @@ class UnsafePlan(ValueError):
         self.gate = gate
 
 
-SAFETY_LINES = {gate.id: gate.line for gate in safety.GATES} | {
+LEGACY_SAFETY_LINES = {gate.id: gate.line for gate in safety.GATES} | {
     'mains': electronics.MAINS, 'series_resistor': electronics.SERIES,
     'usb_power': electronics.USB, 'powered_resistance': electronics.RESISTANCE,
     'home_scope': SCOPE_LINE,
     'power_off': 'Disconnect device power before handling wires or components.',
     'ventilation': next(g.line for g in safety.GATES if g.id == 'solder_fumes'),
 }
+
+
+# Plans are hypothetical instructions, not reports of an emergency in the room.
+# Keep these precautions separate from the live hazard responses in safety.GATES.
+SAFETY_LINES = {
+    'open_microwave': 'Keep the appliance sealed and arrange a qualified repair.',
+    'mains_wiring': 'Leave building electrical work to a qualified electrician.',
+    'open_power_supply': 'Keep the power unit sealed and arrange a qualified repair.',
+    'damaged_battery': 'Leave the battery alone and ask a qualified technician about safe replacement.',
+    'capacitor_discharge': 'Leave stored-charge components to a qualified technician.',
+    'solder_fumes': 'Arrange ventilation, wear eye protection, and place the iron in its stand before continuing.',
+    'water_electric': 'Use a dry workspace and keep electrical equipment away from liquids.',
+    'electrical_panel': 'Leave building electrical work to a qualified electrician.',
+    'gas_line': 'Leave fuel-system repairs to a qualified technician.',
+    'unsafe_ladder': 'Use stable access and get help before reaching higher.',
+    'water_on': 'Wait for the step checker to confirm the shutoff before continuing.',
+    'hot_tool': 'Rest the iron in its stand and let it cool before handling.',
+    'hot_oil': 'Let the pan cool before continuing with the cooking task.',
+    'gas_smell': 'Leave fuel-system checks to a qualified technician.',
+    'live_power': 'Disconnect device power before handling wires or components.',
+    'burning_device': 'Leave the device unused and arrange a qualified inspection.',
+    'chemical_mix': 'Use one cleaning product at a time according to its label.',
+    'mains': 'Use only the low-voltage supply specified for this LED kit.',
+    'series_resistor': 'Check that the LED has its specified series resistor before continuing.',
+    'usb_power': 'Disconnect USB before handling the circuit.',
+    'powered_resistance': 'Disconnect device power before measuring resistance.',
+    'home_scope': 'Ask a qualified professional to handle this repair.',
+    'power_off': 'Disconnect device power before handling wires or components.',
+    'ventilation': 'Arrange ventilation, wear eye protection, and place the iron in its stand before continuing.',
+    'headphone_power_off': 'Unplug the headphones from any device first.',
+}
+
+
+def replacement_step(gate, task, index):
+    event('planner_step_replaced', reason={'step': index + 1, 'gate': gate})
+    line = SAFETY_LINES['headphone_power_off'] if (
+        gate in ('power_off', 'live_power', 'usb_power', 'powered_resistance')
+        and re.search(r'\bheadphones?\b', task, re.I)) else SAFETY_LINES[gate]
+    return safety_step(line)
 
 
 def safety_step(line):
@@ -234,7 +274,7 @@ def validate(value, task):
         raise UnsafePlan(gate, 'unsafe_task')
     normalized = []
     texts = [task]
-    for step in steps:
+    for index, step in enumerate(steps):
         if (not isinstance(step, dict) or not FIELDS - OPTIONAL_FIELDS <= set(step)
                 or set(step) - FIELDS):
             raise ValueError('schema')
@@ -243,6 +283,11 @@ def validate(value, task):
         # and hazard matching on repeated validation (including cache reload).
         if isinstance(step['say'], str) and is_safety_step(step):
             normalized.append(step)
+            continue
+        legacy = next((gate for gate, line in LEGACY_SAFETY_LINES.items()
+                       if step == safety_step(line)), None)
+        if legacy:
+            normalized.append(replacement_step(legacy, task, index))
             continue
         for key, text in step.items():
             if not isinstance(text, str):
@@ -260,9 +305,10 @@ def validate(value, task):
         texts.extend(step.values())
         joined = ' '.join(step[key] for key in ('say', 'show', 'target', 'check', 'safety'))
         texts.extend((joined, task + ' ' + joined))
+        water_text = '\n'.join(step.values())  # Never pair words across fields or with the task.
         gate = next((gate for text in [*step.values(), joined, task + ' ' + joined]
-                     if (gate := unsafe_gate(text, output=True, led_build=led_build))), None)
-        normalized.append(safety_step(SAFETY_LINES[gate]) if gate else step)
+                     if (gate := unsafe_gate(text, output=True, led_build=led_build, water_text=water_text))), None)
+        normalized.append(replacement_step(gate, task, index) if gate else step)
     steps = normalized
     # Preparation must be audible before the first hazardous action. A late step,
     # a negated precaution, or safety text that the guide never speaks is not enough.
@@ -282,7 +328,7 @@ def validate(value, task):
                 (WIRING.search(step['say']) and COMPONENT.search(step['say'])) if pattern is POWER_OFF
                 else SOLDER.search(' '.join(step.values())) or SOLDER_ACTION.search(step['say']))]
             for i in affected or [0]:
-                steps[i] = safety_step(SAFETY_LINES[gate])
+                steps[i] = replacement_step(gate, task, i)
     if any(PERSONAL.search(text) or PERSON_CONTEXT.search(text) or NAMED_PERSON.search(text) for text in texts):
         raise ValueError('personal')
     return dict(task=task, steps=steps)  # fresh dicts; no caller can mutate an accepted cache entry
