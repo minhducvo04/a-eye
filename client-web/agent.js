@@ -59,8 +59,7 @@ import {
   videoConstraints,
 } from "./devices.js";
 
-// Same names and order as ios/AEyeCore Modes.all, plus Memory; pack null means "coming soon". Memory (the memory
-// aid, the product focus) is centred at launch on the web; iOS still centres PC Build.
+// Same names and order as ios/AEyeCore Modes.all; Live is centred at launch.
 const MODES = [
   { id: "general", title: "General", pack: "general" },
   { id: "pc_build", title: "PC Build", pack: "pc_build" },
@@ -72,7 +71,7 @@ const MODES = [
   { id: "engineering", title: "Engineering", pack: null },
   { id: "gemini-live", title: "Gemini Live", pack: "gemini-live" },
 ];
-const DEFAULT_MODE = MODES.findIndex((m) => m.id === "memory");
+const DEFAULT_MODE = MODES.findIndex((m) => m.id === "gemini-live");
 const RING_SLOT = 84;
 const PACK_LABEL = Object.fromEntries(MODES.filter((m) => m.pack).map((m) => [m.pack, m.title]));
 const PRESENCE_STATES = ["idle", "listening", "thinking", "speaking"];
@@ -283,9 +282,9 @@ function boot() {
   // Private mode: hello.private makes the server keep everything local; the page uses server STT (browser
   // recognition can send audio to Google), the server voice (Kokoro) and keeps Rewind off.
   let privateMode = (() => { try { return safeStorage()?.getItem("aeye.private") === "1"; } catch { return false; } })();
-  // Home first: four cloud switches. Claude and Cartesia default on; Google and TwelveLabs off.
+  // Home first: four cloud switches. Claude, Cartesia and Google default on; TwelveLabs stays off.
   // The TwelveLabs switch and the Rewind toggle are one consent.
-  const CLOUD_DEFAULTS = { claude: true, cartesia: true, twelvelabs: false, google: false };
+  const CLOUD_DEFAULTS = { claude: true, cartesia: true, twelvelabs: false, google: true };
   let cloud = (() => {
     try {
       const saved = JSON.parse(safeStorage()?.getItem("aeye.cloud") || "null");
@@ -483,7 +482,7 @@ function boot() {
     const scheme = location.protocol === "https:" ? "wss:" : "ws:";
     const token = new URLSearchParams(location.search).get("token");
     const base = `${scheme}//${location.host}/ws2${token ? `?token=${encodeURIComponent(token)}${ownerQuery()}` : ""}`;
-    return pack === "gemini-live" ? `${base}${base.includes("?") ? "&" : "?"}mode=gemini-live&google=${cloud.google && !privateMode ? "1" : "0"}` : base;
+    return liveSettings(pack, cloud.google, privateMode).allowed ? `${base}${base.includes("?") ? "&" : "?"}mode=gemini-live&google=${cloud.google && !privateMode ? "1" : "0"}` : base;
   }
 
   function reducedMotion() {
@@ -1637,7 +1636,7 @@ function boot() {
 
   function onVoicePick() {
     const picked = voicePick.value;
-    if (pack === "gemini-live" && picked === "browser") return;
+    if (beforeLiveAudio && picked === "browser") return;
     tts = picked === "browser" ? "browser" : "server";
     ttsVoice = picked === "browser" ? "" : picked;
     try {
@@ -1651,11 +1650,6 @@ function boot() {
 
   async function choosePack(next) {
     if (!PACK_LABEL[next] || pack) return;
-    if (next === "gemini-live" && !liveSettings(next, cloud.google, privateMode).allowed) {
-      showProblem("Gemini Live needs the Google switch on and Private mode off. Open Settings to choose.");
-      openSheet(settingsEl);
-      return;
-    }
     pack = next;
     renderLeaves();
     homeStartPending = next === 'home';
@@ -1665,7 +1659,7 @@ function boot() {
     resetCallOwner();
     try { await callOwner(); }
     catch { pack = null; showProblem('Could not create a private call. Please try again.'); return; }
-    if (next === "gemini-live") {
+    if (liveSettings(next, cloud.google, privateMode).allowed) {
       beforeLiveAudio = { stt, tts };
       stt = "server"; tts = "server";
       renderLeaves();
@@ -1876,12 +1870,13 @@ function boot() {
       // per-viewer convenience only
     }
     renderPrivate();
-    if (name === "google" && pack === "gemini-live" && socket) {
-      socket.close(); // reconnect carries the new explicit Google setting
+    if (name === "google" && liveSettings(pack, true, false).selected) {
+      endCall(); // the next call rebuilds both microphone and playback transport
     } else sendHello();
   }
 
   async function setPrivate(on) {
+    if (pack) endCall(); // rebuild transport under the new privacy policy
     privateMode = Boolean(on);
     try {
       safeStorage()?.setItem("aeye.private", privateMode ? "1" : "0");

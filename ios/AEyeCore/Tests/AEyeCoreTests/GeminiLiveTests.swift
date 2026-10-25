@@ -2,6 +2,20 @@ import XCTest
 @testable import AEyeCore
 
 final class GeminiLiveTests: XCTestCase {
+    func testDefaultAndTransportSelection() {
+        XCTAssertTrue(LiveConfiguration.consent(nil))
+        XCTAssertFalse(LiveConfiguration.consent(false))
+        XCTAssertTrue(LiveConfiguration.consent(true))
+        for mode in ["gemini-live", "general"] {
+            XCTAssertTrue(LiveConfiguration.enabled(mode: mode, google: true, privateMode: false))
+            XCTAssertFalse(LiveConfiguration.enabled(mode: mode, google: false, privateMode: false))
+            XCTAssertFalse(LiveConfiguration.enabled(mode: mode, google: true, privateMode: true))
+        }
+        for mode in ["home", "memory", "pc_build"] {
+            XCTAssertFalse(LiveConfiguration.enabled(mode: mode, google: true, privateMode: false))
+        }
+    }
+
     func testConsentAndURLIsolation() throws {
         let base = try XCTUnwrap(URL(string: "wss://example.test/ws2?token=abc&owner=xyz&mode=gemini-live&google=1"))
         XCTAssertNil(LiveConfiguration.url(base, live: true, google: false, privateMode: false))

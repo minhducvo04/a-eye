@@ -13,36 +13,36 @@ The ring shows the v2 skill packs, Gemini Live, and two placeholders:
 
 | Mode | Pack | Status |
 |---|---|---|
-| Gemini Live | `general` + Live URL selection | requires Google consent and Private mode off |
-| General | `general` | works |
+| Gemini Live | `general` + Live URL selection | centred at launch; Live with Google on and Private off |
+| General | `general` | same Live transport and fallback as Gemini Live |
 | PC Build | `pc_build` | works; "Power is off" gate before any step |
 | Cooking | `cooking` | works |
 | Assembly | `assemble` | works |
-| Memory | `memory` | works; centred at launch (the memory aid is the product focus, same as the web) |
+| Memory | `memory` | works; retains its existing flow |
 | Sink | `home` | works; the app sends "sink" as soon as the helper first listens, like the web |
 | Mechanic, Engineering | none | "coming soon" (tap shakes, no call) |
 
 ## Protocol
 
-The app speaks the v2 contract (`contracts/schema.json`, mirror in `contracts/types.ts`) over `/ws2`. `hello` sends `client:"ios"`. Normal modes use `tts:"browser"`, meaning the phone speaks the text itself and the server sends no audio.
-Gemini Live uses `/ws2?mode=gemini-live&google=1` (preserving access/owner query fields), with `pack:"general"`,
+The app speaks the v2 contract (`contracts/schema.json`, mirror in `contracts/types.ts`) over `/ws2`. `hello` sends `client:"ios"`. Modes without Live use `tts:"browser"`, meaning the phone speaks the text itself and the server sends no audio.
+Gemini Live and General use `/ws2?mode=gemini-live&google=1` (preserving access/owner query fields), with `pack:"general"`,
 `tts:"server"` and `stt:"server"`. It captures and plays mono 16 kHz PCM16 in memory using the existing audio contracts.
 `board_id:"demo-b650"` is added for PC Build only. Frames are JPEG, long side at most 640 px, one per second, and
 carry no orientation field. Live frames are capped at 320 px; stale frames older than 1.5 seconds are dropped. Behaviour mirrors `client-web/agent.js` and `draw.js`.
 
 ## Gemini Live
 
-Enable **Gemini Live (Google)** in the existing Settings sheet, leave **Private mode** off, then choose **Gemini Live**
-in the ring. Without consent, selecting Live opens Settings and does not connect. The notice explains that microphone
+**Gemini Live** is selected at launch. Google consent defaults on unless previously turned off.
+General uses the same Live bridge. With Google off or Private on, either selection uses the existing pipeline. The notice explains that microphone
 audio and downscaled camera video go through the server to Google. Revoking/changing Google consent ends an active
-Live call; changing Private mode ends the current call. A new call uses the new settings. Server `LOCAL_ONLY=1` remains
+call; changing Private mode ends the current call. A new call uses the new settings. Server `LOCAL_ONLY=1` remains
 a server-enforced block. No Google credentials belong on the phone.
 
 Live requests microphone permission only; speech-recognition permission is unnecessary. With mic denied it still accepts
 typed input and plays server audio. The existing waveform, caption card, mic/camera buttons and mode ring are reused.
 Mic mute removes the capture tap. Camera off sends the existing `camera` message and stops frame transport. Playback
 finishes after the last PCM buffer has actually played; server interruptions and disconnects clear queued playback.
-A failed audio route falls back to typing; restart the call to restore capture. Normal modes keep on-device recognition
+A failed audio route falls back to typing; restart the call to restore capture. Other modes keep on-device recognition
 and system speech after Live ends. Physical microphone/speaker behavior and real Google sessions still need rehearsal.
 
 ## Layout
@@ -108,7 +108,7 @@ and the Mac must be on the same Wi-Fi. Accepted forms: `192.168.1.10:8000` (beco
 ## Limits
 
 - Portrait, iPhone only.
-- Normal modes use the system voice (`tts:"browser"`); Gemini Live plays server PCM audio.
+- Modes without Live use the system voice (`tts:"browser"`); Live and General play server PCM audio when Google is enabled outside Private mode.
 - Boxes are drawn where the server put them. There is no tracking between frames, so they can lag a moving object.
 - Mechanic and Engineering are placeholders.
 - No app icon yet.

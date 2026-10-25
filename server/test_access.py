@@ -153,6 +153,7 @@ def test_browser_socket_url():
     subprocess.run(['node', '--input-type=module', '-e', '''
 import assert from 'node:assert/strict';
 import { ownerQuery } from './client-web/call-owner.js';
+import { liveSettings } from './client-web/gemini-live.js';
 globalThis.location = {protocol: 'https:', host: 'demo.test', search: ''};
 let pack = 'general', cloud = {google: false}, privateMode = false;
 ''' + function + '''
@@ -164,7 +165,12 @@ assert.equal(new URL(wsUrl()).searchParams.get('mode'), 'gemini-live');
 assert.equal(new URL(wsUrl()).searchParams.get('google'), '1');
 assert.equal(new URL(wsUrl()).searchParams.get('token'), 'a&b');
 privateMode = true;
-assert.equal(new URL(wsUrl()).searchParams.get('google'), '0');
+assert.equal(new URL(wsUrl()).searchParams.get('google'), null);
+assert.equal(new URL(wsUrl()).searchParams.get('mode'), null);
+privateMode = false; pack = 'general';
+assert.equal(new URL(wsUrl()).searchParams.get('mode'), 'gemini-live');
+cloud.google = false;
+assert.equal(new URL(wsUrl()).searchParams.get('mode'), null);
 '''], check=True, capture_output=True)
 
 
