@@ -15,4 +15,4 @@ No real mic or Safari was tested. AudioWorklet and ScriptProcessorNode were not 
 
 Test: node --test client-web/ - PASS (54 pass, 0 fail)
 
-Commit: not created. This session cannot write `/Users/minhducvo/Projects/a-eye/.git/worktrees/client-stt` (`index.lock`, operation not permitted). The four files above are saved in the worktree and are not staged.
+Commit: not created. This session cannot write `$HOME/Projects/a-eye/.git/worktrees/client-stt` (`index.lock`, operation not permitted). The four files above are saved in the worktree and are not staged.

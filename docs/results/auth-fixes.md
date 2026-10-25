@@ -3,7 +3,7 @@
 ## Second independent auth review — 2026-10-24
 
 Outcome: **fixed**, left uncommitted for the lead reviewer. Source assignment:
-`/Users/minhducvo/kyra-grok/aeye-review-auth2/RESULT.md`. Base commit:
+`$HOME/kyra-grok/aeye-review-auth2/RESULT.md`. Base commit:
 `39201cd60389830a31ce3a15e9dec304a541d570`.
 
 ### Changes and boundaries
@@ -43,9 +43,9 @@ the launch flags changed. All these regressions are included in the passing suit
 
 ### Verification of the final working tree
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_auth_fixes.py server/test_access.py server/test_pairing.py --tb=short` - PASS (**83 passed in 2.30s**).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server/test_auth_fixes.py server/test_access.py server/test_pairing.py --tb=short` - PASS (**83 passed in 2.30s**).
 
-Test: `make test PY=/Users/minhducvo/Projects/a-eye/.venv/bin/python` - PASS:
+Test: `make test PY=$HOME/Projects/a-eye/.venv/bin/python` - PASS:
 
 ```text
 700 passed, 2 warnings in 58.65s
@@ -133,11 +133,11 @@ and `scripts/browser_smoke.py`.
 - Before implementation, the new Python regressions produced **9 failures** covering all
   server findings and the four Rewind failure cases. The token-copying browser regression
   also failed before its fix. Final security regressions: **10 passed**.
-- Test: `make test PY=/Users/minhducvo/Projects/a-eye/.venv/bin/python` — **PASS**:
+- Test: `make test PY=$HOME/Projects/a-eye/.venv/bin/python` — **PASS**:
   **658 Python tests**, **137 JavaScript tests**. Two existing Python deprecation warnings.
   An initial restricted run could not bind four test sockets; the permitted rerun passed.
 - Test: `make test-web` — **PASS, 138 tests**, after the QR/caregiver review fixes.
-- Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_access.py`
+- Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server/test_access.py`
   — **PASS, 27 tests**, after the final standalone smoke-runner correction.
 - Test: `make browser-smoke URL=http://127.0.0.1:61947` (synthetic token supplied in the
   environment) — **PASS** against a mock server bound to a dynamically allocated local

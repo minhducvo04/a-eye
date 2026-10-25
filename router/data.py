@@ -10,7 +10,7 @@ from router.labels import LABELS
 HERE = Path(__file__).resolve().parent / 'data'
 TRAIN = HERE / 'train.jsonl'
 HELDOUT = HERE / 'heldout.jsonl'
-HELDOUT_DUC = HERE / 'heldout_duc.jsonl'
+HELDOUT_TEAM = HERE / 'heldout_team.jsonl'
 
 
 def turn_text(turn):
@@ -45,5 +45,5 @@ def load(path):
 
 
 def heldout():
-    """The hand-written set plus Duc's own lines. Never used for training or tuning."""
-    return load(HELDOUT) + load(HELDOUT_DUC)
+    """The hand-written set plus the team's own lines. Never used for training or tuning."""
+    return load(HELDOUT) + load(HELDOUT_TEAM)

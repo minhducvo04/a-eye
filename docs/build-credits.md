@@ -6,8 +6,8 @@ honestly. Updated 2026-10-24.
 
 ## People
 
-- Minh Duc Vo: product, architecture decisions, testing on real devices, every push to GitHub.
-- Teammate (iOS): the native iPhone app in `ios/AEye` and `ios/AEyeCore` (commits by `rereynrd`).
+- the team: product, architecture decisions, testing on real devices, every push to GitHub.
+- Teammate (iOS): the native iPhone app in `ios/AEye` and `ios/AEyeCore` (commits by `the team`).
 
 ## AI agents
 

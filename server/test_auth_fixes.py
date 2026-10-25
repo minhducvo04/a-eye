@@ -155,9 +155,9 @@ def test_non_loopback_pairing_limits_ignore_spoofed_headers(monkeypatch):
 
 @pytest.mark.parametrize('settings,allowed', [
     ({}, False), ({'A_EYE_OPEN': '1'}, False),
-    ({'CF_ACCESS_TEAM_DOMAIN': 'example.cloudflareaccess.com'}, False),
+    ({'CF_ACCESS_TEAM_DOMAIN': 'access.example.test'}, False),
     ({'A_EYE_TOKEN': 'synthetic-master'}, True),
-    ({'CF_ACCESS_TEAM_DOMAIN': 'example.cloudflareaccess.com', 'CF_ACCESS_AUD': 'synthetic-aud'}, True),
+    ({'CF_ACCESS_TEAM_DOMAIN': 'access.example.test', 'CF_ACCESS_AUD': 'synthetic-aud'}, True),
 ])
 def test_phone_requires_credentials_before_suggesting_tunnels(settings, allowed, tmp_path):
     settings = dict.fromkeys(('A_EYE_TOKEN', 'A_EYE_OPEN', 'CF_ACCESS_TEAM_DOMAIN', 'CF_ACCESS_AUD'), '') | settings

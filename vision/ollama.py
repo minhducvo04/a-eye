@@ -134,7 +134,7 @@ def box_normalized(box, width, height, model="qwen2.5vl"):
 
 class OllamaBackend:
     def __init__(self, *, url=None, model=None, transport=None, client=None):
-        self.url = (url or os.environ.get("OLLAMA_URL", "http://100.93.176.7:11434")).rstrip("/")
+        self.url = (url or os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")).rstrip("/")
         self.model = model or os.environ.get("VISION_GROUND_MODEL", "qwen3.5:9b-q4_K_M")
         self.caption_model = os.environ.get("VISION_CAPTION_MODEL", "qwen2.5vl:7b-q4_K_M")
         self.fallback_model = os.environ.get("VISION_FALLBACK_MODEL", "qwen2.5vl:7b-q4_K_M")

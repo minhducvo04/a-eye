@@ -3,7 +3,7 @@ import os
 
 import httpx
 
-OLLAMA = os.environ.get('ROUTER_OLLAMA_URL', 'http://100.93.176.7:11434')
+OLLAMA = os.environ.get('ROUTER_OLLAMA_URL', 'http://127.0.0.1:11434')
 MODEL = os.environ.get('ROUTER_EMBED_MODEL', 'embeddinggemma:300m')
 PREFIX = 'task: classification | query: '
 

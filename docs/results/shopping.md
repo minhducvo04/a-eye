@@ -12,10 +12,10 @@ Ranking policy: price plus 3% of the cheapest price per waiting day; unknown del
 
 ## Verification
 
-- Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest server/test_shopping.py server/test_agent.py server/test_stream.py server/test_ws2.py contracts/test_contracts.py -q` — PASS (110). Includes typed `/ws2`, synthetic frame, injected offers, final recommendation, and server audio chunks. Final ranking/context-only adjustment: `server/test_shopping.py -q` — PASS (7).
-- Test: `make test-py PY=/Users/minhducvo/Projects/a-eye/.venv/bin/python` — 636 passed; four device setup errors because the sandbox prohibited binding localhost. Rerun `.../python -m pytest device/test_client.py -q` outside that sandbox — PASS (4). No assertion failures; two existing JWT test-key warnings. Full suite was run before the final acknowledgment/context adjustments, covered by the targeted reruns above.
+- Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest server/test_shopping.py server/test_agent.py server/test_stream.py server/test_ws2.py contracts/test_contracts.py -q` — PASS (110). Includes typed `/ws2`, synthetic frame, injected offers, final recommendation, and server audio chunks. Final ranking/context-only adjustment: `server/test_shopping.py -q` — PASS (7).
+- Test: `make test-py PY=$HOME/Projects/a-eye/.venv/bin/python` — 636 passed; four device setup errors because the sandbox prohibited binding localhost. Rerun `.../python -m pytest device/test_client.py -q` outside that sandbox — PASS (4). No assertion failures; two existing JWT test-key warnings. Full suite was run before the final acknowledgment/context adjustments, covered by the targeted reruns above.
 - Test: `node --test client-web/` — PASS (132). `node --check client-web/agent.js` — PASS.
-- Test: `/Users/minhducvo/Projects/kyra/.venv/bin/python /private/tmp/check_shopping_sheet.py` — PASS. Headless Chromium executed the repository's actual market rendering function with synthetic fixture data: store, price, delivery, link, recommendation border, unverified chip. Screenshot: `/private/tmp/shopping-sheet.png`. This is an isolated sheet check, not a full camera/microphone browser rehearsal.
+- Test: `$HOME/Projects/kyra/.venv/bin/python /private/tmp/check_shopping_sheet.py` — PASS. Headless Chromium executed the repository's actual market rendering function with synthetic fixture data: store, price, delivery, link, recommendation border, unverified chip. Screenshot: `/private/tmp/shopping-sheet.png`. This is an isolated sheet check, not a full camera/microphone browser rehearsal.
 
 ## Limits for the reviewer
 

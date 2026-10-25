@@ -115,7 +115,7 @@ def test_audio_stt_turn_and_fallback(down):
 
 
 def test_noise_audio_does_not_cancel_speech_but_barge_in_does():
-    # Loud hall (Duc, 2026-10-24): hall noise opened utterances that cut the reply. Server audio alone
+    # Loud hall (the team, 2026-10-24): hall noise opened utterances that cut the reply. Server audio alone
     # no longer cancels a speaking turn; the client's barge_in (sustained speech) or real words do.
     voice = StreamVoice()
     with TestClient(app(voice=voice)) as client, client.websocket_connect('/ws2') as ws:

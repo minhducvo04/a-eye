@@ -18,7 +18,7 @@ import httpx
 
 HERE = Path(__file__).resolve().parent
 IMAGE = HERE.parents[0] / 'backends' / 'data' / 'desk_mug.jpg'
-OLLAMA = os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434').rstrip('/')
+OLLAMA = os.environ.get('OLLAMA_URL', 'http://127.0.0.1:11434').rstrip('/')
 APP = ('qwen3.5:9b-q4_K_M', 'qwen2.5vl:7b-q4_K_M')
 PROMPT = 'Locate only "mug". Return one JSON {"label":str,"bbox_2d":[x1,y1,x2,y2]} in 0 to 1000. Use the exact label. If absent return {}.'
 
@@ -36,6 +36,8 @@ def probe(client, image):
 
 
 def main():
+    if not os.environ.get("OLLAMA_URL"):
+        raise SystemExit("Set OLLAMA_URL to your local service URL before running this script")
     parser = argparse.ArgumentParser()
     parser.add_argument('--every', type=float, default=30)
     parser.add_argument('--count', type=int, default=0, help='0 = until killed')

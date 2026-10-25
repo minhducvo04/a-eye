@@ -88,7 +88,7 @@ async def live_check(name):
                 return True, 'claude'
             except Exception:
                 event('fallback_used', dependency='brain', to='local')
-        body = await get(os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434').rstrip('/') + '/api/tags')
+        body = await get(os.environ.get('OLLAMA_URL', 'http://127.0.0.1:11434').rstrip('/') + '/api/tags')
         from server.llm import LOCAL_DEFAULT
         model = os.environ.get('LOCAL_LLM_MODEL', LOCAL_DEFAULT)
         return any(m.get('name') == model for m in body.get('models', [])), 'local'

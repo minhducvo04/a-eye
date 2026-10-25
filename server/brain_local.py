@@ -60,7 +60,7 @@ def vision_models():
 
 
 def _url():
-    return os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434').rstrip('/') + '/api/chat'
+    return os.environ.get('OLLAMA_URL', 'http://127.0.0.1:11434').rstrip('/') + '/api/chat'
 
 
 def _payload(model, system, user, images, max_tokens, think, stream=True):

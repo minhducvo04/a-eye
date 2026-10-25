@@ -175,7 +175,7 @@ async def run_backend(name, only):
               row.get('error', ''), flush=True)
     if brain and os.environ.get('BRAIN_UNLOAD_AFTER') == '1':  # free the box for the app's models
         import httpx
-        httpx.post(os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434').rstrip('/') + '/api/generate',
+        httpx.post(os.environ.get('OLLAMA_URL', 'http://127.0.0.1:11434').rstrip('/') + '/api/generate',
                    json={'model': model, 'keep_alive': 0}, timeout=60)
 
 
@@ -261,6 +261,8 @@ def main():
     parser.add_argument('--judge', nargs='*', help='file stems to judge, e.g. claude local_qwen3.5_9b-q4_K_M')
     parser.add_argument('--table', action='store_true')
     args = parser.parse_args()
+    if any(name.startswith('local:') for name in args.backends) and not os.environ.get('OLLAMA_URL'):
+        raise SystemExit('Set OLLAMA_URL to your local service URL before running this script')
     for name in args.backends:
         asyncio.run(run_backend(name, args.only))
     if args.judge is not None:

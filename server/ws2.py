@@ -911,7 +911,7 @@ async def warm_brain(app):
         async with hold:
             async with httpx.AsyncClient(timeout=float(os.environ.get('LOCAL_WARM_TIMEOUT_S', '180'))) as client:
                 response = await client.post(
-                    os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434').rstrip('/') + '/api/chat',
+                    os.environ.get('OLLAMA_URL', 'http://127.0.0.1:11434').rstrip('/') + '/api/chat',
                     json=dict(model=local_model(), stream=False, think=False, options=local_options(1),
                               keep_alive=LOCAL_KEEP_ALIVE, messages=[dict(role='user', content='Hi')]))
                 response.raise_for_status()

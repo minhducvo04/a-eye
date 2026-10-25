@@ -43,7 +43,7 @@ Pairing limits use `CF-Connecting-IP`, then the first `X-Forwarded-For` hop, onl
 
 ### Cloudflare Access
 
-For `https://aeye.minhducvo.com`, configure email one-time PIN and an email allowlist in Access, then set `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` on the server. The shared API and socket check verifies RS256 signatures, issuer, audience and expiry using the team's cached signing keys. The Access header or `CF_Authorization` cookie authenticates same-origin requests and WebSocket upgrades; no `?token` is needed. A paired phone signs in separately. A 4401 close offers “Please sign in again” and a reload instead of automatic retries.
+For `https://<YOUR_DOMAIN>`, configure email one-time PIN and an email allowlist in Access, then set `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` on the server. The shared API and socket check verifies RS256 signatures, issuer, audience and expiry using the team's cached signing keys. The Access header or `CF_Authorization` cookie authenticates same-origin requests and WebSocket upgrades; no `?token` is needed. A paired phone signs in separately. A 4401 close offers “Please sign in again” and a reload instead of automatic retries.
 
 `A_EYE_TOKEN`, if configured, remains an alternative credential. Open mode applies only when all three auth settings are empty; incomplete Access settings fail closed. `/health` remains public.
 

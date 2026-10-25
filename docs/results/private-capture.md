@@ -4,7 +4,7 @@ Implemented in the working tree; not committed. `server/ws2.py` and contracts ar
 
 ## Independent privacy review fixes (2026-10-24)
 
-All five findings from `/Users/minhducvo/kyra-grok/aeye-review-capture/RESULT.md` are addressed:
+All five findings from `$HOME/kyra-grok/aeye-review-capture/RESULT.md` are addressed:
 
 1. **Fail-closed device person gate:** `device/hw.py` refuses unavailable detectors, errors and unknown
    results. Both Event and Session use the shared gate; only an explicit negative check permits a frame.
@@ -29,7 +29,7 @@ Changed files for this fix: `device/{capture,client,hw}.py`, `device/device.exam
 ### Fail-before evidence
 
 All following runs preceded the corresponding production changes. The Python executable was
-`/Users/minhducvo/Projects/a-eye/.venv/bin/python` (this worktree has no `.venv`).
+`$HOME/Projects/a-eye/.venv/bin/python` (this worktree has no `.venv`).
 
 - `-m pytest device/test_capture_privacy.py server/test_memory_capture.py -q`:
   **16 failed, 6 passed in 1.40s**. Reproduced absent/unavailable/disabled/unknown Session gating, detector
@@ -49,7 +49,7 @@ All following runs preceded the corresponding production changes. The Python exe
 Test: focused device privacy/server capture/shared memory checks — PASS:
 `59 passed in 2.55s`.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest device server -q --tb=short` — PASS:
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest device server -q --tb=short` — PASS:
 `383 passed, 2 warnings in 62.05s (0:01:02)`.
 
 Test: real Chromium, `uv run --offline --no-project --with playwright python scripts/browser_smoke.py
@@ -99,7 +99,7 @@ with passing regressions. This is not a second independent approval of the final
 Tests use synthetic frames, a real loopback HTTP/WebSocket server and a scripted vision answer. They do not
 contact a model host. Logs are local under `/tmp/private-capture-*.log`.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest device server -q` — PASS
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest device server -q` — PASS
 `340 passed, 2 warnings in 57.90s`. Warnings are existing short JWT fixture keys. This run preceded final device
 stop-handling and additional failure-path tests; the final affected-module result is recorded below.
 

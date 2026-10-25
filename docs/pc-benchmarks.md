@@ -1,6 +1,6 @@
 # GPU box benchmarks (2026-10-23)
 
-Question: which models should the A-eye app use on the GPU box, and does each fit a real-time budget? Duc's
+Question: which models should the A-eye app use on the GPU box, and does each fit a real-time budget? the team's
 requirement: "it must run in real time". The budgets used below:
 
 | Loop | Budget |
@@ -25,7 +25,7 @@ requirement: "it must run in real time". The budgets used below:
 - Vision photo: a public Wikimedia Commons motherboard photo (Gigabyte GA-H87M-D3H; licence not checked, used for
   benchmarking only). Box checks were done by eye on an overlay of the saved answers.
 - Speech clip: 10 s from a public Wikimedia Commons recording (Roosevelt, Pearl Harbor address).
-- Raw outputs: `C:\kyra-work\bench\res_*.json` on the box (private; not in git).
+- Raw outputs: `<PC_WORK_DIR>\bench\res_*.json` on the box (private; not in git).
 
 ## Results
 
@@ -146,7 +146,7 @@ default context (32k, which wastes VRAM) and no `keep_alive`; the locate prompt 
   while a model download saturated the box's link (2.8 to 3.3 fps); it was discarded and redone.
 - Box accuracy used one board photo and five labels, judged by eye. It supports "1280 px works on this photo", not
   an accuracy rate.
-- Setup for the speech and detection runs: a venv at `C:\kyra-work\venv-bench` (torch cu128, ultralytics,
-  faster-whisper, kokoro, transformers) and a hard link `C:\kyra-work\bench\sam2.1_l.pt`. The faster-whisper turbo
-  weights were downloaded to `C:\kyra-work\models\faster-whisper-large-v3-turbo`. No Windows settings, drivers or
+- Setup for the speech and detection runs: a venv at `<PC_WORK_DIR>\venv-bench` (torch cu128, ultralytics,
+  faster-whisper, kokoro, transformers) and a hard link `<PC_WORK_DIR>\bench\sam2.1_l.pt`. The faster-whisper turbo
+  weights were downloaded to `<PC_WORK_DIR>\models\faster-whisper-large-v3-turbo`. No Windows settings, drivers or
   tasks were changed; Ollama was not restarted and stayed on 100% GPU.

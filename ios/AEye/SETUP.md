@@ -5,7 +5,7 @@ or later, and a cable.
 
 ## What the project already has
 
-- Target `AEye`, iPhone only, portrait only, iOS 17.0 minimum, bundle id `com.rereynrd.aeye`.
+- Target `AEye`, iPhone only, portrait only, iOS 17.0 minimum, bundle id `com.example.aeye`.
 - `App/` is a synchronized folder, so new files you add there are built automatically.
 - The local package `../AEyeCore` is linked to the target.
 - Build settings: Swift 5 language mode, Default Actor Isolation = `nonisolated`, Approachable Concurrency = No.

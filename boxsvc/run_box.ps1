@@ -1,10 +1,10 @@
 $ErrorActionPreference = "Stop"
-# Local model copies on the GPU box, so nothing is downloaded at start.
-$env:STT_MODEL = "C:\kyra-work\models\faster-whisper-large-v3-turbo"
-$env:YOLO_WEIGHTS = "C:\kyra-work\models\YOLO11\yolo11n.pt"
-$env:KOKORO_DIR = "C:\kyra-work\models\Kokoro-82M"
+# Configure local model paths and the venv in the environment before launching.
+foreach ($name in @('PC_TAILSCALE_IP', 'STT_MODEL', 'YOLO_WEIGHTS', 'KOKORO_DIR', 'BOX_VENV')) {
+    if (-not [Environment]::GetEnvironmentVariable($name)) { throw "Set $name before running run_box.ps1" }
+}
 $env:HF_HUB_OFFLINE = "1"
-. C:\kyra-work\venv-bench\Scripts\Activate.ps1
+. (Join-Path $env:BOX_VENV 'Scripts/Activate.ps1')
 Set-Location (Split-Path $PSScriptRoot -Parent)
-# Tailnet address only, not every interface.
-python -m uvicorn boxsvc.app:app --host 100.93.176.7 --port 8090
+# Bind only to the configured tailnet interface.
+python -m uvicorn boxsvc.app:app --host $env:PC_TAILSCALE_IP --port 8090

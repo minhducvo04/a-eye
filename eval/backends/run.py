@@ -27,8 +27,8 @@ from PIL import Image
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
 OUT = Path(os.environ.get("EVAL_BACKENDS_OUT", HERE / "out"))
-OLLAMA = os.environ.get("OLLAMA_URL", "http://100.93.176.7:11434").rstrip("/")
-BOXSVC = os.environ.get("BOX_URL", "http://100.93.176.7:8090").rstrip("/")
+OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+BOXSVC = os.environ.get("BOX_URL", "http://127.0.0.1:8090").rstrip("/")
 CODEX = "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex"
 JUDGE_MODEL = "gemma4:31b-it-q4_K_M"
 
@@ -483,6 +483,10 @@ def main():
     ap.add_argument("--table", action="store_true")
     a = ap.parse_args()
     names = [n for n in a.backends.split(",") if n]
+    if (a.judge or any(n.startswith(('ollama:', 'ollama-cpu4:', 'pipe:')) for n in names)) and not os.environ.get('OLLAMA_URL'):
+        raise SystemExit('Set OLLAMA_URL to your local service URL before running this script')
+    if any(n.startswith('boxsvc:') for n in names) and not os.environ.get('BOX_URL'):
+        raise SystemExit('Set BOX_URL to your local service URL before running this script')
     if a.warm:
         for n in names:
             if n.startswith(("ollama:", "ollama-cpu4:", "pipe:")):

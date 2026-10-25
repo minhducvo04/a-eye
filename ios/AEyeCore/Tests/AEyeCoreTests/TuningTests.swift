@@ -10,7 +10,7 @@ final class TuningTests: XCTestCase {
     func testServerURLNormalises() {
         XCTAssertEqual(serverURL(from: "ws://192.168.1.5:8000/ws2")?.absoluteString, "ws://192.168.1.5:8000/ws2")
         XCTAssertEqual(serverURL(from: "192.168.1.5:8000")?.absoluteString, "ws://192.168.1.5:8000/ws2")
-        XCTAssertEqual(serverURL(from: "https://mac.tail1.ts.net")?.absoluteString, "wss://mac.tail1.ts.net/ws2")
+        XCTAssertEqual(serverURL(from: "https://mac.example.ts.net")?.absoluteString, "wss://mac.example.ts.net/ws2")
         XCTAssertEqual(serverURL(from: " http://10.0.0.2:8000/ ")?.absoluteString, "ws://10.0.0.2:8000/ws2")
         XCTAssertNil(serverURL(from: ""))
         XCTAssertNil(serverURL(from: "   "))
@@ -21,8 +21,8 @@ final class ServerURLTokenTests: XCTestCase {
     func testTokenBecomesQueryItem() {
         XCTAssertEqual(serverURL(from: "192.168.1.5:8000", token: "abc123")?.absoluteString,
                        "ws://192.168.1.5:8000/ws2?token=abc123")
-        XCTAssertEqual(serverURL(from: "https://mac.tail1.ts.net", token: " s3cret ")?.absoluteString,
-                       "wss://mac.tail1.ts.net/ws2?token=s3cret")
+        XCTAssertEqual(serverURL(from: "https://mac.example.ts.net", token: " s3cret ")?.absoluteString,
+                       "wss://mac.example.ts.net/ws2?token=s3cret")
     }
 
     func testEmptyTokenLeavesURLAlone() {

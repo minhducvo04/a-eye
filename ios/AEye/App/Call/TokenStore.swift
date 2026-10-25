@@ -4,7 +4,7 @@ import Security
 /// The server's shared access token (`A_EYE_TOKEN`), kept in the Keychain rather than `UserDefaults`.
 /// Only this device can read it (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`); it never goes in a log.
 enum TokenStore {
-    private static let service = "com.rereynrd.aeye.server-token"
+    private static let service = "com.example.aeye.server-token"
     private static let account = "a-eye"
 
     static func load() -> String {

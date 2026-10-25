@@ -8,13 +8,13 @@ Wants=network-online.target
 After=network-online.target sound.target
 
 [Service]
-User=pi
-Group=pi
+User=aeye
+Group=aeye
 SupplementaryGroups=video audio gpio
-WorkingDirectory=/home/pi/a-eye
+WorkingDirectory=/opt/a-eye
 # Credentials only: A_EYE_TOKEN=... or CF_ACCESS_CLIENT_ID=... and CF_ACCESS_CLIENT_SECRET=... (chmod 600).
 EnvironmentFile=-/etc/a-eye/device.env
-ExecStart=/home/pi/a-eye/.venv/bin/python -m device --config /etc/a-eye/device.toml
+ExecStart=/opt/a-eye/.venv/bin/python -m device --config /etc/a-eye/device.toml
 Restart=on-failure
 RestartSec=5
 # Nothing is written to disk by the client; keep the filesystem read-only for it.

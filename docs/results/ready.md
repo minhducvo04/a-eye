@@ -8,7 +8,7 @@ Implemented in the working tree; no commit. `server/ws2.py` is untouched.
 
 ## Verification
 
-Python: `/Users/minhducvo/Projects/a-eye/.venv/bin/python` (`$PY` below).
+Python: `$HOME/Projects/a-eye/.venv/bin/python` (`$PY` below).
 
 Test: `$PY -m pytest -q server/test_brain_openai_compat.py server/test_brain_local.py server/test_expert.py server/test_llm.py` - PASS (66 tests).
 Test: `$PY -m pytest -q scripts/test_ready.py server/test_backbone.py server/test_pipeline.py server/test_pairing.py server/test_phone_remember.py` - initial run: 53 passed, one localhost bind blocked by sandbox; the 48 server tests passed.

@@ -37,7 +37,7 @@ TIMEOUT_LINE = "The expert is taking too long, let's keep going."
 
 def check_local_model(fetch=None):
     """At startup: is the local expert model on the Ollama host? Logs one warning when it is not."""
-    url = os.environ.get('OLLAMA_URL', 'http://100.93.176.7:11434').rstrip('/') + '/api/tags'
+    url = os.environ.get('OLLAMA_URL', 'http://127.0.0.1:11434').rstrip('/') + '/api/tags'
     try:
         if fetch is None:
             import httpx

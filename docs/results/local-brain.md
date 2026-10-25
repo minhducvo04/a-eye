@@ -1,6 +1,6 @@
 # Local brain: open models for the talker and the expert (2026-10-24)
 
-Status: **Phase A built and benchmarked in part; Phase B is a plan only.** Runs paused on Duc's request
+Status: **Phase A built and benchmarked in part; Phase B is a plan only.** Runs paused on the team's request
 (2026-10-24 01:10 PDT). No new slots until told. The gpt-oss:120b pull is paused at about 1.3 of 65 GB.
 
 ## Overnight update (2026-10-24, 02:30 to 03:30 PDT, box free, full GPU)
@@ -56,12 +56,12 @@ one-shot Mac check at 07:40 writes vision `/health`, a real `/scene` call and `o
 Read the results in the morning:
 
 ```
-ssh tomdu@100.93.176.7 "type C:\kyra-work\aeye-night\status.txt"
-scp -r tomdu@100.93.176.7:C:/kyra-work/aeye-night /tmp/aeye-night
-cat /Users/minhducvo/Projects/a-eye/docs/results/night-check.txt
+ssh <PC_USER>@<PC_TAILSCALE_IP> "type <PC_WORK_DIR>\aeye-night\status.txt"
+scp -r <PC_USER>@<PC_TAILSCALE_IP>:C:/kyra-work/aeye-night /tmp/aeye-night
+cat $HOME/Projects/a-eye/docs/results/night-check.txt
 # judge the student rows with the same Sonnet judge (needs the key, so run on the Mac):
-cp /tmp/aeye-night/*+box.jsonl /Users/minhducvo/Projects/a-eye/eval/brain/out/
-cd /Users/minhducvo/Projects/a-eye && make -s -f <(printf -- '-include .env\nexport\nj:\n\t.venv/bin/python -m eval.brain.run --judge --table\n') j
+cp /tmp/aeye-night/*+box.jsonl $HOME/Projects/a-eye/eval/brain/out/
+cd $HOME/Projects/a-eye && make -s -f <(printf -- '-include .env\nexport\nj:\n\t.venv/bin/python -m eval.brain.run --judge --table\n') j
 ```
 
 ## Answer
@@ -124,14 +124,14 @@ How it was measured:
 No vision model was evicted in any run (`/api/ps` checked every 30 s). After every slot the big model was unloaded
 (`keep_alive: 0`). Vision `/health` answered ok and a real `/scene` call returned a box and a caption at 01:11.
 
-## Box change (Duc's "A now", 2026-10-24)
+## Box change (the team's "A now", 2026-10-24)
 
-The box's Ollama runs from the scheduled task "Kyra Ollama" (`cmd /c set OLLAMA_HOST=0.0.0.0:11434&& ollama.exe
-serve`, user tomdu). With the default `OLLAMA_MAX_LOADED_MODELS=3`, a 4th model (even CPU only) evicts one of
+The box's Ollama runs from the scheduled task "<OLLAMA_TASK_NAME>" (`cmd /c set OLLAMA_HOST=0.0.0.0:11434&& ollama.exe
+serve`, user <PC_USER>). With the default `OLLAMA_MAX_LOADED_MODELS=3`, a 4th model (even CPU only) evicts one of
 qwen3.5:9b, qwen2.5vl:7b or embeddinggemma:300m (the router). Command used at 00:36:45 PDT, from the Mac:
 
 ```
-ssh tomdu@100.93.176.7 "powershell -NoProfile -Command \"[Environment]::SetEnvironmentVariable('OLLAMA_MAX_LOADED_MODELS','4','User'); Stop-ScheduledTask -TaskName 'Kyra Ollama'; Start-Sleep 3; Get-Process ollama,llama-server -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 2; Start-ScheduledTask -TaskName 'Kyra Ollama'\""
+ssh <PC_USER>@<PC_TAILSCALE_IP> "powershell -NoProfile -Command \"[Environment]::SetEnvironmentVariable('OLLAMA_MAX_LOADED_MODELS','4','User'); Stop-ScheduledTask -TaskName '<OLLAMA_TASK_NAME>'; Start-Sleep 3; Get-Process ollama,llama-server -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 2; Start-ScheduledTask -TaskName '<OLLAMA_TASK_NAME>'\""
 ```
 
 Then the three app models were warmed with the app's own options (num_ctx 4096, keep_alive 30m; embeddinggemma
@@ -172,12 +172,12 @@ Real run: every local row in the table went through `LocalBrain` against the box
 **Licence check first (blocks the Claude-teacher version).** Anthropic's Commercial Terms, section D.4: the customer
 may not "access the Services to build a competing product or service, including to train competing AI models ...
 except as expressly approved by Anthropic". Training an open model on Claude outputs to replace Claude is close to
-that line. **Duc decides** before any Claude output is used as training data. Two versions:
+that line. **the team decides** before any Claude output is used as training data. Two versions:
 
 | Version | Teacher | Licence risk | Cost |
 |---|---|---|---|
 | B1 (default) | Best local model with thinking on (the top expert row in the table above), distilled into a fast local talker | None: Qwen and Gemma weights are Apache-2.0 / Gemma terms; gpt-oss is Apache-2.0 | $0, box time only |
-| B2 (only with Duc's yes, and ideally Anthropic's) | Claude Haiku 5.5 (talker) and Opus 5.5 (expert) | D.4 above | about $10 to $15 in API calls (estimate below) |
+| B2 (only with the team's yes, and ideally Anthropic's) | Claude Haiku 5.5 (talker) and Opus 5.5 (expert) | D.4 above | about $10 to $15 in API calls (estimate below) |
 
 **Data (synthetic, no user data):**
 - Scene notes from COCO 2014 captions and object lists (annotations CC BY 4.0; text only, no images needed because the
@@ -205,7 +205,7 @@ that line. **Duc decides** before any Claude output is used as training data. Tw
 - **The 9B student must be a separate Ollama tag** (for example `qwen-aeye-talk:9b`). It must not replace the vision
   model `qwen3.5:9b-q4_K_M`: a talker sharing the vision model's runner queues behind grounding (measured above).
 - **Box time:** training needs the whole GPU, so the app's vision models are unloaded for 3 to 4 h. That only
-  happens after Duc says "box is free". Otherwise use a cloud GPU later: one A100 80 GB or H100 for about 2 h. Duc
+  happens after the team says "box is free". Otherwise use a cloud GPU later: one A100 80 GB or H100 for about 2 h. the team
   mentioned BitDeer AI; nothing has been signed up for or spent.
 - **Export:** merge the LoRA, `ollama create qwen-aeye-talk:9b --quantize q4_K_M` from the merged safetensors. Run
   this path once on base weights first; it is not proven for Qwen 3.5 here (see `finetune-plan.md`, parked).
@@ -222,4 +222,4 @@ Accept only if talker quality goes up by at least 0.3 with no new safety failure
 
 ## Parked: vision fine-tune
 
-`docs/results/finetune-plan.md` (Duc parked it 2026-10-24: nothing downloaded or trained).
+`docs/results/finetune-plan.md` (the team parked it 2026-10-24: nothing downloaded or trained).

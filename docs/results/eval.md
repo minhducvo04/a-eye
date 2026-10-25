@@ -20,7 +20,7 @@ The held-out harness is in place. `python -m eval.run` reads a local manifest, p
 - Wrong plugs caught counts verify cases with truth `pass: false` and answer `pass: false`, and it skips abstentions.
 - The sample manifest names three jpegs and does not contain them. Tests write those bytes in a temp directory. Real clips stay outside the repo.
 - The full suite was also run: `.venv/bin/python -m pytest -q` — 48 passed in 0.16s.
-- The commit did not land. `git add` cannot create `/Users/minhducvo/Projects/a-eye/.git/worktrees/eval/index.lock` (operation not permitted). This worktree's git metadata lives outside the writable workspace. The files are untracked on `pkg/eval` and ready to stage:
+- The commit did not land. `git add` cannot create `$HOME/Projects/a-eye/.git/worktrees/eval/index.lock` (operation not permitted). This worktree's git metadata lives outside the writable workspace. The files are untracked on `pkg/eval` and ready to stage:
 
 ```sh
 git add RESULT.md eval/README.md eval/run.py eval/table.py eval/test_eval.py eval/sample/manifest.json

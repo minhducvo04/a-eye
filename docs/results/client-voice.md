@@ -13,7 +13,7 @@ Browser talk-back module for the call page: mic speech-to-text, `speechSynthesis
 
 No real microphone was tested. Safari was not tested. iOS audio unlock is covered only by a fake suspended `AudioContext`. Web Speech auto-restart is the synchronous `onend` path with a fake recognizer. Echo rejection is a word-containment check, not acoustic echo cancellation. Use headphones so speaker playback does not look like the user talking. Whisper on the PC is not in this package.
 
-Commit did not happen. `git add` cannot create `index.lock` in `/Users/minhducvo/Projects/a-eye/.git/worktrees/client-voice` from this session (operation not permitted). The four files above are saved and unstaged.
+Commit did not happen. `git add` cannot create `index.lock` in `$HOME/Projects/a-eye/.git/worktrees/client-voice` from this session (operation not permitted). The four files above are saved and unstaged.
 
 ## Test
 

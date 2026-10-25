@@ -44,13 +44,13 @@ Test: `node --test client-web/trigger.test.mjs` - PASS (3 tests, 3 pass, 0 fail)
 
 Test: `node --test client-web/` - PASS (141 tests, 141 pass, 0 fail).
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest server/test_trigger.py scripts/test_wake_bridge.py -q` - PASS (5 passed in 0.88s).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest server/test_trigger.py scripts/test_wake_bridge.py -q` - PASS (5 passed in 0.88s).
 
 The regression executes the actual `startTrigger` function with stubbed mic and speech boundaries; it does not prove physical microphone or speaker behavior. Changes remain uncommitted.
 
 ### Original implementation checks
 
-Python executable: `/Users/minhducvo/Projects/a-eye/.venv/bin/python` (shared existing environment).
+Python executable: `$HOME/Projects/a-eye/.venv/bin/python` (shared existing environment).
 
 Test: `<python> -m pytest server/test_trigger.py scripts/test_wake_bridge.py server/test_access.py server/test_identity.py -q` - PASS (**35 passed, 2 warnings in 1.13s**). Warnings come from existing short synthetic JWT keys in identity tests.
 

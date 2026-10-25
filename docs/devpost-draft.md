@@ -95,7 +95,7 @@ A-eye has no face recognition and does not identify people.
 ## Accomplishments that we're proud of
 
 - The trained router scored 96% on our 100-question held-out set, at 43 ms on the Mac CPU and $0 per call.
-  The same agent wrote the generation prompt and held-out labels; these were not Duc's questions.
+  The same agent wrote the generation prompt and held-out labels; these were not the team's questions.
 - Local memory found the keys in a later call in 751 ms, using synthetic frames and real local vision.
 - The TwelveLabs training opt-out is done. The owner also submitted Cartesia's training opt-out form.
   Both apply going forward, not to earlier data.
@@ -116,7 +116,7 @@ A-eye has no face recognition and does not identify people.
 - Privacy words must match the code. We wrote down exactly what leaves our machines and fixed the gaps we found.
 - A small trained router came close to Claude Haiku at picking the route (96% against 97% on our held-out
   set of 100 questions), in 43 ms instead of 803 ms, with no API charge. The same agent wrote the generation
-  prompt and held-out labels. These were not Duc's questions.
+  prompt and held-out labels. These were not the team's questions.
 
 ## What's next
 
@@ -196,7 +196,7 @@ when only Rewind is attached.
 <!--
 Sources for claims and numbers in this draft:
 - Router 96%, Haiku 97%, 100 held-out questions, 43 ms vs 803 ms, Mac CPU, $0 router calls, and the same-agent
-  labels caveat (not Duc's lines): docs/results/router-train.md. Its unwired status is superseded by
+  labels caveat (not the team's lines): docs/results/router-train.md. Its unwired status is superseded by
   docs/results/demo-rehearsal.md, "Router first, and ten more runs". Off unless ROUTER=on: docs/privacy.md.
 - 1008 ms (about 1 second) to initial audio, synthetic speech, partial STT, Sonic 3.6, socket/context and
   cancellation: README.md, "Voice: Cartesia", and docs/voice-options.md.

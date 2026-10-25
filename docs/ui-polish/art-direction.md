@@ -143,7 +143,7 @@ Not verified by this review: motion, reduced motion, touch, Safari, the Expert b
 
 | Review fix | Done | Evidence |
 |---|---|---|
-| 1 Privacy sentences | Reworded to what the code does: first run "Video is not saved unless you turn on Rewind or the memory aid."; Settings foot now says the cloud model may see a small crop outside Private mode; Private mode text in plain words. Private on by default is a product call for Duc, not changed. | `after-picker-*.jpg`, `after-settings*.jpg` |
+| 1 Privacy sentences | Reworded to what the code does: first run "Video is not saved unless you turn on Rewind or the memory aid."; Settings foot now says the cloud model may see a small crop outside Private mode; Private mode text in plain words. Private on by default is a product call for the team, not changed. | `after-picker-*.jpg`, `after-settings*.jpg` |
 | 2 Badges | Real states captured: Private mode switched on in Settings (Rewind locks off, so no Rewind badge), Expert from a real `turn` stage `expert` message. The earlier crop with Private beside Rewind on was a forced DOM state and is removed. Memory count gets the same thin edge. | `after-private-*.jpg`, `after-expert-*.jpg` |
 | 3 Camera off | White text with a small amber dot, no orange; copy "The camera is not available. You can use your phone or a photo from Settings." (inline button not added) | `after-camera-off-*.jpg` |
 | 4 Memory mode | Rewind bar button and Rewind starter chip hidden in Memory mode; one filled button (mic). Typed bar kept on purpose (noisy demo hall). | `after-memory-*.jpg` |
@@ -231,7 +231,7 @@ at 4531e2a; the tip 420ca71 only merges main (client-web/memory.js, server memor
 so no recapture is needed for styling, but nothing was captured on 420ca71 itself.
 
 **Verdict: SIGN-OFF WITH NOTES. Overall 8.1.** Fixes 1 to 4 from the re-review are visible in the images. Nothing
-left blocks showing Duc.
+left blocks showing the team.
 
 | Fix | Seen? | Evidence |
 |---|---|---|
@@ -260,11 +260,11 @@ left blocks showing Duc.
 | Projector readiness | 8 | Picker and call both fine at 1920. |
 | Overall | 8.1 | |
 
-Notes (polish, none block showing Duc):
+Notes (polish, none block showing the team):
 1. Privacy line for Home: the memory aid saves 224 px picture crops of tagged objects (builder, citing
    docs/results/memory-aid.md). "Video is not saved unless you turn on Rewind or the memory aid" is true, but a
    reader may think the memory aid keeps video. Suggest "Video and pictures are not saved unless you turn on Rewind or
-   the memory aid." Private mode off by default stays Duc's product call.
+   the memory aid." Private mode off by default stays the team's product call.
 2. "soon" labels under the ring are small and dim at 1280; measure contrast or lift one step.
 3. "keys -> blue bowl" input syntax and voice names ("Kokoro af_kore") are still technical (other modules).
 4. General mode pill is mono while Memory is sans; fine, but one font everywhere would be cleaner.

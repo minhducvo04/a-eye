@@ -36,7 +36,7 @@ Dangerous false-**closed** results first: **Qwen stand-in: 0; embedding stand-in
 Executed:
 
 ```sh
-/Users/minhducvo/Projects/a-eye/.venv/bin/python scripts/step_check_eval.py --synthetic --report /private/tmp/step-check-synthetic.json
+$HOME/Projects/a-eye/.venv/bin/python scripts/step_check_eval.py --synthetic --report /private/tmp/step-check-synthetic.json
 ```
 
 The fixture draws 12 prop-valve images in an automatically deleted temporary directory. Qwen uses a deterministic HTTP transport stand-in; the embedding method uses deterministic image features. Both exercise the real checker wrapper. Fixed seed: `20261024`; tune: 6 (two references, four scored); held-out: 6.
@@ -71,7 +71,7 @@ Keep all human photos outside the repository and coding-agent context. Supply 20
 After the local Qwen service and compatible encoder weights are provisioned, run from this worktree:
 
 ```sh
-OLLAMA_URL=http://100.93.176.7:11434 STEP_CHECK_ENCODER="$HOME/a-eye-private/models/clip-vit-base-patch32-vision.onnx" /Users/minhducvo/Projects/a-eye/.venv/bin/python scripts/step_check_eval.py "$HOME/a-eye-private/valves" --report "$HOME/a-eye-private/valve-eval.json"
+OLLAMA_URL=http://<PC_TAILSCALE_IP>:11434 STEP_CHECK_ENCODER="$HOME/a-eye-private/models/clip-vit-base-patch32-vision.onnx" $HOME/Projects/a-eye/.venv/bin/python scripts/step_check_eval.py "$HOME/a-eye-private/valves" --report "$HOME/a-eye-private/valve-eval.json"
 ```
 
 This produces a stratified fixed-seed 20/20 split. The first tune image of each class supplies a reference; the other 18 tune images select among confidence thresholds 0.9/0.95/0.99. Both thresholds are frozen **before either method sees any held-out image**. Nothing trains or tunes on held-out images. Hashes record split membership without copying photos. Latency includes preprocessing, reference encoding and inference; p50 is the median, p95 nearest rank, cold calls included.
@@ -84,13 +84,13 @@ The operator can set `STEP_CHECK_CONFIG` to the resulting real JSON report for n
 
 Tests first: the new checker test initially failed collection because `server.step_check` did not exist. Final targeted tests cover strict parsing, local-only destinations, errors/timeouts/staleness, cancellation, positive/negative home-flow controls, consent/encryption/isolation, picture accounting, split separation and activation guards.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_step_check.py scripts/test_step_check_eval.py server/test_home_pack.py server/test_home_safety.py server/test_agent.py server/test_proof_wall.py` - PASS (**65 passed in 1.04s**).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server/test_step_check.py scripts/test_step_check_eval.py server/test_home_pack.py server/test_home_safety.py server/test_agent.py server/test_proof_wall.py` - PASS (**65 passed in 1.04s**).
 
 The first sandboxed full suite reported **1 failed, 829 passed, 2 warnings, 4 errors in 40.41s**; all five failures were localhost bind permission errors. The five-test localhost rerun passed (**5 passed in 16.06s**). The subsequent full run found one isolated JS auth-test fixture missing the new valve-card dependency (**1 failed, 835 passed, 2 warnings in 71.09s**). `server/test_access.py` now supplies that dependency and asserts it is cleared; its existing auth assertions remain intact.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_access.py::test_4401_stops_retries_and_offers_reload` - PASS (**1 passed in 0.56s**).
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q server/test_access.py::test_4401_stops_retries_and_offers_reload` - PASS (**1 passed in 0.56s**).
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q` - PASS with localhost access (**836 passed, 2 warnings in 67.51s (0:01:07)**). This is a single green final full-suite invocation. Both warnings concern existing short synthetic JWT keys in identity tests.
+Test: `$HOME/Projects/a-eye/.venv/bin/python -m pytest -q` - PASS with localhost access (**836 passed, 2 warnings in 67.51s (0:01:07)**). This is a single green final full-suite invocation. Both warnings concern existing short synthetic JWT keys in identity tests.
 
 Test: `node --test client-web/` - PASS (**tests 145; pass 145; fail 0; skipped 0**, final run 1176.210792 ms). Includes actual call-page module event wiring and disconnect cleanup, with a DOM fixture; no browser screenshot was taken.
 

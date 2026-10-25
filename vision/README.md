@@ -54,7 +54,7 @@ is added to health. HTTP errors and malformed model answers do not trigger demo
 fallback. Auto mode inherits the fake backend's canned passing verdicts, so its
 results are for demos, not physical connection assurance.
 
-`OLLAMA_URL` defaults to `http://100.93.176.7:11434`. Model routing:
+`OLLAMA_URL` defaults to `http://127.0.0.1:11434`. Model routing:
 
 | Environment variable | Default | Calls |
 | --- | --- | --- |

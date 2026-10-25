@@ -27,7 +27,7 @@ def key():
 def access(monkeypatch, key):
     monkeypatch.setenv('A_EYE_MOCK', '1')
     monkeypatch.delenv('A_EYE_TOKEN', raising=False)
-    monkeypatch.setenv('CF_ACCESS_TEAM_DOMAIN', 'team.cloudflareaccess.com')
+    monkeypatch.setenv('CF_ACCESS_TEAM_DOMAIN', 'team.example.test')
     monkeypatch.setenv('CF_ACCESS_AUD', 'application')
     calls, now = [], [0.0]
     jwk = jwt.algorithms.RSAAlgorithm.to_jwk(key.public_key(), as_dict=True)
@@ -41,7 +41,7 @@ def access(monkeypatch, key):
 
 
 def token(key, **overrides):
-    claims = dict(iss='https://team.cloudflareaccess.com', aud=['application'],
+    claims = dict(iss='https://team.example.test', aud=['application'],
                   exp=int(time.time()) + 300, iat=int(time.time()), email='synthetic@example.test')
     claims.update(overrides)
     return jwt.encode(claims, key, algorithm='RS256', headers={'kid': 'known'})
@@ -50,7 +50,7 @@ def token(key, **overrides):
 @pytest.mark.parametrize('source', ['header', 'cookie'])
 @pytest.mark.parametrize('scheme', ['', 'https://'])
 def test_valid(access, key, source, scheme, monkeypatch, capsys):
-    monkeypatch.setenv('CF_ACCESS_TEAM_DOMAIN', scheme + 'team.cloudflareaccess.com')
+    monkeypatch.setenv('CF_ACCESS_TEAM_DOMAIN', scheme + 'team.example.test')
     encoded = token(key)
     headers = {'Cf-Access-Jwt-Assertion': encoded} if source == 'header' else {'Cookie': 'CF_Authorization=' + encoded}
     with TestClient(create_app()) as client:
@@ -63,7 +63,7 @@ def test_valid(access, key, source, scheme, monkeypatch, capsys):
     rows = [json.loads(line) for line in output.splitlines()]
     assert any(row.get('user') == hashlib.sha256(b'synthetic@example.test').hexdigest()[:12]
                and row['event'] == 'auth_access' for row in rows)
-    assert access[0] == ['https://team.cloudflareaccess.com/cdn-cgi/access/certs']
+    assert access[0] == ['https://team.example.test/cdn-cgi/access/certs']
 
 
 @pytest.mark.parametrize('case,reason', [('aud', 'wrong_aud'), ('iss', 'bad_jwt'),

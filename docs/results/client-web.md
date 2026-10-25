@@ -22,4 +22,4 @@ Safari call page skeleton. Static files only (no build, no npm). Messages follow
 
 Test: node --test client-web/ - PASS (4 pass, 0 fail, 0 skipped)
 
-Commit: not created. `git add` failed with `Unable to create '/Users/minhducvo/Projects/a-eye/.git/worktrees/client-web/index.lock': Operation not permitted`. The files above are in the worktree and unstaged.
+Commit: not created. `git add` failed with `Unable to create '$HOME/Projects/a-eye/.git/worktrees/client-web/index.lock': Operation not permitted`. The files above are in the worktree and unstaged.

@@ -104,7 +104,7 @@ GATES = (
          _re(r"\b(is|it's|that's|are)\s+(\w+\s+)?" + _OK + r"\b|\byou can (mix|combine|use them together)\b|"
              r"\bsafe to (mix|combine|use together)\b"),
          "Don't mix them. Bleach with ammonia, vinegar or other acids makes a toxic gas. If you already did, "
-         "leave the room, open a window on your way out, and call Poison Control at 1-800-222-1222."),
+         "leave the room, open a window on your way out, and call Poison Control at your local poison control service."),
 )
 
 LINES = {gate.line for gate in GATES}

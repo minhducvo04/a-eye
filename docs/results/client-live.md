@@ -32,4 +32,4 @@ Safari live camera mode on the static call page. No build step and no npm packag
 
 Test: node --test client-web/ - PASS (16 pass, 0 fail, 0 skipped)
 
-Commit: not created. `git add` failed with `Unable to create '/Users/minhducvo/Projects/a-eye/.git/worktrees/client-live/index.lock': Operation not permitted`. The files above are in the worktree and unstaged. Nothing was pushed.
+Commit: not created. `git add` failed with `Unable to create '$HOME/Projects/a-eye/.git/worktrees/client-live/index.lock': Operation not permitted`. The files above are in the worktree and unstaged. Nothing was pushed.

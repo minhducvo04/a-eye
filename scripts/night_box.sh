@@ -1,13 +1,18 @@
 #!/bin/bash
 # Unattended overnight run on the GPU box (WSL), 2026-10-24. Every stage has a clock deadline; the app's models
 # are restored and warmed at the end no matter what (and again by the 07:25 Windows task "A-eye restore").
-# Results: C:\kyra-work\aeye-night (status.txt, *.jsonl, logs). Never touches the app's model tags.
+# Results: $PC_WORK_DIR/aeye-night (status.txt, *.jsonl, logs). Never touches the app's model tags.
 set -u
-export PATH=$HOME/.local/bin:$PATH OLLAMA_URL=http://100.93.176.7:11434 PYTHONUNBUFFERED=1
+: "${PC_WORK_DIR:?Set PC_WORK_DIR to the WSL work directory}"
+: "${PC_WINDOWS_MODELS_DIR:?Set PC_WINDOWS_MODELS_DIR to the Windows model directory}"
+: "${OLLAMA_URL:?Set OLLAMA_URL to your local Ollama service URL}"
+: "${OLLAMA_EXE:?Set OLLAMA_EXE to the WSL path of ollama.exe}"
+: "${WSL_SETUP_SCRIPT:?Set WSL_SETUP_SCRIPT to your local setup script}"
+export PATH=$HOME/.local/bin:$PATH OLLAMA_URL PYTHONUNBUFFERED=1
 export UV_HTTP_TIMEOUT=900 UV_CONCURRENT_DOWNLOADS=3
-REPO=~/aeye/a-eye; R=/mnt/c/kyra-work/aeye-night; mkdir -p $R
+REPO=~/aeye/a-eye; R="$PC_WORK_DIR/aeye-night"; mkdir -p $R
 APP=~/aeye/appvenv/bin/python; ML=~/aeye/.venv/bin/python
-OL=/mnt/c/Users/tomdu/AppData/Local/Programs/Ollama/ollama.exe
+OL="$OLLAMA_EXE"
 cd $REPO
 at() { date -d "today $1" +%s; }
 left() { echo $(( $(at $1) - $(date +%s) )); }
@@ -36,7 +41,7 @@ say "night start"
 say "app venv ready: $($APP -c 'import httpx;print("ok")' 2>&1)"
 
 # 2. Background prep: training venv (torch, unsloth, speech) then the Qwen3.5-9B base weights.
-( bash /mnt/c/Users/tomdu/wsl_setup.sh >> $R/setup.log 2>&1; say "ml venv: $($ML -c 'import torch;print(torch.__version__, torch.cuda.is_available())' 2>&1 | tail -1)"
+( bash "$WSL_SETUP_SCRIPT" >> $R/setup.log 2>&1; say "ml venv: $($ML -c 'import torch;print(torch.__version__, torch.cuda.is_available())' 2>&1 | tail -1)"
   uvx --from "huggingface_hub[cli]" hf download Qwen/Qwen3.5-9B --local-dir ~/aeye/models/Qwen3.5-9B >> $R/download.log 2>&1
   du -sh ~/aeye/models/Qwen3.5-9B > ~/aeye/weights.done; say "weights: $(cat ~/aeye/weights.done)" ) &
 PREP=$!
@@ -77,10 +82,10 @@ fi
 
 # 5. Export to a NEW Ollama tag (never the app's qwen3.5:9b-q4_K_M).
 if [ $TRAINED = 1 ] && [ $(left 06:50) -gt 0 ]; then
-  rm -rf /mnt/c/kyra-work/models/qwen-aeye-talk-9b && cp -r ~/aeye/out/qwen-aeye-talk-9b /mnt/c/kyra-work/models/
-  $OL show qwen3.5:9b-q4_K_M --modelfile | grep -v '^FROM ' > /mnt/c/kyra-work/models/Modelfile.talk.tmp
-  { echo 'FROM C:\kyra-work\models\qwen-aeye-talk-9b'; cat /mnt/c/kyra-work/models/Modelfile.talk.tmp; } > /mnt/c/kyra-work/models/Modelfile.talk
-  timeout $(left 06:50) $OL create qwen-aeye-talk:9b --quantize q4_K_M -f 'C:\kyra-work\models\Modelfile.talk' > $R/export.log 2>&1
+  rm -rf "$PC_WORK_DIR/models/qwen-aeye-talk-9b" && cp -r ~/aeye/out/qwen-aeye-talk-9b "$PC_WORK_DIR/models/"
+  "$OL" show qwen3.5:9b-q4_K_M --modelfile | grep -v '^FROM ' > "$PC_WORK_DIR/models/Modelfile.talk.tmp"
+  { echo "FROM $PC_WINDOWS_MODELS_DIR\qwen-aeye-talk-9b"; cat "$PC_WORK_DIR/models/Modelfile.talk.tmp"; } > "$PC_WORK_DIR/models/Modelfile.talk"
+  timeout $(left 06:50) "$OL" create qwen-aeye-talk:9b --quantize q4_K_M -f "$PC_WINDOWS_MODELS_DIR\Modelfile.talk" > $R/export.log 2>&1
   say "export exit $? ($(tail -1 $R/export.log | cut -c1-160))"
 fi
 
