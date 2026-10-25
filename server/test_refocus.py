@@ -145,10 +145,12 @@ def test_multimeter_fresh_power_observation_revokes_confirmation():
 
 def test_home_opt_in_and_speech_guards(monkeypatch):
     from server import packs, safety
-    from server.task_scope import SCOPE_LINE
     assert packs.get('home').id == 'general'
-    assert packs.get('general').guard('Show the sink.') == SCOPE_LINE
+    # Scope is a user-input response, not a speech or observation safety rule.
+    assert packs.get('general').guard('Show the sink.') == 'Show the sink.'
+    assert packs.get('general').refuse('A cabinet door and a valve.') is None
     assert packs.get('general').refuse('water near an outlet') in safety.LINES
+    assert packs.get('general').guard('water near an outlet') in safety.LINES
     monkeypatch.setenv('HOME_TASKS', '1')
     assert packs.get('home').id == 'home'
     for text, task in [('fix the sink', 'sink'), ('cabinet hinge', 'hinge'), ('tripped breaker', 'breaker')]:
@@ -173,4 +175,64 @@ def test_home_does_not_start_by_default(monkeypatch, text):
         messages = await run_turn(session, text, vision=None, llm=None)
         assert session.home_guide is None
         assert any(m['type'] == 'say' and 'electronics' in m['text'] for m in messages)
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('typed', [False, True])
+def test_scope_reply_does_not_mute_next_live_question(monkeypatch, typed):
+    from server.task_scope import SCOPE_LINE
+    from server.test_live_streaming import audio_content
+
+    async def trial():
+        bridge, emitted, fixed, wire = bridge_for(monkeypatch)
+        if typed:
+            assert await bridge.text('fix the faucet')
+        else:
+            await bridge.handle({'serverContent': {'inputTranscription': {'text': 'fix the faucet'}}})
+        assert fixed == [SCOPE_LINE]
+        assert not bridge.safety_stopped and bridge.safety_line is None
+        # A late mic chunk, completion and interruption acknowledgement cannot play the rejected reply.
+        await bridge.audio('AAA=', final=True)
+        await bridge.handle(audio_content('Here is how to fix it.', turnComplete=True))
+        await bridge.handle({'serverContent': {'interrupted': True}})
+        await bridge.handle(audio_content('Stale reply.', turnComplete=True))
+        assert not any(m['type'] in ('audio', 'reply_delta') for m in emitted)
+        question = 'What can you see?'
+        if typed:
+            assert await bridge.text(question)
+            assert wire[-1]['realtimeInput']['text'] == question
+        else:
+            await bridge.audio('AAA=')
+            await bridge.handle({'serverContent': {'inputTranscription': {'text': question}}})
+        assert bridge.question == question and not bridge.blocked
+        await bridge.handle(audio_content('It is blue.', turnComplete=True))
+        assert any(m['type'] == 'audio' and m.get('pcm16_b64') for m in emitted)
+        assert any(m['type'] == 'reply_delta' and m['text'] == 'It is blue.' for m in emitted)
+        assert fixed == [SCOPE_LINE]
+    asyncio.run(trial())
+
+
+@pytest.mark.parametrize('caption', ['A cabinet door behind the desk.', 'A valve beside the desk.'])
+def test_home_scene_caption_and_live_speech_do_not_stop_live(monkeypatch, caption):
+    from server import context_agent
+    from server.test_live_streaming import audio_content
+
+    async def assess(session, evidence):
+        assert caption in evidence
+        return {'context': caption, 'hazard': ''}
+
+    monkeypatch.setattr(context_agent, 'assess_live_context', assess)
+
+    async def trial():
+        bridge, emitted, fixed, wire = bridge_for(monkeypatch)
+        bridge.session.scene = {'caption': caption, 'objects': []}
+        builder = context_agent.LiveContextBuilder(bridge.session, bridge.publish_context, bridge.stop,
+                                                   lambda text: bridge.stop_line(text, True))
+        await builder.build()
+        assert builder.block and caption in builder.block
+        assert wire and not bridge.blocked and not bridge.safety_stopped and not fixed
+        await bridge.handle(audio_content(caption, turnComplete=True))
+        assert any(m['type'] == 'audio' and m.get('pcm16_b64') for m in emitted)
+        assert any(m['type'] == 'reply_delta' and m['text'] == caption for m in emitted)
+        assert not fixed and not bridge.safety_stopped
     asyncio.run(trial())
