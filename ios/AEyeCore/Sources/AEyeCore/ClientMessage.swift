@@ -5,7 +5,7 @@ import Foundation
 public enum ClientMessage {
     private static let version = 2
 
-    public static func hello(sessionId: String, pack: String) -> Data {
+    public static func hello(sessionId: String, pack: String, serverAudio: Bool = false, privateMode: Bool = false) -> Data {
         encode(HelloPayload(
             v: version,
             type: "hello",
@@ -13,7 +13,9 @@ public enum ClientMessage {
             pack: pack,
             boardId: pack == "pc_build" ? Tuning.demoBoardId : nil,
             client: "ios",
-            tts: "browser"
+            tts: serverAudio ? "server" : "browser",
+            stt: serverAudio ? "server" : nil,
+            privateMode: privateMode ? true : nil
         ))
     }
 
@@ -56,9 +58,12 @@ private struct HelloPayload: Encodable {
     let boardId: String?
     let client: String
     let tts: String
+    let stt: String?
+    let privateMode: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case v, type, pack, client, tts
+        case v, type, pack, client, tts, stt
+        case privateMode = "private"
         case sessionId = "session_id"
         case boardId = "board_id"
     }

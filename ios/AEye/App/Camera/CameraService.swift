@@ -17,6 +17,7 @@ nonisolated final class CaptureRig: NSObject, AVCaptureVideoDataOutputSampleBuff
     private let sampleQueue = DispatchQueue(label: "aeye.capture.samples")
     private let lock = NSLock()
     private var newestBuffer: CVPixelBuffer?
+    private var newestAt = Date.distantPast
     private var isConfigured = false  // only touched on sessionQueue
 
     func start() {
@@ -40,12 +41,13 @@ nonisolated final class CaptureRig: NSObject, AVCaptureVideoDataOutputSampleBuff
     func latestBuffer() -> CVPixelBuffer? {
         lock.lock()
         defer { lock.unlock() }
-        return newestBuffer
+        return Date().timeIntervalSince(newestAt) <= 1.5 ? newestBuffer : nil
     }
 
     private func storeBuffer(_ buffer: CVPixelBuffer?) {
         lock.lock()
         newestBuffer = buffer
+        newestAt = Date()
         lock.unlock()
     }
 
@@ -119,13 +121,13 @@ final class CameraService: NSObject, ObservableObject {
     }
 
     /// The newest camera frame scaled to the wire size and JPEG-encoded. Memory only.
-    func latestJPEG() -> (data: Data, width: Int, height: Int)? {
+    func latestJPEG(maxSide: Int = 640) -> (data: Data, width: Int, height: Int)? {
         guard let pixelBuffer = rig.latestBuffer() else { return nil }
 
         let source = CIImage(cvPixelBuffer: pixelBuffer)
         let sourceWidth = Int(source.extent.width)
         let sourceHeight = Int(source.extent.height)
-        let target = frameSize(width: sourceWidth, height: sourceHeight)
+        let target = frameSize(width: sourceWidth, height: sourceHeight, maxSide: maxSide)
         guard target.width > 0, target.height > 0 else { return nil }
 
         let scale = CGAffineTransform(scaleX: CGFloat(target.width) / CGFloat(sourceWidth),

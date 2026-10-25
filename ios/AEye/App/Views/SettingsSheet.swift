@@ -1,7 +1,7 @@
 import AEyeCore
 import SwiftUI
 
-/// Server address and connection status. Nothing else.
+/// Server address, cloud consent and connection status.
 struct SettingsSheet: View {
     @Bindable var controller: CallController
     @Environment(\.dismiss) private var dismiss
@@ -34,12 +34,21 @@ struct SettingsSheet: View {
                     Text("Only needed when the server was started with A_EYE_TOKEN, for example over Tailscale. Kept in the Keychain.")
                 }
 
+                Section {
+                    Toggle("Gemini Live (Google)", isOn: $controller.googleConsent)
+                    Toggle("Private mode", isOn: $controller.privateMode)
+                } header: {
+                    Text("Cloud consent")
+                } footer: {
+                    Text("Gemini Live sends microphone audio and downscaled camera video through your server to Google. Private mode blocks cloud services. Changing consent ends the active Live call; changing Private mode ends the current call. Start a new call to apply your choice.")
+                }
+
                 Section("Connection") {
                     Text(status)
                 }
 
                 Section {
-                    Text("Camera frames go only to this server and are not saved on the phone.")
+                    Text("Camera frames and audio are not saved on the phone. In Gemini Live, your server forwards them to Google only with your consent.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

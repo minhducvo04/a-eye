@@ -1,5 +1,6 @@
 import AEyeCore
 import Foundation
+import AVFoundation
 import Observation
 
 /// Runs one call: owns the socket, the frame timer, spoken replies and the `CallState` the views render.
@@ -8,6 +9,25 @@ import Observation
 @MainActor
 @Observable
 final class CallController {
+    var googleConsent = UserDefaults.standard.bool(forKey: "geminiLiveGoogle") {
+        didSet {
+            UserDefaults.standard.set(googleConsent, forKey: "geminiLiveGoogle")
+            if oldValue != googleConsent, isLive { end() }
+        }
+    }
+    var privateMode = UserDefaults.standard.bool(forKey: "privateMode") {
+        didSet {
+            UserDefaults.standard.set(privateMode, forKey: "privateMode")
+            if oldValue != privateMode, mode != nil { end() }
+        }
+    }
+    var isLive: Bool { mode?.id == "gemini-live" }
+    var liveAllowed: Bool { googleConsent && !privateMode }
+    let liveAudio = LiveAudio()
+    var isMuted: Bool { isLive ? liveAudio.isMuted : listener.isMuted }
+    @ObservationIgnored private var isAudioInFlight = false
+    @ObservationIgnored private var pendingAudioFinal = false
+
     private static let serverURLKey = "serverURL"
 
     private(set) var state = CallState.initial
@@ -95,14 +115,15 @@ final class CallController {
     // MARK: - Call lifecycle
 
     func start(_ mode: Mode) {
-        guard self.mode == nil, mode.isAvailable, socketURL != nil else { return }
+        guard self.mode == nil, mode.isAvailable, socketURL != nil,
+              mode.id != "gemini-live" || liveAllowed else { return }
         self.mode = mode
         state = .initial
         isHomeStartPending = mode.pack == Modes.homePack
         sessionId = UUID().uuidString
         callStartedAt = Date()
         speech.prepareAudioSession()
-        connect()
+        if !isLive { connect() }
         startFrameLoop()
         beginListening()
     }
@@ -110,6 +131,9 @@ final class CallController {
     func end() {
         listenToken += 1
         listener.stop()
+        liveAudio.stop()
+        isAudioInFlight = false
+        pendingAudioFinal = false
         resetUtterance()
         inputMode = .typed
         isInputResolved = false
@@ -156,11 +180,17 @@ final class CallController {
 
     func toggleCamera() {
         isCameraOn.toggle()
+        if isSocketOpen { socket?.send(ClientMessage.camera(sessionId: sessionId, on: isCameraOn)) { _ in } }
     }
 
     /// Mic button: stops or restarts the audio tap. Does nothing in typed mode.
     func toggleMute() {
         guard inputMode == .voice else { return }
+        if isLive {
+            do { try liveAudio.toggleMute() }
+            catch { listeningFailed() }
+            return
+        }
         listener.setMuted(!listener.isMuted)
         resetUtterance()  // muting drops any half-heard utterance
     }
@@ -174,6 +204,10 @@ final class CallController {
         let token = listenToken
         inputMode = .typed
         isInputResolved = false
+        if isLive {
+            beginLiveAudio(token: token)
+            return
+        }
         Task { [weak self] in
             let granted = await SpeechIn.authorize()
             guard let self, token == self.listenToken, self.mode != nil else { return }
@@ -196,6 +230,49 @@ final class CallController {
                 if !didStart { inputMode = .typed }
             }
             isInputResolved = true
+        }
+    }
+
+    private func beginLiveAudio(token: Int) {
+        Task { [weak self] in
+            let granted = await AVAudioApplication.requestRecordPermission()
+            guard let self, token == self.listenToken, self.isLive, self.liveAllowed else { return }
+            self.liveAudio.onPlaybackFinished = { [weak self] in
+                guard let self, self.isLive else { return }
+                self.apply(.server(.agentState(agent: .helper, state: .listening)))
+            }
+            self.liveAudio.onFailure = { [weak self] in
+                self?.listeningFailed()
+                self?.state.errorText = "Audio route changed. End and restart the call to restore the microphone."
+            }
+            do {
+                try self.liveAudio.start(microphone: granted) { [weak self] pcm, final in
+                    self?.sendAudio(pcm, final: final)
+                }
+                self.inputMode = granted ? .voice : .typed
+            } catch {
+                self.liveAudio.stop()
+                self.inputMode = .typed
+                self.state.errorText = "Microphone unavailable. You can type instead."
+            }
+            self.isInputResolved = true
+            self.connect()
+        }
+    }
+
+    private func sendAudio(_ pcm: Data, final: Bool) {
+        guard isLive, liveAllowed, isSocketOpen, let socket else { return }
+        pendingAudioFinal = pendingAudioFinal || final
+        guard !isAudioInFlight else { return }
+        seq += 1
+        let message = ClientMessage.audioIn(sessionId: sessionId, seq: seq, pcm: pcm, final: pendingAudioFinal)
+        pendingAudioFinal = false
+        isAudioInFlight = true
+        let current = generation
+        socket.send(message) { [weak self] _ in
+            guard let self, self.generation == current else { return }
+            self.isAudioInFlight = false
+            if self.pendingAudioFinal { self.sendAudio(Data(), final: true) }
         }
     }
 
@@ -255,7 +332,8 @@ final class CallController {
     // MARK: - Socket
 
     private func connect() {
-        guard let mode, mode.pack != nil, let url = socketURL else { return }
+        guard let mode, mode.pack != nil, let base = socketURL,
+              let url = LiveConfiguration.url(base, live: isLive, google: googleConsent, privateMode: privateMode) else { return }
         generation += 1
         let thisGeneration = generation
         socket?.close()
@@ -273,13 +351,26 @@ final class CallController {
         guard socketGeneration == generation, let pack = mode?.pack, let socket else { return }
         isSocketOpen = true
         apply(.connected)
-        socket.send(ClientMessage.hello(sessionId: sessionId, pack: pack)) { _ in }
+        socket.send(ClientMessage.hello(sessionId: sessionId, pack: pack, serverAudio: isLive, privateMode: privateMode)) { _ in }
+        socket.send(ClientMessage.camera(sessionId: sessionId, on: isCameraOn)) { _ in }
     }
 
     private func socketDidReceive(_ data: Data, _ socketGeneration: Int) {
         guard socketGeneration == generation, let message = ServerMessage.decode(data) else { return }
         apply(.server(message))
-        if case .say(_, let utteranceId, let text) = message, !text.isEmpty {
+        if isLive {
+            if let text = LiveConfiguration.transcript(data) { liveAudio.interim = text }
+            switch message {
+            case .audio(let audio):
+                do { try liveAudio.play(audio) }
+                catch { state.errorText = "Audio playback unavailable." }
+            case .agentState(_, .listening): liveAudio.stopPlayback()
+            case .turn(_, .cancelled, _, _): liveAudio.stopPlayback()
+            case .say: liveAudio.interim = ""
+            default: break
+            }
+        }
+        if !isLive, case .say(_, let utteranceId, let text) = message, !text.isEmpty {
             speech.speak(text: text, utteranceId: utteranceId)
         }
         if isHomeStartPending, case .agentState(_, .listening) = message {
@@ -293,6 +384,9 @@ final class CallController {
         socket = nil
         isSocketOpen = false
         isFrameInFlight = false
+        isAudioInFlight = false
+        pendingAudioFinal = false
+        liveAudio.stopPlayback()
         apply(.disconnected)
         scheduleReconnect()
     }
@@ -320,7 +414,7 @@ final class CallController {
     }
 
     private func sendFrameIfReady() {
-        guard isSocketOpen, isCameraOn, !isFrameInFlight, let socket, let jpeg = camera.latestJPEG() else { return }
+        guard isSocketOpen, isCameraOn, !isFrameInFlight, let socket, let jpeg = camera.latestJPEG(maxSide: isLive ? 320 : 640) else { return }
         seq += 1
         let message = ClientMessage.frame(
             sessionId: sessionId,

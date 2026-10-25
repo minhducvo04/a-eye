@@ -116,7 +116,7 @@ public struct CallState: Equatable {
             case .error(_, let errorMessage):
                 next.errorText = errorMessage
                 next.wait = nil
-            case .ignored:
+            case .audio, .ignored:
                 break
             }
         }
