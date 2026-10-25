@@ -154,6 +154,31 @@ class LiveBridge:
         self.audio_buffer = bytearray()
         self.rate = 24000
         self.blocked = False
+        self.stream_id = None  # utterance id once audio streaming starts
+        self.streamed = 0      # bytes of audio_buffer already sent
+
+    async def _stream_audio(self):
+        # Stream Live audio as it arrives instead of waiting for turn complete. Hold ~250 ms first so the
+        # opening transcript can pass the coded safety check; later hazards still cut via stop().
+        if self.blocked or self.closed:
+            return
+        hold = int(self.rate * 2 * 0.25)
+        if not self.stream_id:
+            if len(self.audio_buffer) < hold or self.stop_line(self.output, True):
+                return
+            self.stream_id = uuid4().hex
+            await self.stage('speaking', detail='Brain: Google / ' + self.model)
+            await self.send(state('speaking'))
+        end = len(self.audio_buffer) - (len(self.audio_buffer) - self.streamed) % 2
+        chunk = bytes(self.audio_buffer[self.streamed:end])
+        if self.rate == 24000:
+            usable = len(chunk) - len(chunk) % 6  # 3 source samples -> 2 output samples
+            chunk = chunk[:usable]
+        if not chunk:
+            return
+        self.streamed += len(chunk)
+        await self.send(message('audio', agent='helper', utterance_id=self.stream_id, sample_rate=16000,
+                                pcm16_b64=base64.b64encode(pcm16(chunk, self.rate)).decode(), final=False))
 
     async def stage(self, stage, **fields):
         await self.send(message('turn', turn_id=self.turn_id, stage=stage,
@@ -200,7 +225,7 @@ class LiveBridge:
                     'Use local memory tools only when requested. '
                     'Use recent_memory for questions about previous steps or observations, preserving the full time scope. '
                     'Never claim a memory is saved or deleted before a tool confirms it. '
-                    'Call gather_context before answering each spoken user question. ' + context_block,
+                    'Answer immediately; context is provided below and updated in the background. ' + context_block,
                     voice=self.session.persona.get('gemini_live_voice'))
             setup['tools'] = [{'functionDeclarations': declarations(self.rewind_on())}]
             await self._send({'setup': setup})
@@ -429,6 +454,7 @@ class LiveBridge:
                     self.audio_buffer.extend(base64.b64decode(blob['data'], validate=True))
                     if len(self.audio_buffer) > MAX_AUDIO:
                         raise ValueError('Live reply too long')
+                    await self._stream_audio()
         for call in response.get('toolCall', {}).get('functionCalls', []):
             try:
                 result = await self.tool(call)
@@ -453,7 +479,9 @@ class LiveBridge:
                     await self.stage('speaking', detail='Brain: Google / ' + self.model)
                     await self.send(state('speaking'))
                     await self.send(msg)
-                    pcm = pcm16(bytes(self.audio_buffer), self.rate)
+                    if self.stream_id:
+                        msg['utterance_id'] = self.stream_id
+                    pcm = pcm16(bytes(self.audio_buffer[self.streamed:]), self.rate) if self.stream_id else pcm16(bytes(self.audio_buffer), self.rate)
                     for offset in range(0, max(1, len(pcm)), 32000):
                         if self.blocked or self.closed:
                             break
