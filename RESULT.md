@@ -566,3 +566,36 @@ Proof: `/private/tmp/planner-live9-before.log`,
 Limits: no .env read, network access, real provider call, push or deployment.
 SDK accepts the request offline; live provider acceptance remains unverified.
 Details: [round 9 report](docs/results/planner-live.md).
+
+
+## planner-live10 — 2026-10-25
+
+Offline installed-SDK request verification confirms top-level required steps,
+2–8 array items, required say plus the existing show/safety fields, and 1200
+output tokens. JSON-string steps now decode before validation. Missing steps
+log only tool input top-level key names. The saved synthetic response has text
+before tool_use; real SDK parsing selects the tool and validates its plan.
+Safety gates, checker fixtures, retries and timeout remain unchanged.
+
+Files changed: `server/planner.py`, `server/test_planner.py`,
+`server/fixtures/planner_tool_use.json`, `docs/results/planner-live.md`, `RESULT.md`.
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py eval/swap/test_checker_regressions.py -k 'installed_sdk_request or submit_plan_schema or json_string_steps or sdk_one_call or production_checker_challenge_bank' --tb=short` - PASS
+(16 passed, 153 deselected in 0.77s; final source; summary read).
+Eight targeted cases failed before the fix. An intermediate full run caught an
+omitted-show acceptance regression; it was corrected without changing the
+challenge bank or weakening its assertions.
+
+Limits: no .env read, network access, real provider call, push, merge or deployment.
+The reported 5668 ms live rejection was not replayed. Its exact cause and live
+acceptance with 1200 tokens remain unverified. Local commit only.
+Details and logs: [planner-live report](docs/results/planner-live.md).
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL, final source
+(16 failed, 1288 passed, 2 warnings in 101.33s; exit 1; summary and failure traces
+read). All planner and checker tests pass. Fifteen failures are denied local
+socket binds (PermissionError); the remaining hazard-state KeyError follows
+Live startup PermissionError. These match the previously documented 16 failures.
+No network permissions were changed or retried outside the sandbox.
+Proof: `/private/tmp/planner-live10-final-full.log`.
+Test: `git diff --check` - PASS.

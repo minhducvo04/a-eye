@@ -23,7 +23,7 @@ PLAN_SCHEMA = {
     'type': 'object', 'additionalProperties': False, 'required': ['task', 'steps'],
     'properties': {
         'task': {'type': 'string', 'minLength': 3, 'maxLength': 120},
-        'steps': {'type': 'array', 'minItems': 1, 'maxItems': 8, 'items': {
+        'steps': {'type': 'array', 'minItems': 2, 'maxItems': 8, 'items': {
             'type': 'object', 'additionalProperties': False,
             'required': ['say', 'show', 'safety'],
             'properties': {
@@ -79,8 +79,8 @@ PLAN = (
     'State uncertainty when needed. Do not output separate research notes. '
     'Submit the guide using submit_plan with {"task": string, "steps": [{"say": string, "show": string, '
     '"target": string, "check": string, "safety": string}]}. Copy the supplied normalized task exactly. '
-    'Use 1 to 8 steps, each say 1 to 22 words. Other fields are at most 240 characters; target at most 80. '
-    'Keep all fields short so eight steps fit in 700 output tokens. '
+    'Use 2 to 8 steps, each say 1 to 22 words. Other fields are at most 240 characters; target at most 80. '
+    'Keep all fields short so eight steps fit in 1200 output tokens. '
     'show must be nonempty; target is at most four words. '
     'Give one safe action per step. show describes what to show; target is a visible object label or empty; '
     'check asks the user to inspect, never claims verification; safety gives a brief precaution or empty. '
@@ -216,6 +216,11 @@ def validate(value, task):
             or not isinstance(task, str) or not 3 <= len(task) <= 120):
         raise ValueError('schema')
     steps = value['steps']
+    if isinstance(steps, str):
+        try:
+            steps = json.loads(steps)
+        except ValueError:
+            raise ValueError('schema') from None
     if isinstance(steps, dict):
         steps = [steps]
     if not isinstance(steps, list) or not steps:
@@ -373,11 +378,14 @@ async def claude(system, evidence):
                    tool_choice=dict(type='tool', name='submit_plan'))
     # Anthropic 2.x no longer accepts temperature, even with forced tool output.
     response = await client.messages.create(
-        model=model, max_tokens=700, system=llm.cached_system(system),
+        model=model, max_tokens=1200, system=llm.cached_system(system),
         messages=[{'role': 'user', 'content': evidence}], **options)
     llm.usage_counts(response)
     for block in response.content:
         if block.type == 'tool_use' and block.name == 'submit_plan':
+            if isinstance(block.input, dict) and 'steps' not in block.input:
+                event('planner_tool_input', reason={'cause': 'missing_steps',
+                                                   'keys': sorted(block.input)})
             return block.input
     return ''.join(b.text for b in response.content if b.type == 'text')
 
