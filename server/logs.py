@@ -9,7 +9,7 @@ from urllib.parse import unquote_plus
 _FIELDS = {'turn_id', 'model', 'first_token_ms', 'total_ms', 'input_tokens', 'output_tokens',
            'cache_read_tokens', 'cache_creation_tokens', 'web_searches', 'web_search_errors',
            'cost_usd', 'search_cost', 'search_cost_excluded', 'pack', 'tts', 'stt', 'dependency', 'to', 'ms', 'vlm_ms',
-           'brain_first_token_ms', 'first_audio_ms', 'turn_ms', 'error', 'where', 'user', 'reason'}
+           'brain_first_token_ms', 'first_audio_ms', 'turn_ms', 'error', 'where', 'user', 'reason', 'code'}
 
 
 def event(name, session=None, level='info', **fields):
