@@ -27,6 +27,7 @@ from jsonschema import ValidationError
 from contracts import validate
 from market.search import search
 from server import ws2
+from server import accounts
 from server.expert import check_local_model
 from server.routing import warm_router
 from server.boards import load_board
@@ -44,6 +45,7 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None, *, pres
     async def lifespan(app):
         protect_transport_logs()
         warn_unconfigured()
+        cleanup = asyncio.create_task(accounts.cleanup_loop(app))
         warmup = None if app.state.mock else asyncio.create_task(ws2.warm_brain(app))
         if not app.state.mock:
             # Off the event loop: warn once at startup if the local expert model tag is missing on the box.
@@ -52,14 +54,17 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None, *, pres
         try:
             yield
         finally:
+            cleanup.cancel()
+            await asyncio.gather(cleanup, return_exceptions=True)
             if warmup:
                 warmup.cancel()
                 await asyncio.gather(warmup, return_exceptions=True)
 
     app = FastAPI(lifespan=lifespan)
     from server.limits import Limits, SocketLimits
-    app.state.limits = Limits()
+    app.state.limits = Limits(guest_turn=lambda owner: accounts.database(app).guest_turn(owner))
     app.add_middleware(SocketLimits, limits=app.state.limits)
+    app.add_middleware(accounts.AccountSockets, application=app)
     app.state.vision = vision if vision is not None else VisionClient()
     app.state.llm = llm if llm is not None else make_llm()
     app.state.llm_v2 = app.state.llm
@@ -80,7 +85,11 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None, *, pres
         if request.url.path.startswith('/api/') and not authorized(request):
             event('auth_rejected', level='warning')
             return JSONResponse({'error': 'unauthorized'}, status_code=401)
-        if request.url.path.startswith('/api/') and request.method in ('POST', 'PUT'):
+        account = getattr(request.state, 'account_owner', '')
+        if account and request.method not in ('GET', 'HEAD', 'OPTIONS') and not accounts.same_origin(request):
+            return JSONResponse({'error': 'cross_origin'}, status_code=403)
+        data_path = request.url.path in ('/api/me', '/api/me/export')
+        if request.url.path.startswith('/api/') and not data_path and request.method in ('POST', 'PUT'):
             from server.limits import LIMIT_LINE, owner_key
             from server.pairing import pairing_address
             ip = pairing_address(request)
@@ -92,7 +101,14 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None, *, pres
                 if session_id else None)
         token = cloud_meter.CURRENT.set(getattr(call, 'cloud_meter', None))
         try:
-            response = await call_next(request)
+            owner = rewind_api.identity(request)
+            if request.url.path.startswith('/api/') and owner != 'local':
+                async with accounts.owner_lock(app, owner):
+                    if account and not accounts.authenticate_session(request):
+                        return JSONResponse({'error': 'unauthorized'}, status_code=401)
+                    response = await call_next(request)
+            else:
+                response = await call_next(request)
             if response.headers.get('content-type', '').split(';')[0] == 'text/html':
                 response.headers['Content-Security-Policy'] = "frame-ancestors 'none'"
                 response.headers['X-Frame-Options'] = 'DENY'
@@ -200,6 +216,7 @@ def create_app(vision=None, clock=None, static_dir=CLIENT_WEB, llm=None, *, pres
     from server.family_note import router as family_router
     app.include_router(family_router)
     app.include_router(rewind_api.router)
+    app.include_router(accounts.router)
     # Routes must precede the catch-all static mount. The client package owns this directory.
     if Path(static_dir).is_dir():
         app.mount('/', NoCacheStatic(directory=static_dir, html=True, check_dir=False), name='client')

@@ -174,7 +174,9 @@ def _install(library):
                 meter = CURRENT.get()
                 if not is_local(request.url):
                     # Deletion must remain available for Rewind privacy cleanup after cutoff.
-                    if request.method != 'DELETE' and request.url.path != '/cdn-cgi/access/certs':
+                    auth_keys = (request.url.path == '/cdn-cgi/access/certs' or
+                                 (request.url.host == 'www.googleapis.com' and request.url.path == '/oauth2/v3/certs'))
+                    if request.method != 'DELETE' and not auth_keys:
                         charge(request_cost(request.url), admit=True)
                 if meter is not None and not is_local(request.url):
                     meter.add(calls=1)
