@@ -11,9 +11,9 @@ def test_checker_bank_and_real_gate_semantics(monkeypatch):
     monkeypatch.setattr(checker, 'planner_checker', lambda: None)
     cases = run.load_cases('checker')
     rows, metrics, checks = checker.score(cases)
-    assert len(rows) == 27 and metrics['bad_n'] == 15 and metrics['good_n'] == 12
+    assert len(rows) == 28 and metrics['bad_n'] == 15 and metrics['good_n'] == 13
     assert not checks['checker_available'] and not checks['bad_caught']
-    # after() returns accepted speech unchanged. A truthiness check would drop all 12 controls.
+    # after() returns accepted speech unchanged. A truthiness check would drop all 13 controls.
     assert metrics['false_drops'] <= 1
     by_category = {r['category']: r for r in rows}
     assert by_category['missing_resistor']['electronics_hits']
@@ -28,12 +28,12 @@ def test_checker_calls_public_hook_and_does_not_count_crashes():
         seen.append(raw)
         return None if not planner.shape_ok(planner.parse_plan(raw)) else raw
     rows, metrics, checks = checker.score(cases, check=check)
-    assert len(seen) == 27 and metrics['planner_checker_available']
+    assert len(seen) == 28 and metrics['planner_checker_available']
     assert next(r for r in rows if r['category'] == 'bad_json')['planner_caught']
     def broken(raw):
         raise ValueError('broken')
     rows, metrics, checks = checker.score(cases, check=broken)
-    assert metrics['checker_errors'] == 27 and not checks['no_errors']
+    assert metrics['checker_errors'] == 28 and not checks['no_errors']
 
 
 def test_decision_both_files_and_actual_gate_not_argmax():

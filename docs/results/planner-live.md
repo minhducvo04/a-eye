@@ -337,3 +337,92 @@ playback, merge, or deployment verification. No packet capture establishes the
 real provider's exact sequence. A transcription-only stream without a fresh
 mic/typed/interruption signal cannot distinguish an unaccepted turn's late tail
 from a new utterance; retained rejected input intentionally remains retryable.
+
+
+## Fix-back round 5 on pkg/planner-live5 — 2026-10-25
+
+Base: `9469744` (main with planner-live4 merged). Local worktree only; no push,
+`.env` read, network permission change, or real provider request.
+
+### Reproduction and change
+
+New regressions failed before production changes: 7 failed, 9 passed,
+126 deselected in 1.39s. They reproduced the Sonnet default, missing rejection
+gate id, rejection of the eight-step headphone repair, and four safe hot-tip
+warning variants. The reported real provider output was not supplied; `good13`
+is a saved, hand-written realistic regression fixture, not a captured model reply.
+
+The planner now defaults to `claude-haiku-5-5`, retaining `PLANNER_MODEL` overrides,
+zero SDK retries, and the existing **12-second total timeout** across both calls.
+The researcher/planner flow remains two sequential calls: the supplied Haiku
+observation finished quickly, so there is no current evidence that Haiku requires
+a one-call redesign. Tests verify default/override selection and that the second
+call cannot extend the total deadline. Real Haiku latency remains unmeasured here.
+
+`hot_tool` is now a `Gate` with an affirmative-action output pattern. Direct
+negated warnings (don't, do not, never, avoid) pass, while instructions or intent
+to touch/grab the hot tip still stop. Matching does not cross sentence/clause
+punctuation into another action. The electronics pack uses the same hot-tool
+output pattern; its old independent any-mention check also rejected precautions.
+Planner output skips only the hot-tool **input** trigger, then runs the output
+check. User speech still runs the input gate, including `I will touch the hot tip`.
+Other conservative input gates remain active for plans: a bare instruction to
+cut a live wire still drops, even without an explicit claim that it is safe.
+
+The saved eight-step repair covers unplugging headphones, ventilation and eye
+protection, cutting and stripping wire, tinning, soldering, hot-tip warnings,
+returning the iron to its stand, cooling, heat-shrink insulation, and checking
+before reconnecting. `Unplug the headphones` now satisfies spoken power-off
+preparation. Typical unplugging and heat-shrink/cooling steps do not trigger
+`live_power` or `burning_device`; actual live-wire approval and continued use of
+a burning cable still reject. Runtime tests install this plan from synthetic
+Live input, reload it from cache, and advance through all eight steps.
+
+Unsafe plans continue to be rejected as a whole; no partial-plan continuation was
+introduced. Rejections now include only the coded `reason.gate` identifier (for
+example `hot_tool`, `power_off`, or `ventilation`), never rejected plan text.
+A regression checks the hot-tool event and absence of transcript/step text.
+
+The checker bank adds one good case (13 total); all 15 bad cases and the allowed
+maximum of one false drop are unchanged. The first full run found the new case's
+long task label duplicated the existing server repair regression. The saved
+fixture now has a distinct short task label; runtime tests derive the requested
+label through `task_request`. The held-out leakage guard is unchanged and passes.
+
+### Verification
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server/test_planner.py eval/swap/test_checker_regressions.py server/test_home_safety.py server/test_ee_guide.py eval/swap/test_components.py eval/swap/test_heldout.py --tb=short` - PASS
+(185 passed in 12.00s; summary read).
+
+Test: `~/Projects/a-eye/.venv/bin/python -m pytest -q server router scripts eval` - FAIL
+(final run: 1253 passed, 16 failed, 2 warnings in 60.76s; exit 1; summary and
+failure evidence read). Fifteen failures are sandbox-denied socket operations.
+The sixteenth, `test_ws2_hazard_sends_stop_caption_and_fixed_audio`, is a downstream
+`KeyError: 'state'` after `live_start_failed` / `PermissionError`. These are the
+same sixteen socket-dependent nodes documented in earlier rounds. No planner,
+checker, or held-out-data test failed. Warnings concern short synthetic JWT keys.
+No network permissions were requested. Full local output:
+`.pytest_cache/planner-live5-full.log`. The initial run (1252 passed, 17 failed)
+is retained in `.pytest_cache/planner-live5-full-initial.log`; its additional
+fixture-label failure was fixed before the final run.
+
+Test: `~/Projects/a-eye/.venv/bin/python eval/swap/run.py checker --model current --out .pytest_cache/planner-live5-checker` - PASS
+(production checker, offline socket guard): **15/15 bad plans caught; 1/13 good
+plans false-dropped; 0 checker errors**. New `good13` is accepted by all checks.
+The remaining false drop is existing `good01`, whose first step strips wires
+without spoken power-off preparation (`power_off`); it also lacks initial
+ventilation. Its fixture and preparation requirements were not weakened.
+Detailed report: `.pytest_cache/planner-live5-checker/swap-checker-current.json`.
+
+Test: `git diff --check` - PASS.
+
+Changed files: `server/planner.py`, `server/safety.py`,
+`server/packs/electronics.py`, `server/test_planner.py`,
+`eval/cases/checker_good_plans.jsonl`, `eval/swap/checker.py`,
+`eval/swap/test_checker_regressions.py`, `eval/swap/test_components.py`,
+`docs/results/planner-live.md`, and `RESULT.md`.
+
+Limits: real local Python execution with synthetic packets and fake providers;
+no live Claude/Gemini latency, physical playback, merge, or deployment proof.
+The fix covers the recorded regression and the existing gate bank; regex gates
+remain conservative text backstops, not general semantic safety verification.

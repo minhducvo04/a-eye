@@ -75,7 +75,7 @@ def refuse(text):
     text = text.casefold()
     if re.search(r'\b(mains|wall (outlet|socket)|120\s*v|230\s*v|240\s*v)\b', text):
         return MAINS
-    if re.search(r'\b(touch|grab|hold)\w*\b', text) and re.search(r'\b(hot|soldering)\b', text) and 'tip' in text:
+    if safety.HOT_TOOL.wrong.search(' '.join(text.split())):
         return HOT
     if re.search(r'\b(no|without|missing|skip|remove|removed|bypass)\b.{0,30}\bresistor\b|'
                  r'\bresistor\b.{0,25}\b(not in series|missing|removed|bypassed)\b', text):
