@@ -1,0 +1,281 @@
+# Scope training set, handwritten 2026-10-25 (no model outputs, no production logs).
+{"id": "s001", "scope": "now", "text": "what is this thing I'm holding"}
+{"id": "s002", "scope": "now", "text": "which way does this valve turn to shut it"}
+{"id": "s003", "scope": "now", "text": "is this the right screwdriver for that screw"}
+{"id": "s004", "scope": "now", "text": "what color is the wire on the left"}
+{"id": "s005", "scope": "now", "text": "hey dad how are you doing today"}
+{"id": "s006", "scope": "now", "text": "can you see my hands okay"}
+{"id": "s007", "scope": "now", "text": "how do I loosen this nut"}
+{"id": "s008", "scope": "now", "text": "is the pan hot enough yet"}
+{"id": "s009", "scope": "now", "text": "what's the next step"}
+{"id": "s010", "scope": "now", "text": "does this look straight to you"}
+{"id": "s011", "scope": "now", "text": "thanks that helped a lot"}
+{"id": "s012", "scope": "now", "text": "ha that's funny"}
+{"id": "s013", "scope": "now", "text": "okay I'm ready"}
+{"id": "s014", "scope": "now", "text": "which one of these is the hot wire"}
+{"id": "s015", "scope": "now", "text": "what am I holding right now"}
+{"id": "s016", "scope": "now", "text": "is that a phillips head or a flat head"}
+{"id": "s017", "scope": "now", "text": "can you tell me what this label says"}
+{"id": "s018", "scope": "now", "text": "where does this cable plug in"}
+{"id": "s019", "scope": "now", "text": "should I tighten it more"}
+{"id": "s020", "scope": "now", "text": "how much water do I add"}
+{"id": "s021", "scope": "now", "text": "what's that little red light mean"}
+{"id": "s022", "scope": "now", "text": "is this mold or just a stain"}
+{"id": "s023", "scope": "now", "text": "how many screws do I need here"}
+{"id": "s024", "scope": "now", "text": "do you think this is cooked through"}
+{"id": "s025", "scope": "now", "text": "what tool should I use for this"}
+{"id": "s026", "scope": "now", "text": "um so what do I do with this part"}
+{"id": "s027", "scope": "now", "text": "good morning"}
+{"id": "s028", "scope": "now", "text": "tell me a joke while I work"}
+{"id": "s029", "scope": "now", "text": "can you say that again"}
+{"id": "s030", "scope": "now", "text": "how long should I let the glue dry"}
+{"id": "s031", "scope": "now", "text": "is my camera blurry"}
+{"id": "s032", "scope": "now", "text": "what kind of plant is this"}
+{"id": "s033", "scope": "now", "text": "is this bolt stripped"}
+{"id": "s034", "scope": "now", "text": "look at this, is it cracked"}
+{"id": "s035", "scope": "now", "text": "which side goes up"}
+{"id": "s036", "scope": "now", "text": "what do you see on the table"}
+{"id": "s037", "scope": "now", "text": "can you zoom in on the corner"}
+{"id": "s038", "scope": "now", "text": "I don't get it, explain it slower"}
+{"id": "s039", "scope": "now", "text": "so this goes into that slot right"}
+{"id": "s040", "scope": "now", "text": "is it safe to touch this now"}
+{"id": "s041", "scope": "now", "text": "what's this sticker for"}
+{"id": "s042", "scope": "now", "text": "how do I open the battery cover"}
+{"id": "s043", "scope": "now", "text": "wait which bolt are you pointing at"}
+{"id": "s044", "scope": "now", "text": "where should I put this washer"}
+{"id": "s045", "scope": "now", "text": "where do I put the drain plug"}
+{"id": "s046", "scope": "now", "text": "is there anything on the floor in front of me"}
+{"id": "s047", "scope": "now", "text": "can you check if the lid is on tight"}
+{"id": "s048", "scope": "now", "text": "what is the brand of this drill"}
+{"id": "s049", "scope": "now", "text": "what do you think of my workbench"}
+{"id": "s050", "scope": "now", "text": "alright let's get started"}
+{"id": "s051", "scope": "now", "text": "you're the best dad"}
+{"id": "s052", "scope": "now", "text": "how hot is too hot for the iron"}
+{"id": "s053", "scope": "now", "text": "okay what's going on here"}
+{"id": "s054", "scope": "now", "text": "is this enough thread tape"}
+{"id": "s055", "scope": "now", "text": "show me where to cut"}
+{"id": "s056", "scope": "now", "text": "do I need gloves for this"}
+{"id": "s057", "scope": "now", "text": "what's the thing sticking out on the right"}
+{"id": "s058", "scope": "now", "text": "is the faucet still dripping"}
+{"id": "s059", "scope": "now", "text": "hmm what am I looking at"}
+{"id": "s060", "scope": "now", "text": "count the screws on the table"}
+{"id": "s061", "scope": "seconds", "text": "what did I just do"}
+{"id": "s062", "scope": "seconds", "text": "what did I just do with the wrench"}
+{"id": "s063", "scope": "seconds", "text": "where did I just put the screwdriver"}
+{"id": "s064", "scope": "seconds", "text": "did I just drop something"}
+{"id": "s065", "scope": "seconds", "text": "what was that I just picked up"}
+{"id": "s066", "scope": "seconds", "text": "a few seconds ago what was in my hand"}
+{"id": "s067", "scope": "seconds", "text": "where did the cap go just now"}
+{"id": "s068", "scope": "seconds", "text": "ten seconds ago where was the tape"}
+{"id": "s069", "scope": "seconds", "text": "what did I set down just now"}
+{"id": "s070", "scope": "seconds", "text": "did you see what I just grabbed"}
+{"id": "s071", "scope": "seconds", "text": "what was on the table a second ago"}
+{"id": "s072", "scope": "seconds", "text": "where did I just leave my phone"}
+{"id": "s073", "scope": "seconds", "text": "what did I just plug in"}
+{"id": "s074", "scope": "seconds", "text": "which wire did I just touch"}
+{"id": "s075", "scope": "seconds", "text": "thirty seconds ago what did I do"}
+{"id": "s076", "scope": "seconds", "text": "wait what did I just knock over"}
+{"id": "s077", "scope": "seconds", "text": "did I just put the lid back on"}
+{"id": "s078", "scope": "seconds", "text": "um where did that screw just roll"}
+{"id": "s079", "scope": "seconds", "text": "what did I just pour in"}
+{"id": "s080", "scope": "seconds", "text": "what was I holding a moment ago"}
+{"id": "s081", "scope": "seconds", "text": "just now where did the nut go"}
+{"id": "s082", "scope": "seconds", "text": "did I just turn the valve"}
+{"id": "s083", "scope": "seconds", "text": "what did I just take out of the box"}
+{"id": "s084", "scope": "seconds", "text": "what did I just hand you to look at"}
+{"id": "s085", "scope": "seconds", "text": "where did I put the pliers a second ago"}
+{"id": "s086", "scope": "seconds", "text": "what was in the bowl a few seconds back"}
+{"id": "s087", "scope": "seconds", "text": "did I just close the drawer"}
+{"id": "s088", "scope": "seconds", "text": "what did I just write down"}
+{"id": "s089", "scope": "seconds", "text": "did I just tighten the left one or the right one"}
+{"id": "s090", "scope": "seconds", "text": "where did I just set the mug"}
+{"id": "s091", "scope": "seconds", "text": "five seconds ago where were my keys"}
+{"id": "s092", "scope": "seconds", "text": "what did I just pick up off the floor"}
+{"id": "s093", "scope": "seconds", "text": "hey what did I just do there"}
+{"id": "s094", "scope": "seconds", "text": "did I just unplug it"}
+{"id": "s095", "scope": "seconds", "text": "where'd I just put the towel"}
+{"id": "s096", "scope": "seconds", "text": "what was that thing I moved a sec ago"}
+{"id": "s097", "scope": "seconds", "text": "which bolt did I just remove"}
+{"id": "s098", "scope": "seconds", "text": "did you catch what I just did"}
+{"id": "s099", "scope": "seconds", "text": "what did I literally just put down"}
+{"id": "s100", "scope": "seconds", "text": "where did the spoon go just now"}
+{"id": "s101", "scope": "minutes", "text": "where did I put the wrench two minutes ago"}
+{"id": "s102", "scope": "minutes", "text": "what was on the counter a minute ago"}
+{"id": "s103", "scope": "minutes", "text": "where did I leave the tape a couple minutes ago"}
+{"id": "s104", "scope": "minutes", "text": "three minutes ago what was I doing"}
+{"id": "s105", "scope": "minutes", "text": "where was the bucket a few minutes ago"}
+{"id": "s106", "scope": "minutes", "text": "what did I do five minutes ago"}
+{"id": "s107", "scope": "minutes", "text": "a minute ago where did I set the screws"}
+{"id": "s108", "scope": "minutes", "text": "where did I put the towel a little while ago"}
+{"id": "s109", "scope": "minutes", "text": "what was I working on a couple of minutes back"}
+{"id": "s110", "scope": "minutes", "text": "where was my phone about two minutes ago"}
+{"id": "s111", "scope": "minutes", "text": "did I add the salt a few minutes ago"}
+{"id": "s112", "scope": "minutes", "text": "what was in my hand like four minutes ago"}
+{"id": "s113", "scope": "minutes", "text": "a few minutes back where did the cap go"}
+{"id": "s114", "scope": "minutes", "text": "where did I leave the drill a minute or two ago"}
+{"id": "s115", "scope": "minutes", "text": "what did I take off a couple minutes ago"}
+{"id": "s116", "scope": "minutes", "text": "two minutes ago which valve did I close"}
+{"id": "s117", "scope": "minutes", "text": "where were the gloves a few minutes back"}
+{"id": "s118", "scope": "minutes", "text": "um what did I put in the drawer a minute ago"}
+{"id": "s119", "scope": "minutes", "text": "where did I set the mug down a few minutes ago"}
+{"id": "s120", "scope": "minutes", "text": "what did the label say two minutes ago"}
+{"id": "s121", "scope": "minutes", "text": "where was the bolt a little bit ago"}
+{"id": "s122", "scope": "minutes", "text": "what was I holding a couple minutes ago"}
+{"id": "s123", "scope": "minutes", "text": "did I turn off the stove a few minutes ago"}
+{"id": "s124", "scope": "minutes", "text": "about three minutes ago where did the lid go"}
+{"id": "s125", "scope": "minutes", "text": "what was on the bench a minute back"}
+{"id": "s126", "scope": "minutes", "text": "where did I drop the nut a few minutes ago"}
+{"id": "s127", "scope": "minutes", "text": "what tool was I using a couple minutes ago"}
+{"id": "s128", "scope": "minutes", "text": "where did I leave the sponge two minutes back"}
+{"id": "s129", "scope": "minutes", "text": "a minute ago did I unplug the router"}
+{"id": "s130", "scope": "minutes", "text": "what did I move a few minutes ago"}
+{"id": "s131", "scope": "minutes", "text": "where did the washer end up a couple minutes ago"}
+{"id": "s132", "scope": "minutes", "text": "what was I doing with the pliers a minute ago"}
+{"id": "s133", "scope": "minutes", "text": "where did I put the plug a few minutes back"}
+{"id": "s134", "scope": "minutes", "text": "what was in the sink a minute ago"}
+{"id": "s135", "scope": "minutes", "text": "where did the scissors go a little while ago"}
+{"id": "s136", "scope": "minutes", "text": "four minutes ago where was the charger"}
+{"id": "s137", "scope": "minutes", "text": "what did I clean a few minutes ago"}
+{"id": "s138", "scope": "minutes", "text": "did I put the cap back on a couple minutes ago"}
+{"id": "s139", "scope": "minutes", "text": "where'd I put the hammer a minute ago"}
+{"id": "s140", "scope": "minutes", "text": "where was the remote a couple of minutes ago"}
+{"id": "s141", "scope": "this_call", "text": "where did I leave the mug earlier"}
+{"id": "s142", "scope": "this_call", "text": "at the start of the call where was the wrench"}
+{"id": "s143", "scope": "this_call", "text": "when did I first pick up the wrench"}
+{"id": "s144", "scope": "this_call", "text": "rewind to when I opened the box"}
+{"id": "s145", "scope": "this_call", "text": "what happened earlier in this call"}
+{"id": "s146", "scope": "this_call", "text": "when did I take the cover off"}
+{"id": "s147", "scope": "this_call", "text": "earlier today on this call where was the bucket"}
+{"id": "s148", "scope": "this_call", "text": "go back to when I turned off the water"}
+{"id": "s149", "scope": "this_call", "text": "when did I start cutting the onions"}
+{"id": "s150", "scope": "this_call", "text": "what was on the table when we started"}
+{"id": "s151", "scope": "this_call", "text": "earlier you saw a screw, where was it"}
+{"id": "s152", "scope": "this_call", "text": "show me the moment I dropped the nut"}
+{"id": "s153", "scope": "this_call", "text": "when did I put the gasket in"}
+{"id": "s154", "scope": "this_call", "text": "did I already tighten the supply line earlier"}
+{"id": "s155", "scope": "this_call", "text": "how many times did I open the fridge during this call"}
+{"id": "s156", "scope": "this_call", "text": "what did I do before I started the second step"}
+{"id": "s157", "scope": "this_call", "text": "earlier in the call did I unplug the power"}
+{"id": "s158", "scope": "this_call", "text": "rewind, where did the towel go"}
+{"id": "s159", "scope": "this_call", "text": "at the beginning where was my phone"}
+{"id": "s160", "scope": "this_call", "text": "when did I last touch the breaker"}
+{"id": "s161", "scope": "this_call", "text": "before we started where was the drill"}
+{"id": "s162", "scope": "this_call", "text": "what did the counter look like at the start"}
+{"id": "s163", "scope": "this_call", "text": "when did I set the timer"}
+{"id": "s164", "scope": "this_call", "text": "go back to the part where I took out the filter"}
+{"id": "s165", "scope": "this_call", "text": "did I already add the eggs earlier"}
+{"id": "s166", "scope": "this_call", "text": "earlier on where did I put the receipt"}
+{"id": "s167", "scope": "this_call", "text": "show me what I did at the beginning of this call"}
+{"id": "s168", "scope": "this_call", "text": "when was the first time I picked up the hammer"}
+{"id": "s169", "scope": "this_call", "text": "earlier did I turn the valve all the way"}
+{"id": "s170", "scope": "this_call", "text": "what happened right before I spilled the water"}
+{"id": "s171", "scope": "this_call", "text": "before the break where was the bucket"}
+{"id": "s172", "scope": "this_call", "text": "since we started how many screws have I removed"}
+{"id": "s173", "scope": "this_call", "text": "earlier in this video where did the cap go"}
+{"id": "s174", "scope": "this_call", "text": "when did I swap the bit on the drill"}
+{"id": "s175", "scope": "this_call", "text": "what was I doing at the start of our call"}
+{"id": "s176", "scope": "this_call", "text": "replay when I put the shelf up"}
+{"id": "s177", "scope": "this_call", "text": "earlier where did I leave the level"}
+{"id": "s178", "scope": "this_call", "text": "when did I first turn on the light"}
+{"id": "s179", "scope": "this_call", "text": "rewind to the part with the red wire"}
+{"id": "s180", "scope": "this_call", "text": "before all this where was my mug"}
+{"id": "s181", "scope": "past_calls", "text": "what did we fix last week"}
+{"id": "s182", "scope": "past_calls", "text": "where did I leave the keys yesterday"}
+{"id": "s183", "scope": "past_calls", "text": "what did we do last time"}
+{"id": "s184", "scope": "past_calls", "text": "last call where did I put the drill"}
+{"id": "s185", "scope": "past_calls", "text": "did we finish the sink fix last time"}
+{"id": "s186", "scope": "past_calls", "text": "what did I cook yesterday"}
+{"id": "s187", "scope": "past_calls", "text": "where was the wrench in our previous call"}
+{"id": "s188", "scope": "past_calls", "text": "a few days ago what were we working on"}
+{"id": "s189", "scope": "past_calls", "text": "what did you help me with the other day"}
+{"id": "s190", "scope": "past_calls", "text": "last week did I replace the filter"}
+{"id": "s191", "scope": "past_calls", "text": "have we done this before"}
+{"id": "s192", "scope": "past_calls", "text": "the last time we talked what did I break"}
+{"id": "s193", "scope": "past_calls", "text": "yesterday where did I put the charger"}
+{"id": "s194", "scope": "past_calls", "text": "what project did we do two days ago"}
+{"id": "s195", "scope": "past_calls", "text": "last time you saw my toolbox where was it"}
+{"id": "s196", "scope": "past_calls", "text": "did I already fix this hinge before in another call"}
+{"id": "s197", "scope": "past_calls", "text": "what did we build last weekend"}
+{"id": "s198", "scope": "past_calls", "text": "in our last call what did you tell me about the valve"}
+{"id": "s199", "scope": "past_calls", "text": "where did I keep the spare bulbs last time"}
+{"id": "s200", "scope": "past_calls", "text": "what did I learn last week"}
+{"id": "s201", "scope": "past_calls", "text": "how did the breaker thing go last time"}
+{"id": "s202", "scope": "past_calls", "text": "remind me what we did on monday"}
+{"id": "s203", "scope": "past_calls", "text": "did I clean the drain last month"}
+{"id": "s204", "scope": "past_calls", "text": "what was the last thing we worked on together"}
+{"id": "s205", "scope": "past_calls", "text": "yesterday did I water the plants"}
+{"id": "s206", "scope": "past_calls", "text": "where did I put the manual the other day"}
+{"id": "s207", "scope": "past_calls", "text": "how long did the sink fix take last time"}
+{"id": "s208", "scope": "past_calls", "text": "what did we do in the previous session"}
+{"id": "s209", "scope": "past_calls", "text": "last week where did I leave the ladder"}
+{"id": "s210", "scope": "past_calls", "text": "did you see my glasses yesterday"}
+{"id": "s211", "scope": "past_calls", "text": "what tasks have I finished before"}
+{"id": "s212", "scope": "past_calls", "text": "how many times have we fixed this faucet"}
+{"id": "s213", "scope": "past_calls", "text": "what was I making last time we talked"}
+{"id": "s214", "scope": "past_calls", "text": "um yesterday what did I do with the wrench"}
+{"id": "s215", "scope": "past_calls", "text": "in a past call where was the spare key"}
+{"id": "s216", "scope": "past_calls", "text": "what did you see in my garage last time"}
+{"id": "s217", "scope": "past_calls", "text": "the other night where did I set the remote"}
+{"id": "s218", "scope": "past_calls", "text": "three days ago what did we fix"}
+{"id": "s219", "scope": "past_calls", "text": "last session did I finish the shelf"}
+{"id": "s220", "scope": "past_calls", "text": "what did I tell you yesterday about my bike"}
+{"id": "s221", "scope": "now", "text": "what did I do wrong here"}
+{"id": "s222", "scope": "now", "text": "did I do this right"}
+{"id": "s223", "scope": "now", "text": "where did I go wrong with this knot"}
+{"id": "s224", "scope": "now", "text": "is this the same screw as the other one"}
+{"id": "s225", "scope": "now", "text": "did I put this in the right way"}
+{"id": "s226", "scope": "now", "text": "what do I do now"}
+{"id": "s227", "scope": "now", "text": "have I got enough paint on the brush"}
+{"id": "s228", "scope": "now", "text": "did I tighten this enough"}
+{"id": "s229", "scope": "now", "text": "what should I have done instead"}
+{"id": "s230", "scope": "now", "text": "is this hole big enough"}
+{"id": "s231", "scope": "now", "text": "which step are we on"}
+{"id": "s232", "scope": "now", "text": "can you remember that the blue one is mine"}
+{"id": "s233", "scope": "now", "text": "ok and now what"}
+{"id": "s234", "scope": "now", "text": "before I cut, is the line straight"}
+{"id": "s235", "scope": "now", "text": "so what's the plan"}
+{"id": "s236", "scope": "now", "text": "I'm back, sorry about that"}
+{"id": "s237", "scope": "now", "text": "wait hold on a second"}
+{"id": "s238", "scope": "now", "text": "um one second let me grab it"}
+{"id": "s239", "scope": "now", "text": "what's the difference between these two"}
+{"id": "s240", "scope": "now", "text": "is it plugged in"}
+{"id": "s241", "scope": "seconds", "text": "hang on what did I just say I was doing"}
+{"id": "s242", "scope": "seconds", "text": "did I just spill something"}
+{"id": "s243", "scope": "seconds", "text": "where did my pen just go"}
+{"id": "s244", "scope": "seconds", "text": "what did I just cut"}
+{"id": "s245", "scope": "seconds", "text": "did I just flip the switch"}
+{"id": "s246", "scope": "seconds", "text": "which drawer did I just open"}
+{"id": "s247", "scope": "seconds", "text": "what was I just pointing at"}
+{"id": "s248", "scope": "seconds", "text": "where did the ring just fall"}
+{"id": "s249", "scope": "seconds", "text": "did I just put salt or sugar in"}
+{"id": "s250", "scope": "seconds", "text": "what did I just snap off"}
+{"id": "s251", "scope": "minutes", "text": "where did I set the knife a few minutes ago"}
+{"id": "s252", "scope": "minutes", "text": "what did I unscrew a couple minutes ago"}
+{"id": "s253", "scope": "minutes", "text": "a little while ago where was the flashlight"}
+{"id": "s254", "scope": "minutes", "text": "where did the tape measure go a few minutes back"}
+{"id": "s255", "scope": "minutes", "text": "what was I fixing about two minutes ago"}
+{"id": "s256", "scope": "minutes", "text": "did I wipe the counter a few minutes ago"}
+{"id": "s257", "scope": "minutes", "text": "a couple minutes ago what was on the stove"}
+{"id": "s258", "scope": "minutes", "text": "where did I put my glasses a minute ago"}
+{"id": "s259", "scope": "minutes", "text": "what did I drop like two minutes ago"}
+{"id": "s260", "scope": "minutes", "text": "a few minutes ago did I lock the door"}
+{"id": "s261", "scope": "this_call", "text": "when did I open the valve under the sink"}
+{"id": "s262", "scope": "this_call", "text": "earlier did you see where the clamp went"}
+{"id": "s263", "scope": "this_call", "text": "go back to when the water started leaking"}
+{"id": "s264", "scope": "this_call", "text": "at the very start what tools did I have out"}
+{"id": "s265", "scope": "this_call", "text": "when did I unplug the toaster"}
+{"id": "s266", "scope": "this_call", "text": "did I already put the screws in the bag earlier"}
+{"id": "s267", "scope": "this_call", "text": "what was the first thing I did on this call"}
+{"id": "s268", "scope": "this_call", "text": "rewind and tell me when I took off the knob"}
+{"id": "s269", "scope": "this_call", "text": "earlier where did the spare washer go"}
+{"id": "s270", "scope": "this_call", "text": "show me when I mixed the paint"}
+{"id": "s271", "scope": "past_calls", "text": "what did I fix the last time we talked"}
+{"id": "s272", "scope": "past_calls", "text": "where did I leave the hammer the other day"}
+{"id": "s273", "scope": "past_calls", "text": "did we change the filter a week ago"}
+{"id": "s274", "scope": "past_calls", "text": "last time where did I store the drill bits"}
+{"id": "s275", "scope": "past_calls", "text": "what did we work on two calls ago"}
+{"id": "s276", "scope": "past_calls", "text": "yesterday did I finish the bookshelf"}
+{"id": "s277", "scope": "past_calls", "text": "what did you see on my desk last time"}
+{"id": "s278", "scope": "past_calls", "text": "a couple days ago where did I put the tape"}
+{"id": "s279", "scope": "past_calls", "text": "have I fixed a sink with you before"}
+{"id": "s280", "scope": "past_calls", "text": "in a previous call did I mention my bike"}

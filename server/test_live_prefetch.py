@@ -71,6 +71,8 @@ def test_slow_tool_does_not_delay_audio(monkeypatch):
 
 
 def test_streaming_prefetch_card_cache_and_idle_publication(monkeypatch):
+    # The tool and prefetch path, as with LIVE_MEMORY_GATE=0 (the gate has its own tests in test_live_memory.py).
+    monkeypatch.setenv('LIVE_MEMORY_GATE', '0')
     async def trial():
         from contracts import validate
         monkeypatch.setenv('GEMINI_API_KEY', 'synthetic')

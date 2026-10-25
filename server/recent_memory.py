@@ -5,13 +5,22 @@ import re
 from time import monotonic, time
 
 
+KEEP_S = 600       # the RAM log keeps 10 minutes, so "two minutes ago" still has notes
+RECENT_MAX_S = 300  # an asked age up to 5 minutes reads the RAM log; older goes to Rewind
 AGE = re.compile(r'\b(a|an|one|two|three|\d+)\s+(seconds?|minutes?) ago\b', re.I)
-LONG = re.compile(r'\b(yesterday|last time|last call|previous call|last week|days? ago)\b', re.I)
+LONG = re.compile(r'\b(yesterday|last time|last call|previous call|last week|days? ago|a week ago|last weekend|'
+                  r'other day|last session|previous session|earlier call|another call)\b', re.I)
 STEP = re.compile(r'\bstep\s+(\d+)\b', re.I)
 CURRENT_STEP = re.compile(r'\b(?:what|which) step\b', re.I)
 STOP = set('what where when did do i my the a an was were is are it put leave left see saw just now ago '
            'minute minutes second seconds one two three earlier in this call happened recently please '
-           'you remember last time yesterday picked up'.split())
+           'you remember last time yesterday picked up set place placed keep kept go went with to on of for '
+           'from at that there have had back think recall dad hey ok okay um uh about few couple go gone end '
+           'ended'.split())
+# Simple synonyms so "mug" finds a "cup" note. Plurals are folded in words().
+SYNONYMS = {'cup': 'mug', 'spanner': 'wrench', 'rag': 'towel', 'cloth': 'towel', 'pail': 'bucket',
+            'cellphone': 'phone', 'mobile': 'phone', 'key': 'keys', 'glass': 'glasses', 'spectacles': 'glasses',
+            'tap': 'faucet', 'countertop': 'counter', 'bench': 'workbench', 'scissor': 'scissors'}
 
 
 def age_seconds(text):
@@ -29,7 +38,7 @@ def source_for(text, rewind_on=False):
         return 'long-term'
     age = age_seconds(text)
     if age is not None:
-        return 'recent' if age <= 120 else 'rewind'
+        return 'recent' if age <= RECENT_MAX_S else 'rewind'
     if re.search(r'\b(just now|just do|just did|recently)\b', text, re.I) or (
             (STEP.search(text) or CURRENT_STEP.search(text)) and re.search(r'\b(was|did|earlier)\b', text, re.I)):
         return 'recent'
@@ -40,8 +49,17 @@ def source_for(text, rewind_on=False):
     return None
 
 
+def _norm(word):
+    if len(word) > 4 and word.endswith('es') and word[-3] in 'sxzh':
+        word = word[:-2]
+    elif len(word) > 3 and word.endswith('s') and not word.endswith('ss'):
+        word = word[:-1]
+    return SYNONYMS.get(word, word)
+
+
 def words(text):
-    return set(re.findall(r'[a-z0-9]+', text.lower())) - STOP
+    raw = set(re.findall(r'[a-z0-9]+', text.lower())) - STOP
+    return {_norm(w) for w in raw} - STOP
 
 
 class RecentMemory:
@@ -75,7 +93,7 @@ class RecentMemory:
 
     def prune(self, now=None):
         now = self.clock() if now is None else now
-        while self.entries and now - self.entries[0]['observed_at'] > 120:
+        while self.entries and now - self.entries[0]['observed_at'] > KEEP_S:
             self.entries.popleft()
 
     def clear(self):
@@ -116,7 +134,7 @@ class RecentMemory:
         entries = list(self.entries)
         if self.store is not None and self.store.remembering():
             entries = [e for e in self.store.recent_records(self.call_id)
-                       if self.clock() - e['observed_at'] <= 120]
+                       if self.clock() - e['observed_at'] <= KEEP_S]
         step = STEP.search(question)
         current_step = CURRENT_STEP.search(question)
         target = words(AGE.sub('', question))
@@ -131,7 +149,7 @@ class RecentMemory:
         age = age_seconds(question)
         if age is not None:
             # A sighting far away from the requested moment isn't evidence for that moment.
-            entries = [e for e in entries if abs(self.clock() - e['observed_at'] - age) <= 20]
+            entries = [e for e in entries if abs(self.clock() - e['observed_at'] - age) <= max(20, age * .25)]
         if not entries:
             return None
         hit = (min(entries, key=lambda e: abs(self.clock() - e['observed_at'] - age))
@@ -142,20 +160,67 @@ class RecentMemory:
                         f"{'the guide said' if step or current_step else 'the scene note was'}: {note}")
 
 
+DAYS = re.compile(r'\b(a|one|two|three|four|five|six|\d+|a few|a couple of|a couple)\s+days? ago\b', re.I)
+TASK_Q = re.compile(r'\b(what (did|have) (we|i) (fix|fixed|do|done|work(?:ed)? on|build|built|finish(?:ed)?|make|made|'
+                    r'repair(?:ed)?)|have (we|i) (done|fixed|worked on|repaired)|how did .+ go|how long did|'
+                    r'what (project|task)s?|last (thing|project) we)\b', re.I)
+TASK_NAMES = {'sink': 'the dripping sink fix', 'hinge': 'the cabinet hinge fix', 'breaker': 'the tripped breaker',
+              'ee_led': 'the LED circuit', 'ee_resistor': 'reading resistor bands', 'ee_polarity': 'LED polarity'}
+
+
+def window(question, end):
+    """(start, end, words) for a past-call question, in wall-clock seconds. end is the call start."""
+    q = question.lower()
+    today = datetime.fromtimestamp(end).replace(hour=0, minute=0, second=0, microsecond=0)
+    if 'yesterday' in q:
+        return (today - timedelta(days=1)).timestamp(), today.timestamp(), 'yesterday'
+    days = DAYS.search(q)
+    if days:
+        n = {'a': 1, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'a few': 3,
+             'a couple of': 2, 'a couple': 2}.get(days[1], None)
+        n = n if n is not None else int(days[1])
+        # Spoken day counts are rough: allow one day either side.
+        return (today - timedelta(days=n + 1)).timestamp(), (today - timedelta(days=n - 1)).timestamp(), 'then'
+    if re.search(r'\b(last week|a week ago|last weekend|other day)\b', q):
+        return (today - timedelta(days=14)).timestamp(), today.timestamp(), 'last week'
+    return float('-inf'), end, 'an earlier call'
+
+
+def task_history(session, question, start, end, scope):
+    """"What did we fix last week": completed or started tasks from the growth log, by date. None if no log."""
+    growth = getattr(session, 'growth', None)
+    if growth is None or not TASK_Q.search(question):
+        return None
+    rows = []
+    for row in getattr(growth, 'entries', []):
+        try:
+            t = datetime.fromisoformat(row['date']).timestamp()
+        except (KeyError, TypeError, ValueError):
+            continue
+        if start <= t < end:
+            rows.append((t, row))
+    if not rows:
+        return dict(source='unavailable', found=False,
+                    say=f"I don't have a saved task from {scope}. I can't confirm what we did.")
+    parts = []
+    for t, row in sorted(rows, key=lambda x: x[0])[-3:]:
+        day = datetime.fromtimestamp(t).strftime('%A %B %-d')
+        name = TASK_NAMES.get(row.get('task'), str(row.get('task', 'a task')).replace('_', ' '))
+        parts.append(f"on {day} you worked on {name} and {'finished it' if row.get('completed') else 'did not finish it'}")
+    return dict(source='history', found=True, say='From your task history: ' + '; '.join(parts) + '.')
+
+
 async def long_term(session, question):
     from server import memory
+    log = session.recent_memory
+    start, end, scope = window(question, log.started_wall)
+    history = task_history(session, question, start, end, scope)
+    if history and history['found']:
+        return history
     rewind = getattr(session, 'rewind', None)
     writer = getattr(rewind, 'memory_writer', None)
     if writer is None or not writer.store.remembering():
-        return None
-    log = session.recent_memory
-    end = log.started_wall
-    start = float('-inf')
-    if 'yesterday' in question.lower():
-        today = datetime.fromtimestamp(end).replace(hour=0, minute=0, second=0, microsecond=0)
-        start, end = (today - timedelta(days=1)).timestamp(), today.timestamp()
-    elif 'last week' in question.lower() or re.search(r'\bdays? ago\b', question, re.I):
-        return None  # Do not relabel a newest sighting as evidence for an unsupported date.
+        return history
 
     class PastStore:
         clock = staticmethod(writer.store.clock)
@@ -168,43 +233,73 @@ async def long_term(session, question):
         def where(self, name):
             return writer.store.where(name, start=start, end=end)
 
-    query = LONG.sub('', question)
+    query = DAYS.sub('', LONG.sub('', question))
     result = await memory.find(PastStore(), query, embedder=writer.embedder)
-    return dict(result, source='long-term') if result['found'] else None
+    return dict(result, source='long-term') if result['found'] else history
 
 
-async def answer(session, question, vision=None, *, on_hit=None):
+NOT_RECENT = "I didn't see that in my notes from the last few minutes, so I can't confirm it."
+
+
+def _sighting(session, question):
+    """Keyframe scene memory on a RAM-log miss; never the current frame (under 10 s old) for a past question."""
+    try:
+        from server.rewind import memory_sighting
+        seen = memory_sighting(session, question)
+    except Exception:
+        return None
+    if seen and seen.get('memory_age_s', 0) >= 10:
+        return dict(source='scene_memory', found=True, say=seen['say'])
+    return None
+
+
+async def answer(session, question, vision=None, *, on_hit=None, scope=None):
+    """scope: the source the caller's decision model chose ('recent', 'rewind', 'long-term') when the question
+    has no explicit time words; explicit words always win."""
     from server.privacy import twelvelabs_allowed
     rewind = getattr(session, 'rewind', None)
     on = bool(rewind and rewind.on and twelvelabs_allowed() and not getattr(session, 'private', False))
-    requested = source_for(question, on) or 'recent'
+    requested = source_for(question, on) or scope or 'recent'
+    if requested == 'rewind' and not on:
+        requested = 'recent'
     if requested == 'recent':
-        hit = session.recent_memory.find(question)
+        hit = session.recent_memory.find(question) or _sighting(session, question)
         if hit:
             return hit
         # An explicit recent question must never be answered with yesterday's evidence.
-        return dict(source='unavailable', found=False,
-                    say="I don't have a matching scene note from the last two minutes. I can't confirm that.")
-    if requested == 'rewind' and on:
+        return dict(source='unavailable', found=False, say=NOT_RECENT)
+    guess = None
+    if requested == 'rewind':
         try:
             spoken, hit = await rewind.answer(question, vision=vision, before_s=rewind.now_s() - 20)
             if hit and on_hit:
                 await on_hit(hit)
             if hit and hit['sure']:
                 return dict(source='rewind', found=True, say=spoken.replace(" Here's the clip.", ''), t_s=hit['t_s'])
+            if hit:
+                guess = dict(source='rewind', found=True, sure=False, t_s=hit['t_s'],
+                             say=spoken.replace(" Here's my best guess.", '').replace(" Here's the clip.", ''))
         except Exception:
             pass  # Availability only; never expose query, frames or exception text in logs.
+        hit = session.recent_memory.find(question)
+        if hit:
+            hit['say'] = 'From my notes of this call: ' + hit['say']
+            return hit
+        if guess:
+            return guess
     try:
         hit = await long_term(session, question)
     except Exception:
         hit = None
-    if hit:
+    if hit and hit['found']:
         if requested == 'rewind':
             hit['say'] = "I couldn't confirm that in this call's Rewind. From an earlier call: " + hit['say']
         return hit
-    scope = 'yesterday' if 'yesterday' in question.lower() else 'that time'
+    if hit:
+        return hit
+    scope_words = window(question, session.recent_memory.started_wall)[2]
     return dict(source='unavailable', found=False,
-                say=f"I don't have an available memory for {scope}. I can't confirm what happened.")
+                say=f"I don't have a saved memory from {scope_words}. I can't confirm what happened.")
 
 
 async def run_turn(session, question, turn_id, vision=None):

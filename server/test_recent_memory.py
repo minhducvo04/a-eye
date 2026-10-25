@@ -18,7 +18,7 @@ def test_window_step_and_specific_time():
     assert 'Soldering iron' in log.find('what did I just do?')['say']
     assert log.find('where did I put the blue wire?') is None
     assert 'image_b64' not in repr(log.entries)
-    log.prune(181)
+    log.prune(661)  # the RAM log keeps 10 minutes
     assert len(log.entries) == 2
     log.clear()
     assert not log.entries
@@ -34,7 +34,8 @@ def test_temporal_routes():
         ('what happened earlier in this call?', False, 'recent'),
         ('where was the resistor yesterday?', True, 'long-term'),
         ('what did I do last time?', False, 'long-term'),
-        ('where was the wire 3 minutes ago?', True, 'rewind'),
+        ('where was the wire 3 minutes ago?', True, 'recent'),
+        ('where was the wire 6 minutes ago?', True, 'rewind'),
         ('where does this resistor go?', True, None),
     ]:
         assert source_for(text, on) == want
@@ -122,6 +123,10 @@ def test_fixture_sources_and_honest_fallback(tmp_path, monkeypatch):
             return 'Indexing', None
         session.rewind.answer = unavailable
         result = await answer(session, 'Where was the resistor earlier in this call?')
+        # Rewind has nothing yet: this call's own notes come before an earlier call.
+        assert result['source'] == 'recent' and result['say'].startswith('From my notes of this call')
+        session.recent_memory.entries.clear()
+        result = await answer(session, 'Where was the resistor earlier in this call?')
         assert result['source'] == 'long-term'
         assert 'earlier call' in result['say'] and 'parts bin' in result['say']
         session.rewind.memory_writer.store.save_settings(dict(remembering=False))
@@ -147,6 +152,32 @@ def test_live_transcripts_are_not_scene_evidence_and_steps_expire():
     log.note_transcript('Step 3: place resistor on row 12.', 'helper')
     assert 'guide said' in log.find('what step was I just on?')['say']
     assert log.find('what did I just do?') is None
-    now[0] = 221
+    now[0] = 701
     assert log.find('what step was I just on?') is None
     assert not log.entries
+
+
+def test_two_minutes_ago_plurals_and_synonyms():
+    log = RecentMemory(clock=lambda: 130, started=0)
+    log.add(scene('Wrench set on the towels', 'wrench'), 10)
+    log.add(scene('Cup on the shelf', 'cup'), 100)
+    assert 'towels' in log.find('where did I put the wrench two minutes ago?')['say']
+    assert 'shelf' in log.find('where did I leave the mug?')['say']
+    assert 'towels' in log.find('what did I do with the wrenches?')['say']
+    assert log.find('where did I put the screwdriver a minute ago?') is None
+
+
+def test_last_week_reads_task_history_and_never_invents_one():
+    from datetime import datetime, timedelta, timezone
+
+    async def check(entries):
+        log = RecentMemory(clock=lambda: 10, started=0)
+        session = SimpleNamespace(recent_memory=log, rewind=None, growth=SimpleNamespace(entries=entries))
+        return await answer(session, 'What did we fix last week?')
+    five_days = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+    result = asyncio.run(check([dict(task='sink', date=five_days, completed=True)]))
+    assert result['source'] == 'history' and 'sink' in result['say'] and 'finished it' in result['say']
+    result = asyncio.run(check([]))
+    assert not result['found'] and "don't have a saved task from last week" in result['say']
+    old = (datetime.now(timezone.utc) - timedelta(days=40)).isoformat()
+    assert not asyncio.run(check([dict(task='hinge', date=old, completed=True)]))['found']
