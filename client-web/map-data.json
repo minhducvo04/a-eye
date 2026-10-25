@@ -1,8 +1,8 @@
 {
  "version": 1,
  "title": "A-Eye system map",
- "measured_note": "Measured on real Gemini Live calls on 2026-10-25 with synthetic speech. Anything else says not measured.",
- "cost_note": "Costs are estimates from the server's own meter defaults, not provider invoices. One 2.5 minute Live call with Rewind measured about $1.40 on the meter; the meter overcounts status polls. Local models cost $0.",
+ "measured_note": "Measured on real Gemini Live calls with synthetic speech (latest runs, 2026-10-25). Anything else says not measured.",
+ "cost_note": "Costs are provider list prices, estimates from the price pages. Local models cost $0 cloud. Our safety meter counts high on purpose; its figures are in the Cost panel.",
  "zones": [
   {
    "id": "device",
@@ -163,8 +163,8 @@
    "status": "working",
    "privacy": "google",
    "name": "Gemini Live talker",
-   "speed": "0.6 to 1.1 s to voice",
-   "cost": "~$0.10 / min (est.)",
+   "speed": "0.5 to 1.4 s to voice",
+   "cost": "list $0.016 to $0.025 / min (est.)",
    "kind": "Cloud voice model (gemini-3.8-live)",
    "what": "Hears the voice and sees 1 fps frames, then speaks. It is the only voice in the normal call. Safety gates can mute it mid sentence and speak a fixed line instead.",
    "code": [
@@ -177,11 +177,19 @@
     ],
     [
      "End of speech to first voice",
-     "0.6 to 1.1 s (measured)"
+     "0.5 to 1.4 s, measured (latest real calls)"
     ],
     [
-     "Cost",
-     "GEMINI_LIVE_USD_PER_MINUTE, default 0.10 (estimate)"
+     "List price",
+     "$0.016 / min (mic + 1 fps video, 50/50 talk) to $0.025 / min (full duplex), estimate"
+    ],
+    [
+     "our safety meter (counts high on purpose)",
+     "$0.10 / connection-minute (GEMINI_LIVE_USD_PER_MINUTE), billed at connect and every 60 s, idle included"
+    ],
+    [
+     "Session",
+     "about 10 min then resume; A-Eye sets slidingWindow so the call continues"
     ]
    ],
    "look": {
@@ -193,15 +201,9 @@
     "ranges": [
      {
       "label": "Speech end to voice",
-      "from": 0.6,
-      "to": 1.1,
+      "from": 0.5,
+      "to": 1.4,
       "tone": "speed"
-     },
-     {
-      "label": "Named to box",
-      "from": 1.8,
-      "to": 2.3,
-      "tone": "gpu"
      }
     ],
     "marks": [
@@ -209,10 +211,21 @@
       "at": 0.086,
       "label": "hazard stop line 86 ms",
       "tone": "danger"
+     },
+     {
+      "at": 2.0,
+      "label": "box about 2 s",
+      "tone": "gpu"
      }
     ],
-    "foot": "Measured on real Live calls tonight, synthetic speech."
-   }
+    "foot": "Measured on real Live calls, 2026-10-25, synthetic speech. Prices: ai.google.dev/gemini-api/docs/pricing (page 2026-10-22)."
+   },
+   "links": [
+    [
+     "Gemini API pricing",
+     "https://ai.google.dev/gemini-api/docs/pricing"
+    ]
+   ]
   },
   {
    "id": "router",
@@ -225,7 +238,7 @@
    "size": 0.55,
    "status": "working",
    "name": "Router",
-   "speed": "~45 ms",
+   "speed": "45.7 ms p50",
    "cost": "$0 (local)",
    "kind": "Decision model: EmbeddingGemma + logistic regression, with a time-scope head",
    "what": "Embeds each question and picks a lane: answer from now (camera), from memory, or ask the expert. A time-scope head then picks how far back: seconds, minutes, earlier this call or earlier calls. A past question holds Gemini's reply until code has looked it up. Local, about 45 ms on CPU.",
@@ -238,15 +251,15 @@
    "facts": [
     [
      "Time scope, independent set",
-     "86% of 300 questions, 0 \"now\" questions held by mistake (team report tonight)"
+     "91% of 300 questions, 0 \"now\" questions held by mistake (independent set, team report)"
     ],
     [
      "Time scope, held-out file",
-     "96 of 100, 0 of 20 \"now\" held (router/results/scope_heldout_eval.json)"
+     "93 of 100, 0 of 20 \"now\" held (router/results/scope_heldout_eval.json)"
     ],
     [
      "Latency",
-     "about 45 ms on CPU (route() median 45.7 ms, p90 47.9 ms)"
+     "45.7 ms p50 on CPU, measured"
     ],
     [
      "Lane model, held-out",
@@ -301,7 +314,7 @@
       ]
      }
     ],
-    "foot": "Lane accuracy from router/results/heldout_eval.json. Time scope: 86% on an independent 300-question set, 0 \"now\" held by mistake."
+    "foot": "Lane accuracy from router/results/heldout_eval.json. Time scope: 91% on an independent 300-question set, 0 \"now\" held by mistake; 93 of 100 on the repo held-out set."
    }
   },
   {
@@ -319,10 +332,10 @@
    "speed": "86 ms stop line",
    "cost": "$0 (code)",
    "kind": "Coded rules (server/safety.py)",
-   "what": "Plain code, no model. A question about a known hazard gets a fixed line and no model is asked. A reply that calls a hazard fine is replaced. On a hazard it mutes Gemini and speaks the stop line 86 ms after speech ends.",
+   "what": "Plain code, no model. A question about a known hazard gets a fixed line and no model is asked; a reply that calls a hazard fine is replaced. Touching the hot soldering iron tip, wiring with USB plugged in, or mains power each get a fixed line. On a hazard it mutes Gemini and speaks the stop line 86 ms after speech ends.",
    "code": [
     "server/safety.py",
-    "server/gates.py"
+    "server/packs/electronics.py"
    ],
    "facts": [
     [
@@ -330,8 +343,12 @@
      "86 ms after speech, Gemini muted (measured)"
     ],
     [
+     "Examples",
+     "\"Do not touch the hot soldering iron tip; leave it in its stand.\" / \"Unplug the USB first.\""
+    ],
+    [
      "Why code",
-     "a local model once told a user heavily smoking oil was fine"
+     "the model never decides what is safe; fixed lines are spoken by code"
     ]
    ],
    "look": {
@@ -343,8 +360,8 @@
     "ranges": [
      {
       "label": "Gemini would speak",
-      "from": 0.6,
-      "to": 1.1,
+      "from": 0.5,
+      "to": 1.4,
       "tone": "cloud"
      }
     ],
@@ -371,46 +388,72 @@
    "name": "Step guide",
    "speed": "not measured",
    "cost": "$0 (code)",
-   "kind": "Coded step guide (server/live_guide.py)",
-   "what": "Code owns the task and the current step; Gemini only phrases it. A step moves only when the guide's rules pass. The shutoff step also needs the valve checker to see the valve off in the current frame: saying \"it's off\" is refused.",
+   "kind": "Coded electronics guide (server/packs/electronics.py, server/live_guide.py)",
+   "what": "Code owns the task and the current step; Gemini only phrases it. Coded tasks: the Arduino LED build, resistor bands, LED polarity, a multimeter resistance check and tying a four-in-hand tie. Every wiring step starts with USB unplugged. A step moves only when the guide's rules pass on what the son says.",
    "code": [
-    "server/live_guide.py",
-    "server/steps.py"
+    "server/packs/electronics.py",
+    "server/packs/tie.py",
+    "server/live_guide.py"
    ],
    "facts": [
     [
-     "Valve check",
-     "refuses spoken \"it's off\" without a frame that shows it"
+     "Coded tasks",
+     "LED build 7, resistor bands 2, LED polarity 2, multimeter 6, tie 8 steps"
     ],
     [
-     "Who speaks steps",
-     "fixed lines from code, phrased by Live"
+     "USB rule",
+     "\"Unplug the USB first\" before wiring; a 220 ohm resistor in series before USB"
+    ],
+    [
+     "Multimeter rule",
+     "never measure resistance on a powered circuit; black to COM, red to V or ohms, never A or mA"
+    ],
+    [
+     "Out of scope",
+     "mains power and wall outlets get a fixed stop line"
+    ],
+    [
+     "Guide done turn",
+     "not measured on this focus"
     ]
    ],
    "look": {
     "type": "cards",
-    "title": "How a step advances",
+    "title": "What the son can learn (coded on main)",
     "cards": [
      {
-      "head": "User says",
-      "body": "\"Done, it's off.\""
-     },
-     {
-      "head": "Guide asks the valve checker",
-      "body": "Current frame only, Qwen 2.5-VL on the home GPU."
-     },
-     {
-      "head": "No proof in the frame",
-      "body": "Step stays. Fixed retry line is spoken.",
-      "tone": "danger"
-     },
-     {
-      "head": "Proof in the frame",
-      "body": "Step moves on.",
+      "head": "Arduino LED build, 7 steps",
+      "body": "Parts, LED rows, 220 ohm to GND, pin 9, GND, USB, Blink upload.",
       "tone": "server"
+     },
+     {
+      "head": "Resistor bands, 2 steps",
+      "body": "Read from the end opposite the tolerance band; red red brown is 220 ohms.",
+      "tone": "server"
+     },
+     {
+      "head": "LED polarity, 2 steps",
+      "body": "Long leg is plus, flat rim is minus.",
+      "tone": "server"
+     },
+     {
+      "head": "Multimeter, 6 steps",
+      "body": "Power off, probes to COM and V/ohms, ohm range, measure the loose resistor, read, turn off.",
+      "tone": "server"
+     },
+     {
+      "head": "Tie a tie, 8 steps",
+      "body": "Four-in-hand: drape, cross, wrap, cross, up through the loop, down through the band, dimple, slide up.",
+      "tone": "server"
+     },
+     {
+      "head": "Soldering",
+      "body": "Hot-iron safety gate only; no coded steps.",
+      "tone": "building"
      }
     ]
-   }
+   },
+   "building": "Soldering has the hot-iron safety gate and a part card, but no coded steps."
   },
   {
    "id": "context",
@@ -425,7 +468,7 @@
    "privacy": "claude",
    "name": "Context builder",
    "speed": "every ~4 s",
-   "cost": "tokens, est.",
+   "cost": "list ~$0.003 / min (est.)",
    "kind": "Background agent (Claude Haiku, server/context_agent.py)",
    "what": "Every ~4 seconds in the background it writes a short scene note from the transcript and recent frames and hands it to Gemini, so answers know what happened. With Claude switched off it falls back to a local model.",
    "code": [
@@ -439,15 +482,29 @@
     ],
     [
      "Interval",
-     "4 s (interval=4)"
+     "one note every 4 s, 15 per minute, max_tokens 320"
     ],
     [
-     "Meter weights",
-     "$5 / M input, $25 / M output, $0.5 / M cache read (cloud_meter.py defaults, budget weights not an invoice)"
-    ],
-    [
-     "Speed per note",
+     "Per-note speed",
      "not measured"
+    ],
+    [
+     "Tokens",
+     "about 1,500 in + 100 out per note, estimate"
+    ],
+    [
+     "List price",
+     "about $0.0002 / note, $0.003 / min"
+    ],
+    [
+     "our safety meter (counts high on purpose)",
+     "about $0.01 / note, $0.15 / min, estimate"
+    ]
+   ],
+   "links": [
+    [
+     "Claude Haiku 5.5 pricing",
+     "https://platform.claude.com/docs/en/models/haiku-5-5/overview"
     ]
    ]
   },
@@ -462,10 +519,10 @@
    "size": 0.55,
    "status": "working",
    "name": "Grounding boxes",
-   "speed": "box in 1.8 to 2.3 s",
+   "speed": "box in about 2 s",
    "cost": "$0 (local)",
    "kind": "Qwen 3.5 9B on the home GPU",
-   "what": "When you name an object it finds it in the frame and returns a box, drawn on your screen about 1.8 to 2.3 s after the object is named.",
+   "what": "When you name an object it finds it in the frame and returns a box, drawn on your screen about 2 s after the object is named.",
    "code": [
     "server/vision_client.py",
     "server/pointer.py",
@@ -478,11 +535,19 @@
     ],
     [
      "Box after object named",
-     "1.8 to 2.3 s (measured)"
+     "about 2 s, measured"
+    ],
+    [
+     "Throughput",
+     "serial GPU: about 0.5 boxes / s, estimate"
+    ],
+    [
+     "Capacity",
+     "about 1 concurrent pointer user at demo quality"
     ],
     [
      "Network",
-     "Tailscale only"
+     "Tailscale only; frames stay on our GPU"
     ]
    ],
    "look": {
@@ -491,16 +556,15 @@
     "unit": "s",
     "min": 0,
     "max": 3,
-    "ranges": [
+    "ranges": [],
+    "marks": [
      {
-      "label": "Box",
-      "from": 1.8,
-      "to": 2.3,
+      "at": 2.0,
+      "label": "box about 2 s",
       "tone": "gpu"
      }
     ],
-    "marks": [],
-    "foot": "Measured on real calls tonight."
+    "foot": "Measured on real calls, 2026-10-25."
    }
   },
   {
@@ -513,14 +577,14 @@
    ],
    "size": 0.5,
    "status": "working",
-   "name": "Captions + valve check",
+   "name": "Captions",
    "speed": "not measured",
    "cost": "$0 (local)",
    "kind": "Qwen 2.5-VL 7B on the home GPU",
-   "what": "Writes short captions of frames for memory and runs the trusted valve checker the step guide relies on.",
+   "what": "Writes short captions of frames so recent memory can answer \"what did I just do?\".",
    "code": [
     "server/cloud_vision.py",
-    "server/step_check.py"
+    "server/vision_client.py"
    ],
    "facts": [
     [
@@ -574,11 +638,11 @@
    ],
    "size": 0.5,
    "status": "working",
-   "name": "Private mode voice",
-   "speed": "not measured",
-   "cost": "$0 (local)",
-   "kind": "Whisper + Kokoro (boxsvc) + local brain",
-   "what": "In Private mode every cloud switch is off: Whisper turns speech into text, a local model answers and Kokoro speaks, all at home.",
+   "name": "Guest / local mode",
+   "speed": "first voice about 1.0 s",
+   "cost": "$0 cloud",
+   "kind": "Whisper + Kokoro (boxsvc) + local brain + local vision",
+   "what": "Guest / local mode turns every cloud switch off. Whisper turns speech into text, a local model answers, local vision finds parts, and Kokoro speaks, all on our own machines. $0 cloud.",
    "code": [
     "boxsvc/engines.py",
     "server/brain_local.py",
@@ -586,20 +650,28 @@
    ],
    "facts": [
     [
-     "Speech to text",
-     "faster-whisper"
+     "First voice",
+     "about 1.0 s, measured (latest acceptance run)"
     ],
     [
-     "Voice",
-     "Kokoro"
+     "Whisper",
+     "10 s clip in 0.114 s, measured"
     ],
     [
-     "Talker",
-     "local Qwen (server/brain_local.py)"
+     "Kokoro",
+     "first audio 0.060 s on the box, measured"
     ],
     [
-     "Speed",
-     "not measured"
+     "Whole call as a Live replacement",
+     "not measured beyond that run"
+    ],
+    [
+     "Cost",
+     "$0 cloud; home GPU electricity about $0.0007 / session-minute, estimate"
+    ],
+    [
+     "Trade-off",
+     "weaker talker (local 3.75 vs Haiku 4.81 on a 16-image set, measured), no Rewind, no Live barge-in"
     ]
    ]
   },
@@ -614,7 +686,7 @@
    "size": 0.5,
    "status": "working",
    "name": "Recent memory",
-   "speed": "not measured",
+   "speed": "0.013 ms lookup",
    "cost": "$0 (local)",
    "kind": "Call-local text recall (server/recent_memory.py)",
    "what": "Remembers what was said and seen in this call so \"what did I just do?\" can be answered from text, without video. Lives only for the call.",
@@ -623,12 +695,20 @@
    ],
    "facts": [
     [
+     "Lookup",
+     "0.013 ms median, measured (fixture)"
+    ],
+    [
+     "Answer on loopback",
+     "3.78 ms, measured; voice not included"
+    ],
+    [
      "Holds",
-     "up to 1,024 entries per call"
+     "up to 1,024 entries; RAM only, cleared on hang-up"
     ],
     [
      "Scope",
-     "this call, seconds to minutes ago"
+     "this call, seconds up to 120 s"
     ]
    ],
    "look": {
@@ -676,7 +756,7 @@
    "privacy": "twelvelabs",
    "name": "Rewind",
    "speed": "searchable in 35 to 40 s",
-   "cost": "~$0.10 / req (est.)",
+   "cost": "list ~$0.033 / busy min (est.)",
    "kind": "TwelveLabs video search of this call",
    "what": "Short silent clips around busy moments are uploaded to TwelveLabs so you can ask about earlier in the call. Clips are deleted when the call ends.",
    "code": [
@@ -687,19 +767,31 @@
    "facts": [
     [
      "Searchable after the event",
-     "about 35 to 40 s (measured)"
+     "35 to 40 s, measured on the 60 s flush"
     ],
     [
-     "Flush",
-     "now 15 s (REWIND_FLUSH_S; code default 60), not re-measured"
+     "Now",
+     "clips upload as cut (REWIND_FLUSH_S default 0): 11 to 20 s, estimate, not re-measured"
     ],
     [
-     "Clip",
-     "up to 12 s, at most 60 per call, deleted at call end"
+     "Indexing",
+     "7 to 15 s after upload, measured"
     ],
     [
-     "Meter",
-     "TWELVELABS_REQUEST_USD default 0.10 per request, demo override 0.01 (estimate)"
+     "Search",
+     "0.3 to 1.1 s, measured; spoken hit 2.26 to 2.29 s after the question, measured"
+    ],
+    [
+     "Clips",
+     "change-cut 4 to 12 s, silent; deleted at call end unless kept; save mode keeps them in RAM"
+    ],
+    [
+     "List price",
+     "busy minute (6 clips, 2 searches) about $0.033: index $2.50 / hour of video, search $0.004"
+    ],
+    [
+     "our safety meter (counts high on purpose)",
+     "$0.10 per non-DELETE request; about $2.00 to $3.20 for that minute, overcounts free polls"
     ]
    ],
    "look": {
@@ -710,21 +802,27 @@
     "max": 60,
     "ranges": [
      {
-      "label": "Searchable",
+      "label": "Measured, 60 s flush",
       "from": 35,
       "to": 40,
       "tone": "cloud"
-     }
-    ],
-    "marks": [
+     },
      {
-      "at": 15,
-      "label": "flush now 15 s",
+      "label": "Now, flush 0 (estimate)",
+      "from": 11,
+      "to": 20,
       "tone": "muted"
      }
     ],
-    "foot": "35 to 40 s was measured before the flush moved to 15 s; not re-measured."
-   }
+    "marks": [],
+    "foot": "11 to 20 s is an estimate for the current flush, not re-measured. Prices: twelvelabs.io/overage."
+   },
+   "links": [
+    [
+     "TwelveLabs pricing",
+     "https://www.twelvelabs.io/overage"
+    ]
+   ]
   },
   {
    "id": "saved",
@@ -737,7 +835,7 @@
    "size": 0.55,
    "status": "working",
    "name": "Saved calls",
-   "speed": "not measured",
+   "speed": "0.483 ms lookup",
    "cost": "$0 (local)",
    "kind": "Long-term local memory (server/memory.py)",
    "what": "With memory consent, a call is saved on this Mac, encrypted on disk when the memory key is set. Questions about earlier calls are routed here by the time-scope head and answered by code from task history and dated sightings.",
@@ -747,6 +845,10 @@
     "server/live_memory.py"
    ],
    "facts": [
+    [
+     "Lookup",
+     "0.483 ms median local file lookup, measured (fixture)"
+    ],
     [
      "At rest",
      "Fernet encrypted when A_EYE_MEMORY_KEY is set; otherwise file system protection only"
@@ -761,7 +863,7 @@
     ],
     [
      "Recall",
-     "working: past-call questions answered from task history and dated sightings (server/live_memory.py)"
+     "working: past-call questions routed by the time-scope head"
     ]
    ],
    "look": {
@@ -804,20 +906,20 @@
    "speed": "not measured",
    "cost": "$0 (local)",
    "kind": "Team SpacetimeDB, Apify scrape",
-   "what": "10,001 Amazon tool and electronics listings scraped with Apify by Shivam into the team SpacetimeDB. 39 guide cards link to real product rows, and the step guide adds a short \"parts for this step\" note to Gemini's context.",
+   "what": "20 electronics cards (Arduino UNO, breadboard, LED, 220 ohm resistor, multimeter, soldering iron and more), 11 of them linked to real products from Shivam's Apify scrape in the team SpacetimeDB. The guide adds a short \"parts for this step\" note to Gemini's context.",
    "code": [
-    "market/apify.py",
-    "market/compat.py",
-    "server/live_guide.py"
+    "server/parts_shelf.py",
+    "data/kb/cards.json",
+    "market/apify.py"
    ],
    "facts": [
     [
-     "Listings",
-     "10,001"
+     "Electronics cards",
+     "20, 11 linked to product rows (data/kb/cards.json)"
     ],
     [
-     "Guide cards",
-     "39, linked to real product rows (data/kb)"
+     "Scrape",
+     "10,001 Amazon tool and electronics listings (Apify, team SpacetimeDB)"
     ],
     [
      "In the call",
@@ -831,9 +933,9 @@
    "look": {
     "type": "stat",
     "title": "Parts shelf",
-    "value": "10,001",
-    "unit": "listings",
-    "foot": "The cloud of points around this node has one point per listing. Positions are decorative."
+    "value": "20",
+    "unit": "electronics cards, 11 linked to products",
+    "foot": "The point cloud around this node has one point per scraped listing (10,001). Positions are decorative."
    }
   },
   {
@@ -851,7 +953,7 @@
    "speed": "applies per call",
    "cost": "$0",
    "kind": "Per-call cloud switches (server/privacy.py)",
-   "what": "Every cloud path has a named switch checked in code on every server path. Private mode turns them all off and the call runs at home.",
+   "what": "Every cloud path has a named switch checked in code on every server path. Guest / local mode turns them all off and the call runs at home.",
    "code": [
     "server/privacy.py"
    ],
@@ -861,36 +963,39 @@
      "Google, Claude, TwelveLabs, Cartesia"
     ],
     [
-     "Private mode",
-     "all off; Whisper, local brain, Kokoro"
+     "Guest / local",
+     "all off; Whisper, local brain, Kokoro, local vision"
     ]
    ],
    "look": {
-    "type": "switches",
-    "title": "What leaves home, and what turns it off",
-    "rows": [
-     {
-      "label": "Google (Gemini)",
-      "sends": "downscaled camera frames and voice",
-      "node": "gemini"
-     },
-     {
-      "label": "Claude",
-      "sends": "question and a written scene note",
-      "node": "context"
-     },
-     {
-      "label": "TwelveLabs",
-      "sends": "short silent clips, deleted at call end",
-      "node": "rewind"
-     },
-     {
-      "label": "Private mode",
-      "sends": "nothing: every switch off",
-      "node": "private"
-     }
+    "type": "split",
+    "title": "Normal call: what stays home, what goes out",
+    "stay": [
+     "Saved calls and recent memory (encrypted on disk when keyed)",
+     "Router, safety gates and step guide (code on the Mac)",
+     "Grounding, captions and YOLO on the home GPU",
+     "Parts cards (data/kb)",
+     "Whisper, Kokoro and the local brain in Guest / local mode"
     ],
-    "foot": "Paraphrased from server/privacy.py WHAT_LEAVES."
+    "go": [
+     [
+      "Google (Gemini Live)",
+      "downscaled camera frames and voice"
+     ],
+     [
+      "Claude",
+      "the question and a written scene note, sometimes one small close-up"
+     ],
+     [
+      "TwelveLabs (if on)",
+      "short silent clips, deleted at call end"
+     ],
+     [
+      "Cartesia (if on)",
+      "only the reply sentence"
+     ]
+    ],
+    "foot": "Guest / local mode sends nothing out. Wording paraphrased from server/privacy.py WHAT_LEAVES."
    }
   }
  ],
@@ -917,8 +1022,8 @@
    "rate": 1.0,
    "bend": 1.2,
    "name": "live audio + frames",
-   "speed": "0.6 to 1.1 s",
-   "cost": "~$0.10 / min (est.)",
+   "speed": "0.5 to 1.4 s",
+   "cost": "list $0.016 to $0.025 / min (est.)",
    "what": "The live conversation. Gemini hears and sees, then speaks; the reply streams back through the server to the phone.",
    "main": true
   },
@@ -929,7 +1034,7 @@
    "status": "working",
    "rate": 0.8,
    "name": "question",
-   "speed": "~45 ms",
+   "speed": "45.7 ms",
    "cost": "$0",
    "what": "Each finished question is routed in about 45 ms on CPU (lane and time scope)."
   },
@@ -941,9 +1046,9 @@
    "rate": 0.5,
    "bend": 1.4,
    "name": "find an object",
-   "speed": "box 1.8 to 2.3 s",
+   "speed": "box about 2 s",
    "cost": "$0",
-   "what": "\"Where is the M.2 slot?\" goes to grounding; the box is on screen about 1.8 to 2.3 s after the object is named."
+   "what": "\"Where is the LED?\" goes to grounding; the box is on screen about 2 s after the object is named."
   },
   {
    "id": "rt-recent",
@@ -964,8 +1069,8 @@
    "status": "working",
    "rate": 0.4,
    "name": "earlier this call",
-   "speed": "",
-   "cost": "~$0.10 / req (est.)",
+   "speed": "search 0.3 to 1.1 s",
+   "cost": "search $0.004 (list)",
    "what": "Questions about earlier in this call search Rewind."
   },
   {
@@ -1001,7 +1106,7 @@
    "name": "mute + stop line",
    "speed": "86 ms",
    "cost": "",
-   "what": "On a hazard the gate mutes Gemini and the fixed stop line plays 86 ms after speech ends."
+   "what": "On a hazard (hot soldering iron, live USB) the gate mutes Gemini and the fixed stop line plays 86 ms after speech ends."
   },
   {
    "id": "srv-guide",
@@ -1013,19 +1118,6 @@
    "speed": "",
    "cost": "$0",
    "what": "The guide checks the user's words against the current step's rules."
-  },
-  {
-   "id": "guide-cap",
-   "from": "guide",
-   "to": "caption",
-   "both": true,
-   "status": "working",
-   "rate": 0.3,
-   "bend": 1.2,
-   "name": "valve check",
-   "speed": "",
-   "cost": "$0",
-   "what": "For the shutoff step the guide asks the trusted valve checker about the current frame."
   },
   {
    "id": "guide-gem",
@@ -1047,7 +1139,7 @@
    "bend": 1.2,
    "name": "every ~4 s",
    "speed": "~4 s",
-   "cost": "tokens",
+   "cost": "~$0.003 / min (est.)",
    "what": "Every ~4 s the context builder gets the latest transcript and frames."
   },
   {
@@ -1094,10 +1186,10 @@
    "status": "working",
    "rate": 0.3,
    "bend": 0.8,
-   "name": "Private mode audio",
+   "name": "Guest / local audio",
    "speed": "",
    "cost": "$0",
-   "what": "In Private mode speech goes to Whisper and the reply comes back as Kokoro voice."
+   "what": "In Guest / local mode speech goes to Whisper and the reply comes back as Kokoro voice, all at home."
   },
   {
    "id": "srv-recent",
@@ -1118,8 +1210,8 @@
    "rate": 0.3,
    "bend": 0.8,
    "name": "silent clips",
-   "speed": "35 to 40 s",
-   "cost": "~$0.10 / req (est.)",
+   "speed": "index 7 to 15 s",
+   "cost": "list ~$0.033 / busy min (est.)",
    "what": "Busy moments become short silent clips, uploaded on each flush and searchable about 35 to 40 s after the event."
   },
   {
@@ -1192,7 +1284,14 @@
     "-srv-gem",
     "-cap-srv"
    ],
-   "say": "Voice and frames reach the server, the router picks a lane in about 45 ms, Gemini answers with the latest scene note. First voice 0.6 to 1.1 s after you stop."
+   "say": "Voice and frames reach the server, the router picks a lane in about 45 ms, Gemini answers with the latest scene note. First voice 0.5 to 1.4 s after you stop.",
+   "detail": {
+    "path": "Phone 1 fps 320 px frames + audio to /ws2 on the Mac, to Gemini Live in the cloud. The router (about 45 ms, local) picks now, memory or expert; the Haiku context builder adds a scene note every ~4 s; safety gates run in code before playback.",
+    "out": "Mic audio and downscaled frames to Google. With Claude on: question text, scene note, last dialogue, sometimes one crop.",
+    "latency": "End of speech to first voice 0.5 to 1.4 s, measured. Router 45.7 ms p50, measured. Time to write one note not measured.",
+    "cost": "Gemini list $0.016 to $0.025 / min; Haiku notes $0.003 / min, estimate.",
+    "runs": "Until hang-up; the Gemini connection resumes about every 10 min."
+   }
   },
   {
    "id": "find",
@@ -1203,7 +1302,14 @@
     "rt-ground",
     "-cap-srv"
    ],
-   "say": "\"Where is it?\" routes to grounding on the home GPU; the box is on your screen about 1.8 to 2.3 s after you name it."
+   "say": "\"Where is it?\" routes to grounding on the home GPU; the box is on your screen about 2 s after you name it.",
+   "detail": {
+    "path": "Named object to pointer grounding: Qwen 3.5 9B on the home GPU over Tailscale; YOLO can pre-detect; the box is drawn on the live view.",
+    "out": "None for the box; frames stay on our GPU (Live still has its own audio and frames).",
+    "latency": "Object named to box on screen about 2 s, measured.",
+    "cost": "$0 (GPU, on demand).",
+    "runs": "One grounding call; about 0.5 boxes / s on one GPU, estimate."
+   }
   },
   {
    "id": "hazard",
@@ -1214,7 +1320,14 @@
     "safe-gem",
     "-cap-srv"
    ],
-   "say": "A coded gate catches the hazard, mutes Gemini and plays the stop line 86 ms after you stop speaking."
+   "say": "\"Can I touch the iron tip?\" A coded gate catches it, mutes Gemini and plays the stop line 86 ms after you stop speaking.",
+   "detail": {
+    "path": "Speech to /ws2 to server/safety.py and the pack refuse() check, in code. On a hit Gemini is muted and the fixed line is spoken; no model is asked that turn.",
+    "out": "The hazard turn is not answered by Claude or Live.",
+    "latency": "Stop line 86 ms after speech, Gemini muted, measured.",
+    "cost": "$0 for the gate (the Live minute still bills while open).",
+    "runs": "One spoken stop; the call can continue."
+   }
   },
   {
    "id": "rewind",
@@ -1226,25 +1339,41 @@
     "rt-rewind",
     "-cap-srv"
    ],
-   "say": "Silent clips go to TwelveLabs and are searchable about 35 to 40 s later; \"what did I do earlier?\" routes there."
+   "say": "Silent clips go to TwelveLabs and are searchable about 35 to 40 s later; \"what did I do earlier?\" routes there.",
+   "detail": {
+    "path": "Scene-change cuts (2 s pre-roll + 3 to 12 s) become in-memory MP4 clips sent to TwelveLabs; \"what did I do earlier?\" goes through the router's time scope to a Rewind search.",
+    "out": "Silent clips to TwelveLabs (opt-in, per call); deleted at call end unless kept.",
+    "latency": "Searchable 35 to 40 s after the event, measured on the 60 s flush; 11 to 20 s with flush 0, estimate. Search 0.3 to 1.1 s, measured.",
+    "cost": "Busy minute about $0.033 at list, estimate.",
+    "runs": "While Rewind is on for the call."
+   }
   },
   {
-   "id": "private",
-   "name": "Private mode",
+   "id": "guest",
+   "name": "Guest / local",
    "edges": [
     "cap-srv",
+    "srv-rt",
+    "rt-ground",
     "srv-priv",
     "-srv-priv",
     "-cap-srv"
    ],
-   "say": "Every cloud switch off: Whisper, a local model and Kokoro at home. $0, speed not measured."
+   "say": "Guest / local: local vision, Whisper, a local brain and Kokoro on our own machines. Nothing leaves home; $0 cloud.",
+   "detail": {
+    "path": "Guest sign-in or Private turns Google, Claude, TwelveLabs and Cartesia off. Camera to local Qwen vision, mic to Whisper, a local brain, Kokoro voice. Safety, steps, recent memory and parts stay on.",
+    "out": "Nothing to model providers.",
+    "latency": "First voice about 1.0 s, measured (latest acceptance run).",
+    "cost": "$0 cloud; electricity about $0.0007 / session-minute, estimate.",
+    "runs": "Guest: 24 h cookie, 10 turns / min, 100 admitted actions."
+   }
   }
  ],
  "headline": {
-  "say": "A-Eye sees through your phone camera and talks you through hands-on jobs, while coded safety gates can cut the model off mid sentence.",
+  "say": "A-Eye lets a dad guide his son through fixing and learning electronics, and tying a tie: it sees through the phone camera, talks each step, and coded gates stop it at a hot soldering iron or live USB.",
   "chips": [
    {
-    "text": "voice in 0.6 to 1.1 s",
+    "text": "voice in 0.5 to 1.4 s",
     "tone": "speed",
     "node": "gemini"
    },
@@ -1254,10 +1383,161 @@
     "node": "safety"
    },
    {
-    "text": "~$1.40 per 2.5 min call (est.)",
+    "text": "about $0.05 to $0.07 per 2.5 min call ($0.13 to $0.15 with Recall), list price, est.",
     "tone": "cost",
-    "node": "gemini"
+    "panel": "cost"
    }
+  ]
+ },
+ "scale": {
+  "title": "Scale",
+  "note": "From the team numbers sheet (2026-10-25): code limits plus provider pages. Estimates and unmeasured items are marked.",
+  "sections": [
+   {
+    "head": "Per live user, and the cap that bites",
+    "rows": [
+     [
+      "Server /ws2",
+      "1 socket each; MAX_OPEN_SOCKETS default 20, CALLS_PER_IP 3, TURNS_PER_MINUTE 30 (guest 10)"
+     ],
+     [
+      "Gemini Live",
+      "1 session each; Vertex PayGo 1,000 concurrent sessions per project; Developer API concurrent cap not published"
+     ],
+     [
+      "Home GPU grounding",
+      "about 2 s per box, measured; about 1 concurrent pointer user at demo quality"
+     ],
+     [
+      "Haiku context",
+      "15 requests / min each; 100 users = 1,500 RPM"
+     ],
+     [
+      "TwelveLabs (Rewind on)",
+      "Free: index 60 RPM, search 600 RPM; Plus/Pro: 240 / 2,400 RPM"
+     ],
+     [
+      "Daily cloud cap",
+      "DAILY_CLOUD_CAP_USD default $5, then the whole server drops to local"
+     ]
+    ]
+   },
+   {
+    "head": "What breaks first",
+    "rows": [
+     [
+      "10 users",
+      "home GPU vision; fix: ground only on demand, more GPU boxes"
+     ],
+     [
+      "100 users",
+      "the 20-socket cap on one Mac, Gemini TPM, Haiku RPM, TwelveLabs Free index; fix: more hosts, paid tiers, Rewind off by default"
+     ],
+     [
+      "1,000 users",
+      "Vertex Live 1,000 sessions and the $5 / day cap; fix: provisioned throughput, cloud or on-device vision"
+     ],
+     [
+      "100,000 users",
+      "about $480k / month at list for Live alone (10 min / day each), estimate; fix: local-only default, Rewind only for kept calls"
+     ]
+    ]
+   },
+   {
+    "head": "Monthly cost per active user (10 min / day)",
+    "rows": [
+     [
+      "Guest / local",
+      "$0 cloud"
+     ],
+     [
+      "Live, no Rewind",
+      "list about $6 to $8, estimate"
+     ],
+     [
+      "Live + Rewind",
+      "add about $0.42 at list, estimate"
+     ],
+     [
+      "One 2.5 min call",
+      "about $0.05 to $0.07 ($0.13 to $0.15 with Recall) at list, estimate (see the Cost panel)"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   [
+    "Gemini API pricing",
+    "https://ai.google.dev/gemini-api/docs/pricing"
+   ],
+   [
+    "Gemini Live sessions (Vertex)",
+    "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/live-api/start-manage-session"
+   ],
+   [
+    "Gemini API rate limits",
+    "https://ai.google.dev/gemini-api/docs/rate-limits"
+   ],
+   [
+    "Claude Haiku 5.5",
+    "https://platform.claude.com/docs/en/models/haiku-5-5/overview"
+   ],
+   [
+    "TwelveLabs pricing",
+    "https://www.twelvelabs.io/overage"
+   ],
+   [
+    "TwelveLabs rate limits",
+    "https://docs.twelvelabs.io/v1.3/docs/get-started/plans-and-billing/rate-limits/new-billing"
+   ]
+  ]
+ },
+ "call_cost": {
+  "title": "Cost of one 2.5 min call",
+  "note": "List price, estimate, from the team numbers sheet and the provider price pages.",
+  "rows": [
+   [
+    "Gemini Live",
+    "$0.04 to $0.06 (list $0.016 to $0.025 / min)"
+   ],
+   [
+    "Haiku context notes",
+    "about $0.01 (list about $0.003 / min)"
+   ],
+   [
+    "Rewind, when Recall is on",
+    "about $0.08 (list about $0.033 / busy min)"
+   ],
+   [
+    "Total with Recall",
+    "about $0.13 to $0.15"
+   ],
+   [
+    "Total without Recall",
+    "about $0.05 to $0.07"
+   ],
+   [
+    "Guest / local",
+    "$0 cloud"
+   ]
+  ],
+  "meter": [
+   "Our safety meter (counts high on purpose)",
+   "One 2.5 min Live call with Rewind measured about $1.40 on it. It bills Gemini at $0.10 per connection-minute, Haiku by budget weights and TwelveLabs at $0.10 per request including free status polls, so the daily cap trips early rather than late."
+  ],
+  "sources": [
+   [
+    "Gemini API pricing",
+    "https://ai.google.dev/gemini-api/docs/pricing"
+   ],
+   [
+    "Claude Haiku 5.5",
+    "https://platform.claude.com/docs/en/models/haiku-5-5/overview"
+   ],
+   [
+    "TwelveLabs pricing",
+    "https://www.twelvelabs.io/overage"
+   ]
   ]
  }
 }

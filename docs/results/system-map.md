@@ -4,6 +4,51 @@ Interactive 3D map of the A-Eye system for judges, served at `/map.html` next to
 per call, all driven by one JSON file. Branch `pkg/system-map`; the commit sha is in the git log of that branch (this
 file is part of that commit).
 
+## Number check (2026-10-25)
+
+Chip: "about $0.05 to $0.07 per 2.5 min call ($0.13 to $0.15 with Recall), list price, est.". Changed: voice 0.6 to
+1.1 s -> 0.5 to 1.4 s; box 1.8 to 2.3 s -> about 2 s (throughput now about 0.5 boxes / s, estimate); time scope 86% ->
+91% on the independent 300 set; repo held-out 96 -> 93 of 100 (file `router/results/scope_heldout_eval.json`; the
+coordinator's note said 92); Guest / local first voice 1630 ms (classic path) -> about 1.0 s (latest acceptance
+run); monthly list costs now say estimate. Unchanged and sourced: hazard 86 ms, router 45.7 ms, lane model 96 / Haiku
+97 / regex 64 of 100 and 43 / 803.3 ms (`router/results/heldout_eval.json`), code limits, sheet prices.
+
+## Cost chip round (owner, 2026-10-25)
+
+The headline chip now reads "about $0.10 to $0.15 per 2.5 min call (list price, est.)" and opens a Cost panel:
+Gemini $0.04 to $0.06, Haiku notes about $0.01, Rewind about $0.08 with Recall on; totals about $0.13 to $0.15 with
+Recall and $0.05 to $0.07 without. The $1.40 meter figure appears only in that panel, under "Our safety meter (counts
+high on purpose)"; a test enforces this. Captures: `1280-cost-panel.png`, `390-cost-panel.png`, headline shots.
+
+## Numbers round (team numbers sheet, 2026-10-25)
+
+1. Scale panel filled from the sheet: per-user caps, what breaks first at 10 / 100 / 1,000 / 100,000 users, monthly
+   cost per active user, with the provider source links in the panel footnote (`1280-scale.png`, `390-scale.png`).
+2. Every flow now has Path, Data that leaves, Latency, Cost and How long it runs. On desktop the flow opens a panel;
+   on a phone the bottom card has a "Path, cost, runtime" button (`1280-flow-hazard.png`, `390-flow-guest.png`).
+3. Nodes carry list price (estimate) next to our meter: Gemini $0.016 to $0.025 / min list vs $0.10 meter; Haiku notes
+   $0.003 / min list vs $0.15 meter; Rewind busy minute $0.033 list. Router 45.7 ms p50, recent-memory and saved-call
+   lookups (fixtures), Guest / local first audio 1630 ms, Rewind flush 0 at 11 to 20 s marked estimate, all as the
+   sheet marks them. The headline cost chip now reads "(meter)".
+4. Step guide lists the coded multimeter (6 steps) and four-in-hand tie (8 steps) from `server/packs/` on main;
+   soldering stays gate-only. The sheet's pre-refocus home-repair section was not used, and its card count (39) is
+   superseded by main's 20 electronics cards.
+
+## Product focus round (owner, 2026-10-25)
+
+1. Electronics plus a tie: the headline, step guide and parts shelf now follow the dad guiding his son. The step guide
+   panel lists the coded tasks on main (Arduino LED build 7 steps, resistor bands 2, LED polarity 2) and marks
+   multimeter, soldering and tying a tie as having no coded steps yet. The valve checker panel and its line are gone;
+   the GPU node is Captions. Hazard examples are the hot soldering iron and live USB (`server/safety.py`,
+   `server/packs/electronics.py`). Parts shelf: 20 electronics cards, 11 linked to products (`data/kb/cards.json`),
+   from the 10,001-listing Apify scrape.
+2. "Guest / local" flow replaces Private mode: camera to server, router, local grounding, Whisper / local brain /
+   Kokoro and back, $0 cloud. The Privacy switches panel shows what stays on our machines and what goes to the cloud
+   in a normal call (`1280-privacy-panel.png`, `390-privacy-panel.png`, `1280-flow-guest.png`).
+3. Scale panel (header button) with placeholder rows marked "numbers coming" (`1280-scale.png`, `390-scale.png`).
+4. A test fails if sink, faucet, valve, plumbing, hinge or breaker appear in the map data, page or script. Panels now
+   open below the header controls on desktop.
+
 ## Polish round (after SIGN-OFF WITH NOTES, 8 of 10, on b035759)
 
 1. Ambient pulse heads 1.6x the first build (2.4 vs 1.5), thin tails that fade out over the last 10% of each line, so

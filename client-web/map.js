@@ -332,6 +332,7 @@ function lookHtml(w) {
   else if (w.type === 'cards') inner = `<div class="cards">${w.cards.map((c) => `<div class="card t-${c.tone || ''}"><b>${esc(c.head)}</b>${esc(c.body)}</div>`).join('')}</div>`;
   else if (w.type === 'scopes') inner = `<div class="scopes">${w.rows.map((r) => `<div class="scope"><i style="background:${tone(r.tone)}"></i><span>${esc(r.label)}<br><small>${esc(r.who)}</small></span><span class="st ${r.status}">${esc(r.status)}</span></div>`).join('')}</div>`;
   else if (w.type === 'switches') inner = w.rows.map((r) => `<div class="sw"><span>${esc(r.label)}</span><small>${esc(r.sends)}</small><button data-go="${r.node}">Show</button></div>`).join('');
+  else if (w.type === 'split') inner = `<p class="sec">Stays on our machines</p><ul class="facts">${w.stay.map((t) => `<li>${esc(t)}</li>`).join('')}</ul><p class="sec">Goes to the cloud</p><ul class="facts">${w.go.map(([k, v]) => `<li><b>${esc(k)}</b>${esc(v)}</li>`).join('')}</ul>`;
   else if (w.type === 'stat') inner = `<div class="stat">${esc(w.value)}<small>${esc(w.unit)}</small></div>`;
   return `<section class="look"><h3>${esc(w.title)}</h3>${inner}${w.foot ? `<p class="foot">${esc(w.foot)}</p>` : ''}</section>`;
 }
@@ -347,7 +348,7 @@ function nodePanel(n) {
     ${lookHtml(n.look)}
     ${n.facts ? `<ul class="facts">${n.facts.map(([k, v]) => `<li><b>${esc(k)}</b>${esc(v)}</li>`).join('')}</ul>` : ''}
     <p class="sec">Connections</p><div class="links">${links.map((e) => `<button data-edge="${e.id}">${esc(nodes[e.from === n.id ? e.to : e.from].name)}: ${esc(e.name)}</button>`).join('')}</div>
-    <p class="sec">Code</p><ul class="code">${n.code.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>`;
+    <p class="sec">Code</p><ul class="code">${n.code.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>${linksHtml(n.links)}`;
 }
 function edgePanel(e) {
   const a = nodes[e.from], b = nodes[e.to];
@@ -369,6 +370,20 @@ function indexPanel() {
   }
   return s + `<p class="sec" style="margin-top:14px">About the numbers</p><p class="kind">${esc(data.measured_note)} ${esc(data.cost_note)}</p>`;
 }
+const linksHtml = (list) => list && list.length ? `<p class="sec">Sources</p><ul class="code src">${list.map(([t, u]) => `<li><a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a></li>`).join('')}</ul>` : '';
+function scalePanel() {
+  const sc = data.scale;
+  return `<h2>${esc(sc.title)}</h2><p class="kind">${esc(sc.note)}</p>${sc.sections.map((x) => `<p class="sec">${esc(x.head)}</p><ul class="facts">${x.rows.map(([k, v]) => `<li><b>${esc(k)}</b>${esc(v)}</li>`).join('')}</ul>`).join('')}${linksHtml(sc.sources)}`;
+}
+function costPanel() {
+  const c = data.call_cost;
+  return `<h2>${esc(c.title)}</h2><p class="kind">${esc(c.note)}</p><ul class="facts">${c.rows.map(([k, v]) => `<li><b>${esc(k)}</b><span class="co">${esc(v)}</span></li>`).join('')}</ul><p class="sec">${esc(c.meter[0])}</p><p class="kind">${esc(c.meter[1])}</p>${linksHtml(c.sources)}`;
+}
+function flowPanel(f) {
+  const x = f.detail || {};
+  const rows = [['Path', x.path], ['Data that leaves', x.out], ['Latency', x.latency], ['Cost', x.cost], ['How long it runs', x.runs]].filter(([, v]) => v);
+  return `<h2>${esc(f.name)}</h2><p class="kind">Data flow, playing on the map</p><p>${esc(f.say)}</p><ul class="facts">${rows.map(([k, v]) => `<li><b>${esc(k)}</b>${esc(v)}</li>`).join('')}</ul><p class="kind">${esc(data.cost_note)}</p>`;
+}
 function openPanel(html) {
   body.innerHTML = html;
   panel.hidden = false;
@@ -383,6 +398,7 @@ panel.addEventListener('click', (ev) => {
   else if (t.dataset.edge) select({ kind: 'edge', id: t.dataset.edge });
 });
 document.getElementById('closeBtn').addEventListener('click', closePanel);
+document.getElementById('scaleBtn').addEventListener('click', () => { selected = null; applyFocus(); openPanel(scalePanel()); });
 document.getElementById('indexBtn').addEventListener('click', () => { selected = null; applyFocus(); openPanel(indexPanel()); });
 
 // ---------- camera framing ----------
@@ -469,10 +485,11 @@ for (const c of data.headline.chips) {
   const b = document.createElement('button');
   b.className = 't-' + c.tone;
   b.textContent = c.text;
-  b.addEventListener('click', () => select({ kind: 'node', id: c.node }));
+  b.addEventListener('click', () => (c.panel === 'cost' ? (selected = null, applyFocus(), openPanel(costPanel())) : select({ kind: 'node', id: c.node })));
   document.getElementById('chips').appendChild(b);
 }
-function markFlows() { for (const b of flowsEl.children) b.setAttribute('aria-pressed', String(!!flow && b.dataset.flow === flow.id)); sayEl.textContent = flow ? flow.say : defaultSay; document.body.classList.toggle('flowing', !!flow); }
+function markFlows() { for (const b of flowsEl.children) b.setAttribute('aria-pressed', String(!!flow && b.dataset.flow === flow.id)); sayEl.textContent = flow ? flow.say : defaultSay;
+  if (flow && flow.detail && innerWidth <= 760) { const d = document.createElement('button'); d.className = 'more'; d.textContent = 'Path, cost, runtime'; d.addEventListener('click', () => openPanel(flowPanel(flow))); sayEl.append(' ', d); } document.body.classList.toggle('flowing', !!flow); }
 function setFlow(f, once = false) {
   flow = f;
   selected = null;
@@ -482,6 +499,7 @@ function setFlow(f, once = false) {
   applyFocus();
   flowPackets.length = 0;
   if (f) flowPackets.push({ step: 0, t: 0, wait: once ? 0.8 : 0.2, once });
+  if (f && !once && innerWidth > 760) openPanel(flowPanel(f));
 }
 
 // ---------- mode switch ----------
@@ -728,6 +746,8 @@ if (startFlow) setFlow(startFlow);
 const sel = params.get('select');
 if (sel && (nodes[sel] || edges[sel])) { REDUCED || (tween = null); select({ kind: nodes[sel] ? 'node' : 'edge', id: sel }); }
 if (params.get('panel') === 'index') openPanel(indexPanel());
+if (params.get('panel') === 'scale') openPanel(scalePanel());
+if (params.get('panel') === 'cost') openPanel(costPanel());
 // play "Ask a question" once on a plain load to lead the eye (never under reduced motion)
 if (!REDUCED && !location.search) setFlow(data.flows.find((f) => f.id === 'ask'), true);
 requestAnimationFrame(tick);
