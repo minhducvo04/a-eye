@@ -182,7 +182,7 @@ struct RootView: View {
     }
 
     private func startCall(_ mode: Mode) {
-        guard !needsServer else {
+        guard !needsServer, mode.id != "gemini-live" || controller.liveAllowed else {
             showSettings = true
             return
         }

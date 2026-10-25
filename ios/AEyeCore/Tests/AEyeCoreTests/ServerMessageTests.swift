@@ -29,7 +29,7 @@ final class ServerMessageTests: XCTestCase {
     }
     func testUnknownTypeIsIgnored() {
         XCTAssertEqual(d(#"{"v":2,"type":"metrics","x":1}"#), .ignored(type: "metrics"))
-        XCTAssertEqual(d(#"{"v":2,"type":"audio","agent":"helper","utterance_id":"u","pcm16_b64":""}"#), .ignored(type: "audio"))
+        XCTAssertEqual(d(#"{"v":2,"type":"audio","agent":"helper","utterance_id":"u","pcm16_b64":"invalid"}"#), .ignored(type: "audio"))
     }
     func testGarbageIsNil() {
         XCTAssertNil(d("not json")); XCTAssertNil(d(#"{"v":2}"#))

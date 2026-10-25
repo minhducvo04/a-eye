@@ -5,15 +5,15 @@ import SwiftUI
 /// Bars light up in the helper colour while the user talks and sit low and grey on room noise.
 /// Reading font and sentence case, as the web strip ("Listening", "Hearing you…", "Mic off").
 struct ListeningStrip: View {
-    let listener: SpeechIn
+    let levels: [Double]
+    let heard: String
+    let isMuted: Bool
 
     var body: some View {
-        let levels = listener.levels
-        let heard = listener.interim
         let isTalking = !heard.isEmpty || isVoiceLevel(levels.last ?? 0)
 
         HStack(spacing: 12) {
-            WaveformBars(levels: levels, count: SpeechIn.levelHistoryCount, isActive: isTalking && !listener.isMuted)
+            WaveformBars(levels: levels, count: SpeechIn.levelHistoryCount, isActive: isTalking && !isMuted)
                 .frame(width: 96, height: 28)
 
             Text(label(heard: heard, isTalking: isTalking))
@@ -27,17 +27,17 @@ struct ListeningStrip: View {
         .padding(.vertical, 10)
         .callGlass(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(listener.isMuted ? "Microphone off" : (heard.isEmpty ? "Listening" : "Heard: \(heard)"))
+        .accessibilityLabel(isMuted ? "Microphone off" : (heard.isEmpty ? "Listening" : "Heard: \(heard)"))
     }
 
     private func label(heard: String, isTalking: Bool) -> String {
-        if listener.isMuted { return "Mic off" }
+        if isMuted { return "Mic off" }
         if !heard.isEmpty { return heard }
         return isTalking ? "Hearing you…" : "Listening"
     }
 
     private func textColor(heard: String, isTalking: Bool) -> Color {
-        if listener.isMuted { return Palette.warn }
+        if isMuted { return Palette.warn }
         if !heard.isEmpty { return .white }
         return isTalking ? Palette.helper : Palette.text3
     }
