@@ -6,9 +6,9 @@ Scene captions and context summaries no longer trigger safety stops. Only a non-
 
 Synthetic headphone replay reproduced the electrician false stop before the fix and passes afterward. Regression coverage includes summary-only live-power/water/burning wording, scene-only wording, explicit present hazard controls, negation/advice, low-voltage tasks, and the 12 V boundary.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_bg_context.py server/test_false_stop.py` - FAIL before fix (17 failed, 35 passed; one failure was sandbox socket binding).
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_bg_context.py server/test_false_stop.py server/test_planner_safety_steps.py server/test_live_polish.py --tb=short` - FAIL in sandbox (116 passed, 1 localhost socket bind permission failure).
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_bg_context.py::test_live_publishes_context_while_next_build_waits_and_cancels_on_close` - PASS with socket access (1 passed). All 117 selected cases passed across these final runs.
+Test: `.venv/bin/python -m pytest -q server/test_bg_context.py server/test_false_stop.py` - FAIL before fix (17 failed, 35 passed; one failure was sandbox socket binding).
+Test: `.venv/bin/python -m pytest -q server/test_bg_context.py server/test_false_stop.py server/test_planner_safety_steps.py server/test_live_polish.py --tb=short` - FAIL in sandbox (116 passed, 1 localhost socket bind permission failure).
+Test: `.venv/bin/python -m pytest -q server/test_bg_context.py::test_live_publishes_context_while_next_build_waits_and_cancels_on_close` - PASS with socket access (1 passed). All 117 selected cases passed across these final runs.
 Test: `git diff --check` - PASS.
 
 Limits: synthetic packets, mocked assessment, and real localhost WebSocket only; no live provider or physical rehearsal proof. Low-voltage recognition is lexical. No client changes, server restart, .env read, push, or merge. FIX A and FIX C are outside this change.
@@ -21,7 +21,7 @@ Changed files: `server/gemini_live.py`, `server/live_memory.py`, `server/test_ge
 
 Unsupported memory/record claims cut the streaming reply and clear queued audio without a safety stop or latch. The last question goes immediately through the existing code-owned past-memory lookup; explicit question scope still wins in recent_memory.answer. Found results supply evidence to Live; not-found results are spoken by code. Only a successfully delivered code evidence turn for this question within 10 seconds permits the claim. New user input invalidates that evidence. One claim_guard event records only a fixed phrase id in reason.
 
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_gemini_live.py server/test_live_memory.py` - FAIL (75 passed, 3 failed in 3.37s; all 10 new claim-guard cases passed).
+Test: `.venv/bin/python -m pytest -q server/test_gemini_live.py server/test_live_memory.py` - FAIL (75 passed, 3 failed in 3.37s; all 10 new claim-guard cases passed).
 
 The three failures also reproduce from untouched baseline `73d96ff64b53b96cd7c57acb9d9681fc0e9e6087`:
 - `test_recent_tool_temporal_routes_and_local_result_cards`: expects local row 12; existing routing returns Rewind's workbench.
@@ -835,7 +835,7 @@ No HTML, CSS, start-screen or call-screen layout changes.
 Fail-before: new initial-state test failed (false instead of true); all three
 new API flag cases failed because the field was absent.
 Test: node --test client-web/*.test.mjs - PASS (181 passed).
-Test: /Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_ws2.py server/test_rewind.py - PASS (31 passed).
+Test: .venv/bin/python -m pytest -q server/test_ws2.py server/test_rewind.py - PASS (31 passed).
 Test: git diff --check - PASS.
 Proof logs: /private/tmp/rewind-default-node.log and /private/tmp/rewind-default-pytest.log.
 
@@ -851,7 +851,7 @@ Files changed: `server/gemini_live.py`, `server/logs.py`, `server/test_gemini_li
 Live reconnects now get three attempts with 0.5, 1, and 2 second backoffs, including failed setup attempts and repeated rapid socket drops. The existing healthy-minute reset, consent checks, session resumption handle, guide republish, and safety-stop latch remain in effect. Successful recovery does not speak the fallback line. Each drop records live_drop with the close code and allowlisted transport reason; arbitrary provider text is withheld to prevent transcript/key logging.
 
 Fail-before: the new two-drop loopback recovery timed out, and the retry-exhaustion regression observed only two connections instead of four.
-Test: `/Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_gemini_live.py --tb=short` - FAIL (56 passed, 1 failed in 20.49s). All reconnect, backoff, resumption, safety-latch and log-privacy checks passed.
+Test: `.venv/bin/python -m pytest -q server/test_gemini_live.py --tb=short` - FAIL (56 passed, 1 failed in 20.49s). All reconnect, backoff, resumption, safety-latch and log-privacy checks passed.
 The sole failure is `test_recent_tool_temporal_routes_and_local_result_cards` (expected row 12, got workbench); reproduced by loading `server/gemini_live.py` from baseline commit `147b1019f22e2ff13a3b0ab03f8c476b1fc49fcb` and running that test: 1 failed, 56 deselected. It is outside FIX C.
 Test: `git diff --check` - PASS (no whitespace errors).
 
@@ -872,7 +872,7 @@ Low API confidence cannot become sure=True even after local vision confirmation;
 unverified cards remain best guesses and spoken saved-call replies say not sure.
 
 Fail-before: both new same-call regressions failed (filler query and wrong phone clip).
-Test: /Users/minhducvo/Projects/a-eye/.venv/bin/python -m pytest -q server/test_rewind.py server/test_past_calls.py server/test_recent_memory.py - FAIL (55 passed, 6 failed in 6.11s; final summary read).
+Test: .venv/bin/python -m pytest -q server/test_rewind.py server/test_past_calls.py server/test_recent_memory.py - FAIL (55 passed, 6 failed in 6.11s; final summary read).
 Baseline before edits: 52 passed, the same 6 failed in 6.41s. Existing failures:
 three generic last-call summary expectations, save_snapshots_text_before_cleanup,
 summary_bound_and_legacy_record_fallback, fixture_sources_and_honest_fallback.
