@@ -166,9 +166,10 @@
    "speed": "0.5 to 1.4 s to voice",
    "cost": "list $0.016 to $0.025 / min (est.)",
    "kind": "Cloud voice model (gemini-3.8-live)",
-   "what": "Hears the voice and sees 1 fps frames, then speaks. It is the only voice in the normal call. Safety gates can mute it mid sentence and speak a fixed line instead.",
+   "what": "Hears the voice and sees 1 fps frames, then speaks. It is the only voice in the normal call. The session resumes after a provider goAway or drop, with up to 3 quiet retries (0.5, 1 and 2 s). Safety gates can mute it mid sentence and speak a fixed line instead.",
    "code": [
-    "server/gemini_live.py"
+    "server/gemini_live.py",
+    "client-web/gemini-live.js"
    ],
    "facts": [
     [
@@ -189,7 +190,7 @@
     ],
     [
      "Session",
-     "about 10 min then resume; A-Eye sets slidingWindow so the call continues"
+     "resumes with a session handle on goAway or drop; up to 3 quiet retries at 0.5, 1 and 2 s (RECONNECT_DELAYS); slidingWindow keeps context"
     ]
    ],
    "look": {
@@ -237,10 +238,10 @@
    ],
    "size": 0.55,
    "status": "working",
-   "name": "Router",
+   "name": "Decision model",
    "speed": "45.7 ms p50",
    "cost": "$0 (local)",
-   "kind": "Decision model: EmbeddingGemma + logistic regression, with a time-scope head",
+   "kind": "Router and time-scope decision model in front of memory (EmbeddingGemma + logistic regression)",
    "what": "Embeds each question and picks a lane: answer from now (camera), from memory, or ask the expert. A time-scope head then picks how far back: seconds, minutes, earlier this call or earlier calls. A past question holds Gemini's reply until code has looked it up. Local, about 45 ms on CPU.",
    "code": [
     "router/route.py",
@@ -335,7 +336,8 @@
    "what": "Plain code, no model. A question about a known hazard gets a fixed line and no model is asked; a reply that calls a hazard fine is replaced. Touching the hot soldering iron tip, wiring with USB plugged in, or mains power each get a fixed line. On a hazard it mutes Gemini and speaks the stop line 86 ms after speech ends.",
    "code": [
     "server/safety.py",
-    "server/packs/electronics.py"
+    "server/packs/electronics.py",
+    "server/context_agent.py"
    ],
    "facts": [
     [
@@ -349,6 +351,10 @@
     [
      "Why code",
      "the model never decides what is safe; fixed lines are spoken by code"
+    ],
+    [
+     "Background notes",
+     "a context note cannot fire a gate on low-voltage work (headphones, USB, Arduino); only an explicit current hazard reaches the gates (server/context_agent.py)"
     ]
    ],
    "look": {
@@ -522,7 +528,7 @@
    "speed": "box in about 2 s",
    "cost": "$0 (local)",
    "kind": "Qwen 3.5 9B on the home GPU",
-   "what": "When you name an object it finds it in the frame and returns a box, drawn on your screen about 2 s after the object is named.",
+   "what": "When you name an object it finds it in the frame and returns a box, drawn on your screen about 2 s after the object is named. If the home GPU is unavailable and cloud fallback is set, Gemini vision answers instead.",
    "code": [
     "server/vision_client.py",
     "server/pointer.py",
@@ -548,6 +554,10 @@
     [
      "Network",
      "Tailscale only; frames stay on our GPU"
+    ],
+    [
+     "Cloud fallback",
+     "Gemini cloud vision when VISION_BACKEND=cloud_fallback and the Google switch is on (server/cloud_vision.py)"
     ]
    ],
    "look": {
@@ -594,6 +604,10 @@
     [
      "Speed",
      "not measured"
+    ],
+    [
+     "Cloud fallback",
+     "Gemini cloud vision when VISION_BACKEND=cloud_fallback and the Google switch is on (server/cloud_vision.py)"
     ]
    ]
   },
@@ -689,11 +703,19 @@
    "speed": "0.013 ms lookup",
    "cost": "$0 (local)",
    "kind": "Call-local text recall (server/recent_memory.py)",
-   "what": "Remembers what was said and seen in this call so \"what did I just do?\" can be answered from text, without video. Lives only for the call.",
+   "what": "Keeps notes of what was said and seen for the last 10 minutes so \"what did I just do?\" is answered from text. A question about up to 5 minutes ago reads these notes; older goes to Rewind.",
    "code": [
     "server/recent_memory.py"
    ],
    "facts": [
+    [
+     "Keeps",
+     "10 minutes of notes in RAM (KEEP_S 600), cleared on hang-up"
+    ],
+    [
+     "Reads",
+     "questions about up to 5 minutes ago (RECENT_MAX_S 300); older goes to Rewind"
+    ],
     [
      "Lookup",
      "0.013 ms median, measured (fixture)"
@@ -701,14 +723,6 @@
     [
      "Answer on loopback",
      "3.78 ms, measured; voice not included"
-    ],
-    [
-     "Holds",
-     "up to 1,024 entries; RAM only, cleared on hang-up"
-    ],
-    [
-     "Scope",
-     "this call, seconds up to 120 s"
     ]
    ],
    "look": {
@@ -722,25 +736,25 @@
       "status": "working"
      },
      {
-      "label": "Seconds to minutes ago",
-      "who": "Recent memory",
+      "label": "Up to 5 minutes ago",
+      "who": "Recent notes (10 min RAM log)",
       "tone": "memory",
       "status": "working"
      },
      {
       "label": "Earlier this call",
-      "who": "Rewind (TwelveLabs)",
+      "who": "Rewind: TwelveLabs visual search first",
       "tone": "cloud",
       "status": "working"
      },
      {
       "label": "Earlier calls",
-      "who": "Saved calls",
+      "who": "Saved calls, TwelveLabs search of kept clips first",
       "tone": "memory",
       "status": "working"
      }
     ],
-    "foot": "The router's time-scope head picks the row; a past question holds Gemini until code has the answer."
+    "foot": "The decision model's time scope picks the row; a past question holds Gemini until code has the answer."
    }
   },
   {
@@ -758,13 +772,25 @@
    "speed": "searchable in 35 to 40 s",
    "cost": "list ~$0.033 / busy min (est.)",
    "kind": "TwelveLabs video search of this call",
-   "what": "Short silent clips around busy moments are uploaded to TwelveLabs so you can ask about earlier in the call. Clips are deleted when the call ends.",
+   "what": "Short silent clips around busy moments go to TwelveLabs. Past and this-call questions go through the decision model to a TwelveLabs visual search first, using only the object words, and the best of the top 5 clips plays in the card as an MP4.",
    "code": [
     "server/rewind.py",
     "server/rewind_tools.py",
     "server/cloud_meter.py"
    ],
    "facts": [
+    [
+     "Question path",
+     "decision model, then TwelveLabs visual search with object words only, best of the top 5"
+    ],
+    [
+     "Answer",
+     "the found clip plays in the card as an MP4; end to end time on this path not measured"
+    ],
+    [
+     "Default in this demo",
+     "Rewind is on for every call (agent.js initialRewind with demo_shared_memory on); the son can turn it off with the Rewind button. Every call is kept in the shared demo library (A_EYE_DEMO_SHARED_MEMORY=1)"
+    ],
     [
      "Searchable after the event",
      "35 to 40 s, measured on the 60 s flush"
@@ -838,7 +864,7 @@
    "speed": "0.483 ms lookup",
    "cost": "$0 (local)",
    "kind": "Long-term local memory (server/memory.py)",
-   "what": "With memory consent, a call is saved on this Mac, encrypted on disk when the memory key is set. Questions about earlier calls are routed here by the time-scope head and answered by code from task history and dated sightings.",
+   "what": "With memory consent, a call is saved, encrypted on disk when the memory key is set. In open demo mode every call is kept for the team library. Questions about earlier calls go through the decision model to a TwelveLabs search of kept clips first; the clip plays in the card as an MP4.",
    "code": [
     "server/memory.py",
     "server/memory_capture.py",
@@ -997,6 +1023,85 @@
     ],
     "foot": "Guest / local mode sends nothing out. Wording paraphrased from server/privacy.py WHAT_LEAVES."
    }
+  },
+  {
+   "id": "planner",
+   "zone": "server",
+   "pos": [
+    3.6,
+    2.4,
+    2.4
+   ],
+   "size": 0.5,
+   "status": "working",
+   "privacy": "claude",
+   "name": "Planning team",
+   "speed": "plan in about 4 to 6 s",
+   "cost": "one Haiku call (est.)",
+   "kind": "Background planner (server/planner.py, Claude Haiku 5.5)",
+   "what": "For a task with no coded guide, one Claude Haiku 5.5 call with a forced submit_plan tool writes up to 8 steps. A code safety checker replaces unsafe steps with calm precautions, then code runs the plan like a coded guide (\"Guide: plan 1/6\") while Gemini handles the first reply.",
+   "code": [
+    "server/planner.py",
+    "server/task_scope.py",
+    "server/safety.py"
+   ],
+   "facts": [
+    [
+     "Model",
+     "claude-haiku-5-5 (PLANNER_MODEL), forced submit_plan tool"
+    ],
+    [
+     "Plan time",
+     "about 4 to 6 s, measured in real calls"
+    ],
+    [
+     "Steps",
+     "2 to 8, each with say, show and safety"
+    ],
+    [
+     "Safety checker eval",
+     "15 of 15 bad plans caught; 1 of 13 good plans wrongly dropped"
+    ],
+    [
+     "Cost per plan",
+     "not measured (one Haiku call; list price per the Haiku page)"
+    ]
+   ],
+   "look": {
+    "type": "cards",
+    "title": "How a new task becomes a guide",
+    "cards": [
+     {
+      "head": "Son asks",
+      "body": "\"The wire on my headphones broke, how do I fix it?\" No coded guide matches."
+     },
+     {
+      "head": "Gemini replies first",
+      "body": "The call keeps talking while the plan is written in the background."
+     },
+     {
+      "head": "Haiku writes the plan",
+      "body": "One forced submit_plan call, up to 8 steps, about 4 to 6 s.",
+      "tone": "server"
+     },
+     {
+      "head": "Code checks every step",
+      "body": "Unsafe steps become calm precautions (15 of 15 bad plans caught in the eval).",
+      "tone": "danger"
+     },
+     {
+      "head": "Code runs it",
+      "body": "\"Guide: plan 1/6\", one step at a time, like a coded guide.",
+      "tone": "server"
+     }
+    ]
+   },
+   "links": [
+    [
+     "Claude Haiku 5.5",
+     "https://platform.claude.com/docs/en/models/haiku-5-5/overview"
+    ]
+   ]
   }
  ],
  "edges": [
@@ -1068,10 +1173,10 @@
    "to": "rewind",
    "status": "working",
    "rate": 0.4,
-   "name": "earlier this call",
+   "name": "past or this call",
    "speed": "search 0.3 to 1.1 s",
    "cost": "search $0.004 (list)",
-   "what": "Questions about earlier in this call search Rewind."
+   "what": "Past and this-call questions go to a TwelveLabs visual search first (object words only, best of the top 5); the clip plays in the card as an MP4."
   },
   {
    "id": "rt-saved",
@@ -1269,6 +1374,52 @@
    "speed": "",
    "cost": "",
    "what": "Switch: off means no clips leave the Mac."
+  },
+  {
+   "id": "rt-plan",
+   "from": "router",
+   "to": "planner",
+   "status": "working",
+   "rate": 0.25,
+   "bend": 1.0,
+   "name": "new task",
+   "speed": "",
+   "cost": "",
+   "what": "A task with no coded guide goes to the planner."
+  },
+  {
+   "id": "plan-safe",
+   "from": "planner",
+   "to": "safety",
+   "status": "working",
+   "rate": 0.2,
+   "bend": 1.2,
+   "name": "check every step",
+   "speed": "",
+   "cost": "$0",
+   "what": "The code safety checker replaces unsafe plan steps with calm precautions."
+  },
+  {
+   "id": "plan-guide",
+   "from": "planner",
+   "to": "guide",
+   "status": "working",
+   "rate": 0.25,
+   "name": "plan to run",
+   "speed": "",
+   "cost": "$0",
+   "what": "Checked steps run in the step guide like a coded task: \"Guide: plan 1/6\"."
+  },
+  {
+   "id": "plan-gem",
+   "from": "planner",
+   "to": "gemini",
+   "status": "working",
+   "rate": 0.2,
+   "name": "step to phrase",
+   "speed": "",
+   "cost": "",
+   "what": "Gemini handles the first reply, then phrases each plan step."
   }
  ],
  "flows": [
@@ -1339,13 +1490,36 @@
     "rt-rewind",
     "-cap-srv"
    ],
-   "say": "Silent clips go to TwelveLabs and are searchable about 35 to 40 s later; \"what did I do earlier?\" routes there.",
+   "say": "\"Where did I leave the multimeter?\" The decision model sends it to a TwelveLabs visual search (object words, best of the top 5) and the clip plays in the card.",
    "detail": {
     "path": "Scene-change cuts (2 s pre-roll + 3 to 12 s) become in-memory MP4 clips sent to TwelveLabs; \"what did I do earlier?\" goes through the router's time scope to a Rewind search.",
-    "out": "Silent clips to TwelveLabs (opt-in, per call); deleted at call end unless kept.",
+    "out": "Silent clips to TwelveLabs; on by default in this demo, off with the Rewind button; deleted at call end unless kept.",
     "latency": "Searchable 35 to 40 s after the event, measured on the 60 s flush; 11 to 20 s with flush 0, estimate. Search 0.3 to 1.1 s, measured.",
     "cost": "Busy minute about $0.033 at list, estimate.",
     "runs": "While Rewind is on for the call."
+   }
+  },
+  {
+   "id": "plan",
+   "name": "Plan a new task",
+   "edges": [
+    "cap-srv",
+    "srv-rt",
+    "srv-gem",
+    "rt-plan",
+    "plan-safe",
+    "plan-guide",
+    "guide-gem",
+    "-srv-gem",
+    "-cap-srv"
+   ],
+   "say": "\"The wire on my headphones broke, how do I fix it?\" Gemini answers first; Haiku writes up to 8 steps in about 4 to 6 s; code checks every step and runs the plan.",
+   "detail": {
+    "path": "Camera and mic to /ws2, router finds no coded guide, one Claude Haiku 5.5 submit_plan call writes the plan, the code safety checker rewrites unsafe steps, the step guide runs it while Gemini phrases each step.",
+    "out": "The task text to Claude (Claude switch on); voice and frames to Google as in any Live call.",
+    "latency": "Plan in about 4 to 6 s, measured in real calls; Gemini's first reply is not held.",
+    "cost": "One Haiku call per plan; cost not measured.",
+    "runs": "Until the last plan step or the son stops."
    }
   },
   {
